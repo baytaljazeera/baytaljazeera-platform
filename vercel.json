@@ -1,8 +1,4 @@
 {
-  "builds": [
-    {
-      "src": "frontend/**",
-      "use": "@vercel/static"
-    }
-  ]
+  "framework": "nextjs",
+  "rootDirectory": "frontend"
 }
