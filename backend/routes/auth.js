@@ -1,0 +1,466 @@
+const express = require("express");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const db = require("../db");
+const { JWT_SECRET, JWT_CONFIG, JWT_VERIFY_OPTIONS } = require("../middleware/auth");
+const { asyncHandler } = require('../middleware/asyncHandler');
+const { validatePassword, PASSWORD_POLICY, sanitizeInput } = require("../config/security");
+
+const router = express.Router();
+
+function generateReferralCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = 'AQR';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+router.post("/register", asyncHandler(async (req, res) => {
+  const allowRegResult = await db.query(
+    `SELECT value FROM app_settings WHERE key = 'allow_registration'`
+  );
+  const allowRegistration = allowRegResult.rows.length === 0 || allowRegResult.rows[0].value === 'true';
+  
+  if (!allowRegistration) {
+    return res.status(403).json({ 
+      error: "التسجيل مغلق حالياً", 
+      errorEn: "Registration is currently closed" 
+    });
+  }
+
+  const { email, password, name, phone, referral_code, referralCode } = req.body;
+  const refCode = referral_code || referralCode;
+  
+  if (!email || !password) {
+    return res.status(400).json({ error: "البريد وكلمة المرور مطلوبان", errorEn: "Email and password required" });
+  }
+
+  const passwordValidation = validatePassword(password);
+  if (!passwordValidation.valid) {
+    return res.status(400).json({ 
+      error: passwordValidation.errorMessage, 
+      errorEn: "Password does not meet security requirements",
+      requirements: passwordValidation.errors
+    });
+  }
+
+  const sanitizedEmail = sanitizeInput(email.toLowerCase().trim());
+  const sanitizedName = name ? sanitizeInput(name) : null;
+  const sanitizedPhone = phone ? sanitizeInput(phone) : null;
+
+  let referrerId = null;
+  let referrerCode = null;
+  if (refCode) {
+    const normalizedCode = refCode.toUpperCase().trim();
+    const referrerResult = await db.query(
+      'SELECT id, referral_code, ambassador_code, email FROM users WHERE referral_code = $1 OR ambassador_code = $1',
+      [normalizedCode]
+    );
+    if (referrerResult.rows.length > 0) {
+      const referrer = referrerResult.rows[0];
+      if (referrer.email.toLowerCase() !== sanitizedEmail) {
+        referrerId = referrer.id;
+        referrerCode = referrer.ambassador_code || referrer.referral_code;
+      }
+    }
+  }
+
+  const hashed = await bcrypt.hash(password, 10);
+  let newReferralCode = generateReferralCode();
+  let codeExists = true;
+  let attempts = 0;
+  while (codeExists && attempts < 10) {
+    const checkCode = await db.query('SELECT 1 FROM users WHERE referral_code = $1', [newReferralCode]);
+    if (checkCode.rows.length === 0) {
+      codeExists = false;
+    } else {
+      newReferralCode = generateReferralCode();
+      attempts++;
+    }
+  }
+
+  try {
+    const result = await db.query(
+      `INSERT INTO users (email, password_hash, name, phone, referral_code, referred_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, email, name, phone, role, created_at, referral_code`,
+      [sanitizedEmail, hashed, sanitizedName, sanitizedPhone, newReferralCode, referrerId]
+    );
+
+    const user = result.rows[0];
+
+    if (referrerId && referrerCode) {
+      // جلب إعدادات السفراء لتحديد حالة الإحالة
+      const settingsResult = await db.query(
+        `SELECT require_first_listing, require_email_verified FROM ambassador_settings WHERE id = 1`
+      );
+      const settings = settingsResult.rows[0] || { require_first_listing: false, require_email_verified: false };
+      
+      // إذا كان اشتراط إعلان أول مفعّل، تُسجّل الإحالة كـ pending_listing
+      // وإلا تُسجّل كـ completed مباشرة
+      const initialStatus = settings.require_first_listing ? 'pending_listing' : 'completed';
+      
+      await db.query(
+        `INSERT INTO referrals (referrer_id, referred_id, referral_code, status)
+         VALUES ($1, $2, $3, $4)`,
+        [referrerId, user.id, referrerCode, initialStatus]
+      );
+      
+      // لا نحتسب الإحالة في referral_count إلا إذا كانت completed
+      if (initialStatus === 'completed') {
+        const updateResult = await db.query(
+          `UPDATE users SET referral_count = referral_count + 1, updated_at = NOW()
+           WHERE id = $1
+           RETURNING referral_count, referral_reward_claimed`,
+          [referrerId]
+        );
+      
+        const referrerData = updateResult.rows[0];
+        if (referrerData && referrerData.referral_count >= 10 && !referrerData.referral_reward_claimed) {
+          let businessPlan = await db.query(
+            `SELECT id, duration_days, max_listings FROM plans 
+             WHERE ai_support_level = 3 AND visible = true AND price > 0 
+             ORDER BY price DESC LIMIT 1`
+          );
+          
+          if (businessPlan.rows.length === 0) {
+            businessPlan = await db.query(
+              `SELECT id, duration_days, max_listings FROM plans 
+               WHERE ai_support_level >= 2 AND visible = true 
+               ORDER BY ai_support_level DESC, price DESC LIMIT 1`
+            );
+          }
+          
+          if (businessPlan.rows.length > 0) {
+            const plan = businessPlan.rows[0];
+            const durationDays = 365;
+            
+            const userPlanResult = await db.query(
+              `INSERT INTO user_plans (user_id, plan_id, status, started_at, expires_at, paid_amount)
+               VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '1 day' * $3, 0)
+               RETURNING id, expires_at`,
+              [referrerId, plan.id, durationDays]
+            );
+            const userPlanId = userPlanResult.rows[0].id;
+            const expiresAt = userPlanResult.rows[0].expires_at;
+            
+            await db.query(
+              `INSERT INTO quota_buckets (user_id, plan_id, user_plan_id, source, total_slots, used_slots, expires_at, active)
+               VALUES ($1, $2, $3, 'referral_reward', $4, 0, $5, true)`,
+              [referrerId, plan.id, userPlanId, plan.max_listings || 10, expiresAt]
+            );
+            
+            await db.query(
+              `INSERT INTO referral_rewards (user_id, reward_type, plan_id, user_plan_id, referral_count, notes)
+               VALUES ($1, 'free_subscription', $2, $3, 10, 'مكافأة إحالة 10 عملاء - اشتراك سنة رجال أعمال مجاني')`,
+              [referrerId, plan.id, userPlanId]
+            );
+            
+            await db.query(
+              `UPDATE users SET referral_reward_claimed = true, updated_at = NOW() WHERE id = $1`,
+              [referrerId]
+            );
+            
+            await db.query(
+              `INSERT INTO notifications (user_id, title, body, type, created_at)
+               VALUES ($1, '🎉 مبروك! حصلت على اشتراك مجاني', 'تهانينا! لقد أحلت 10 عملاء وحصلت على اشتراك سنة رجال أعمال مجاناً', 'referral_reward', NOW())`,
+              [referrerId]
+            );
+            
+            console.log(`🎁 Referral reward granted to user ${referrerId}: 1-year plan (ID: ${plan.id})`);
+          } else {
+            console.error(`❌ Referral reward FAILED for user ${referrerId}: No eligible plan found`);
+            await db.query(
+              `INSERT INTO notifications (user_id, title, body, type, created_at)
+               VALUES ($1, '⚠️ مكافأة الإحالة قيد المعالجة', 'تهانينا على 10 إحالات! سيتم تفعيل اشتراكك المجاني قريباً', 'referral_pending', NOW())`,
+              [referrerId]
+            );
+          }
+        }
+      }
+      
+      console.log(`📨 Referral registered: ${referrerCode} -> ${user.email} (status: ${initialStatus})`);
+    }
+    
+    const freePlanResult = await db.query(
+      `SELECT id, duration_days FROM plans WHERE price = 0 AND visible = true ORDER BY id LIMIT 1`
+    );
+    
+    if (freePlanResult.rows.length > 0) {
+      const freePlan = freePlanResult.rows[0];
+      const durationDays = freePlan.duration_days || 30;
+      
+      const fullPlanResult = await db.query(
+        `SELECT max_listings FROM plans WHERE id = $1`,
+        [freePlan.id]
+      );
+      const maxListings = fullPlanResult.rows[0]?.max_listings || 1;
+      
+      const userPlanResult = await db.query(
+        `INSERT INTO user_plans (user_id, plan_id, status, started_at, expires_at)
+         VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '1 day' * $3)
+         RETURNING id, expires_at`,
+        [user.id, freePlan.id, durationDays]
+      );
+      const userPlanId = userPlanResult.rows[0].id;
+      const expiresAt = userPlanResult.rows[0].expires_at;
+      
+      await db.query(
+        `INSERT INTO quota_buckets (user_id, plan_id, user_plan_id, source, total_slots, used_slots, expires_at, active)
+         VALUES ($1, $2, $3, 'registration', $4, 0, $5, true)`,
+        [user.id, freePlan.id, userPlanId, maxListings, expiresAt]
+      );
+      
+      console.log(`✅ Assigned free plan and quota bucket (user_plan_id: ${userPlanId}) to new user ${user.email}`);
+    } else {
+      console.warn(`⚠️ No free plan found for new user ${user.email}`);
+    }
+    
+    const token = jwt.sign(
+      { userId: user.id, role: user.role },
+      JWT_SECRET,
+      { 
+        expiresIn: JWT_CONFIG.expiresIn,
+        issuer: JWT_CONFIG.issuer,
+        audience: JWT_CONFIG.audience
+      }
+    );
+
+    res
+      .cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      })
+      .json({ 
+        ok: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          phone: user.phone,
+          role: user.role,
+        },
+        token,
+        message: "تم إنشاء الحساب بنجاح"
+      });
+  } catch (err) {
+    if (err.code === "23505") {
+      if (err.constraint?.includes("email")) {
+        return res.status(409).json({ error: "البريد الإلكتروني مستخدم من قبل", errorEn: "Email already exists" });
+      }
+      if (err.constraint?.includes("phone")) {
+        return res.status(409).json({ error: "رقم الجوال مستخدم من قبل", errorEn: "Phone already exists" });
+      }
+    }
+    throw err;
+  }
+}));
+
+router.post("/login", asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
+  
+  if (!email || !password) {
+    return res.status(400).json({ error: "البريد وكلمة المرور مطلوبان", errorEn: "Email and password required" });
+  }
+
+  const result = await db.query(
+    "SELECT * FROM users WHERE email = $1",
+    [email.toLowerCase().trim()]
+  );
+  const user = result.rows[0];
+  
+  if (!user) {
+    return res.status(401).json({ error: "بيانات الدخول غير صحيحة", errorEn: "Invalid credentials" });
+  }
+
+  if (user.locked_until && new Date(user.locked_until) > new Date()) {
+    const remainingMinutes = Math.ceil((new Date(user.locked_until) - new Date()) / 60000);
+    return res.status(423).json({ 
+      error: `الحساب مقفل، حاول بعد ${remainingMinutes} دقيقة`, 
+      errorEn: `Account locked, try again in ${remainingMinutes} minutes` 
+    });
+  }
+
+  const validPassword = await bcrypt.compare(password, user.password_hash);
+  if (!validPassword) {
+    const failedAttempts = (user.failed_login_attempts || 0) + 1;
+    
+    if (failedAttempts >= PASSWORD_POLICY.maxLoginAttempts) {
+      await db.query(
+        `UPDATE users SET failed_login_attempts = $1, locked_until = NOW() + INTERVAL '30 minutes' WHERE id = $2`,
+        [failedAttempts, user.id]
+      );
+      return res.status(423).json({ 
+        error: "تم قفل الحساب بسبب محاولات فاشلة متعددة، حاول بعد 30 دقيقة", 
+        errorEn: "Account locked due to multiple failed attempts" 
+      });
+    }
+    
+    await db.query(
+      `UPDATE users SET failed_login_attempts = $1 WHERE id = $2`,
+      [failedAttempts, user.id]
+    );
+    
+    return res.status(401).json({ 
+      error: "بيانات الدخول غير صحيحة", 
+      errorEn: "Invalid credentials",
+      attemptsRemaining: PASSWORD_POLICY.maxLoginAttempts - failedAttempts
+    });
+  }
+  
+  await db.query(
+    `UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = $1`,
+    [user.id]
+  );
+
+  if (user.role === 'user') {
+    const existingPlan = await db.query(
+      `SELECT id FROM user_plans WHERE user_id = $1 LIMIT 1`,
+      [user.id]
+    );
+    
+    if (existingPlan.rows.length === 0) {
+      const freePlanResult = await db.query(
+        `SELECT id, duration_days FROM plans WHERE price = 0 AND visible = true ORDER BY id LIMIT 1`
+      );
+      
+      if (freePlanResult.rows.length > 0) {
+        const freePlan = freePlanResult.rows[0];
+        const durationDays = freePlan.duration_days || 30;
+        
+        const fullPlanResult = await db.query(
+          `SELECT max_listings FROM plans WHERE id = $1`,
+          [freePlan.id]
+        );
+        const maxListings = fullPlanResult.rows[0]?.max_listings || 1;
+        
+        const userPlanResult = await db.query(
+          `INSERT INTO user_plans (user_id, plan_id, status, started_at, expires_at)
+           VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '1 day' * $3)
+           RETURNING id, expires_at`,
+          [user.id, freePlan.id, durationDays]
+        );
+        const userPlanId = userPlanResult.rows[0].id;
+        const expiresAt = userPlanResult.rows[0].expires_at;
+        
+        await db.query(
+          `INSERT INTO quota_buckets (user_id, plan_id, user_plan_id, source, total_slots, used_slots, expires_at, active)
+           VALUES ($1, $2, $3, 'login_assignment', $4, 0, $5, true)`,
+          [user.id, freePlan.id, userPlanId, maxListings, expiresAt]
+        );
+        
+        console.log(`✅ Assigned free plan and quota bucket (user_plan_id: ${userPlanId}) to existing user ${user.email} on login`);
+      }
+    }
+  }
+
+  await db.query(
+    `UPDATE users SET last_login_at = NOW(), login_count = COALESCE(login_count, 0) + 1 WHERE id = $1`,
+    [user.id]
+  );
+
+  const token = jwt.sign(
+    { userId: user.id, role: user.role },
+    JWT_SECRET,
+    { 
+      expiresIn: JWT_CONFIG.expiresIn,
+      issuer: JWT_CONFIG.issuer,
+      audience: JWT_CONFIG.audience
+    }
+  );
+
+  res
+    .cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    })
+    .json({
+      ok: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        phone: user.phone,
+        whatsapp: user.whatsapp,
+        role: user.role,
+      },
+      token,
+      message: "تم تسجيل الدخول بنجاح"
+    });
+}));
+
+router.post("/logout", (req, res) => {
+  if (req.session) {
+    req.session.destroy((err) => {
+      if (err) {
+        console.warn("Session destroy error:", err);
+      }
+    });
+  }
+  
+  res
+    .clearCookie("token", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      path: "/"
+    })
+    .clearCookie("connect.sid", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      path: "/"
+    })
+    .json({ ok: true, message: "تم تسجيل الخروج بنجاح" });
+});
+
+router.get("/me", asyncHandler(async (req, res) => {
+  const token = req.cookies?.token || req.headers.authorization?.replace("Bearer ", "");
+  
+  if (!token) {
+    return res.status(401).json({ error: "غير مسجل الدخول", errorEn: "Not logged in" });
+  }
+
+  let payload;
+  try {
+    payload = jwt.verify(token, JWT_SECRET, JWT_VERIFY_OPTIONS);
+  } catch (err) {
+    return res.status(401).json({ error: "انتهت صلاحية الجلسة", errorEn: "Session expired" });
+  }
+  
+  const result = await db.query(
+    `SELECT id, email, name, phone, whatsapp, role, email_verified_at, phone_verified_at, created_at
+     FROM users WHERE id = $1`,
+    [payload.userId]
+  );
+  
+  const user = result.rows[0];
+  if (!user) {
+    return res.status(401).json({ error: "المستخدم غير موجود", errorEn: "User not found" });
+  }
+
+  const planResult = await db.query(
+    `SELECT p.* FROM user_plans up
+     JOIN plans p ON up.plan_id = p.id
+     WHERE up.user_id = $1 AND up.status = 'active' AND (up.expires_at IS NULL OR up.expires_at > NOW())
+     ORDER BY up.started_at DESC LIMIT 1`,
+    [user.id]
+  );
+
+  res.json({
+    user: {
+      ...user,
+      emailVerified: !!user.email_verified_at,
+      phoneVerified: !!user.phone_verified_at,
+    },
+    plan: planResult.rows[0] || null,
+  });
+}));
+
+module.exports = router;
