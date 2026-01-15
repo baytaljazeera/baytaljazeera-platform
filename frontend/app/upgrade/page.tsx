@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+export const dynamic = 'force-dynamic';
+
+import React, { useEffect, useState, Suspense } from "react";
 import { 
   Loader2, CheckCircle2, CreditCard, Building2, ArrowLeft, 
   Crown, Sparkles, Star, Shield, ArrowUpRight, FileText, Mail,

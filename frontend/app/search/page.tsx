@@ -1,16 +1,18 @@
 "use client";
 
-import React, { JSX, useEffect, useMemo, useState, useRef, useCallback } from "react";
+export const dynamic = 'force-dynamic';
+
+import React, { JSX, useEffect, useMemo, useState, useRef, useCallback, Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
-import dynamic from "next/dynamic";
+import dynamicImport from "next/dynamic";
 
-const MapClient = dynamic(() => import("../../components/MapClient"), {
+const MapClient = dynamicImport(() => import("../../components/MapClient"), {
   ssr: false,
 });
 
-const SyncedMapPane = dynamic(() => import("../../components/search/SyncedMapPane"), {
+const SyncedMapPane = dynamicImport(() => import("../../components/search/SyncedMapPane"), {
   ssr: false,
 });
 import {

@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+export const dynamic = 'force-dynamic';
+
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/lib/stores/authStore';
 import Link from 'next/link';

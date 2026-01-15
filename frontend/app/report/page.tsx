@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+export const dynamic = 'force-dynamic';
+
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { MapPin, BedDouble, Bath, Square } from "lucide-react";
 

@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+export const dynamic = 'force-dynamic';
+
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Star, Send, CheckCircle, Heart, Sparkles, ExternalLink } from "lucide-react";
 
-export default function RatePage() {
+function RatePageContent() {
   const searchParams = useSearchParams();
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
@@ -200,5 +202,13 @@ export default function RatePage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function RatePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="text-xl">جاري التحميل...</div></div>}>
+      <RatePageContent />
+    </Suspense>
   );
 }
