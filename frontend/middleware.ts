@@ -21,11 +21,21 @@ export async function middleware(request: NextRequest) {
   }
 
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8080'
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL
+    if (!baseUrl) {
+      return NextResponse.next()
+    }
+    
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 3000)
+    
     const response = await fetch(`${baseUrl}/api/settings/maintenance-status`, {
       cache: 'no-store',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal
     })
+    
+    clearTimeout(timeoutId)
 
     if (response.ok) {
       const data = await response.json()
@@ -35,7 +45,7 @@ export async function middleware(request: NextRequest) {
       }
     }
   } catch (error) {
-    console.error('Maintenance check error:', error)
+    // Silently continue if API is unavailable
   }
 
   return NextResponse.next()
