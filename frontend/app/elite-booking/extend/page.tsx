@@ -46,7 +46,7 @@ const tierColors: Record<string, string> = {
   bottom: 'from-orange-400 to-orange-600'
 };
 
-export default function EliteExtendPage() {
+function EliteExtendContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isAuthenticated, isHydrated } = useAuthStore();
@@ -456,5 +456,13 @@ export default function EliteExtendPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function EliteExtendPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="text-xl">جاري التحميل...</div></div>}>
+      <EliteExtendContent />
+    </Suspense>
   );
 }
