@@ -49,7 +49,10 @@ export default function InvoiceDetailPage() {
   async function fetchInvoice() {
     try {
       const token = localStorage.getItem("token");
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
       
       // Try finance endpoint first (for admins)
       let res = await fetch(`/api/finance/invoices/${invoiceId}`, {
