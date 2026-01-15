@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -97,7 +97,7 @@ const tierColors = {
   }
 };
 
-export default function EliteBookingPage() {
+function EliteBookingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isAuthenticated, user } = useAuthStore();
@@ -923,5 +923,13 @@ export default function EliteBookingPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function EliteBookingPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="text-xl">جاري التحميل...</div></div>}>
+      <EliteBookingContent />
+    </Suspense>
   );
 }
