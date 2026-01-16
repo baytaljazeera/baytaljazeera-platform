@@ -209,72 +209,66 @@ app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
 // 📦 Multer configuration imported from backend/config/multer.js
 
-// محاولة تهيئة قاعدة البيانات (إن وُجدت backend/init.js)
-try {
-  const { initializeDatabase } = require("./backend/init");
-  initializeDatabase()
-    .then(async () => {
-      console.log("✅ Database ready - plans already exist");
-      // إنشاء جدول flagged_conversations إذا لم يكن موجوداً
-      try {
-        await db.query(`
-          CREATE TABLE IF NOT EXISTS flagged_conversations (
-            id SERIAL PRIMARY KEY,
-            user1_id UUID REFERENCES users(id) ON DELETE CASCADE,
-            user2_id UUID REFERENCES users(id) ON DELETE CASCADE,
-            listing_id UUID REFERENCES properties(id) ON DELETE SET NULL,
-            flag_type VARCHAR(50) NOT NULL DEFAULT 'suspicious',
-            flag_reason TEXT,
-            ai_analysis TEXT,
-            ai_risk_score INTEGER DEFAULT 0,
-            flagged_by UUID REFERENCES users(id) ON DELETE SET NULL,
-            status VARCHAR(20) DEFAULT 'pending',
-            admin_note TEXT,
-            reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
-            reviewed_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ DEFAULT NOW()
-          );
-        `);
-        await db.query(`CREATE INDEX IF NOT EXISTS idx_flagged_conv_status ON flagged_conversations(status);`);
-        console.log("✅ flagged_conversations table ready");
-        
-        // إضافة فهارس للأداء على الجداول الرئيسية
-        await db.query(`
-          -- فهارس properties
-          CREATE INDEX IF NOT EXISTS idx_properties_status ON properties(status);
-          CREATE INDEX IF NOT EXISTS idx_properties_user_id ON properties(user_id);
-          CREATE INDEX IF NOT EXISTS idx_properties_city ON properties(city);
-          CREATE INDEX IF NOT EXISTS idx_properties_created_at ON properties(created_at DESC);
-          CREATE INDEX IF NOT EXISTS idx_properties_is_featured ON properties(is_featured) WHERE is_featured = true;
-          
-          -- فهارس user_plans
-          CREATE INDEX IF NOT EXISTS idx_user_plans_user_id ON user_plans(user_id);
-          CREATE INDEX IF NOT EXISTS idx_user_plans_status ON user_plans(status);
-          CREATE INDEX IF NOT EXISTS idx_user_plans_plan_id ON user_plans(plan_id);
-          
-          -- فهارس notifications
-          CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
-          CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read) WHERE is_read = false;
-          CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
-          
-          -- فهارس أخرى
-          CREATE INDEX IF NOT EXISTS idx_listing_reports_status ON listing_reports(status);
-          CREATE INDEX IF NOT EXISTS idx_refunds_status ON refunds(status);
-          CREATE INDEX IF NOT EXISTS idx_membership_requests_status ON membership_requests(status);
-          CREATE INDEX IF NOT EXISTS idx_quota_buckets_user_id ON quota_buckets(user_id);
-          CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON favorites(user_id);
-          CREATE INDEX IF NOT EXISTS idx_favorites_listing_id ON favorites(listing_id);
-        `);
-        console.log("✅ Performance indexes created");
-      } catch (tableErr) {
-        if (!tableErr.message.includes('already exists')) {
-          console.error("Error in database setup:", tableErr.message);
-        }
-      }
-    })
-    .catch((err) => console.error("Database init error:", err));
-} catch (err) {
-  console.log("ℹ️ No backend/init.js found or init skipped.");
+// Database initialization status
+let dbInitialized = false;
+
+// دالة تهيئة قاعدة البيانات (تُستدعى قبل بدء السيرفر)
+async function runDatabaseInit() {
+  try {
+    const { initializeDatabase } = require("./backend/init");
+    await initializeDatabase();
+    console.log("✅ Database tables initialized");
+    
+    // إنشاء جدول flagged_conversations
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS flagged_conversations (
+        id SERIAL PRIMARY KEY,
+        user1_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        user2_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        listing_id UUID REFERENCES properties(id) ON DELETE SET NULL,
+        flag_type VARCHAR(50) NOT NULL DEFAULT 'suspicious',
+        flag_reason TEXT,
+        ai_analysis TEXT,
+        ai_risk_score INTEGER DEFAULT 0,
+        flagged_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        admin_note TEXT,
+        reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        reviewed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_flagged_conv_status ON flagged_conversations(status);`);
+    console.log("✅ flagged_conversations table ready");
+    
+    // إضافة فهارس للأداء
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS idx_properties_status ON properties(status);
+      CREATE INDEX IF NOT EXISTS idx_properties_user_id ON properties(user_id);
+      CREATE INDEX IF NOT EXISTS idx_properties_city ON properties(city);
+      CREATE INDEX IF NOT EXISTS idx_properties_created_at ON properties(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_properties_is_featured ON properties(is_featured) WHERE is_featured = true;
+      CREATE INDEX IF NOT EXISTS idx_user_plans_user_id ON user_plans(user_id);
+      CREATE INDEX IF NOT EXISTS idx_user_plans_status ON user_plans(status);
+      CREATE INDEX IF NOT EXISTS idx_user_plans_plan_id ON user_plans(plan_id);
+      CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
+      CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read) WHERE is_read = false;
+      CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_listing_reports_status ON listing_reports(status);
+      CREATE INDEX IF NOT EXISTS idx_refunds_status ON refunds(status);
+      CREATE INDEX IF NOT EXISTS idx_membership_requests_status ON membership_requests(status);
+      CREATE INDEX IF NOT EXISTS idx_quota_buckets_user_id ON quota_buckets(user_id);
+      CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON favorites(user_id);
+      CREATE INDEX IF NOT EXISTS idx_favorites_listing_id ON favorites(listing_id);
+    `);
+    console.log("✅ Performance indexes created");
+    
+    dbInitialized = true;
+    return true;
+  } catch (err) {
+    console.error("❌ Database init error:", err.message);
+    return false;
+  }
 }
 
 // معالجة الأخطاء العامة
@@ -540,31 +534,46 @@ app.use((err, req, res, next) => {
 
 // 🟢 تشغيل السيرفر على المنفذ 8080 (خليه ثابت كده في Replit)
 const PORT = 8080;
-const server = app.listen(PORT, async () => {
-  console.log(`Aqar Al Jazeera backend running on port ${PORT}`);
+
+// دالة بدء السيرفر بعد تهيئة قاعدة البيانات
+async function startServer() {
+  console.log("🚀 Starting server initialization...");
   
-  // 🔧 إصلاح الإعلانات عند بدء السيرفر
-  await fixActiveListings();
-  
-  // ⏰ جدولة المهام التلقائية بعد بدء السيرفر
-  startScheduledTasks();
-  
-  // 🔴 Redis & BullMQ initialization
-  if (process.env.UPSTASH_REDIS_URL || process.env.REDIS_URL) {
-    console.log('🔴 Initializing Redis & BullMQ workers...');
-    initializeWorkers();
-  } else {
-    console.log('⚠️ Redis not configured - using in-memory cache fallback');
+  // تهيئة قاعدة البيانات أولاً (مع انتظار الاكتمال)
+  const dbReady = await runDatabaseInit();
+  if (!dbReady) {
+    console.error("⚠️ Database initialization had issues, but continuing...");
   }
-});
-
-server.on("error", (err) => console.error("Server error:", err));
-
-process.on('SIGTERM', async () => {
-  console.log('🔌 Graceful shutdown initiated...');
-  await closeAllQueues();
-  server.close(() => {
-    console.log('✅ Server closed');
-    process.exit(0);
+  
+  const server = app.listen(PORT, async () => {
+    console.log(`Aqar Al Jazeera backend running on port ${PORT}`);
+    
+    // 🔧 إصلاح الإعلانات عند بدء السيرفر
+    await fixActiveListings();
+    
+    // ⏰ جدولة المهام التلقائية بعد بدء السيرفر
+    startScheduledTasks();
+    
+    // 🔴 Redis & BullMQ initialization
+    if (process.env.UPSTASH_REDIS_URL || process.env.REDIS_URL) {
+      console.log('🔴 Initializing Redis & BullMQ workers...');
+      initializeWorkers();
+    } else {
+      console.log('⚠️ Redis not configured - using in-memory cache fallback');
+    }
   });
-});
+  
+  server.on("error", (err) => console.error("Server error:", err));
+  
+  process.on('SIGTERM', async () => {
+    console.log('🔌 Graceful shutdown initiated...');
+    await closeAllQueues();
+    server.close(() => {
+      console.log('✅ Server closed');
+      process.exit(0);
+    });
+  });
+}
+
+// بدء التطبيق
+startServer();
