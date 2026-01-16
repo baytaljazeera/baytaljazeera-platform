@@ -503,30 +503,55 @@ app.use("/api/launch-trial", launchTrialRoutes);
 
 // 🟢 معالج أخطاء عام (خصوصاً أخطاء Multer)
 app.use((err, req, res, next) => {
-  console.error("Error:", err.message || err);
+  console.error("❌ [ERROR HANDLER]", err.message || err);
+  if (err.stack) {
+    console.error("Stack trace:", err.stack);
+  }
   
   // معالجة أخطاء Multer
   if (err instanceof multer.MulterError) {
     return res.status(400).json({ 
-      error: true, 
-      message: err.code === 'LIMIT_FILE_SIZE' 
+      error: err.code === 'LIMIT_FILE_SIZE' 
         ? 'حجم الملف كبير جداً' 
-        : 'خطأ في رفع الملف: ' + err.message 
+        : 'خطأ في رفع الملف: ' + err.message,
+      errorEn: err.code === 'LIMIT_FILE_SIZE'
+        ? 'File size too large'
+        : 'File upload error: ' + err.message
     });
   }
   
   // معالجة أخطاء نوع الملف
   if (err.message === 'نوع الملف غير مدعوم') {
     return res.status(400).json({ 
-      error: true, 
-      message: 'نوع الملف غير مدعوم. الأنواع المسموحة: JPEG, PNG, WebP, GIF, MP4, WebM' 
+      error: 'نوع الملف غير مدعوم. الأنواع المسموحة: JPEG, PNG, WebP, GIF, MP4, WebM',
+      errorEn: 'File type not supported. Allowed types: JPEG, PNG, WebP, GIF, MP4, WebM'
+    });
+  }
+  
+  // أخطاء قاعدة البيانات
+  if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND' || err.message?.includes('database')) {
+    console.error("❌ Database connection error:", err.message);
+    return res.status(500).json({ 
+      error: 'خطأ في الاتصال بقاعدة البيانات',
+      errorEn: 'Database connection error',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+  
+  // أخطاء JWT
+  if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+    return res.status(401).json({ 
+      error: 'رمز الدخول غير صالح أو منتهي الصلاحية',
+      errorEn: 'Invalid or expired token'
     });
   }
   
   // أخطاء عامة
-  res.status(500).json({ 
-    error: true, 
-    message: err.message || 'حدث خطأ في الخادم' 
+  const statusCode = err.status || err.statusCode || 500;
+  res.status(statusCode).json({ 
+    error: err.message || 'حدث خطأ في الخادم',
+    errorEn: err.errorEn || 'Server error occurred',
+    details: process.env.NODE_ENV === 'development' ? err.stack : undefined
   });
 });
 

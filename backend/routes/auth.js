@@ -263,6 +263,15 @@ router.post("/register", asyncHandler(async (req, res) => {
 router.post("/login", asyncHandler(async (req, res) => {
   const { email, password } = req.body;
   
+  // Validate JWT_SECRET before processing login
+  if (!JWT_SECRET) {
+    console.error("❌ CRITICAL: JWT_SECRET is not set in login route!");
+    return res.status(500).json({ 
+      error: "خطأ في إعدادات السيرفر - JWT_SECRET غير موجود",
+      errorEn: "Server configuration error - JWT_SECRET missing"
+    });
+  }
+  
   if (!email || !password) {
     return res.status(400).json({ error: "البريد وكلمة المرور مطلوبان", errorEn: "Email and password required" });
   }
