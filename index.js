@@ -532,8 +532,8 @@ app.use((err, req, res, next) => {
 
 // 📦 fixActiveListings imported from backend/scheduler/tasks.js
 
-// 🟢 تشغيل السيرفر على المنفذ 8080 (خليه ثابت كده في Replit)
-const PORT = 8080;
+// 🟢 تشغيل السيرفر - Railway يستخدم PORT env، Replit يستخدم 8080
+const PORT = process.env.PORT || 8080;
 
 // بدء السيرفر فوراً (لنجاح الـ health check)
 const server = app.listen(PORT, async () => {
