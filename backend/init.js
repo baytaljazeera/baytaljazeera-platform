@@ -189,6 +189,15 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'plans' AND column_name = 'max_video_seconds') THEN
           ALTER TABLE plans ADD COLUMN max_video_seconds INTEGER DEFAULT 60;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'plans' AND column_name = 'ai_calls_per_month') THEN
+          ALTER TABLE plans ADD COLUMN ai_calls_per_month INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'plans' AND column_name = 'highlights_allowed') THEN
+          ALTER TABLE plans ADD COLUMN highlights_allowed INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'plans' AND column_name = 'has_extra_support') THEN
+          ALTER TABLE plans ADD COLUMN has_extra_support BOOLEAN DEFAULT false;
+        END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'plans' AND column_name = 'custom_icon') THEN
           ALTER TABLE plans ADD COLUMN custom_icon TEXT;
         END IF;
