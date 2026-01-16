@@ -2694,6 +2694,16 @@ async function initializeDatabase() {
       }
     }
     console.log("✅ All admin users configured");
+    
+    // 🔍 إضافة Indexes ناقصة لتحسين الأداء (تلقائياً عند كل نشر)
+    try {
+      const { addMissingIndexes } = require('./scripts/add-missing-indexes');
+      await addMissingIndexes();
+      console.log("✅ Performance indexes added");
+    } catch (indexErr) {
+      console.warn("⚠️ Warning: Could not add performance indexes:", indexErr.message);
+      // Continue anyway - not critical
+    }
   } catch (err) {
     console.error("❌ Database initialization error:", err.message);
   }
