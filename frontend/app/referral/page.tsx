@@ -2831,7 +2831,7 @@ export default function ReferralPage() {
                 <ul className="space-y-1 text-xs text-gray-600">
                   <li>• التسجيلات الوهمية تؤدي لانهيار الطوابق</li>
                   <li>• الطوابق المنهارة لا تُحتسب في المكافآت</li>
-                  <li>• يحق للإدارة مراجعة أي طلب سحب</li>
+                  <li>• يحق للإدارة مراجعة أو إلغاء أي طلب</li>
                 </ul>
               </div>
             </div>
