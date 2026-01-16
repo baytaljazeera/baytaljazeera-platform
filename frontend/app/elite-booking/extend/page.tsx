@@ -9,6 +9,14 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { toast } from 'sonner';
 
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-[#0A1628] to-[#1a2942] flex items-center justify-center">
+      <div className="animate-spin w-12 h-12 border-4 border-[#D4AF37] border-t-transparent rounded-full"></div>
+    </div>
+  );
+}
+
 interface Reservation {
   id: string;
   property_id: string;
@@ -461,7 +469,7 @@ function EliteExtendContent() {
 
 export default function EliteExtendPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="text-xl">جاري التحميل...</div></div>}>
+    <Suspense fallback={<LoadingFallback />}>
       <EliteExtendContent />
     </Suspense>
   );
