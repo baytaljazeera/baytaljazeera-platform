@@ -538,6 +538,18 @@ app.use((err, req, res, next) => {
     });
   }
   
+  // أخطاء PostgreSQL Pool
+  if (err.message?.includes('Cannot use a pool after calling end') || 
+      err.message?.includes('pool') || 
+      err.message?.includes('connection')) {
+    console.error("❌ Database pool error:", err.message);
+    return res.status(500).json({ 
+      error: 'خطأ في اتصال قاعدة البيانات، يرجى المحاولة مرة أخرى',
+      errorEn: 'Database connection error, please try again',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+  
   // أخطاء JWT
   if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
     return res.status(401).json({ 

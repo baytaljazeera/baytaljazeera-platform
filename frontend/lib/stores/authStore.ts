@@ -133,11 +133,48 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         body: JSON.stringify(data),
       });
 
-      const result = await response.json();
+      let result;
+      try {
+        result = await response.json();
+      } catch (parseError) {
+        // If response is not JSON, create error object
+        const text = await response.text();
+        console.error('Register response parse error:', text);
+        set({ isLoading: false });
+        return { 
+          success: false, 
+          error: response.status === 500 
+            ? 'خطأ في السيرفر، يرجى المحاولة لاحقاً' 
+            : `خطأ ${response.status}: ${text || 'فشل إنشاء الحساب'}`
+        };
+      }
 
       if (!response.ok) {
         set({ isLoading: false });
-        return { success: false, error: result.error || 'فشل إنشاء الحساب' };
+        // Use Arabic error message if available, otherwise translate common errors
+        let errorMessage = result.error || result.errorEn || 'فشل إنشاء الحساب';
+        
+        // Translate common English errors to Arabic
+        if (errorMessage.includes('Cannot use a pool') || 
+            errorMessage.includes('pool') || 
+            errorMessage.includes('connection')) {
+          errorMessage = 'خطأ في اتصال قاعدة البيانات، يرجى المحاولة مرة أخرى';
+        } else if (errorMessage.includes('Email already exists') || 
+                   errorMessage.includes('email')) {
+          errorMessage = 'البريد الإلكتروني مستخدم من قبل';
+        } else if (errorMessage.includes('Phone already exists') || 
+                   errorMessage.includes('phone')) {
+          errorMessage = 'رقم الجوال مستخدم من قبل';
+        } else if (errorMessage.includes('Password') || 
+                   errorMessage.includes('password')) {
+          errorMessage = result.error || 'كلمة المرور لا تلبي المتطلبات';
+        } else if (response.status === 500) {
+          errorMessage = result.error || 'خطأ في السيرفر، يرجى المحاولة لاحقاً';
+        } else if (response.status === 409) {
+          errorMessage = result.error || 'البيانات موجودة مسبقاً';
+        }
+        
+        return { success: false, error: errorMessage };
       }
 
       set({ 
@@ -147,9 +184,22 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       });
 
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Register error:', error);
       set({ isLoading: false });
-      return { success: false, error: 'حدث خطأ في الاتصال' };
+      
+      // Translate common errors to Arabic
+      let errorMessage = 'حدث خطأ في الاتصال، حاول مرة أخرى';
+      
+      if (error.message?.includes('fetch') || error.message?.includes('network')) {
+        errorMessage = 'لا يمكن الاتصال بالسيرفر، تحقق من اتصالك بالإنترنت';
+      } else if (error.message?.includes('pool') || error.message?.includes('database') || error.message?.includes('connection')) {
+        errorMessage = 'خطأ في اتصال قاعدة البيانات، يرجى المحاولة مرة أخرى';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      return { success: false, error: errorMessage };
     }
   },
 

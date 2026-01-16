@@ -125,7 +125,11 @@ async function addMissingIndexes() {
     throw err;
   } finally {
     client.release();
-    db.pool.end();
+    // ⚠️ لا نغلق الـ pool إذا تم استدعاء الـ function من init.js (production)
+    // فقط نغلقه إذا تم تشغيل الـ script مباشرة (من terminal)
+    if (require.main === module) {
+      db.pool.end();
+    }
   }
 }
 
