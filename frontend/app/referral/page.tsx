@@ -30,7 +30,10 @@ import {
   Edit3,
   PlusCircle,
   ShieldCheck,
-  FileText
+  FileText,
+  Calendar,
+  AlertCircle,
+  AlertTriangle
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/stores/authStore";
@@ -827,42 +830,58 @@ function RealisticBuilding({
                   <div 
                     onClick={() => isClickable && onFloorClick?.(floorData)}
                     className={`
-                      h-6 border-x border-b relative overflow-hidden transition-all duration-300
-                      ${isClickable ? 'cursor-pointer hover:scale-[1.02]' : ''}
+                      h-6 border-x border-b relative overflow-hidden transition-all duration-500
+                      ${isClickable ? 'cursor-pointer hover:scale-[1.03] hover:z-10' : ''}
                       ${isFlagged
-                        ? 'bg-gradient-to-l from-red-400/60 to-red-500/60 border-red-600/70'
+                        ? 'bg-gradient-to-l from-red-500/80 via-red-600/70 to-red-500/80 border-red-700/90 shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)]'
                         : isAtRisk
-                          ? 'bg-gradient-to-l from-amber-300/70 to-amber-400/70 border-amber-500/80 animate-pulse'
+                          ? 'bg-gradient-to-l from-amber-400/80 via-amber-500/70 to-amber-400/80 border-amber-600/90 animate-pulse shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]'
                           : isBuilt 
                             ? isConsumed
-                              ? 'bg-gradient-to-l from-slate-400 to-slate-500 border-slate-500'
+                              ? 'bg-gradient-to-l from-slate-500/90 via-slate-600/80 to-slate-500/90 border-slate-700/90 shadow-[inset_0_1px_3px_rgba(0,0,0,0.2)]'
                               : completionGlow
-                                ? 'bg-gradient-to-l from-[#FFE4B5] to-[#FFD700]/40 border-[#D4AF37]'
-                                : 'bg-gradient-to-l from-[#ECD9A9] to-[#D4B896] border-[#8B4513]'
+                                ? 'bg-gradient-to-l from-[#FFE4B5] via-[#FFD700]/60 to-[#FFE4B5] border-[#D4AF37]/90 shadow-[0_0_12px_rgba(212,175,55,0.6),inset_0_2px_6px_rgba(255,215,0,0.3)]'
+                                : 'bg-gradient-to-l from-[#F5E6C8] via-[#ECD9A9] to-[#F5E6C8] border-[#8B4513]/90 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),inset_0_-2px_4px_rgba(0,0,0,0.1)]'
                             : isNext
-                              ? 'border border-emerald-400/80 bg-emerald-500/15'
-                              : 'bg-slate-100/20 border-slate-400/20'
+                              ? 'border-2 border-emerald-400/90 bg-emerald-500/20 shadow-[0_0_8px_rgba(16,185,129,0.4),inset_0_0_6px_rgba(16,185,129,0.2)]'
+                              : 'bg-slate-200/15 border-slate-400/25 shadow-[inset_0_1px_2px_rgba(0,0,0,0.1)]'
                       }
-                      ${isHighlighted && isFlagged ? 'animate-shake animate-collapse ring-2 ring-red-500 ring-offset-1' : ''}
+                      ${isHighlighted && isFlagged ? 'animate-shake animate-collapse ring-2 ring-red-600 ring-offset-2 shadow-[0_0_20px_rgba(239,68,68,0.8)]' : ''}
                     `}
                     style={
                       completionGlow 
-                        ? { boxShadow: '0 0 10px rgba(212, 175, 55, 0.4)', animation: 'completionPulse 2s ease-in-out infinite' } 
+                        ? { boxShadow: '0 0 16px rgba(212, 175, 55, 0.6), inset 0 2px 8px rgba(255, 215, 0, 0.4)', animation: 'completionPulse 2s ease-in-out infinite' } 
                         : isNext 
-                          ? { boxShadow: '0 0 12px rgba(16, 185, 129, 0.5), inset 0 0 8px rgba(16, 185, 129, 0.2)', animation: 'glow 1.5s ease-in-out infinite' } 
-                          : undefined
+                          ? { boxShadow: '0 0 16px rgba(16, 185, 129, 0.6), inset 0 0 10px rgba(16, 185, 129, 0.3)', animation: 'glow 1.5s ease-in-out infinite' } 
+                          : isBuilt && !isFlagged && !isConsumed
+                            ? { filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))' }
+                            : undefined
                     }
                   >
                     {isFlagged && (
                       <>
-                        <div className="absolute inset-0 opacity-40" style={{
-                          backgroundImage: `linear-gradient(135deg, transparent 40%, rgba(0,0,0,0.3) 45%, transparent 50%, transparent 90%, rgba(0,0,0,0.3) 95%)`,
-                          backgroundSize: '8px 8px'
+                        <div className="absolute inset-0 opacity-50" style={{
+                          backgroundImage: `
+                            repeating-linear-gradient(135deg, 
+                              transparent 0px, 
+                              transparent 3px, 
+                              rgba(0,0,0,0.15) 3px, 
+                              rgba(0,0,0,0.15) 6px
+                            ),
+                            repeating-linear-gradient(45deg, 
+                              transparent 0px, 
+                              transparent 3px, 
+                              rgba(0,0,0,0.1) 3px, 
+                              rgba(0,0,0,0.1) 6px
+                            )
+                          `,
+                          backgroundSize: '12px 12px'
                         }} />
-                        <div className="absolute top-0 left-1/4 w-0.5 h-full bg-red-800/50 transform rotate-12" />
-                        <div className="absolute top-0 right-1/3 w-0.5 h-full bg-red-800/40 transform -rotate-6" />
+                        <div className="absolute top-0 left-1/4 w-1 h-full bg-red-900/60 transform rotate-12 shadow-[2px_0_4px_rgba(0,0,0,0.5)]" />
+                        <div className="absolute top-0 right-1/3 w-1 h-full bg-red-900/50 transform -rotate-6 shadow-[-2px_0_4px_rgba(0,0,0,0.5)]" />
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-0.5 bg-red-900/70 transform rotate-45" />
                         {isHighlighted && (
-                          <div className="absolute inset-0 bg-red-500/30 animate-pulse" />
+                          <div className="absolute inset-0 bg-red-600/40 animate-pulse ring-2 ring-red-400/50" />
                         )}
                       </>
                     )}
@@ -875,24 +894,28 @@ function RealisticBuilding({
                           <div 
                             key={windowNum}
                             className={`
-                              w-3 h-3.5 rounded-t-md border transition-all duration-300
+                              w-3 h-3.5 rounded-t-md border transition-all duration-500 relative
                               ${isFlagged
-                                ? 'bg-red-200/50 border-red-600/60'
+                                ? 'bg-gradient-to-b from-red-300/40 to-red-400/30 border-red-700/80 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]'
                                 : hasDamagedAbove && isBuilt && !isConsumed
-                                  ? 'bg-gradient-to-b from-amber-300/80 to-amber-500/60 border-amber-600/70 animate-pulse'
+                                  ? 'bg-gradient-to-b from-amber-400/90 to-amber-600/80 border-amber-700/90 animate-pulse shadow-[0_0_6px_rgba(251,191,36,0.6),inset_0_1px_2px_rgba(255,255,255,0.3)]'
                                   : isBuilt 
                                     ? isConsumed
-                                      ? 'bg-slate-300/70 border-slate-500'
+                                      ? 'bg-gradient-to-b from-slate-400/80 to-slate-600/70 border-slate-700/90 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]'
                                       : windowLit
-                                        ? 'bg-gradient-to-b from-[#FFD700] to-[#FFA500] border-[#D4AF37] shadow-[0_0_8px_rgba(255,215,0,0.6)]'
-                                        : 'bg-gradient-to-b from-[#87CEEB] to-[#4682B4] border-[#8B4513]'
+                                        ? 'bg-gradient-to-b from-[#FFD700] via-[#FFA500] to-[#FF8C00] border-[#D4AF37]/90 shadow-[0_0_12px_rgba(255,215,0,0.9),0_0_20px_rgba(255,165,0,0.6),inset_0_2px_4px_rgba(255,255,255,0.4)]'
+                                        : 'bg-gradient-to-b from-[#A8D8F0] via-[#87CEEB] to-[#4682B4] border-[#8B4513]/90 shadow-[inset_0_2px_4px_rgba(255,255,255,0.4),inset_0_-1px_2px_rgba(0,0,0,0.2)]'
                                     : isNext
-                                      ? 'bg-emerald-300/40 border-emerald-400/60'
-                                      : 'bg-white/10 border-white/20'
+                                      ? 'bg-emerald-400/30 border-emerald-500/70 shadow-[0_0_4px_rgba(16,185,129,0.5)]'
+                                      : 'bg-white/8 border-white/15 shadow-[inset_0_1px_2px_rgba(0,0,0,0.1)]'
                               }
                             `}
                             style={windowLit ? { animation: `windowGlow ${1.5 + (windowNum * 0.3)}s ease-in-out infinite` } : undefined}
-                          />
+                          >
+                            {!isFlagged && isBuilt && !isConsumed && !windowLit && (
+                              <div className="absolute top-0.5 left-0.5 w-1 h-1 bg-white/60 rounded-full" />
+                            )}
+                          </div>
                         );
                       })}
                     </div>
@@ -1064,82 +1087,124 @@ function CollapsedFloorModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl animate-in fade-in zoom-in duration-300">
-        <div className="p-5 bg-gradient-to-l from-red-600 to-red-700 rounded-t-3xl">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Flag className="w-5 h-5 text-red-200" />
-              طابق منهار - الطابق {floor.floor_number}
-            </h3>
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 duration-300 overflow-hidden border-2 border-red-200/50">
+        {/* Header with enhanced design */}
+        <div className="relative p-5 bg-gradient-to-br from-red-600 via-red-700 to-red-800 rounded-t-3xl overflow-hidden">
+          {/* Animated background pattern */}
+          <div className="absolute inset-0 opacity-20">
+            <div className="absolute top-0 left-0 w-full h-full" style={{
+              backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.1) 10px, rgba(255,255,255,0.1) 20px)`
+            }} />
+          </div>
+          <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 blur-2xl" />
+          <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full -ml-12 -mb-12 blur-xl" />
+          
+          <div className="relative flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm shadow-lg border border-white/30">
+                <Flag className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  طابق منهار
+                </h3>
+                <p className="text-white/80 text-xs mt-0.5">الطابق رقم {floor.floor_number}</p>
+              </div>
+            </div>
             <button 
               onClick={onClose}
-              className="p-2 rounded-full hover:bg-white/10 transition"
+              className="p-2 rounded-xl hover:bg-white/20 transition-all backdrop-blur-sm border border-white/20 hover:scale-110"
             >
               <X className="w-5 h-5 text-white" />
             </button>
           </div>
         </div>
 
-        <div className="p-5 space-y-4">
-          <div className="bg-red-50 rounded-xl p-4 border border-red-100">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <X className="w-5 h-5 text-red-600" />
+        <div className="p-5 space-y-4 bg-gradient-to-b from-white to-slate-50">
+          {/* Enhanced collapse reason card */}
+          <div className="relative bg-gradient-to-br from-red-50 to-red-100/50 rounded-2xl p-4 border-2 border-red-200 shadow-lg overflow-hidden">
+            <div className="absolute top-0 right-0 w-20 h-20 bg-red-200/30 rounded-full -mr-10 -mt-10 blur-2xl" />
+            <div className="relative flex items-start gap-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg border-2 border-white/50">
+                <X className="w-6 h-6 text-white" />
               </div>
               <div className="flex-1">
-                <p className="text-sm font-bold text-red-800 mb-1">سبب الانهيار:</p>
-                <p className="text-sm text-red-700">
+                <p className="text-sm font-bold text-red-900 mb-2 flex items-center gap-2">
+                  <span className="w-2 h-2 bg-red-600 rounded-full animate-pulse" />
+                  سبب الانهيار:
+                </p>
+                <p className="text-sm text-red-800 leading-relaxed font-medium">
                   {floor.collapse_reason || 'تم رصد نشاط غير سليم في هذه الإحالة'}
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between items-center py-2 border-b border-slate-100">
-              <span className="text-slate-600">اسم المُحال:</span>
-              <span className="font-medium text-slate-800">{floor.referred_name}</span>
+          {/* Enhanced info cards */}
+          <div className="space-y-3">
+            <div className="flex justify-between items-center py-3 px-4 bg-gradient-to-r from-slate-50 to-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
+              <span className="text-slate-600 font-medium flex items-center gap-2">
+                <User className="w-4 h-4 text-slate-400" />
+                اسم المُحال:
+              </span>
+              <span className="font-bold text-slate-800 text-sm">{floor.referred_name}</span>
             </div>
-            <div className="flex justify-between items-center py-2 border-b border-slate-100">
-              <span className="text-slate-600">تاريخ التسجيل:</span>
-              <span className="font-medium text-slate-800">{formatDate(floor.created_at)}</span>
+            <div className="flex justify-between items-center py-3 px-4 bg-gradient-to-r from-slate-50 to-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
+              <span className="text-slate-600 font-medium flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-slate-400" />
+                تاريخ التسجيل:
+              </span>
+              <span className="font-medium text-slate-800 text-sm">{formatDate(floor.created_at)}</span>
             </div>
             {floor.collapsed_at && (
-              <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                <span className="text-slate-600">تاريخ الانهيار:</span>
-                <span className="font-medium text-red-700">{formatDate(floor.collapsed_at)}</span>
+              <div className="flex justify-between items-center py-3 px-4 bg-gradient-to-r from-red-50 to-red-100/30 rounded-xl border-2 border-red-200 shadow-sm">
+                <span className="text-red-700 font-medium flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-500" />
+                  تاريخ الانهيار:
+                </span>
+                <span className="font-bold text-red-700 text-sm">{formatDate(floor.collapsed_at)}</span>
               </div>
             )}
           </div>
 
-          <div className="bg-amber-50 rounded-xl p-3 border border-amber-200">
-            <p className="text-xs text-amber-800 leading-relaxed">
-              <strong>ملاحظة:</strong> إزالة هذا الطابق ستفسح المجال لبناء طابق جديد صالح بدلاً منه. هذا الإجراء لا يمكن التراجع عنه.
-            </p>
+          {/* Enhanced warning note */}
+          <div className="relative bg-gradient-to-br from-amber-50 via-yellow-50/50 to-amber-50 rounded-2xl p-4 border-2 border-amber-300 shadow-lg overflow-hidden">
+            <div className="absolute top-0 left-0 w-16 h-16 bg-amber-200/40 rounded-full -ml-8 -mt-8 blur-xl" />
+            <div className="relative flex items-start gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-500 rounded-lg flex items-center justify-center flex-shrink-0 shadow-md">
+                <AlertTriangle className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs text-amber-900 leading-relaxed font-medium">
+                  <strong className="text-amber-950">ملاحظة مهمة:</strong> إزالة هذا الطابق ستفسح المجال لبناء طابق جديد صالح بدلاً منه. هذا الإجراء لا يمكن التراجع عنه.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="p-4 bg-slate-50 rounded-b-3xl flex gap-3">
+        {/* Enhanced action buttons */}
+        <div className="p-5 bg-gradient-to-b from-slate-50 to-white border-t border-slate-200 rounded-b-3xl flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2.5 border border-slate-300 rounded-xl text-slate-700 hover:bg-slate-100 transition font-medium text-sm"
+            className="flex-1 px-4 py-3 border-2 border-slate-300 rounded-xl text-slate-700 hover:bg-slate-100 hover:border-slate-400 transition-all font-bold text-sm shadow-sm hover:shadow-md"
           >
             إغلاق
           </button>
           <button
             onClick={() => onRemove(floor.id)}
             disabled={removing}
-            className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="flex-1 px-4 py-3 bg-gradient-to-r from-red-600 via-red-700 to-red-600 text-white rounded-xl hover:from-red-700 hover:via-red-800 hover:to-red-700 transition-all font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg hover:shadow-xl disabled:shadow-sm"
           >
             {removing ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-5 h-5 animate-spin" />
                 جاري الإزالة...
               </>
             ) : (
               <>
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
                 إزالة الطابق
               </>
             )}
