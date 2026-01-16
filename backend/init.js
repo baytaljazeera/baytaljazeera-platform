@@ -186,6 +186,9 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'plans' AND column_name = 'max_video_duration') THEN
           ALTER TABLE plans ADD COLUMN max_video_duration INTEGER DEFAULT 60;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'plans' AND column_name = 'max_video_seconds') THEN
+          ALTER TABLE plans ADD COLUMN max_video_seconds INTEGER DEFAULT 60;
+        END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'plans' AND column_name = 'custom_icon') THEN
           ALTER TABLE plans ADD COLUMN custom_icon TEXT;
         END IF;
@@ -347,6 +350,9 @@ async function initializeDatabase() {
       BEGIN 
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'properties' AND column_name = 'images') THEN
           ALTER TABLE properties ADD COLUMN images JSONB DEFAULT '[]'::jsonb;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'properties' AND column_name = 'country') THEN
+          ALTER TABLE properties ADD COLUMN country VARCHAR(50) DEFAULT 'SA';
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'properties' AND column_name = 'video_url') THEN
           ALTER TABLE properties ADD COLUMN video_url TEXT;
