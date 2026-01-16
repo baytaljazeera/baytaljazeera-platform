@@ -1055,31 +1055,91 @@ function SearchPage() {
         )}
 
         {!isLoading && !error && filteredListings.length === 0 && showPromoOverlay && (
-          <div className="absolute inset-0 z-[1000] bg-gradient-to-b from-transparent via-[#001A33]/60 to-[#001A33]/90 flex flex-col items-center justify-center p-6">
-            <div className="relative bg-gradient-to-b from-[#001A33] to-[#002845] rounded-3xl p-8 max-w-md text-center shadow-2xl border border-[#D4AF37]/30">
+          <div className="absolute inset-0 z-[1000] bg-gradient-to-b from-transparent via-[#001A33]/70 to-[#001A33]/95 backdrop-blur-sm flex flex-col items-center justify-center p-4 sm:p-6 transition-opacity duration-500 opacity-100">
+            <div className="relative bg-gradient-to-br from-[#001A33] via-[#002845] to-[#001A33] rounded-3xl p-6 sm:p-10 max-w-lg w-full text-center shadow-2xl border border-[#D4AF37]/40 overflow-hidden transition-all duration-500 transform scale-100">
+              {/* Background decoration */}
+              <div className="absolute inset-0 bg-gradient-to-br from-[#D4AF37]/5 to-transparent pointer-events-none" />
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#D4AF37] to-transparent" />
+              
+              {/* Close button - improved */}
               <button
                 onClick={() => setShowPromoOverlay(false)}
-                className="absolute top-3 left-3 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-all"
+                className="absolute top-4 left-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center text-white/80 hover:text-white transition-all duration-200 hover:scale-110 active:scale-95 shadow-lg border border-white/10"
                 title="إغلاق"
+                aria-label="إغلاق"
               >
                 <X className="w-5 h-5" />
               </button>
-              <div className="w-20 h-20 mx-auto rounded-full bg-[#D4AF37]/20 border-2 border-dashed border-[#D4AF37] flex items-center justify-center mb-4">
-                <span className="text-4xl">🏠</span>
+              
+              {/* Icon with animation */}
+              <div className="relative w-24 h-24 mx-auto mb-6">
+                <div className="absolute inset-0 rounded-full bg-[#D4AF37]/20 animate-ping opacity-75" />
+                <div className="absolute inset-2 rounded-full bg-[#D4AF37]/30 animate-pulse" />
+                <div className="relative w-full h-full rounded-full bg-gradient-to-br from-[#D4AF37]/30 to-[#B8860B]/30 border-2 border-dashed border-[#D4AF37] flex items-center justify-center shadow-lg backdrop-blur-sm">
+                  <span className="text-5xl animate-bounce">🏠</span>
+                </div>
               </div>
-              <h3 className="text-xl font-bold text-white mb-2">
+              
+              {/* Title */}
+              <h3 className="text-2xl sm:text-3xl font-bold text-white mb-3 leading-tight">
                 لا توجد عقارات في هذه المنطقة حالياً
               </h3>
-              <p className="text-[#D4AF37] text-sm mb-6">
-                كن أول من يعلن ويحصل على ظهور حصري!
+              
+              {/* Description */}
+              <p className="text-[#D4AF37] text-base sm:text-lg mb-2 font-medium">
+                كن أول من يعلن ويحصل على ظهور حصري! ✨
               </p>
-              <Link 
-                href="/listings/new"
-                className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#001A33] font-bold hover:shadow-lg transition text-lg"
-              >
-                <span>✨</span>
-                أضف إعلانك الآن
-              </Link>
+              <p className="text-white/70 text-sm mb-8">
+                ابدأ اليوم وتمتع بظهور مميز في نتائج البحث
+              </p>
+              
+              {/* Actions */}
+              <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+                <Link 
+                  href="/listings/new"
+                  className="group relative inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#001A33] font-bold hover:shadow-2xl transition-all duration-300 text-base sm:text-lg hover:scale-105 active:scale-95 overflow-hidden"
+                >
+                  <span className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <span className="relative flex items-center gap-2">
+                    <span className="text-xl animate-pulse">✨</span>
+                    أضف إعلانك الآن
+                  </span>
+                </Link>
+                
+                <button
+                  onClick={() => {
+                    setFilters({});
+                    setPurposeTab("all");
+                    setShowPromoOverlay(false);
+                  }}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-sm text-white font-semibold text-sm transition-all duration-200 hover:scale-105 active:scale-95 border border-white/20"
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                  جرب فلتر آخر
+                </button>
+              </div>
+              
+              {/* Benefits list */}
+              <div className="mt-8 pt-6 border-t border-white/10">
+                <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm text-white/70">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[#D4AF37]">✓</span>
+                    <span>ظهور حصري</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[#D4AF37]">✓</span>
+                    <span>أول النتائج</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[#D4AF37]">✓</span>
+                    <span>وصول أفضل</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[#D4AF37]">✓</span>
+                    <span>دعم فني</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
