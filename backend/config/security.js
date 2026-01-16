@@ -102,18 +102,38 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
+    
+    // Allow Replit domains
     if (origin.includes('.replit.dev') || origin.includes('.replit.app')) {
       return callback(null, true);
     }
+    
+    // Allow Vercel domains (production frontend)
+    if (origin.includes('.vercel.app') || origin.includes('vercel.app')) {
+      return callback(null, true);
+    }
+    
+    // Allow localhost in development
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return callback(null, true);
+    }
+    
+    // Check allowed origins from environment variables
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
+    
+    // In development, allow all origins (for testing)
     if (!isProduction) {
       console.warn(`[CORS] Allowing unrecognized origin in dev: ${origin}`);
       return callback(null, true);
     }
+    
+    // In production, log blocked origins for debugging
     console.warn(`[CORS] Blocked origin: ${origin}`);
+    console.warn(`[CORS] Allowed origins:`, allowedOrigins);
     return callback(new Error('Not allowed by CORS'), false);
   },
   credentials: true,

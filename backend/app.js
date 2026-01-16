@@ -116,9 +116,19 @@ function createApp() {
   app.use(cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
+      // Allow Replit domains
       if (origin.includes('.replit.dev') || origin.includes('.replit.app')) {
         return callback(null, true);
       }
+      // Allow Vercel domains (production frontend)
+      if (origin.includes('.vercel.app') || origin.includes('vercel.app')) {
+        return callback(null, true);
+      }
+      // Allow localhost in development
+      if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+        return callback(null, true);
+      }
+      // Allow all origins (for compatibility)
       return callback(null, true);
     },
     credentials: true,
