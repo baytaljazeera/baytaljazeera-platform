@@ -1603,10 +1603,23 @@ export default function ReferralPage() {
       const res = await fetch('/api/ambassador/terms-status', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
-        setTermsAccepted(data.terms_accepted);
+        const accepted = data.terms_accepted;
+        setTermsAccepted(accepted);
+        
+        // ✅ فتح Modal الشروط تلقائياً إذا لم يوافق المستخدم
+        if (accepted === false) {
+          setShowTermsModal(true);
+        }
+      } else {
+        // إذا لم يوجد wallet بعد، يعني لم يوافق على الشروط
+        setTermsAccepted(false);
+        setShowTermsModal(true);
       }
     } catch (err) {
       console.error('Error fetching terms status:', err);
+      // في حالة الخطأ، افترض أنه لم يوافق وافتح الـ modal
+      setTermsAccepted(false);
+      setShowTermsModal(true);
     }
   }
 
@@ -1621,11 +1634,17 @@ export default function ReferralPage() {
       if (res.ok) {
         setTermsAccepted(true);
         setShowTermsModal(false);
-        setSuccessMessage('تم تفعيل خدمة سفير البيت بنجاح!');
-        setTimeout(() => setSuccessMessage(null), 3000);
+        
+        // ✅ رسالة نجاح محسّنة
+        setSuccessMessage('🎉 مبروك! تم تفعيل برنامج سفير البيت بنجاح');
+        setTimeout(() => setSuccessMessage(null), 5000);
+        
         // تحديث البيانات بعد القبول
         fetchStats();
         fetchWalletData();
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        setError(errorData.error || 'فشل تفعيل الخدمة، حاول مرة أخرى');
       }
     } catch (err) {
       console.error('Error accepting terms:', err);
@@ -2763,16 +2782,26 @@ export default function ReferralPage() {
 
       {/* نافذة الشروط والأحكام مع خانة الموافقة */}
       {showTermsModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowTermsModal(false)}>
+        <div 
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" 
+          onClick={() => {
+            // ⚠️ منع الإغلاق إذا لم يوافق (يجب الموافقة أولاً)
+            if (termsAccepted === false) return;
+            setShowTermsModal(false);
+          }}
+        >
           <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border-2 border-[#D4AF37]/40 overflow-hidden animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
             <div className="p-5 border-b border-[#D4AF37]/20 bg-gradient-to-r from-[#D4AF37]/10 to-[#B8860B]/10 flex items-center justify-between">
               <h3 className="font-bold text-[#003366] text-lg flex items-center gap-2">
                 <FileText className="w-5 h-5 text-[#D4AF37]" />
                 الشروط والأحكام
               </h3>
-              <button onClick={() => setShowTermsModal(false)} className="p-1.5 rounded-lg hover:bg-[#D4AF37]/20 transition">
-                <X className="w-5 h-5 text-[#003366]" />
-              </button>
+              {/* ⚠️ إخفاء زر الإغلاق إذا لم يوافق - يجب الموافقة أولاً */}
+              {termsAccepted !== false && (
+                <button onClick={() => setShowTermsModal(false)} className="p-1.5 rounded-lg hover:bg-[#D4AF37]/20 transition">
+                  <X className="w-5 h-5 text-[#003366]" />
+                </button>
+              )}
             </div>
             
             <div className="p-5 space-y-4 max-h-[50vh] overflow-y-auto">
@@ -2820,20 +2849,37 @@ export default function ReferralPage() {
                 </span>
               </label>
               
-              <button
-                onClick={acceptTerms}
-                disabled={!termsCheckbox || acceptingTerms}
-                className="w-full py-3.5 bg-gradient-to-r from-[#D4AF37] via-[#B8860B] to-[#D4AF37] hover:from-[#B8860B] hover:to-[#D4AF37] text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-[#D4AF37]/30 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {acceptingTerms ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <>
-                    <ShieldCheck className="w-5 h-5" />
-                    تفعيل خدمة سفير البيت
-                  </>
+              <div className="flex gap-3">
+                {/* زر الرفض (فقط إذا لم يوافق بعد) */}
+                {termsAccepted === false && (
+                  <button
+                    onClick={() => {
+                      // عند الرفض، نغلق الـ modal لكن الكود يبقى مخفي
+                      setShowTermsModal(false);
+                    }}
+                    className="flex-1 py-3.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold flex items-center justify-center gap-2 transition-all"
+                  >
+                    <X className="w-5 h-5" />
+                    رفض
+                  </button>
                 )}
-              </button>
+                
+                {/* زر القبول */}
+                <button
+                  onClick={acceptTerms}
+                  disabled={!termsCheckbox || acceptingTerms}
+                  className={`${termsAccepted === false ? 'flex-1' : 'w-full'} py-3.5 bg-gradient-to-r from-[#D4AF37] via-[#B8860B] to-[#D4AF37] hover:from-[#B8860B] hover:to-[#D4AF37] text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-[#D4AF37]/30 disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {acceptingTerms ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-5 h-5" />
+                      {termsAccepted === false ? 'أقبل الشروط' : 'تفعيل خدمة سفير البيت'}
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
