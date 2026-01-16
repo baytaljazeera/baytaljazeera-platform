@@ -1123,43 +1123,19 @@ async function initializeDatabase() {
     await db.query(`CREATE INDEX IF NOT EXISTS idx_membership_requests_user ON membership_requests(user_id);`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_membership_requests_status ON membership_requests(status);`);
 
-    // Insert/Update default plans with visual elements
-    const countResult = await db.query(`SELECT COUNT(*) as cnt FROM plans`);
-    const planCount = parseInt(countResult.rows[0].cnt) || 0;
-    if (planCount === 0) {
-      await db.query(`
-        INSERT INTO plans (name_ar, name_en, slug, price, duration_days, max_listings, max_photos_per_listing, max_videos_per_listing, show_on_map, ai_support_level, highlights_allowed, description, icon, logo, color, badge, visible, sort_order)
-        VALUES 
-          ('الأساس', 'Starter', 'starter', 0, 7, 1, 1, 0, false, 0, 0, 'للإعلانات الشخصية البسيطة', 'leaf', '🌱', '#90EE90', null, true, 0),
-          ('التميّــز', 'Premium', 'premium', 25, 30, 1, 5, 0, true, 1, 0, 'لمن يريد ظهورًا أفضل', 'sparkles', '✨', '#87CEEB', 'مميز', true, 1),
-          ('النخبة', 'Elite', 'elite', 65, 30, 2, 7, 1, true, 1, 2, 'للوسطاء ورجال العقارات', 'crown', '👑', '#FFD700', 'نخبة', true, 2),
-          ('الملكي', 'Royal', 'royal', 125, 30, 5, 10, 2, true, 2, 5, 'للشركات الكبرى', 'gem', '💎', '#FF6347', 'ملكي', true, 3),
-          ('الإمبراطوري', 'Imperial', 'imperial', 250, 30, 25, 15, 5, true, 3, 15, 'الفئة الأعلى', 'star', '⭐', '#9370DB', 'إمبراطوري', true, 4);
-      `);
-      console.log("✅ Database initialized - 5 plans inserted with visual elements");
-    } else {
-      // Update existing plans with visual elements if they're missing
-      await db.query(`
-        UPDATE plans SET icon = 'leaf', logo = '🌱', color = '#90EE90', badge = null, sort_order = 0
-        WHERE name_ar = 'الأساس' AND icon IS NULL;
-      `);
-      await db.query(`
-        UPDATE plans SET icon = 'sparkles', logo = '✨', color = '#87CEEB', badge = 'مميز', sort_order = 1
-        WHERE name_ar = 'التميّــز' AND icon IS NULL;
-      `);
-      await db.query(`
-        UPDATE plans SET icon = 'crown', logo = '👑', color = '#FFD700', badge = 'نخبة', sort_order = 2
-        WHERE name_ar = 'النخبة' AND icon IS NULL;
-      `);
-      await db.query(`
-        UPDATE plans SET icon = 'gem', logo = '💎', color = '#FF6347', badge = 'ملكي', sort_order = 3
-        WHERE name_ar = 'الملكي' AND icon IS NULL;
-      `);
-      await db.query(`
-        UPDATE plans SET icon = 'star', logo = '⭐', color = '#9370DB', badge = 'إمبراطوري', sort_order = 4
-        WHERE name_ar = 'الإمبراطوري' AND icon IS NULL;
-      `);
-      console.log("✅ Database ready - plans updated with visual elements");
+    // Insert/Update plans from backup data
+    try {
+      const { seedPlans } = require('./seeds/seed_plans');
+      await seedPlans();
+    } catch (seedError) {
+      console.log("⚠️ Plans seed skipped:", seedError.message);
+      const countResult = await db.query(`SELECT COUNT(*) as cnt FROM plans`);
+      const planCount = parseInt(countResult.rows[0].cnt) || 0;
+      if (planCount === 0) {
+        console.log("⚠️ No plans found - please run: node seeds/seed_plans.js");
+      } else {
+        console.log("✅ Database ready - plans already exist");
+      }
     }
 
     // ============ Elite Slots System Tables ============
