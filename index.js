@@ -535,45 +535,38 @@ app.use((err, req, res, next) => {
 // 🟢 تشغيل السيرفر على المنفذ 8080 (خليه ثابت كده في Replit)
 const PORT = 8080;
 
-// دالة بدء السيرفر بعد تهيئة قاعدة البيانات
-async function startServer() {
-  console.log("🚀 Starting server initialization...");
+// بدء السيرفر فوراً (لنجاح الـ health check)
+const server = app.listen(PORT, async () => {
+  console.log(`🚀 Aqar Al Jazeera backend running on port ${PORT}`);
   
-  // تهيئة قاعدة البيانات أولاً (مع انتظار الاكتمال)
+  // تهيئة قاعدة البيانات بعد بدء الاستماع
   const dbReady = await runDatabaseInit();
   if (!dbReady) {
-    console.error("⚠️ Database initialization had issues, but continuing...");
+    console.error("⚠️ Database initialization had issues");
   }
   
-  const server = app.listen(PORT, async () => {
-    console.log(`Aqar Al Jazeera backend running on port ${PORT}`);
-    
-    // 🔧 إصلاح الإعلانات عند بدء السيرفر
-    await fixActiveListings();
-    
-    // ⏰ جدولة المهام التلقائية بعد بدء السيرفر
-    startScheduledTasks();
-    
-    // 🔴 Redis & BullMQ initialization
-    if (process.env.UPSTASH_REDIS_URL || process.env.REDIS_URL) {
-      console.log('🔴 Initializing Redis & BullMQ workers...');
-      initializeWorkers();
-    } else {
-      console.log('⚠️ Redis not configured - using in-memory cache fallback');
-    }
-  });
+  // 🔧 إصلاح الإعلانات عند بدء السيرفر
+  await fixActiveListings();
   
-  server.on("error", (err) => console.error("Server error:", err));
+  // ⏰ جدولة المهام التلقائية بعد بدء السيرفر
+  startScheduledTasks();
   
-  process.on('SIGTERM', async () => {
-    console.log('🔌 Graceful shutdown initiated...');
-    await closeAllQueues();
-    server.close(() => {
-      console.log('✅ Server closed');
-      process.exit(0);
-    });
-  });
-}
+  // 🔴 Redis & BullMQ initialization
+  if (process.env.UPSTASH_REDIS_URL || process.env.REDIS_URL) {
+    console.log('🔴 Initializing Redis & BullMQ workers...');
+    initializeWorkers();
+  } else {
+    console.log('⚠️ Redis not configured - using in-memory cache fallback');
+  }
+});
 
-// بدء التطبيق
-startServer();
+server.on("error", (err) => console.error("Server error:", err));
+
+process.on('SIGTERM', async () => {
+  console.log('🔌 Graceful shutdown initiated...');
+  await closeAllQueues();
+  server.close(() => {
+    console.log('✅ Server closed');
+    process.exit(0);
+  });
+});
