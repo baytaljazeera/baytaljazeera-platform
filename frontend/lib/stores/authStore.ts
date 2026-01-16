@@ -79,11 +79,20 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         
         if (response.status === 401) {
           errorMessage = data.error || 'بيانات الدخول غير صحيحة';
+          // Add attempts remaining info if available
+          if (data.attemptsRemaining !== undefined) {
+            errorMessage += ` (محاولات متبقية: ${data.attemptsRemaining})`;
+          }
         } else if (response.status === 423) {
           errorMessage = data.error || 'الحساب مقفل، حاول لاحقاً';
         } else if (response.status === 500) {
           errorMessage = data.error || 'خطأ في السيرفر، يرجى المحاولة لاحقاً';
-          console.error('Login server error:', data);
+          // In development, show more details
+          if (data.details && process.env.NODE_ENV === 'development') {
+            console.error('Login server error details:', data.details);
+          } else {
+            console.error('Login server error:', data);
+          }
         }
         
         return { success: false, error: errorMessage };

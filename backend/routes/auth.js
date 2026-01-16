@@ -267,13 +267,25 @@ router.post("/login", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "البريد وكلمة المرور مطلوبان", errorEn: "Email and password required" });
   }
 
-  const result = await db.query(
-    "SELECT * FROM users WHERE email = $1",
-    [email.toLowerCase().trim()]
-  );
-  const user = result.rows[0];
+  let user;
+  try {
+    const result = await db.query(
+      "SELECT * FROM users WHERE email = $1",
+      [email.toLowerCase().trim()]
+    );
+    user = result.rows[0];
+  } catch (dbError) {
+    console.error("❌ Database error during login:", dbError.message);
+    console.error("Full error:", dbError);
+    return res.status(500).json({ 
+      error: "خطأ في الاتصال بقاعدة البيانات", 
+      errorEn: "Database connection error",
+      details: process.env.NODE_ENV === 'development' ? dbError.message : undefined
+    });
+  }
   
   if (!user) {
+    console.log(`⚠️ Login attempt failed: User not found - ${email}`);
     return res.status(401).json({ error: "بيانات الدخول غير صحيحة", errorEn: "Invalid credentials" });
   }
 
