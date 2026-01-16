@@ -22,7 +22,7 @@ type Listing = {
   image_url?: string;
 };
 
-export default function ReportPage() {
+function ReportContent() {
   const searchParams = useSearchParams();
   const listingId = searchParams?.get("listingId") || searchParams?.get("listing");
   
@@ -301,5 +301,13 @@ export default function ReportPage() {
         </form>
       )}
     </div>
+  );
+}
+
+export default function ReportPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="text-xl">جاري التحميل...</div></div>}>
+      <ReportContent />
+    </Suspense>
   );
 }
