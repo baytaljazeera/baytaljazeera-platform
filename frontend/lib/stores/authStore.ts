@@ -56,11 +56,42 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        // If response is not JSON, create error object
+        const text = await response.text();
+        console.error('Login response parse error:', text);
+        set({ isLoading: false });
+        return { 
+          success: false, 
+          error: response.status === 500 
+            ? 'خطأ في السيرفر، يرجى المحاولة لاحقاً' 
+            : `خطأ ${response.status}: ${text || 'فشل تسجيل الدخول'}`
+        };
+      }
 
       if (!response.ok) {
         set({ isLoading: false });
-        return { success: false, error: data.error || 'فشل تسجيل الدخول' };
+        // Handle different error statuses
+        let errorMessage = data.error || data.errorEn || 'فشل تسجيل الدخول';
+        
+        if (response.status === 401) {
+          errorMessage = data.error || 'بيانات الدخول غير صحيحة';
+        } else if (response.status === 423) {
+          errorMessage = data.error || 'الحساب مقفل، حاول لاحقاً';
+        } else if (response.status === 500) {
+          errorMessage = data.error || 'خطأ في السيرفر، يرجى المحاولة لاحقاً';
+          console.error('Login server error:', data);
+        }
+        
+        return { success: false, error: errorMessage };
+      }
+
+      if (!data.user) {
+        set({ isLoading: false });
+        return { success: false, error: 'لم يتم استلام بيانات المستخدم' };
       }
 
       set({ 
@@ -70,9 +101,15 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       });
 
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Login error:', error);
       set({ isLoading: false });
-      return { success: false, error: 'حدث خطأ في الاتصال' };
+      return { 
+        success: false, 
+        error: error.message?.includes('fetch') 
+          ? 'لا يمكن الاتصال بالسيرفر، تحقق من اتصالك بالإنترنت' 
+          : 'حدث خطأ غير متوقع، حاول مرة أخرى' 
+      };
     }
   },
 
