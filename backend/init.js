@@ -2492,22 +2492,39 @@ async function initializeDatabase() {
       { email: 'content@aqar.sa', name: 'إدارة المحتوى', role: 'content_admin', role_level: 60 },
     ];
 
-    const hashedPassword = await bcrypt.hash("Admin@123456", 10);
+    const adminPassword = process.env.ADMIN_PASSWORD || "Admin@123456";
+    const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
+    console.log("🔐 Creating/updating admin users...");
     for (const admin of adminRoles) {
-      const check = await db.query("SELECT id FROM users WHERE email = $1", [admin.email]);
-      if (check.rows.length === 0) {
-        await db.query(
-          `INSERT INTO users (email, password_hash, name, role, role_level) 
-           VALUES ($1, $2, $3, $4, $5)`,
-          [admin.email, hashedPassword, admin.name, admin.role, admin.role_level]
-        );
-        console.log(`✅ Admin created: ${admin.email} (${admin.role})`);
-      } else {
-        await db.query(
-          "UPDATE users SET password_hash = $1, role = $2, role_level = $3 WHERE email = $4",
-          [hashedPassword, admin.role, admin.role_level, admin.email]
-        );
+      try {
+        const check = await db.query("SELECT id, role, role_level FROM users WHERE email = $1", [admin.email]);
+        if (check.rows.length === 0) {
+          await db.query(
+            `INSERT INTO users (email, password_hash, name, role, role_level, created_at, updated_at) 
+             VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+            [admin.email.toLowerCase().trim(), hashedPassword, admin.name, admin.role, admin.role_level]
+          );
+          console.log(`✅ Admin created: ${admin.email} (${admin.role})`);
+        } else {
+          const existing = check.rows[0];
+          await db.query(
+            `UPDATE users 
+             SET password_hash = $1, 
+                 role = $2, 
+                 role_level = $3,
+                 name = COALESCE($4, name),
+                 locked_until = NULL,
+                 failed_login_attempts = 0,
+                 updated_at = NOW()
+             WHERE email = $5`,
+            [hashedPassword, admin.role, admin.role_level, admin.name, admin.email.toLowerCase().trim()]
+          );
+          console.log(`🔄 Admin updated: ${admin.email} (${admin.role}) - password reset, account unlocked`);
+        }
+      } catch (adminErr) {
+        console.error(`❌ Error creating/updating admin ${admin.email}:`, adminErr.message);
+        // Continue with other admins even if one fails
       }
     }
     console.log("✅ All admin users configured");

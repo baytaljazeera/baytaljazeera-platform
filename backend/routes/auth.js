@@ -317,61 +317,91 @@ router.post("/login", asyncHandler(async (req, res) => {
     [user.id]
   );
 
+  // Only assign free plan to regular users (not admins) and only if they don't have a plan
   if (user.role === 'user') {
-    const existingPlan = await db.query(
-      `SELECT id FROM user_plans WHERE user_id = $1 LIMIT 1`,
-      [user.id]
-    );
-    
-    if (existingPlan.rows.length === 0) {
-      const freePlanResult = await db.query(
-        `SELECT id, duration_days FROM plans WHERE price = 0 AND visible = true ORDER BY id LIMIT 1`
+    try {
+      const existingPlan = await db.query(
+        `SELECT id FROM user_plans WHERE user_id = $1 LIMIT 1`,
+        [user.id]
       );
       
-      if (freePlanResult.rows.length > 0) {
-        const freePlan = freePlanResult.rows[0];
-        const durationDays = freePlan.duration_days || 30;
-        
-        const fullPlanResult = await db.query(
-          `SELECT max_listings FROM plans WHERE id = $1`,
-          [freePlan.id]
-        );
-        const maxListings = fullPlanResult.rows[0]?.max_listings || 1;
-        
-        const userPlanResult = await db.query(
-          `INSERT INTO user_plans (user_id, plan_id, status, started_at, expires_at)
-           VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '1 day' * $3)
-           RETURNING id, expires_at`,
-          [user.id, freePlan.id, durationDays]
-        );
-        const userPlanId = userPlanResult.rows[0].id;
-        const expiresAt = userPlanResult.rows[0].expires_at;
-        
-        await db.query(
-          `INSERT INTO quota_buckets (user_id, plan_id, user_plan_id, source, total_slots, used_slots, expires_at, active)
-           VALUES ($1, $2, $3, 'login_assignment', $4, 0, $5, true)`,
-          [user.id, freePlan.id, userPlanId, maxListings, expiresAt]
+      if (existingPlan.rows.length === 0) {
+        const freePlanResult = await db.query(
+          `SELECT id, duration_days FROM plans WHERE price = 0 AND visible = true ORDER BY id LIMIT 1`
         );
         
-        console.log(`✅ Assigned free plan and quota bucket (user_plan_id: ${userPlanId}) to existing user ${user.email} on login`);
+        if (freePlanResult.rows.length > 0) {
+          const freePlan = freePlanResult.rows[0];
+          const durationDays = freePlan.duration_days || 30;
+          
+          const fullPlanResult = await db.query(
+            `SELECT max_listings FROM plans WHERE id = $1`,
+            [freePlan.id]
+          );
+          const maxListings = fullPlanResult.rows[0]?.max_listings || 1;
+          
+          const userPlanResult = await db.query(
+            `INSERT INTO user_plans (user_id, plan_id, status, started_at, expires_at)
+             VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '1 day' * $3)
+             RETURNING id, expires_at`,
+            [user.id, freePlan.id, durationDays]
+          );
+          const userPlanId = userPlanResult.rows[0].id;
+          const expiresAt = userPlanResult.rows[0].expires_at;
+          
+          await db.query(
+            `INSERT INTO quota_buckets (user_id, plan_id, user_plan_id, source, total_slots, used_slots, expires_at, active)
+             VALUES ($1, $2, $3, 'login_assignment', $4, 0, $5, true)`,
+            [user.id, freePlan.id, userPlanId, maxListings, expiresAt]
+          );
+          
+          console.log(`✅ Assigned free plan and quota bucket (user_plan_id: ${userPlanId}) to existing user ${user.email} on login`);
+        } else {
+          console.warn(`⚠️ No free plan found for user ${user.email} - skipping plan assignment`);
+        }
       }
+    } catch (planError) {
+      // Don't fail login if plan assignment fails - just log the error
+      console.error(`⚠️ Error assigning plan to user ${user.email}:`, planError.message);
     }
   }
 
-  await db.query(
-    `UPDATE users SET last_login_at = NOW(), login_count = COALESCE(login_count, 0) + 1 WHERE id = $1`,
-    [user.id]
-  );
+  try {
+    await db.query(
+      `UPDATE users SET last_login_at = NOW(), login_count = COALESCE(login_count, 0) + 1 WHERE id = $1`,
+      [user.id]
+    );
+  } catch (updateErr) {
+    console.error("Error updating last_login_at:", updateErr.message);
+    // Don't fail login if this update fails
+  }
 
-  const token = jwt.sign(
-    { userId: user.id, role: user.role },
-    JWT_SECRET,
-    { 
-      expiresIn: JWT_CONFIG.expiresIn,
-      issuer: JWT_CONFIG.issuer,
-      audience: JWT_CONFIG.audience
-    }
-  );
+  if (!JWT_SECRET) {
+    console.error("❌ JWT_SECRET is not set!");
+    return res.status(500).json({ 
+      error: "خطأ في إعدادات السيرفر", 
+      errorEn: "Server configuration error" 
+    });
+  }
+
+  let token;
+  try {
+    token = jwt.sign(
+      { userId: user.id, role: user.role },
+      JWT_SECRET,
+      { 
+        expiresIn: JWT_CONFIG.expiresIn,
+        issuer: JWT_CONFIG.issuer,
+        audience: JWT_CONFIG.audience
+      }
+    );
+  } catch (jwtErr) {
+    console.error("Error signing JWT:", jwtErr.message);
+    return res.status(500).json({ 
+      error: "خطأ في إنشاء رمز الدخول", 
+      errorEn: "Token generation error" 
+    });
+  }
 
   res
     .cookie("token", token, {
