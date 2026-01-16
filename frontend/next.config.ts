@@ -22,20 +22,29 @@ const nextConfig: NextConfig = {
       { hostname: "**.cloudinary.com" },
     ],
   },
-  // Proxy API requests to backend (only in development)
+  // Proxy API requests to backend
   async rewrites() {
-    if (process.env.NODE_ENV === 'production' && process.env.NEXT_PUBLIC_API_URL) {
+    // In production, NEXT_PUBLIC_API_URL must be set
+    if (process.env.NODE_ENV === 'production') {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+      if (!apiUrl) {
+        console.warn('⚠️ WARNING: NEXT_PUBLIC_API_URL is not set in production!');
+        console.warn('   API requests will fail. Please set NEXT_PUBLIC_API_URL in Vercel environment variables.');
+        // Return empty rewrites to prevent routing to localhost
+        return [];
+      }
       return [
         {
           source: "/api/:path*",
-          destination: `${process.env.NEXT_PUBLIC_API_URL}/api/:path*`,
+          destination: `${apiUrl}/api/:path*`,
         },
         {
           source: "/uploads/:path*",
-          destination: `${process.env.NEXT_PUBLIC_API_URL}/uploads/:path*`,
+          destination: `${apiUrl}/uploads/:path*`,
         },
       ];
     }
+    // Development: use local backend
     return [
       {
         source: "/api/:path*",
