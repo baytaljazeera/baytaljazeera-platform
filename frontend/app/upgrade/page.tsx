@@ -98,7 +98,7 @@ type PaymentResult = {
   } | null;
 };
 
-export default function UpgradePage() {
+function UpgradePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const planId = searchParams.get("planId");
@@ -752,5 +752,25 @@ export default function UpgradePage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function UpgradePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-b from-[#002845] via-[#123a64] to-[#fdf6db] flex items-center justify-center py-12 px-4" dir="rtl">
+        <div className="text-center">
+          <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-[#002845] to-[#123a64] rounded-full flex items-center justify-center shadow-lg">
+            <svg className="animate-spin h-10 w-10 text-[#f6d879]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </div>
+          <p className="text-[#002845]">جاري التحميل...</p>
+        </div>
+      </div>
+    }>
+      <UpgradePageContent />
+    </Suspense>
   );
 }
