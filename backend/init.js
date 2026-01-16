@@ -1138,6 +1138,14 @@ async function initializeDatabase() {
       }
     }
 
+    // Insert/Update admin users from backup data
+    try {
+      const { seedAdmins } = require('./seeds/seed_admins');
+      await seedAdmins();
+    } catch (seedError) {
+      console.log("⚠️ Admin users seed skipped:", seedError.message);
+    }
+
     // ============ Elite Slots System Tables ============
     // جداول نظام نخبة العقارات المختارة (مثل اختيار مقاعد الطائرة)
 
