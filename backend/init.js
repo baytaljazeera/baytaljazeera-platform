@@ -433,6 +433,16 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'properties' AND column_name = 'seo_video_enabled') THEN
           ALTER TABLE properties ADD COLUMN seo_video_enabled BOOLEAN DEFAULT false;
         END IF;
+        -- حقول نخبة العقارات (Elite/Featured properties)
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'properties' AND column_name = 'is_featured') THEN
+          ALTER TABLE properties ADD COLUMN is_featured BOOLEAN DEFAULT false;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'properties' AND column_name = 'featured_order') THEN
+          ALTER TABLE properties ADD COLUMN featured_order INTEGER;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'properties' AND column_name = 'featured_at') THEN
+          ALTER TABLE properties ADD COLUMN featured_at TIMESTAMPTZ;
+        END IF;
       END $$;
     `);
     console.log("✅ SEO columns added to properties");
@@ -843,11 +853,12 @@ async function initializeDatabase() {
       END $$;
     `);
 
-    // Add status_changed_at column to refunds
+    // Add status_changed_at column to refunds (only if table exists - it's created later)
     await db.query(`
       DO $$ 
       BEGIN 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'status_changed_at') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'refunds')
+           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'status_changed_at') THEN
           ALTER TABLE refunds ADD COLUMN status_changed_at TIMESTAMPTZ DEFAULT NOW();
         END IF;
       END $$;
