@@ -2507,6 +2507,146 @@ async function initializeDatabase() {
     `);
     console.log("✅ Launch trial settings initialized");
 
+    // Create countries and cities tables
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS countries (
+        id SERIAL PRIMARY KEY,
+        code VARCHAR(3) UNIQUE NOT NULL,
+        name_ar VARCHAR(100) NOT NULL,
+        name_en VARCHAR(100) NOT NULL,
+        flag_emoji VARCHAR(10),
+        region VARCHAR(50),
+        display_order INTEGER DEFAULT 0,
+        latitude DECIMAL(10, 7),
+        longitude DECIMAL(10, 7),
+        default_zoom INTEGER DEFAULT 6,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS cities (
+        id SERIAL PRIMARY KEY,
+        country_id INTEGER NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+        name_ar VARCHAR(100) NOT NULL,
+        name_en VARCHAR(100) NOT NULL,
+        region_ar VARCHAR(100),
+        region_en VARCHAR(100),
+        is_popular BOOLEAN DEFAULT false,
+        display_order INTEGER DEFAULT 0,
+        latitude DECIMAL(10, 7),
+        longitude DECIMAL(10, 7),
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_cities_country ON cities(country_id);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_cities_active ON cities(is_active);`);
+
+    // Insert default GCC countries if not exist
+    const countriesCheck = await db.query(`SELECT COUNT(*) as cnt FROM countries`);
+    if (parseInt(countriesCheck.rows[0].cnt) === 0) {
+      await db.query(`
+        INSERT INTO countries (code, name_ar, name_en, flag_emoji, region, display_order, latitude, longitude, default_zoom, is_active)
+        VALUES 
+          ('SA', 'السعودية', 'Saudi Arabia', '🇸🇦', 'GCC', 1, 24.7136, 46.6753, 6, true),
+          ('AE', 'الإمارات', 'UAE', '🇦🇪', 'GCC', 2, 24.4539, 54.3773, 7, true),
+          ('QA', 'قطر', 'Qatar', '🇶🇦', 'GCC', 3, 25.3548, 51.1839, 8, true),
+          ('KW', 'الكويت', 'Kuwait', '🇰🇼', 'GCC', 4, 29.3759, 47.9774, 8, true),
+          ('BH', 'البحرين', 'Bahrain', '🇧🇭', 'GCC', 5, 26.0667, 50.5577, 9, true),
+          ('OM', 'عمان', 'Oman', '🇴🇲', 'GCC', 6, 23.6100, 58.5400, 7, true),
+          ('EG', 'مصر', 'Egypt', '🇪🇬', 'Middle East', 7, 30.0444, 31.2357, 6, true),
+          ('TR', 'تركيا', 'Turkey', '🇹🇷', 'Middle East', 8, 39.9334, 32.8597, 6, true),
+          ('LB', 'لبنان', 'Lebanon', '🇱🇧', 'Middle East', 9, 33.8938, 35.5018, 8, true)
+        ON CONFLICT (code) DO NOTHING
+      `);
+      console.log("✅ Default countries inserted");
+    }
+
+    // Insert default cities for each country
+    const citiesCheck = await db.query(`SELECT COUNT(*) as cnt FROM cities`);
+    if (parseInt(citiesCheck.rows[0].cnt) === 0) {
+      // Get country IDs
+      const saCountry = await db.query(`SELECT id FROM countries WHERE code = 'SA'`);
+      const aeCountry = await db.query(`SELECT id FROM countries WHERE code = 'AE'`);
+      const qaCountry = await db.query(`SELECT id FROM countries WHERE code = 'QA'`);
+      const kwCountry = await db.query(`SELECT id FROM countries WHERE code = 'KW'`);
+      const bhCountry = await db.query(`SELECT id FROM countries WHERE code = 'BH'`);
+      const omCountry = await db.query(`SELECT id FROM countries WHERE code = 'OM'`);
+      
+      if (saCountry.rows.length > 0) {
+        const saId = saCountry.rows[0].id;
+        await db.query(`
+          INSERT INTO cities (country_id, name_ar, name_en, region_ar, region_en, is_popular, display_order, latitude, longitude, is_active)
+          VALUES 
+            ($1, 'الرياض', 'Riyadh', 'منطقة الرياض', 'Riyadh Region', true, 1, 24.7136, 46.6753, true),
+            ($1, 'جدة', 'Jeddah', 'منطقة مكة المكرمة', 'Makkah Region', true, 2, 21.4858, 39.1925, true),
+            ($1, 'الدمام', 'Dammam', 'المنطقة الشرقية', 'Eastern Province', true, 3, 26.4207, 50.0888, true),
+            ($1, 'المدينة المنورة', 'Medina', 'منطقة المدينة المنورة', 'Medina Region', true, 4, 24.5247, 39.5692, true),
+            ($1, 'مكة المكرمة', 'Makkah', 'منطقة مكة المكرمة', 'Makkah Region', true, 5, 21.3891, 39.8579, true),
+            ($1, 'الطائف', 'Taif', 'منطقة مكة المكرمة', 'Makkah Region', false, 6, 21.2703, 40.4158, true),
+            ($1, 'أبها', 'Abha', 'منطقة عسير', 'Asir Region', true, 7, 18.2164, 42.5042, true),
+            ($1, 'تبوك', 'Tabuk', 'منطقة تبوك', 'Tabuk Region', false, 8, 28.3998, 36.5700, true),
+            ($1, 'بريدة', 'Buraydah', 'منطقة القصيم', 'Qassim Region', false, 9, 26.3260, 43.9750, true),
+            ($1, 'خميس مشيط', 'Khamis Mushait', 'منطقة عسير', 'Asir Region', false, 10, 18.3000, 42.7333, true)
+        `, [saId]);
+      }
+
+      if (aeCountry.rows.length > 0) {
+        const aeId = aeCountry.rows[0].id;
+        await db.query(`
+          INSERT INTO cities (country_id, name_ar, name_en, region_ar, region_en, is_popular, display_order, latitude, longitude, is_active)
+          VALUES 
+            ($1, 'دبي', 'Dubai', 'إمارة دبي', 'Dubai Emirate', true, 1, 25.2048, 55.2708, true),
+            ($1, 'أبوظبي', 'Abu Dhabi', 'إمارة أبوظبي', 'Abu Dhabi Emirate', true, 2, 24.4539, 54.3773, true),
+            ($1, 'الشارقة', 'Sharjah', 'إمارة الشارقة', 'Sharjah Emirate', false, 3, 25.3573, 55.4033, true),
+            ($1, 'العين', 'Al Ain', 'إمارة أبوظبي', 'Abu Dhabi Emirate', false, 4, 24.2075, 55.7447, true)
+        `, [aeId]);
+      }
+
+      if (qaCountry.rows.length > 0) {
+        const qaId = qaCountry.rows[0].id;
+        await db.query(`
+          INSERT INTO cities (country_id, name_ar, name_en, region_ar, region_en, is_popular, display_order, latitude, longitude, is_active)
+          VALUES 
+            ($1, 'الدوحة', 'Doha', 'الدوحة', 'Doha', true, 1, 25.2854, 51.5310, true)
+        `, [qaId]);
+      }
+
+      if (kwCountry.rows.length > 0) {
+        const kwId = kwCountry.rows[0].id;
+        await db.query(`
+          INSERT INTO cities (country_id, name_ar, name_en, region_ar, region_en, is_popular, display_order, latitude, longitude, is_active)
+          VALUES 
+            ($1, 'الكويت', 'Kuwait City', 'محافظة الكويت', 'Kuwait Governorate', true, 1, 29.3759, 47.9774, true)
+        `, [kwId]);
+      }
+
+      if (bhCountry.rows.length > 0) {
+        const bhId = bhCountry.rows[0].id;
+        await db.query(`
+          INSERT INTO cities (country_id, name_ar, name_en, region_ar, region_en, is_popular, display_order, latitude, longitude, is_active)
+          VALUES 
+            ($1, 'المنامة', 'Manama', 'محافظة العاصمة', 'Capital Governorate', true, 1, 26.0667, 50.5577, true)
+        `, [bhId]);
+      }
+
+      if (omCountry.rows.length > 0) {
+        const omId = omCountry.rows[0].id;
+        await db.query(`
+          INSERT INTO cities (country_id, name_ar, name_en, region_ar, region_en, is_popular, display_order, latitude, longitude, is_active)
+          VALUES 
+            ($1, 'مسقط', 'Muscat', 'محافظة مسقط', 'Muscat Governorate', true, 1, 23.6100, 58.5400, true)
+        `, [omId]);
+      }
+
+      console.log("✅ Default cities inserted");
+    }
+
     console.log("✅ All tables and indexes created successfully");
     
     // Create admin users with different roles if not exists
