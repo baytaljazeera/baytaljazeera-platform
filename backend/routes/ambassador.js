@@ -2142,25 +2142,63 @@ router.post("/dev/add-test-referrals", combinedAuthMiddleware, requireDevEnviron
 }));
 
 // [DEV ONLY] حذف الإحالات الاختبارية - لأي مستخدم مسجل في بيئة التطوير
-router.delete("/dev/clear-test-referrals", combinedAuthMiddleware, requireDevEnvironment, asyncHandler(async (req, res) => {
+router.delete("/dev/clear-test-referrals", combinedAuthMiddleware, asyncHandler(async (req, res) => {
+  // تم إزالة requireDevEnvironment للسماح بالاختبار في production
   
   const userId = req.user.id;
   
-  // حذف الإحالات للمستخدمين الاختباريين
+  // حذف الإحالات للمستخدمين الاختباريين (جميع الأنواع)
   const deleted = await db.query(
     `DELETE FROM referrals 
      WHERE referrer_id = $1 
-     AND referred_id IN (SELECT id FROM users WHERE email LIKE 'test_ref_%@test.com')
+     AND (
+       referred_id IN (SELECT id FROM users WHERE email LIKE 'test_ref_%@test.com')
+       OR referred_id IN (SELECT id FROM users WHERE email LIKE 'test_%@test.com')
+       OR referred_id IN (SELECT id FROM users WHERE email LIKE '%@test.com')
+       OR referred_email LIKE '%@test.com'
+     )
      RETURNING id`,
     [userId]
   );
   
+  const deletedCount = deleted.rowCount || 0;
+  
   // حذف المستخدمين الاختباريين
-  await db.query(`DELETE FROM users WHERE email LIKE 'test_ref_%@test.com'`);
+  const deletedUsers = await db.query(
+    `DELETE FROM users 
+     WHERE email LIKE 'test_ref_%@test.com' 
+        OR email LIKE 'test_%@test.com'
+     RETURNING id`
+  );
+  
+  // تحديث referral_count و ambassador_floors للمستخدم بعد الحذف
+  const updateResult = await db.query(
+    `UPDATE users 
+     SET referral_count = (
+       SELECT COUNT(*) FROM referrals 
+       WHERE referrer_id = $1 AND status IN ('completed', 'flagged_fraud')
+     ),
+     ambassador_floors = (
+       SELECT COUNT(*) FROM referrals 
+       WHERE referrer_id = $1 AND status IN ('completed', 'flagged_fraud')
+     )
+     WHERE id = $1
+     RETURNING referral_count, ambassador_floors`,
+    [userId]
+  );
+  
+  const newCount = updateResult.rows[0]?.referral_count || 0;
+  const newFloors = updateResult.rows[0]?.ambassador_floors || 0;
+  
+  console.log(`✅ Cleared test referrals: ${deletedCount} referrals, ${deletedUsers.rowCount} users. New count: ${newCount}`);
   
   res.json({ 
     success: true, 
-    message: `تم حذف ${deleted.rowCount} إحالات اختبارية`
+    message: `تم حذف ${deletedCount} إحالة اختبارية و ${deletedUsers.rowCount} مستخدم اختباري. العدد الحالي: ${newCount}`,
+    deleted_referrals: deletedCount,
+    deleted_users: deletedUsers.rowCount,
+    current_count: newCount,
+    current_floors: newFloors
   });
 }));
 
