@@ -561,7 +561,7 @@ export default function AmbassadorAdminPage() {
   }
 
   // Toggle AI Scan Mode (show/hide building selection)
-  function toggleAIScanMode() {
+  function toggleAIScanMode(preselectedBuilding?: number) {
     if (aiScanMode) {
       // إذا كان في وضع الاختيار، ابدأ الفحص
       if (selectedBuildingsForScan.length === 0) {
@@ -573,7 +573,7 @@ export default function AmbassadorAdminPage() {
     } else {
       // افتح وضع الاختيار
       setAiScanMode(true);
-      setSelectedBuildingsForScan([]);
+      setSelectedBuildingsForScan(preselectedBuilding ? [preselectedBuilding] : []);
       setAiScanResult(null);
       setAiScanError(null);
     }
@@ -1171,7 +1171,7 @@ export default function AmbassadorAdminPage() {
                           <h4 className="font-medium text-[#003366]">طوابق المبنى ({selectedBuilding.total_floors} طابق)</h4>
                           {selectedAmbassador && (
                             <button
-                              onClick={() => openAIScanModal(selectedAmbassador.user.id, selectedBuilding.building_number)}
+                              onClick={() => toggleAIScanMode(selectedBuilding.building_number)}
                               disabled={aiScanning}
                               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
                                 aiScanning 
