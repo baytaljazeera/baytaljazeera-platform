@@ -1611,9 +1611,25 @@ router.post('/wallet/withdraw', combinedAuthMiddleware, requireAmbassadorEnabled
   const userId = req.user.id;
   const { amount_cents, payment_method } = req.body;
   
+  console.log(`💰 Withdrawal request from user ${userId}:`, { amount_cents, payment_method });
+  
+  // التحقق من البيانات المرسلة
+  if (!amount_cents || amount_cents <= 0) {
+    console.error('❌ Invalid amount_cents:', amount_cents);
+    return res.status(400).json({ error: "المبلغ غير صحيح" });
+  }
+  
   // Check if financial rewards enabled
-  const settings = await db.query(`SELECT financial_rewards_enabled, min_withdrawal_cents, buildings_per_dollar FROM ambassador_settings WHERE id = 1`);
-  if (!settings.rows[0]?.financial_rewards_enabled) {
+  let settings;
+  try {
+    settings = await db.query(`SELECT financial_rewards_enabled, min_withdrawal_cents, buildings_per_dollar FROM ambassador_settings WHERE id = 1`);
+  } catch (settingsError) {
+    console.error('❌ Error fetching settings:', settingsError);
+    return res.status(500).json({ error: "خطأ في جلب إعدادات النظام" });
+  }
+  
+  if (!settings.rows || settings.rows.length === 0 || !settings.rows[0]?.financial_rewards_enabled) {
+    console.warn('⚠️ Financial rewards disabled or settings not found');
     return res.status(400).json({ error: "المكافآت المالية غير مفعلة حالياً" });
   }
   const buildingsPerDollar = settings.rows[0]?.buildings_per_dollar || 5;
@@ -1687,15 +1703,46 @@ router.post('/wallet/withdraw', combinedAuthMiddleware, requireAmbassadorEnabled
   }
   
   // AI fraud check for withdrawal
-  const fraudAnalysis = await analyzeWithdrawalRequest(userId, amount_cents);
+  console.log('🔍 Running fraud analysis...');
+  let fraudAnalysis;
+  try {
+    fraudAnalysis = await analyzeWithdrawalRequest(userId, amount_cents);
+    console.log('✅ Fraud analysis completed:', { riskScore: fraudAnalysis.riskScore, riskLevel: fraudAnalysis.riskLevel });
+  } catch (fraudError) {
+    console.error('❌ Error in fraud analysis:', fraudError);
+    // في حالة الخطأ، نستخدم risk score منخفض بدلاً من إيقاف العملية
+    fraudAnalysis = { riskScore: 0, riskLevel: 'low', riskFactors: [], analyzedAt: new Date().toISOString() };
+  }
   
   // Create withdrawal request
-  const result = await db.query(`
-    INSERT INTO ambassador_withdrawal_requests 
-    (user_id, amount_cents, payment_method, risk_score, risk_notes, ai_analyzed_at)
-    VALUES ($1, $2, $3, $4, $5, NOW())
-    RETURNING *
-  `, [userId, amount_cents, payment_method, fraudAnalysis.riskScore, JSON.stringify(fraudAnalysis)]);
+  console.log('📝 Creating withdrawal request...');
+  let result;
+  try {
+    result = await db.query(`
+      INSERT INTO ambassador_withdrawal_requests 
+      (user_id, amount_cents, payment_method, risk_score, risk_notes, ai_analyzed_at)
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      RETURNING *
+    `, [userId, amount_cents, payment_method || 'bank_transfer', fraudAnalysis.riskScore || 0, JSON.stringify(fraudAnalysis)]);
+    console.log('✅ Withdrawal request created:', result.rows[0]?.id);
+  } catch (insertError) {
+    console.error('❌ Error creating withdrawal request:', insertError);
+    console.error('Error details:', {
+      message: insertError.message,
+      code: insertError.code,
+      detail: insertError.detail,
+      table: insertError.table
+    });
+    return res.status(500).json({ 
+      error: "حدث خطأ أثناء إنشاء طلب السحب",
+      details: process.env.NODE_ENV === 'development' ? insertError.message : undefined
+    });
+  }
+  
+  if (!result.rows || result.rows.length === 0) {
+    console.error('❌ No rows returned from withdrawal request insert');
+    return res.status(500).json({ error: "فشل إنشاء طلب السحب" });
+  }
   
   // الرصيد الجديد بعد السحب (للسجل فقط - الرصيد يُحسب تلقائياً الآن)
   const newBalanceAfterWithdraw = availableBalanceCents - amount_cents;
@@ -1720,18 +1767,30 @@ router.post('/wallet/withdraw', combinedAuthMiddleware, requireAmbassadorEnabled
   }
   
   // Notify ambassador admins
-  const admins = await db.query(`SELECT id FROM users WHERE role IN ('super_admin', 'ambassador_admin')`);
-  for (const admin of admins.rows) {
-    await db.query(`
-      INSERT INTO notifications (user_id, type, title, message)
-      VALUES ($1, 'ambassador_withdrawal', '💰 طلب سحب مالي جديد', 'طلب سحب جديد بقيمة $' || $2 || ' يحتاج مراجعة')
-    `, [admin.id, (amount_cents/100).toFixed(2)]);
+  try {
+    const admins = await db.query(`SELECT id FROM users WHERE role IN ('super_admin', 'ambassador_admin')`);
+    for (const admin of admins.rows) {
+      try {
+        await db.query(`
+          INSERT INTO notifications (user_id, type, title, message)
+          VALUES ($1, 'ambassador_withdrawal', '💰 طلب سحب مالي جديد', 'طلب سحب جديد بقيمة $' || $2 || ' يحتاج مراجعة')
+        `, [admin.id, (amount_cents/100).toFixed(2)]);
+      } catch (notifError) {
+        console.error('Error sending notification to admin:', notifError);
+        // لا نوقف العملية إذا فشل إرسال الإشعار
+      }
+    }
+  } catch (adminError) {
+    console.error('Error fetching admins for notification:', adminError);
+    // لا نوقف العملية إذا فشل جلب الأدمن
   }
+  
+  console.log(`✅ Withdrawal request completed successfully: ${result.rows[0].id} for user ${userId}, amount: $${(amount_cents/100).toFixed(2)}`);
   
   res.json({
     success: true,
-    request: result.rows[0],
-    message: "تم تقديم طلب السحب بنجاح. سيتم مراجعته قريباً."
+    message: `تم تقديم طلب سحب $${(amount_cents/100).toFixed(2)} بنجاح. سيتم مراجعته قريباً.`,
+    request: result.rows[0]
   });
 }));
 

@@ -1830,22 +1830,48 @@ export default function ReferralPage() {
       });
       
       if (res.ok) {
-        const result = await res.json();
+        let result;
+        try {
+          const text = await res.text();
+          result = text ? JSON.parse(text) : {};
+        } catch (parseError) {
+          console.error('JSON parse error:', parseError);
+          throw new Error('فشل قراءة الاستجابة من السيرفر');
+        }
+        
+        console.log('✅ Withdrawal request successful:', result);
+        
         // تحديث البيانات
         await fetchWalletData();
         await fetchStats(); // تحديث الإحصائيات لتحديث العدد المتاح
         
         // رسالة نجاح واضحة
-        setSuccessMessage(`✅ تم إرسال طلب سحب $${(amountCents / 100).toFixed(2)} بنجاح! سيتم مراجعة طلبك قريباً.`);
+        const successMsg = result.message || `✅ تم إرسال طلب سحب $${(amountCents / 100).toFixed(2)} بنجاح! سيتم مراجعة طلبك قريباً.`;
+        setSuccessMessage(successMsg);
         setTimeout(() => setSuccessMessage(null), 5000);
         
         // إغلاق الـ modal وتنظيف الحقول
         setShowWithdrawModal(false);
         setWithdrawAmount('full');
         setCustomAmount('');
+        setError(''); // تنظيف أي أخطاء سابقة
       } else {
-        const err = await res.json().catch(() => ({ error: 'حدث خطأ غير متوقع' }));
-        setError(err.error || 'حدث خطأ أثناء إرسال الطلب');
+        let err;
+        try {
+          const text = await res.text();
+          err = text ? JSON.parse(text) : { error: `HTTP ${res.status}` };
+        } catch (parseError) {
+          err = { error: `خطأ ${res.status}: ${res.statusText || 'حدث خطأ غير متوقع'}` };
+        }
+        
+        console.error('❌ Withdrawal request failed:', {
+          status: res.status,
+          statusText: res.statusText,
+          error: err
+        });
+        
+        const errorMsg = err.error || err.details || 'حدث خطأ أثناء إرسال الطلب';
+        setError(errorMsg);
       }
     } catch (err: any) {
       console.error('Withdrawal error:', err);
