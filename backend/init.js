@@ -2004,10 +2004,29 @@ async function initializeDatabase() {
         status VARCHAR(20) NOT NULL DEFAULT 'pending',
         reward_granted BOOLEAN DEFAULT false,
         reward_granted_at TIMESTAMPTZ,
+        collapse_reason TEXT,
+        collapsed_at TIMESTAMPTZ,
+        flag_reason TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         UNIQUE(referred_id)
       );
+    `);
+    
+    // إضافة الأعمدة إذا لم تكن موجودة (للتحديثات التلقائية)
+    await db.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'referrals' AND column_name = 'collapse_reason') THEN
+          ALTER TABLE referrals ADD COLUMN collapse_reason TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'referrals' AND column_name = 'collapsed_at') THEN
+          ALTER TABLE referrals ADD COLUMN collapsed_at TIMESTAMPTZ;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'referrals' AND column_name = 'flag_reason') THEN
+          ALTER TABLE referrals ADD COLUMN flag_reason TEXT;
+        END IF;
+      END $$;
     `);
     
     // Fraud Detection Tables - جداول اكتشاف الاحتيال
