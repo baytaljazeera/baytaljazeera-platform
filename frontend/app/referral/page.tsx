@@ -1847,10 +1847,23 @@ export default function ReferralPage() {
 
   async function fetchWalletData() {
     try {
-      const res = await fetch('/api/ambassador/wallet', { credentials: 'include' });
+      // استخدام cache busting للتأكد من جلب البيانات الأحدث
+      const res = await fetch(`/api/ambassador/wallet?t=${Date.now()}`, { 
+        credentials: 'include',
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      });
       if (res.ok) {
         const data = await res.json();
+        console.log('💼 Wallet data fetched:', { 
+          balance: data.wallet?.balance_cents, 
+          pending: data.pending_withdrawal ? `${data.pending_withdrawal.amount_cents / 100} (${data.pending_withdrawal.status})` : 'none'
+        });
         setWalletData(data);
+      } else {
+        console.error('❌ Failed to fetch wallet:', res.status);
       }
     } catch (err) {
       console.error('Error fetching wallet data:', err);
@@ -2278,7 +2291,15 @@ export default function ReferralPage() {
         setSuccessMessage(`✅ ${data.message || 'تم حذف جميع طلبات السحب بنجاح!'}`);
         setTimeout(() => setSuccessMessage(null), 5000);
         
-        // إعادة جلب البيانات بعد الحذف
+        // تحديث state فوراً (بدون انتظار API)
+        if (walletData) {
+          setWalletData({
+            ...walletData,
+            pending_withdrawal: null // إزالة pending_withdrawal فوراً
+          });
+        }
+        
+        // إعادة جلب البيانات بعد الحذف للتأكد
         console.log('🔄 Refreshing stats and wallet data...');
         await Promise.all([fetchStats(), fetchWalletData()]);
         console.log('✅ Data refreshed');
