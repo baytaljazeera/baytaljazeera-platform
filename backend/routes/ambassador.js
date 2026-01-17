@@ -80,81 +80,101 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
     );
     console.log(`✅ Referrals fetched: ${referralsResult.rows.length}`);
   
-  // جلب الطوابق الموصومة بالتفصيل
-  const flaggedFloorsResult = await db.query(
-    `SELECT r.id, r.status, r.created_at, r.collapse_reason, r.collapsed_at, r.flag_reason,
-            COALESCE(u.name, 'مستخدم اختباري') as referred_name, 
-            COALESCE(u.email, 'test@test.com') as referred_email,
-            ROW_NUMBER() OVER (ORDER BY r.created_at ASC) as floor_number
-     FROM referrals r
-     LEFT JOIN users u ON u.id = r.referred_id
-     WHERE r.referrer_id = $1 AND r.status = 'flagged_fraud'
-     ORDER BY r.created_at ASC`,
-    [userId]
-  );
+    // جلب الطوابق الموصومة بالتفصيل
+    console.log(`📋 Fetching flagged floors...`);
+    const flaggedFloorsResult = await db.query(
+      `SELECT r.id, r.status, r.created_at, r.collapse_reason, r.collapsed_at, r.flag_reason,
+              COALESCE(u.name, 'مستخدم اختباري') as referred_name, 
+              COALESCE(u.email, 'test@test.com') as referred_email,
+              ROW_NUMBER() OVER (ORDER BY r.created_at ASC) as floor_number
+       FROM referrals r
+       LEFT JOIN users u ON u.id = r.referred_id
+       WHERE r.referrer_id = $1 AND r.status = 'flagged_fraud'
+       ORDER BY r.created_at ASC`,
+      [userId]
+    );
+    console.log(`✅ Flagged floors fetched: ${flaggedFloorsResult.rows.length}`);
+    
+    console.log(`📋 Fetching consumptions...`);
+    const consumptionsResult = await db.query(
+      `SELECT ac.*, p.name_ar as plan_name
+       FROM ambassador_consumptions ac
+       LEFT JOIN plans p ON p.id = ac.reward_plan_id
+       WHERE ac.user_id = $1
+       ORDER BY ac.consumed_at DESC`,
+      [userId]
+    );
+    console.log(`✅ Consumptions fetched: ${consumptionsResult.rows.length}`);
+    
+    // حساب مجموع الطوابق المستهلكة
+    console.log(`📋 Calculating consumed floors...`);
+    const totalConsumedResult = await db.query(
+      `SELECT COALESCE(SUM(floors_consumed), 0) as total FROM ambassador_consumptions WHERE user_id = $1`,
+      [userId]
+    );
+    const rawFloorsConsumed = parseInt(totalConsumedResult.rows[0]?.total || 0);
+    // ضمان أن المستهلك لا يتجاوز الطوابق المبنية (لتجنب القيم السالبة عند انهيار طوابق بعد استهلاكها)
+    const floorsConsumed = Math.min(rawFloorsConsumed, currentFloors);
+    console.log(`✅ Floors consumed: ${floorsConsumed}`);
+    
+    console.log(`📋 Fetching pending requests...`);
+    const pendingRequestResult = await db.query(
+      `SELECT * FROM ambassador_requests 
+       WHERE user_id = $1 AND status IN ('pending', 'under_review')
+       ORDER BY created_at DESC LIMIT 1`,
+      [userId]
+    );
+    console.log(`✅ Pending requests fetched: ${pendingRequestResult.rows.length}`);
   
-  const consumptionsResult = await db.query(
-    `SELECT ac.*, p.name_ar as plan_name
-     FROM ambassador_consumptions ac
-     LEFT JOIN plans p ON p.id = ac.reward_plan_id
-     WHERE ac.user_id = $1
-     ORDER BY ac.consumed_at DESC`,
-    [userId]
-  );
-  
-  // حساب مجموع الطوابق المستهلكة
-  const totalConsumedResult = await db.query(
-    `SELECT COALESCE(SUM(floors_consumed), 0) as total FROM ambassador_consumptions WHERE user_id = $1`,
-    [userId]
-  );
-  const rawFloorsConsumed = parseInt(totalConsumedResult.rows[0]?.total || 0);
-  // ضمان أن المستهلك لا يتجاوز الطوابق المبنية (لتجنب القيم السالبة عند انهيار طوابق بعد استهلاكها)
-  const floorsConsumed = Math.min(rawFloorsConsumed, currentFloors);
-  
-  const pendingRequestResult = await db.query(
-    `SELECT * FROM ambassador_requests 
-     WHERE user_id = $1 AND status IN ('pending', 'under_review')
-     ORDER BY created_at DESC LIMIT 1`,
-    [userId]
-  );
-  
-  let rewards = settings.floors_per_reward || [];
-  if (typeof rewards === 'string') {
-    try {
-      rewards = JSON.parse(rewards);
-    } catch (parseError) {
-      console.error('Error parsing floors_per_reward:', parseError);
+    console.log(`📋 Parsing rewards config...`);
+    let rewards = settings.floors_per_reward || [];
+    if (typeof rewards === 'string') {
+      try {
+        rewards = JSON.parse(rewards);
+        console.log(`✅ Rewards parsed: ${rewards.length} rewards`);
+      } catch (parseError) {
+        console.error('❌ Error parsing floors_per_reward:', parseError);
+        rewards = [];
+      }
+    }
+    if (!Array.isArray(rewards)) {
+      console.warn('⚠️ Rewards is not an array, using empty array');
       rewards = [];
     }
-  }
-  if (!Array.isArray(rewards)) {
-    rewards = [];
-  }
-  
-  // حساب الطوابق السليمة (المبنية - المنهارة)
-  const healthyFloors = Math.max(0, currentFloors - flaggedFloors);
-  
-  // حساب الطوابق المتاحة (السليمة - المستهلكة) مع ضمان عدم السالب
-  const availableFloors = Math.max(0, healthyFloors - floorsConsumed);
-  
-  const availableReward = rewards
-    .filter(r => r.floors <= availableFloors)
-    .sort((a, b) => b.floors - a.floors)[0] || null;
-  
-  const canConsume = availableReward && settings.consumption_enabled && !pendingRequestResult.rows.length;
-  
-  // حساب رقم الطابق لكل إحالة
-  const referralsWithFloorNumbers = referralsResult.rows.map((ref, idx) => ({
-    ...ref,
-    floor_number: idx + 1
-  }));
-  
-  // عدد الإحالات المعلقة (pending_listing)
-  const pendingListingResult = await db.query(
-    `SELECT COUNT(*) as count FROM referrals WHERE referrer_id = $1 AND status = 'pending_listing'`,
-    [userId]
-  );
-  const pendingListingCount = parseInt(pendingListingResult.rows[0]?.count || 0);
+    
+    // حساب الطوابق السليمة (المبنية - المنهارة)
+    const healthyFloors = Math.max(0, currentFloors - flaggedFloors);
+    console.log(`✅ Healthy floors: ${healthyFloors}`);
+    
+    // حساب الطوابق المتاحة (السليمة - المستهلكة) مع ضمان عدم السالب
+    const availableFloors = Math.max(0, healthyFloors - floorsConsumed);
+    console.log(`✅ Available floors: ${availableFloors}`);
+    
+    const availableReward = rewards
+      .filter(r => r.floors <= availableFloors)
+      .sort((a, b) => b.floors - a.floors)[0] || null;
+    console.log(`✅ Available reward: ${availableReward ? availableReward.plan_tier : 'none'}`);
+    
+    const canConsume = availableReward && settings.consumption_enabled && !pendingRequestResult.rows.length;
+    
+    // حساب رقم الطابق لكل إحالة
+    console.log(`📋 Adding floor numbers to referrals...`);
+    const referralsWithFloorNumbers = referralsResult.rows.map((ref, idx) => ({
+      ...ref,
+      floor_number: idx + 1
+    }));
+    console.log(`✅ Floor numbers added: ${referralsWithFloorNumbers.length} referrals`);
+    
+    // عدد الإحالات المعلقة (pending_listing)
+    console.log(`📋 Fetching pending listing count...`);
+    const pendingListingResult = await db.query(
+      `SELECT COUNT(*) as count FROM referrals WHERE referrer_id = $1 AND status = 'pending_listing'`,
+      [userId]
+    );
+    const pendingListingCount = parseInt(pendingListingResult.rows[0]?.count || 0);
+    console.log(`✅ Pending listing count: ${pendingListingCount}`);
+    
+    console.log(`✅ All queries completed successfully, preparing response...`);
 
     res.json({
       ambassador_code: ambassadorCode,
