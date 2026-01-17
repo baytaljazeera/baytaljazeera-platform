@@ -24,20 +24,21 @@ const requireAmbassadorEnabled = asyncHandler(async (req, res, next) => {
 router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   
-  const userResult = await db.query(
-    `SELECT 
-      ambassador_code, ambassador_floors, total_floors_earned,
-      referral_code, referral_count
-     FROM users WHERE id = $1`,
-    [userId]
-  );
-  
-  if (userResult.rows.length === 0) {
-    return res.status(404).json({ error: "المستخدم غير موجود" });
-  }
-  
-  const user = userResult.rows[0];
-  const ambassadorCode = user.ambassador_code || user.referral_code;
+  try {
+    const userResult = await db.query(
+      `SELECT 
+        ambassador_code, ambassador_floors, total_floors_earned,
+        referral_code, referral_count
+       FROM users WHERE id = $1`,
+      [userId]
+    );
+    
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "المستخدم غير موجود" });
+    }
+    
+    const user = userResult.rows[0];
+    const ambassadorCode = user.ambassador_code || user.referral_code;
   
   // حساب العدد الفعلي من جدول الإحالات (كل الطوابق المبنية: completed + flagged_fraud)
   const allFloorsResult = await db.query(
@@ -60,10 +61,11 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
   
   const referralsResult = await db.query(
     `SELECT r.id, r.status, r.created_at, r.collapse_reason, r.collapsed_at,
-            u.name as referred_name, u.email as referred_email,
+            COALESCE(u.name, 'مستخدم اختباري') as referred_name, 
+            COALESCE(u.email, 'test@test.com') as referred_email,
             rs.risk_score, rs.risk_level, rs.triggered_rules, rs.ai_explanation
      FROM referrals r
-     JOIN users u ON u.id = r.referred_id
+     LEFT JOIN users u ON u.id = r.referred_id
      LEFT JOIN referral_risk_scores rs ON rs.referral_id = r.id
      WHERE r.referrer_id = $1 AND r.status IN ('completed', 'flagged_fraud')
      ORDER BY r.created_at ASC`,
@@ -73,10 +75,11 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
   // جلب الطوابق الموصومة بالتفصيل
   const flaggedFloorsResult = await db.query(
     `SELECT r.id, r.status, r.created_at, r.collapse_reason, r.collapsed_at, r.flag_reason,
-            u.name as referred_name, u.email as referred_email,
+            COALESCE(u.name, 'مستخدم اختباري') as referred_name, 
+            COALESCE(u.email, 'test@test.com') as referred_email,
             ROW_NUMBER() OVER (ORDER BY r.created_at ASC) as floor_number
      FROM referrals r
-     JOIN users u ON u.id = r.referred_id
+     LEFT JOIN users u ON u.id = r.referred_id
      WHERE r.referrer_id = $1 AND r.status = 'flagged_fraud'
      ORDER BY r.created_at ASC`,
     [userId]
@@ -137,34 +140,41 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
   );
   const pendingListingCount = parseInt(pendingListingResult.rows[0]?.count || 0);
 
-  res.json({
-    ambassador_code: ambassadorCode,
-    // الإحصائيات الرئيسية
-    built_floors: currentFloors,           // الطوابق المبنية (completed + flagged_fraud)
-    collapsed_floors: flaggedFloors,       // الطوابق المنهارة (flagged_fraud)
-    healthy_floors: healthyFloors,         // الطوابق السليمة (built - collapsed)
-    floors_consumed: floorsConsumed,       // الطوابق المستهلكة للمكافآت
-    available_floors: availableFloors,     // الطوابق المتاحة للاستخدام (healthy - consumed)
-    pending_listing_count: pendingListingCount, // إحالات بانتظار أول إعلان
-    // للتوافق مع الكود القديم
-    current_floors: currentFloors,
-    flagged_floors: flaggedFloors,
-    flagged_floors_details: flaggedFloorsResult.rows,
-    total_floors_earned: user.total_floors_earned || currentFloors,
-    max_floors: settings.max_floors,
-    rewards_config: rewards,
-    available_reward: availableReward,
-    can_consume: canConsume,
-    consumption_enabled: settings.consumption_enabled,
-    pending_request: pendingRequestResult.rows[0] || null,
-    referrals: referralsWithFloorNumbers,
-    consumptions: consumptionsResult.rows,
-    // شروط الإحالة
-    requirements: {
-      require_first_listing: settings.require_first_listing || false,
-      require_email_verified: settings.require_email_verified || false
-    }
-  });
+    res.json({
+      ambassador_code: ambassadorCode,
+      // الإحصائيات الرئيسية
+      built_floors: currentFloors,           // الطوابق المبنية (completed + flagged_fraud)
+      collapsed_floors: flaggedFloors,       // الطوابق المنهارة (flagged_fraud)
+      healthy_floors: healthyFloors,         // الطوابق السليمة (built - collapsed)
+      floors_consumed: floorsConsumed,       // الطوابق المستهلكة للمكافآت
+      available_floors: availableFloors,     // الطوابق المتاحة للاستخدام (healthy - consumed)
+      pending_listing_count: pendingListingCount, // إحالات بانتظار أول إعلان
+      // للتوافق مع الكود القديم
+      current_floors: currentFloors,
+      flagged_floors: flaggedFloors,
+      flagged_floors_details: flaggedFloorsResult.rows,
+      total_floors_earned: user.total_floors_earned || currentFloors,
+      max_floors: settings.max_floors,
+      rewards_config: rewards,
+      available_reward: availableReward,
+      can_consume: canConsume,
+      consumption_enabled: settings.consumption_enabled,
+      pending_request: pendingRequestResult.rows[0] || null,
+      referrals: referralsWithFloorNumbers,
+      consumptions: consumptionsResult.rows,
+      // شروط الإحالة
+      requirements: {
+        require_first_listing: settings.require_first_listing || false,
+        require_email_verified: settings.require_email_verified || false
+      }
+    });
+  } catch (error) {
+    console.error('Error in /my-stats:', error);
+    return res.status(500).json({ 
+      error: "حدث خطأ أثناء جلب الإحصائيات",
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 }));
 
 // إزالة طابق منهار (soft-delete - تغيير الحالة فقط)
