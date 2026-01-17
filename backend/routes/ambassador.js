@@ -1991,6 +1991,21 @@ router.post("/dev/add-test-referrals", combinedAuthMiddleware, requireDevEnviron
          VALUES ${referralPlaceholders.join(', ')}`,
         referralParams
       );
+      
+      // تحديث referral_count في جدول users
+      await db.query(
+        `UPDATE users 
+         SET referral_count = (
+           SELECT COUNT(*) FROM referrals 
+           WHERE referrer_id = $1 AND status IN ('completed', 'flagged_fraud')
+         ),
+         ambassador_floors = (
+           SELECT COUNT(*) FROM referrals 
+           WHERE referrer_id = $1 AND status IN ('completed', 'flagged_fraud')
+         )
+         WHERE id = $1`,
+        [userId]
+      );
     } catch (refError) {
       console.error('Error creating referrals:', refError);
       // حذف المستخدمين الذين تم إنشاؤهم لأن الإحالات فشلت
