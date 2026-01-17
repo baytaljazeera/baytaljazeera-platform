@@ -3429,5 +3429,6 @@ export default function ReferralPage() {
         </div>
       )}
     </div>
+    </div>
   );
 }
