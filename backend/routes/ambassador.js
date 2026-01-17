@@ -1519,6 +1519,15 @@ router.get('/wallet', combinedAuthMiddleware, requireAmbassadorEnabled, asyncHan
     ORDER BY created_at DESC LIMIT 1
   `, [userId]);
   
+  console.log(`💼 Wallet data for user ${userId}:`, {
+    balance: wallet.rows[0]?.balance_cents || 0,
+    pending_withdrawal: pendingWithdrawal.rows[0] ? {
+      id: pendingWithdrawal.rows[0].id,
+      amount: pendingWithdrawal.rows[0].amount_cents,
+      status: pendingWithdrawal.rows[0].status
+    } : null
+  });
+  
   res.json({
     wallet: wallet.rows[0],
     settings: {
@@ -2349,6 +2358,30 @@ router.delete("/dev/clear-test-referrals", combinedAuthMiddleware, asyncHandler(
     deleted_users: deletedUsers.rowCount,
     current_count: newCount,
     current_floors: newFloors
+  });
+}));
+
+// [DEV ONLY] فحص طلبات السحب - للتحقق
+router.get("/dev/check-withdrawal-requests", combinedAuthMiddleware, asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  
+  const requests = await db.query(`
+    SELECT id, amount_cents, status, created_at 
+    FROM ambassador_withdrawal_requests 
+    WHERE user_id = $1
+    ORDER BY created_at DESC
+  `, [userId]);
+  
+  console.log(`📋 Found ${requests.rows.length} withdrawal requests for user ${userId}`);
+  
+  res.json({ 
+    count: requests.rows.length,
+    requests: requests.rows.map(r => ({
+      id: r.id,
+      amount: r.amount_cents / 100,
+      status: r.status,
+      created_at: r.created_at
+    }))
   });
 }));
 
