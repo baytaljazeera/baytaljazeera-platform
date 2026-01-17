@@ -2934,7 +2934,6 @@ export default function ReferralPage() {
           </div>
         )}
       </div>
-    </div>
 
       {stats && (
         <>
@@ -3429,6 +3428,7 @@ export default function ReferralPage() {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }
