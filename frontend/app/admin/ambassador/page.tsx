@@ -1059,8 +1059,31 @@ export default function AmbassadorAdminPage() {
                       </div>
                       
                       <div className="bg-white rounded-xl border border-slate-200">
-                        <div className="p-4 border-b border-slate-200">
+                        <div className="p-4 border-b border-slate-200 flex items-center justify-between">
                           <h4 className="font-medium text-[#003366]">طوابق المبنى ({selectedBuilding.total_floors} طابق)</h4>
+                          {selectedAmbassador && (
+                            <button
+                              onClick={() => runAIFraudScan(selectedAmbassador.user.id, selectedBuilding.building_number)}
+                              disabled={aiScanning}
+                              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+                                aiScanning 
+                                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                                  : 'bg-gradient-to-l from-purple-600 to-indigo-600 text-white hover:shadow-lg hover:scale-105'
+                              }`}
+                            >
+                              {aiScanning ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  جارٍ الفحص...
+                                </>
+                              ) : (
+                                <>
+                                  <Brain className="w-4 h-4" />
+                                  فحص AI للتلاعب في المبنى
+                                </>
+                              )}
+                            </button>
+                          )}
                         </div>
                         <div className="divide-y divide-slate-100">
                           {selectedBuilding.floors.map((floor) => (
