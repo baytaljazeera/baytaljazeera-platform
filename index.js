@@ -219,6 +219,14 @@ async function runDatabaseInit() {
     await initializeDatabase();
     console.log("✅ Database tables initialized");
     
+    // Seed missing cities for Turkey, Egypt, Lebanon
+    try {
+      const { seedMissingCities } = require("./backend/scripts/seed-missing-cities");
+      await seedMissingCities();
+    } catch (seedErr) {
+      console.log("⚠️ Cities seeding skipped:", seedErr.message);
+    }
+    
     // إنشاء جدول flagged_conversations
     await db.query(`
       CREATE TABLE IF NOT EXISTS flagged_conversations (
