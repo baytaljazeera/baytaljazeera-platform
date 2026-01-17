@@ -227,6 +227,14 @@ async function runDatabaseInit() {
       console.log("⚠️ Cities seeding skipped:", seedErr.message);
     }
     
+    // Seed GCC cities (SA, AE, KW, QA, BH, OM)
+    try {
+      const { seedGCCCities } = require("./backend/scripts/seed-gcc-cities");
+      await seedGCCCities();
+    } catch (seedErr) {
+      console.log("⚠️ GCC cities seeding skipped:", seedErr.message);
+    }
+    
     // إنشاء جدول flagged_conversations
     await db.query(`
       CREATE TABLE IF NOT EXISTS flagged_conversations (
