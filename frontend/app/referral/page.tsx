@@ -2761,25 +2761,25 @@ export default function ReferralPage() {
                 {/* سلم المكافآت */}
                 <div className="bg-white/80 backdrop-blur-sm rounded-2xl sm:rounded-3xl shadow-xl p-5 sm:p-8 border border-[#D4AF37]/30">
                   <div className="flex items-center justify-between flex-wrap gap-3 mb-5 sm:mb-6">
-                  <h2 className="text-lg sm:text-xl font-bold text-[#003366] flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#D4AF37] to-[#B8860B] flex items-center justify-center shadow-lg">
-                      <Star className="w-5 h-5 text-[#003366]" />
+                    <h2 className="text-lg sm:text-xl font-bold text-[#003366] flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#D4AF37] to-[#B8860B] flex items-center justify-center shadow-lg">
+                        <Star className="w-5 h-5 text-[#003366]" />
+                      </div>
+                      <span>سلم المكافآت</span>
+                    </h2>
+                    <div className="flex items-center gap-3 flex-wrap text-[11px]">
+                      <span className="text-blue-600"><Building2 className="w-3 h-3 inline ml-1" />{builtFloors} طابق</span>
+                      <span className="text-emerald-600"><Check className="w-3 h-3 inline ml-1" />{availableFloors} متاح</span>
+                      <span className="text-[#B8860B]"><Gift className="w-3 h-3 inline ml-1" />{floorsConsumed} مستهلك</span>
+                      {collapsedFloors > 0 && (
+                        <button onClick={scrollToFlaggedFloor} className="text-red-600 hover:text-red-500">
+                          <Flag className="w-3 h-3 inline ml-1" />{collapsedFloors} منهار
+                        </button>
+                      )}
                     </div>
-                    <span>سلم المكافآت</span>
-                  </h2>
-                  <div className="flex items-center gap-3 flex-wrap text-[11px]">
-                    <span className="text-blue-600"><Building2 className="w-3 h-3 inline ml-1" />{builtFloors} طابق</span>
-                    <span className="text-emerald-600"><Check className="w-3 h-3 inline ml-1" />{availableFloors} متاح</span>
-                    <span className="text-[#B8860B]"><Gift className="w-3 h-3 inline ml-1" />{floorsConsumed} مستهلك</span>
-                    {collapsedFloors > 0 && (
-                      <button onClick={scrollToFlaggedFloor} className="text-red-600 hover:text-red-500">
-                        <Flag className="w-3 h-3 inline ml-1" />{collapsedFloors} منهار
-                      </button>
-                    )}
                   </div>
-                </div>
-                
-                <div className="space-y-3">
+                  
+                  <div className="space-y-3">
                   {stats.rewards_config?.map((reward, idx) => {
                     const isAchieved = availableFloors >= reward.floors;
                     const progress = Math.min((availableFloors / reward.floors) * 100, 100);
@@ -2930,13 +2930,13 @@ export default function ReferralPage() {
                   </div>
                 </div>
               )}
+              </div>
             </div>
           </div>
         )}
       </div>
-    </div>
 
-    {stats && (
+      {stats && (
         <>
           <SocialShareModal
             isOpen={showShareModal}
@@ -3429,7 +3429,6 @@ export default function ReferralPage() {
           </div>
         </div>
       )}
-      </div>
     </div>
   );
 }
