@@ -778,31 +778,56 @@ function RealisticBuilding({
           </div>
         </div>
       ) : (
-      <div className="relative mx-auto z-10" style={{ width: '120px' }}>
-        <div className="relative mb-0.5">
-          <div className="absolute left-1/2 -translate-x-1/2 -top-6 z-10">
-            <div className="w-2 h-6 bg-gradient-to-b from-[#D4AF37] to-[#B8860B] rounded-t-full" />
+      <div className="relative mx-auto z-10" style={{ width: '180px' }}>
+        <div className="relative mb-1">
+          {/* منارة محسنة مع إضاءة قوية */}
+          <div className="absolute left-1/2 -translate-x-1/2 -top-8 z-10">
+            <div className="w-3 h-8 bg-gradient-to-b from-[#FFD700] via-[#D4AF37] to-[#B8860B] rounded-t-full shadow-[0_0_15px_rgba(212,175,55,0.8)]" />
             <div 
-              className="absolute top-0 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full bg-[#D4AF37]" 
-              style={{ marginTop: '-10px', boxShadow: '0 0 12px #D4AF37, 0 0 20px rgba(212, 175, 55, 0.5)' }}
+              className="absolute top-0 left-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-gradient-to-br from-[#FFD700] to-[#FFA500]" 
+              style={{ 
+                marginTop: '-12px', 
+                boxShadow: '0 0 20px #D4AF37, 0 0 40px rgba(212,175,55,0.8), 0 0 60px rgba(255,215,0,0.4)',
+                animation: 'pulse 2s ease-in-out infinite'
+              }}
             />
           </div>
           
-          <svg viewBox="0 0 120 36" className="w-full" style={{ marginBottom: '-2px' }}>
+          {/* سقف محسن أكبر وأكثر جاذبية */}
+          <svg viewBox="0 0 180 50" className="w-full" style={{ marginBottom: '-3px' }}>
             <defs>
               <linearGradient id="roofGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="#2563eb" />
-                <stop offset="50%" stopColor="#1d4ed8" />
+                <stop offset="0%" stopColor="#3b82f6" />
+                <stop offset="30%" stopColor="#2563eb" />
+                <stop offset="70%" stopColor="#1d4ed8" />
                 <stop offset="100%" stopColor="#1e3a5f" />
               </linearGradient>
               <linearGradient id="domeGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="#3b82f6" />
+                <stop offset="0%" stopColor="#60a5fa" />
+                <stop offset="50%" stopColor="#3b82f6" />
                 <stop offset="100%" stopColor="#1d4ed8" />
               </linearGradient>
+              <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+                <feOffset dx="0" dy="2" result="offsetblur"/>
+                <feComponentTransfer>
+                  <feFuncA type="linear" slope="0.3"/>
+                </feComponentTransfer>
+                <feMerge>
+                  <feMergeNode/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
             </defs>
-            <ellipse cx="60" cy="12" rx="22" ry="12" fill="url(#domeGradient)" stroke="#1e40af" strokeWidth="0.5"/>
-            <path d="M8 36 L60 14 L112 36 Z" fill="url(#roofGradient)" stroke="#1e40af" strokeWidth="0.5"/>
-            <rect x="8" y="34" width="104" height="3" fill="#1e3a5f" stroke="#1e40af" strokeWidth="0.3"/>
+            {/* القبة */}
+            <ellipse cx="90" cy="16" rx="32" ry="16" fill="url(#domeGradient)" stroke="#1e40af" strokeWidth="1" filter="url(#shadow)"/>
+            {/* السقف */}
+            <path d="M12 50 L90 18 L168 50 Z" fill="url(#roofGradient)" stroke="#1e40af" strokeWidth="1" filter="url(#shadow)"/>
+            {/* أساس السقف */}
+            <rect x="12" y="48" width="156" height="4" fill="#1e3a5f" stroke="#1e40af" strokeWidth="0.5" rx="2"/>
+            {/* تفاصيل السقف */}
+            <line x1="45" y1="30" x2="135" y2="30" stroke="#60a5fa" strokeWidth="0.5" opacity="0.4"/>
+            <line x1="60" y1="25" x2="120" y2="25" stroke="#60a5fa" strokeWidth="0.5" opacity="0.3"/>
           </svg>
         </div>
 
@@ -830,31 +855,41 @@ function RealisticBuilding({
                   <div 
                     onClick={() => isClickable && onFloorClick?.(floorData)}
                     className={`
-                      h-6 border-x border-b relative overflow-hidden transition-all duration-500
-                      ${isClickable ? 'cursor-pointer hover:scale-[1.03] hover:z-10' : ''}
+                      h-8 border-x-2 border-b-2 relative overflow-hidden transition-all duration-500 transform
+                      ${isClickable ? 'cursor-pointer hover:scale-[1.04] hover:z-10 hover:brightness-110' : ''}
                       ${isFlagged
-                        ? 'bg-gradient-to-l from-red-500/80 via-red-600/70 to-red-500/80 border-red-700/90 shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)]'
+                        ? 'bg-gradient-to-l from-red-500/90 via-red-600/80 to-red-500/90 border-red-800/95 shadow-[inset_0_3px_6px_rgba(0,0,0,0.4),0_2px_8px_rgba(239,68,68,0.3)]'
                         : isAtRisk
-                          ? 'bg-gradient-to-l from-amber-400/80 via-amber-500/70 to-amber-400/80 border-amber-600/90 animate-pulse shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]'
+                          ? 'bg-gradient-to-l from-amber-400/90 via-amber-500/80 to-amber-400/90 border-amber-700/95 animate-pulse shadow-[inset_0_3px_6px_rgba(0,0,0,0.3),0_2px_8px_rgba(251,191,36,0.3)]'
                           : isBuilt 
                             ? isConsumed
-                              ? 'bg-gradient-to-l from-slate-500/90 via-slate-600/80 to-slate-500/90 border-slate-700/90 shadow-[inset_0_1px_3px_rgba(0,0,0,0.2)]'
+                              ? 'bg-gradient-to-l from-slate-500/95 via-slate-600/85 to-slate-500/95 border-slate-800/95 shadow-[inset_0_2px_4px_rgba(0,0,0,0.3),0_1px_4px_rgba(0,0,0,0.2)]'
                               : completionGlow
-                                ? 'bg-gradient-to-l from-[#FFE4B5] via-[#FFD700]/60 to-[#FFE4B5] border-[#D4AF37]/90 shadow-[0_0_12px_rgba(212,175,55,0.6),inset_0_2px_6px_rgba(255,215,0,0.3)]'
-                                : 'bg-gradient-to-l from-[#F5E6C8] via-[#ECD9A9] to-[#F5E6C8] border-[#8B4513]/90 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),inset_0_-2px_4px_rgba(0,0,0,0.1)]'
+                                ? 'bg-gradient-to-l from-[#FFE4B5] via-[#FFD700]/70 to-[#FFE4B5] border-[#D4AF37]/95 shadow-[0_0_20px_rgba(212,175,55,0.8),inset_0_3px_8px_rgba(255,215,0,0.5),0_2px_10px_rgba(255,215,0,0.4)]'
+                                : 'bg-gradient-to-l from-[#F8EDD0] via-[#F5E6C8] to-[#F8EDD0] border-[#8B4513]/95 shadow-[inset_0_3px_6px_rgba(255,255,255,0.3),inset_0_-3px_6px_rgba(0,0,0,0.15),0_2px_6px_rgba(0,0,0,0.1)]'
                             : isNext
-                              ? 'border-2 border-emerald-400/90 bg-emerald-500/20 shadow-[0_0_8px_rgba(16,185,129,0.4),inset_0_0_6px_rgba(16,185,129,0.2)]'
-                              : 'bg-slate-200/15 border-slate-400/25 shadow-[inset_0_1px_2px_rgba(0,0,0,0.1)]'
+                              ? 'border-3 border-emerald-400/95 bg-emerald-500/25 shadow-[0_0_12px_rgba(16,185,129,0.6),inset_0_0_10px_rgba(16,185,129,0.3),0_3px_10px_rgba(16,185,129,0.3)]'
+                              : 'bg-slate-200/20 border-slate-400/30 shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]'
                       }
-                      ${isHighlighted && isFlagged ? 'animate-shake animate-collapse ring-2 ring-red-600 ring-offset-2 shadow-[0_0_20px_rgba(239,68,68,0.8)]' : ''}
+                      ${isHighlighted && isFlagged ? 'animate-shake animate-collapse ring-2 ring-red-600 ring-offset-3 shadow-[0_0_30px_rgba(239,68,68,1)]' : ''}
                     `}
                     style={
                       completionGlow 
-                        ? { boxShadow: '0 0 16px rgba(212, 175, 55, 0.6), inset 0 2px 8px rgba(255, 215, 0, 0.4)', animation: 'completionPulse 2s ease-in-out infinite' } 
+                        ? { 
+                            boxShadow: '0 0 24px rgba(212, 175, 55, 0.8), inset 0 3px 10px rgba(255, 215, 0, 0.5), 0 4px 15px rgba(255, 215, 0, 0.5)', 
+                            animation: 'completionPulse 2s ease-in-out infinite',
+                            transform: 'perspective(500px) rotateX(1deg)'
+                          } 
                         : isNext 
-                          ? { boxShadow: '0 0 16px rgba(16, 185, 129, 0.6), inset 0 0 10px rgba(16, 185, 129, 0.3)', animation: 'glow 1.5s ease-in-out infinite' } 
+                          ? { 
+                              boxShadow: '0 0 20px rgba(16, 185, 129, 0.8), inset 0 0 12px rgba(16, 185, 129, 0.4), 0 4px 15px rgba(16, 185, 129, 0.4)', 
+                              animation: 'glow 1.5s ease-in-out infinite' 
+                            } 
                           : isBuilt && !isFlagged && !isConsumed
-                            ? { filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))' }
+                            ? { 
+                                filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.15))',
+                                transform: 'perspective(300px) rotateX(0.5deg)'
+                              }
                             : undefined
                     }
                   >
@@ -886,7 +921,7 @@ function RealisticBuilding({
                       </>
                     )}
                     
-                    <div className="absolute inset-0 flex items-center justify-around px-0.5">
+                    <div className="absolute inset-0 flex items-center justify-around px-1">
                       {[1, 2, 3].map((windowNum) => {
                         const hasDamagedAbove = getFlaggedFloorAbove(floorNum);
                         const windowLit = isComplete && showCelebration && isBuilt && !isFlagged && !isConsumed;
@@ -894,26 +929,39 @@ function RealisticBuilding({
                           <div 
                             key={windowNum}
                             className={`
-                              w-3 h-3.5 rounded-t-md border transition-all duration-500 relative
+                              w-4 h-5 rounded-t-lg border-2 transition-all duration-500 relative
                               ${isFlagged
-                                ? 'bg-gradient-to-b from-red-300/40 to-red-400/30 border-red-700/80 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]'
+                                ? 'bg-gradient-to-b from-red-300/50 to-red-400/40 border-red-800/90 shadow-[inset_0_3px_6px_rgba(0,0,0,0.5),0_1px_3px_rgba(0,0,0,0.3)]'
                                 : hasDamagedAbove && isBuilt && !isConsumed
-                                  ? 'bg-gradient-to-b from-amber-400/90 to-amber-600/80 border-amber-700/90 animate-pulse shadow-[0_0_6px_rgba(251,191,36,0.6),inset_0_1px_2px_rgba(255,255,255,0.3)]'
+                                  ? 'bg-gradient-to-b from-amber-400/95 to-amber-600/85 border-amber-800/95 animate-pulse shadow-[0_0_10px_rgba(251,191,36,0.8),inset_0_2px_4px_rgba(255,255,255,0.4),0_2px_6px_rgba(251,191,36,0.5)]'
                                   : isBuilt 
                                     ? isConsumed
-                                      ? 'bg-gradient-to-b from-slate-400/80 to-slate-600/70 border-slate-700/90 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]'
+                                      ? 'bg-gradient-to-b from-slate-400/85 to-slate-600/75 border-slate-800/95 shadow-[inset_0_2px_5px_rgba(0,0,0,0.4),0_1px_3px_rgba(0,0,0,0.2)]'
                                       : windowLit
-                                        ? 'bg-gradient-to-b from-[#FFD700] via-[#FFA500] to-[#FF8C00] border-[#D4AF37]/90 shadow-[0_0_12px_rgba(255,215,0,0.9),0_0_20px_rgba(255,165,0,0.6),inset_0_2px_4px_rgba(255,255,255,0.4)]'
-                                        : 'bg-gradient-to-b from-[#A8D8F0] via-[#87CEEB] to-[#4682B4] border-[#8B4513]/90 shadow-[inset_0_2px_4px_rgba(255,255,255,0.4),inset_0_-1px_2px_rgba(0,0,0,0.2)]'
+                                        ? 'bg-gradient-to-b from-[#FFD700] via-[#FFA500] to-[#FF8C00] border-[#D4AF37]/95 shadow-[0_0_18px_rgba(255,215,0,1),0_0_30px_rgba(255,165,0,0.8),inset_0_3px_6px_rgba(255,255,255,0.5),0_3px_10px_rgba(255,215,0,0.6)]'
+                                        : 'bg-gradient-to-b from-[#B8DDF0] via-[#A8D8F0] to-[#5A9BC8] border-[#8B4513]/95 shadow-[inset_0_3px_6px_rgba(255,255,255,0.5),inset_0_-2px_4px_rgba(0,0,0,0.25),0_1px_4px_rgba(0,0,0,0.15)]'
                                     : isNext
-                                      ? 'bg-emerald-400/30 border-emerald-500/70 shadow-[0_0_4px_rgba(16,185,129,0.5)]'
-                                      : 'bg-white/8 border-white/15 shadow-[inset_0_1px_2px_rgba(0,0,0,0.1)]'
+                                      ? 'bg-emerald-400/35 border-emerald-500/80 shadow-[0_0_6px_rgba(16,185,129,0.6),0_1px_4px_rgba(16,185,129,0.3)]'
+                                      : 'bg-white/10 border-white/20 shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]'
                               }
                             `}
-                            style={windowLit ? { animation: `windowGlow ${1.5 + (windowNum * 0.3)}s ease-in-out infinite` } : undefined}
+                            style={
+                              windowLit 
+                                ? { 
+                                    animation: `windowGlow ${1.5 + (windowNum * 0.3)}s ease-in-out infinite`,
+                                    transform: 'perspective(200px) rotateX(2deg)'
+                                  } 
+                                : isBuilt && !isFlagged && !isConsumed
+                                  ? { transform: 'perspective(200px) rotateX(1deg)' }
+                                  : undefined
+                            }
                           >
                             {!isFlagged && isBuilt && !isConsumed && !windowLit && (
-                              <div className="absolute top-0.5 left-0.5 w-1 h-1 bg-white/60 rounded-full" />
+                              <div className="absolute top-1 left-1 w-1.5 h-1.5 bg-white/70 rounded-full shadow-[0_0_3px_rgba(255,255,255,0.8)]" />
+                            )}
+                            {/* إطار النافذة */}
+                            {isBuilt && !isConsumed && (
+                              <div className="absolute inset-0 border-2 border-black/10 rounded-t-lg pointer-events-none" />
                             )}
                           </div>
                         );
@@ -921,44 +969,44 @@ function RealisticBuilding({
                     </div>
                     
                     <div className={`
-                      absolute right-0.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full flex items-center justify-center text-[6px] font-bold
+                      absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-black border-2 transition-all duration-300
                       ${isFlagged
-                        ? 'bg-red-600 text-white'
+                        ? 'bg-gradient-to-br from-red-600 to-red-700 text-white border-red-900 shadow-[0_0_8px_rgba(239,68,68,0.8),inset_0_1px_3px_rgba(0,0,0,0.3)]'
                         : isBuilt 
                           ? isConsumed
-                            ? 'bg-slate-500 text-white'
-                            : 'bg-[#D4AF37] text-white'
+                            ? 'bg-gradient-to-br from-slate-500 to-slate-600 text-white border-slate-800 shadow-[0_0_4px_rgba(0,0,0,0.3),inset_0_1px_2px_rgba(0,0,0,0.2)]'
+                            : 'bg-gradient-to-br from-[#D4AF37] to-[#B8860B] text-[#003366] border-[#8B4513] shadow-[0_0_8px_rgba(212,175,55,0.6),inset_0_1px_3px_rgba(255,255,255,0.4),0_2px_6px_rgba(0,0,0,0.2)]'
                           : isNext
-                            ? 'bg-emerald-500 text-white'
-                            : 'bg-white/30 text-white/70'
+                            ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white border-emerald-800 shadow-[0_0_10px_rgba(16,185,129,1),0_0_20px_rgba(16,185,129,0.6),inset_0_1px_3px_rgba(255,255,255,0.3)]'
+                            : 'bg-white/20 text-slate-400 border-slate-500/30 shadow-[inset_0_1px_2px_rgba(0,0,0,0.1)]'
                       }
                     `}
-                    style={isNext ? { boxShadow: '0 0 6px rgba(16, 185, 129, 0.8)' } : undefined}
+                    style={isNext ? { animation: 'pulse 1.5s ease-in-out infinite' } : undefined}
                     >
                       {floorNum}
                     </div>
 
                     {isFlagged && (
-                      <div className="absolute left-0.5 top-1/2 -translate-y-1/2">
-                        <X className="w-2.5 h-2.5 text-red-700" />
+                      <div className="absolute left-1 top-1/2 -translate-y-1/2 bg-red-600/20 rounded-full p-0.5 border border-red-700/50">
+                        <X className="w-3.5 h-3.5 text-red-700" strokeWidth={3} />
                       </div>
                     )}
                     
                     {isBuilt && !isConsumed && !isFlagged && (
-                      <div className="absolute left-0.5 top-1/2 -translate-y-1/2">
-                        <User className="w-2.5 h-2.5 text-[#003366]" />
+                      <div className="absolute left-1 top-1/2 -translate-y-1/2 bg-[#D4AF37]/20 rounded-full p-0.5 border border-[#8B4513]/30">
+                        <User className="w-3.5 h-3.5 text-[#003366]" strokeWidth={2.5} />
                       </div>
                     )}
                     
                     {isConsumed && (
-                      <div className="absolute left-0.5 top-1/2 -translate-y-1/2">
-                        <Check className="w-2.5 h-2.5 text-emerald-600" />
+                      <div className="absolute left-1 top-1/2 -translate-y-1/2 bg-emerald-500/20 rounded-full p-0.5 border border-emerald-600/50">
+                        <Check className="w-3.5 h-3.5 text-emerald-700" strokeWidth={3} />
                       </div>
                     )}
                     
                     {isNext && (
-                      <div className="absolute left-0.5 top-1/2 -translate-y-1/2">
-                        <Sparkles className="w-2.5 h-2.5 text-emerald-400" />
+                      <div className="absolute left-1 top-1/2 -translate-y-1/2 bg-emerald-400/30 rounded-full p-0.5 border border-emerald-500/60 animate-pulse">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-500" strokeWidth={2.5} />
                       </div>
                     )}
                   </div>
@@ -969,15 +1017,32 @@ function RealisticBuilding({
             })}
         </div>
         
-        <div className="h-10 bg-gradient-to-b from-[#654321] to-[#3d2e22] border border-[#2d2117] rounded-b-lg flex items-center justify-center">
-          <div className="w-6 h-8 bg-gradient-to-b from-[#8B4513] to-[#654321] rounded-t-lg border border-[#2d2117] relative">
-            <div className="absolute top-1.5 right-0.5 w-1 h-1 rounded-full bg-[#D4AF37]" />
+        {/* أساس المبنى محسن */}
+        <div className="h-12 bg-gradient-to-b from-[#654321] via-[#4a3218] to-[#3d2e22] border-2 border-[#2d2117] rounded-b-xl flex items-center justify-center shadow-[0_4px_12px_rgba(0,0,0,0.3),inset_0_2px_4px_rgba(0,0,0,0.2)]">
+          {/* الباب الرئيسي */}
+          <div className="w-10 h-12 bg-gradient-to-b from-[#8B4513] via-[#704214] to-[#654321] rounded-t-lg border-2 border-[#2d2117] relative shadow-[inset_0_2px_6px_rgba(0,0,0,0.4),0_2px_8px_rgba(0,0,0,0.3)]">
+            {/* مقبض الباب */}
+            <div className="absolute top-1/2 right-1.5 w-1.5 h-1.5 rounded-full bg-[#D4AF37] shadow-[0_0_4px_rgba(212,175,55,0.8)]" />
+            {/* لوحة الباب */}
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 w-6 h-1 bg-[#2d2117]/50 rounded" />
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-[#2d2117]/30 rounded" />
+            {/* إطار الباب */}
+            <div className="absolute inset-0 border-2 border-[#1a1008]/50 rounded-t-lg pointer-events-none" />
           </div>
         </div>
         
-        <div className="flex justify-center gap-3 mt-0.5">
+        {/* السلالم */}
+        <div className="flex justify-center gap-2 mt-1">
           {[1, 2, 3].map((step) => (
-            <div key={step} className="w-5 h-1 bg-slate-500 rounded-b" style={{ marginTop: `${step}px` }} />
+            <div 
+              key={step} 
+              className="h-1 bg-gradient-to-b from-slate-400 to-slate-600 rounded-b shadow-[0_1px_3px_rgba(0,0,0,0.3)]" 
+              style={{ 
+                width: `${16 + step * 4}px`, 
+                marginTop: `${step * 0.5}px`,
+                boxShadow: `0 ${step * 0.5}px ${step * 1}px rgba(0,0,0,0.2)`
+              }} 
+            />
           ))}
         </div>
         

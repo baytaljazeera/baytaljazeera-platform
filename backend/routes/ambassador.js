@@ -1896,11 +1896,10 @@ async function analyzeWithdrawalRequest(userId, amountCents) {
   };
 }
 
-// Middleware للأدوات التطويرية - يسمح لأي مستخدم مسجل فقط في بيئة التطوير
+// Middleware للأدوات التطويرية - متاح في Production للاختبار قبل الإطلاق (سيتم إزالتها لاحقاً)
 const requireDevEnvironment = (req, res, next) => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(403).json({ error: "غير متاح في الإنتاج" });
-  }
+  // مؤقتاً: متاح في جميع البيئات للاختبار قبل الإطلاق
+  // TODO: إزالة هذه الأدوات بعد الانتهاء من الاختبار
   next();
 };
 
