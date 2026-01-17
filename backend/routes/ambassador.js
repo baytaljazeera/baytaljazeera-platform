@@ -587,6 +587,7 @@ router.get("/admin/stats", authMiddleware, requireRoles('super_admin', 'support_
     SELECT 
       (SELECT COUNT(DISTINCT u.id) FROM users u WHERE u.ambassador_floors > 0 OR u.referral_count > 0)::int as active_ambassadors,
       (SELECT COUNT(*) FROM ambassador_requests WHERE status IN ('pending', 'under_review'))::int as pending_requests,
+      (SELECT COUNT(*) FROM ambassador_withdrawal_requests WHERE status = 'pending')::int as pending_withdrawal_requests,
       (SELECT COUNT(*) FROM ambassador_consumptions WHERE consumed_at::date = CURRENT_DATE)::int as consumptions_today,
       (SELECT COUNT(*) FROM referrals WHERE status = 'completed')::int as total_referrals,
       (SELECT COALESCE(SUM(floors_consumed), 0) FROM ambassador_consumptions)::int as total_floors_consumed
@@ -603,10 +604,13 @@ router.get("/admin/stats", authMiddleware, requireRoles('super_admin', 'support_
     LIMIT 10
   `);
   
-  res.json({
+  const response = {
     stats: statsResult.rows[0],
     top_ambassadors: topAmbassadors.rows
-  });
+  };
+  
+  console.log('📊 Sending ambassador stats response:', response);
+  res.json(response);
 }));
 
 router.get("/admin/requests", authMiddleware, requireRoles('super_admin', 'support_admin'), asyncHandler(async (req, res) => {
@@ -847,6 +851,7 @@ router.get("/admin/stats-overview", authMiddleware, requireRoles('super_admin', 
       (SELECT COUNT(*) FROM referrals)::int as total_referrals,
       (SELECT COUNT(*) FROM ambassador_consumptions)::int as total_rewards_given,
       (SELECT COUNT(*) FROM ambassador_requests WHERE status IN ('pending', 'under_review'))::int as pending_requests,
+      (SELECT COUNT(*) FROM ambassador_withdrawal_requests WHERE status = 'pending')::int as pending_withdrawal_requests,
       (SELECT COUNT(*) FROM users WHERE ambassador_floors > 0)::int as active_buildings
   `);
   res.json(result.rows[0]);
@@ -1878,11 +1883,15 @@ router.post('/request-building', combinedAuthMiddleware, requireAmbassadorEnable
 // Admin: Get withdrawal requests
 router.get('/admin/financial-requests', combinedAuthMiddleware, requireRoles(['super_admin', 'ambassador_admin', 'finance_admin']), asyncHandler(async (req, res) => {
   const { status = 'all', page = 1, limit = 20 } = req.query;
-  const offset = (page - 1) * limit;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  
+  console.log(`📋 Fetching withdrawal requests: status=${status}, page=${page}, limit=${limit}, offset=${offset}`);
   
   let statusFilter = '';
+  const params = [parseInt(limit), parseInt(offset)];
   if (status !== 'all') {
-    statusFilter = `WHERE wr.status = '${status}'`;
+    statusFilter = `WHERE wr.status = $3`;
+    params.push(status);
   }
   
   const requests = await db.query(`
@@ -1901,16 +1910,19 @@ router.get('/admin/financial-requests', combinedAuthMiddleware, requireRoles(['s
     ${statusFilter}
     ORDER BY wr.created_at DESC
     LIMIT $1 OFFSET $2
-  `, [limit, offset]);
+  `, params);
   
+  const countParams = status !== 'all' ? [status] : [];
   const countResult = await db.query(`
-    SELECT COUNT(*) FROM ambassador_withdrawal_requests wr ${statusFilter}
-  `);
+    SELECT COUNT(*) FROM ambassador_withdrawal_requests ${status !== 'all' ? 'WHERE status = $1' : ''}
+  `, countParams);
   
   // Get pending count for badge
   const pendingCount = await db.query(`
     SELECT COUNT(*) FROM ambassador_withdrawal_requests WHERE status = 'pending'
   `);
+  
+  console.log(`✅ Found ${requests.rows.length} withdrawal requests (total: ${countResult.rows[0].count}, pending: ${pendingCount.rows[0].count})`);
   
   res.json({
     requests: requests.rows,
@@ -2163,6 +2175,25 @@ router.post("/dev/add-test-referrals", combinedAuthMiddleware, requireDevEnviron
   const timestamp = Date.now();
   const added = [];
   
+  // قائمة أسماء عربية وهمية واقعية
+  const fakeNames = [
+    'أحمد محمد العلي', 'فاطمة سعيد الأحمد', 'خالد عبدالله النور', 'سارة علي المالكي',
+    'محمد حسن الشمري', 'نورا عبدالرحمن الدوسري', 'عبدالله خالد القحطاني', 'ليلى فهد العتيبي',
+    'يوسف سعد الزهراني', 'مريم إبراهيم الحربي', 'عمر محمد المطيري', 'هند خالد الغامدي',
+    'طارق علي الشهراني', 'ريم فهد القحطاني', 'سعد عبدالله العتيبي', 'لينا محمد الدوسري',
+    'بدر حسن المالكي', 'نور خالد الشمري', 'علي أحمد النور', 'سلمى فهد الأحمد',
+    'حسام سعيد العلي', 'دانة محمد القحطاني', 'وليد عبدالرحمن المطيري', 'جنى علي الحربي',
+    'مشعل خالد الزهراني', 'تالا فهد الغامدي', 'راشد سعد الشهراني', 'زينب محمد العتيبي',
+    'فيصل عبدالله الدوسري', 'لينا حسن المالكي', 'بندر علي الشمري', 'ريماز خالد النور',
+    'عبدالرحمن فهد الأحمد', 'مها سعيد العلي', 'نواف محمد القحطاني', 'سارة عبدالله المطيري',
+    'ماجد خالد الحربي', 'نورا فهد الزهراني', 'عبدالعزيز علي الغامدي', 'ليلى سعد الشهراني',
+    'سامي محمد العتيبي', 'هند خالد الدوسري', 'يوسف فهد المالكي', 'مريم علي الشمري',
+    'خالد سعيد النور', 'فاطمة عبدالرحمن الأحمد', 'أحمد محمد العلي', 'سارة خالد القحطاني',
+    'محمد فهد المطيري', 'نورا علي الحربي', 'عبدالله سعد الزهراني', 'ليلى محمد الغامدي',
+    'طارق خالد الشهراني', 'ريم فهد العتيبي', 'سعد علي الدوسري', 'لينا سعيد المالكي',
+    'بدر عبدالرحمن الشمري', 'نور محمد النور', 'علي خالد الأحمد', 'سلمى فهد العلي'
+  ];
+  
   // إعداد البيانات للـ Batch Insert للمستخدمين
   const userPlaceholders = [];
   const userParams = [];
@@ -2170,7 +2201,8 @@ router.post("/dev/add-test-referrals", combinedAuthMiddleware, requireDevEnviron
   for (let i = 0; i < count; i++) {
     const paramIndex = i * 2 + 1;
     userPlaceholders.push(`($${paramIndex}, $${paramIndex + 1}, 'test_hash_not_usable')`);
-    userParams.push(`مستخدم اختباري ${i + 1}`, `test_ref_${timestamp}_${i}@test.com`);
+    const randomName = fakeNames[Math.floor(Math.random() * fakeNames.length)];
+    userParams.push(randomName, `test_ref_${timestamp}_${i}@test.com`);
   }
   
   // Batch Insert للمستخدمين - أسرع بكثير من الحلقة المتسلسلة
@@ -2317,6 +2349,78 @@ router.delete("/dev/clear-test-referrals", combinedAuthMiddleware, asyncHandler(
     deleted_users: deletedUsers.rowCount,
     current_count: newCount,
     current_floors: newFloors
+  });
+}));
+
+// [DEV ONLY] حذف جميع طلبات السحب - للتجربة فقط
+router.delete("/dev/clear-withdrawal-requests", combinedAuthMiddleware, asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  
+  console.log(`🗑️ Clearing all withdrawal requests for user ${userId}...`);
+  
+  // التحقق من وجود طلبات قبل الحذف
+  const beforeCount = await db.query(
+    `SELECT COUNT(*) as count FROM ambassador_withdrawal_requests WHERE user_id = $1`,
+    [userId]
+  );
+  console.log(`📊 Found ${beforeCount.rows[0].count} withdrawal requests before deletion`);
+  
+  // حذف جميع طلبات السحب للمستخدم الحالي (بأي status)
+  const deleted = await db.query(
+    `DELETE FROM ambassador_withdrawal_requests 
+     WHERE user_id = $1
+     RETURNING id, status, amount_cents`,
+    [userId]
+  );
+  
+  const deletedCount = deleted.rowCount || 0;
+  console.log(`✅ Deleted ${deletedCount} withdrawal requests:`, deleted.rows.map(r => ({ id: r.id, status: r.status, amount: r.amount_cents })));
+  
+  // تحديث المحفظة (إعادة الرصيد المحجوز)
+  const wallet = await db.query(`SELECT * FROM ambassador_wallet WHERE user_id = $1`, [userId]);
+  if (wallet.rows.length > 0) {
+    // حساب الرصيد من جديد بناءً على الطوابق المكتملة
+    const allFloorsResult = await db.query(
+      `SELECT COUNT(*) as count FROM referrals WHERE referrer_id = $1 AND status IN ('completed', 'flagged_fraud')`,
+      [userId]
+    );
+    const currentFloors = parseInt(allFloorsResult.rows[0]?.count || 0);
+    
+    const flaggedResult = await db.query(
+      `SELECT COUNT(*) as count FROM referrals WHERE referrer_id = $1 AND status = 'flagged_fraud'`,
+      [userId]
+    );
+    const flaggedFloors = parseInt(flaggedResult.rows[0]?.count || 0);
+    
+    const consumedResult = await db.query(
+      `SELECT COALESCE(SUM(floors_consumed), 0) as total FROM ambassador_consumptions WHERE user_id = $1`,
+      [userId]
+    );
+    const floorsConsumed = Math.min(parseInt(consumedResult.rows[0]?.total || 0), currentFloors);
+    
+    const settings = await db.query(`SELECT buildings_per_dollar FROM ambassador_settings WHERE id = 1`);
+    const buildingsPerDollar = settings.rows[0]?.buildings_per_dollar || 5;
+    
+    const healthyFloors = Math.max(0, currentFloors - flaggedFloors);
+    const availableFloors = Math.max(0, healthyFloors - floorsConsumed);
+    const completedBuildings = Math.floor(availableFloors / 20);
+    const newBalanceCents = Math.floor((completedBuildings / buildingsPerDollar) * 100);
+    
+    await db.query(`
+      UPDATE ambassador_wallet 
+      SET balance_cents = $1, updated_at = NOW()
+      WHERE user_id = $2
+    `, [newBalanceCents, userId]);
+    
+    console.log(`✅ Wallet balance updated: ${newBalanceCents} cents`);
+  }
+  
+  console.log(`✅ Cleared ${deletedCount} withdrawal requests`);
+  
+  res.json({ 
+    success: true, 
+    message: `تم حذف ${deletedCount} طلب سحب`,
+    deleted_count: deletedCount
   });
 }));
 

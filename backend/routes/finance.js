@@ -182,6 +182,15 @@ router.get("/stats", authMiddleware, requireRoles('finance_admin'), asyncHandler
   const pendingRefundsCount = parseInt(pendingRefundsResult.rows[0].count);
   const pendingRefundsAmount = parseFloat(pendingRefundsResult.rows[0].total) || 0;
 
+  // طلبات السحب من السفراء (في انتظار المراجعة المالية)
+  const pendingWithdrawalRequestsResult = await db.query(`
+    SELECT COUNT(*) as count, COALESCE(SUM(amount_cents), 0) as total_cents 
+    FROM ambassador_withdrawal_requests 
+    WHERE status = 'finance_review'
+  `);
+  const pendingWithdrawalRequestsCount = parseInt(pendingWithdrawalRequestsResult.rows[0].count);
+  const pendingWithdrawalRequestsAmount = parseFloat(pendingWithdrawalRequestsResult.rows[0].total_cents || 0) / 100;
+
   const planDistributionResult = await db.query(`
     SELECT p.name_ar, p.color, COUNT(up.id) as subscribers
     FROM plans p
@@ -219,7 +228,9 @@ router.get("/stats", authMiddleware, requireRoles('finance_admin'), asyncHandler
       monthly: monthlyRevenue,
       refundsTotal: totalRefunds,
       pendingRefunds: pendingRefundsAmount,
-      pendingRefundsCount
+      pendingRefundsCount,
+      pendingWithdrawalRequests: pendingWithdrawalRequestsAmount,
+      pendingWithdrawalRequestsCount
     },
     planDistribution: planDistributionResult.rows,
     monthlyTrend: monthlyTrendResult.rows

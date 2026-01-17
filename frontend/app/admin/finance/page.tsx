@@ -45,6 +45,8 @@ interface FinanceStats {
     refundsTotal: number;
     pendingRefunds: number;
     pendingRefundsCount: number;
+    pendingWithdrawalRequests?: number;
+    pendingWithdrawalRequestsCount?: number;
   };
   planDistribution: Array<{
     name_ar: string;
@@ -102,10 +104,11 @@ export default function FinancePage() {
   const [refunds, setRefunds] = useState<Refund[]>([]);
   const [allRefunds, setAllRefunds] = useState<Refund[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "subscribers" | "refunds" | "payments" | "invoices" | "messages">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "subscribers" | "refunds" | "payments" | "invoices" | "messages" | "withdrawals">("overview");
   const [payments, setPayments] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [paymentStats, setPaymentStats] = useState<any>(null);
+  const [withdrawalRequests, setWithdrawalRequests] = useState<any[]>([]);
   const [subscriberFilter, setSubscriberFilter] = useState("all");
   const [refundFilter, setRefundFilter] = useState("pending");
   const [searchQuery, setSearchQuery] = useState("");
@@ -163,7 +166,53 @@ export default function FinancePage() {
     fetchPayments();
     fetchInvoices();
     fetchPaymentStats();
+    fetchWithdrawalRequests();
   }, []);
+
+  async function fetchWithdrawalRequests() {
+    try {
+      const res = await fetch("/api/ambassador/admin/financial-requests?status=finance_review", { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setWithdrawalRequests(data.requests || []);
+      }
+    } catch (err) {
+      console.error("Error fetching withdrawal requests:", err);
+    }
+  }
+
+  async function handleWithdrawalComplete(requestId: string) {
+    const paymentRef = prompt('رقم المرجع/التحويل:') || '';
+    if (!paymentRef) {
+      alert('يجب إدخال رقم المرجع');
+      return;
+    }
+    
+    const notes = prompt('ملاحظات إضافية (اختياري):') || '';
+    
+    try {
+      const res = await fetch(`/api/ambassador/admin/financial-requests/${requestId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ payment_reference: paymentRef, notes })
+      });
+      if (res.ok) {
+        setSuccessModal({ isOpen: true, message: '✅ تم إتمام التحويل بنجاح', type: 'success' });
+        setTimeout(() => setSuccessModal({ isOpen: false, message: '', type: 'success' }), 3000);
+        await fetchWithdrawalRequests();
+        await fetchStats();
+      } else {
+        const error = await res.json().catch(() => ({}));
+        setSuccessModal({ isOpen: true, message: `❌ ${error.error || 'حدث خطأ'}`, type: 'error' });
+        setTimeout(() => setSuccessModal({ isOpen: false, message: '', type: 'success' }), 3000);
+      }
+    } catch (err) {
+      console.error(err);
+      setSuccessModal({ isOpen: true, message: '❌ حدث خطأ أثناء إتمام التحويل', type: 'error' });
+      setTimeout(() => setSuccessModal({ isOpen: false, message: '', type: 'success' }), 3000);
+    }
+  }
 
   async function fetchAllRefunds() {
     try {
@@ -530,12 +579,15 @@ export default function FinancePage() {
           const pendingCount = allRefunds.filter(r => r.status === 'pending').length;
           const awaitingPayoutCount = allRefunds.filter(r => r.status === 'approved' && !r.payout_confirmed_at).length;
           
+          const withdrawalPendingCount = stats?.revenue?.pendingWithdrawalRequestsCount || 0;
+          
           return [
             { id: "overview", label: "نظرة عامة", icon: TrendingUp },
             { id: "payments", label: "المدفوعات", icon: CreditCard },
             { id: "invoices", label: "الفواتير", icon: PiggyBank },
             { id: "subscribers", label: "المشتركون", icon: Users },
             { id: "refunds", label: "الاستردادات", icon: Wallet, pendingCount, awaitingPayoutCount },
+            { id: "withdrawals", label: "طلبات سحب السفراء", icon: DollarSign, pendingCount: withdrawalPendingCount },
             { id: "messages", label: "مراسلات المالية", icon: MessageSquare },
           ].map((tab) => (
             <button
@@ -561,6 +613,11 @@ export default function FinancePage() {
                       {awaitingPayoutCount}
                     </span>
                   )}
+                </span>
+              )}
+              {tab.id === 'withdrawals' && tab.pendingCount > 0 && (
+                <span className="bg-amber-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                  {tab.pendingCount}
                 </span>
               )}
             </button>
@@ -620,7 +677,7 @@ export default function FinancePage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <StatCard
               icon={DollarSign}
               label="إجمالي الدخل"
@@ -646,6 +703,13 @@ export default function FinancePage() {
               value={stats.revenue.pendingRefundsCount}
               color="yellow"
               subtext={formatCurrency(stats.revenue.pendingRefunds)}
+            />
+            <StatCard
+              icon={Wallet}
+              label="طلبات سحب سفراء معلقة"
+              value={stats.revenue.pendingWithdrawalRequestsCount || 0}
+              color="orange"
+              subtext={formatCurrency(stats.revenue.pendingWithdrawalRequests || 0)}
             />
           </div>
 
@@ -1140,6 +1204,60 @@ export default function FinancePage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "withdrawals" && (
+        <div className="bg-white rounded-2xl border border-gray-200">
+          <div className="p-4 border-b border-gray-200">
+            <h2 className="text-lg font-bold text-[#002845]">طلبات سحب السفراء</h2>
+            <p className="text-sm text-gray-500 mt-1">طلبات السحب التي تحتاج إلى مراجعة مالية</p>
+          </div>
+          
+          {withdrawalRequests.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">لا توجد طلبات سحب حالياً</div>
+          ) : (
+            <div className="divide-y divide-gray-200">
+              {withdrawalRequests.map((request) => (
+                <div key={request.id} className="p-4 hover:bg-gray-50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold">
+                        ${((request.amount_cents || 0) / 100).toFixed(2)}
+                      </div>
+                      <div>
+                        <p className="font-medium text-[#002845]">{request.user_name || 'مستخدم'}</p>
+                        <p className="text-sm text-gray-500">{request.user_email}</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {new Date(request.created_at).toLocaleDateString('ar-SA', { 
+                            year: 'numeric', 
+                            month: 'long', 
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      <span className="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-700 border border-blue-300">
+                        💰 في انتظار المالية
+                      </span>
+                      
+                      <button 
+                        onClick={() => handleWithdrawalComplete(request.id)} 
+                        className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:shadow-lg transition font-medium flex items-center gap-2"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        إتمام التحويل
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

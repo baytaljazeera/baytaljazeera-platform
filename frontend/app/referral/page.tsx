@@ -2257,6 +2257,43 @@ export default function ReferralPage() {
     }
   };
 
+  // أدوات اختبارية - حذف طلبات السحب
+  const clearWithdrawalRequests = async () => {
+    if (!confirm('هل أنت متأكد من حذف جميع طلبات السحب؟ سيتم إعادة الرصيد.')) {
+      return;
+    }
+    
+    setTestToolsLoading(true);
+    console.log('🗑️ Deleting withdrawal requests...');
+    try {
+      const res = await fetch('/api/ambassador/dev/clear-withdrawal-requests', {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      
+      const data = await res.json();
+      console.log('📋 Delete response:', data);
+      
+      if (res.ok) {
+        setSuccessMessage(`✅ ${data.message || 'تم حذف جميع طلبات السحب بنجاح!'}`);
+        setTimeout(() => setSuccessMessage(null), 5000);
+        
+        // إعادة جلب البيانات بعد الحذف
+        console.log('🔄 Refreshing stats and wallet data...');
+        await Promise.all([fetchStats(), fetchWalletData()]);
+        console.log('✅ Data refreshed');
+      } else {
+        console.error('❌ Failed to delete:', res.status, data);
+        setError(data.error || 'حدث خطأ أثناء حذف طلبات السحب');
+      }
+    } catch (err) {
+      console.error('❌ Error deleting withdrawal requests:', err);
+      setError('حدث خطأ أثناء حذف طلبات السحب');
+    } finally {
+      setTestToolsLoading(false);
+    }
+  };
+
   if (!isHydrated || loading || systemEnabled === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#F5F1E8] via-[#FBF9F4] to-[#F5F1E8]">
@@ -2714,7 +2751,7 @@ export default function ReferralPage() {
                         </button>
                       </div>
                       
-                      <div className="mt-3 pt-3 border-t border-amber-200">
+                      <div className="mt-3 pt-3 border-t border-amber-200 space-y-2">
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => addTestReferrals(maxFloors * 5)}
@@ -2745,6 +2782,20 @@ export default function ReferralPage() {
                             )}
                           </button>
                         </div>
+                        <button
+                          onClick={clearWithdrawalRequests}
+                          disabled={testToolsLoading}
+                          className="w-full px-3 py-2.5 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                        >
+                          {testToolsLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <Trash2 className="w-3.5 h-3.5" />
+                              حذف طلبات السحب
+                            </>
+                          )}
+                        </button>
                       </div>
                     </div>
                     

@@ -14,6 +14,7 @@ type AmbassadorStats = {
   total_referrals: number;
   total_rewards_given: number;
   pending_requests: number;
+  pending_withdrawal_requests?: number;
   active_buildings: number;
 };
 
@@ -71,7 +72,7 @@ type AmbassadorSettings = {
   min_days_active: number;
 };
 
-type TabType = 'overview' | 'requests' | 'buildings' | 'settings';
+type TabType = 'overview' | 'requests' | 'withdrawals' | 'buildings' | 'settings';
 
 type AmbassadorWithBuildings = {
   id: string;
@@ -123,6 +124,7 @@ export default function AmbassadorAdminPage() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [stats, setStats] = useState<AmbassadorStats | null>(null);
   const [requests, setRequests] = useState<AmbassadorRequest[]>([]);
+  const [withdrawalRequests, setWithdrawalRequests] = useState<any[]>([]);
   const [settings, setSettings] = useState<AmbassadorSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -239,16 +241,28 @@ export default function AmbassadorAdminPage() {
   async function fetchData() {
     setLoading(true);
     try {
-      const [statsRes, requestsRes, settingsRes] = await Promise.all([
+      const [statsRes, requestsRes, withdrawalRes, settingsRes] = await Promise.all([
         fetch('/api/ambassador/admin/stats', { credentials: 'include' }),
         fetch('/api/ambassador/admin/requests', { credentials: 'include' }),
+        fetch('/api/ambassador/admin/financial-requests?status=all', { credentials: 'include' }),
         fetch('/api/ambassador/admin/settings', { credentials: 'include' })
       ]);
       
-      if (statsRes.ok) setStats(await statsRes.json());
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        // statsData قد يكون { stats: {...}, top_ambassadors: [...] } أو { ... } مباشرة
+        setStats(statsData.stats || statsData);
+      }
       if (requestsRes.ok) {
         const data = await requestsRes.json();
         setRequests(data.requests || []);
+      }
+      if (withdrawalRes.ok) {
+        const data = await withdrawalRes.json();
+        console.log('📋 Withdrawal requests fetched:', data);
+        setWithdrawalRequests(data.requests || []);
+      } else {
+        console.error('❌ Failed to fetch withdrawal requests:', withdrawalRes.status, await withdrawalRes.text().catch(() => ''));
       }
       if (settingsRes.ok) setSettings(await settingsRes.json());
     } catch (err) {
@@ -267,6 +281,65 @@ export default function AmbassadorAdminPage() {
       if (res.ok) await fetchData();
     } catch (err) {
       console.error(err);
+    }
+  }
+
+  async function handleWithdrawalReview(requestId: string, action: 'approve' | 'reject') {
+    try {
+      const notes = action === 'reject' ? prompt('سبب الرفض (اختياري):') || '' : '';
+      const res = await fetch(`/api/ambassador/admin/financial-requests/${requestId}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action, notes })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSuccessMessage(action === 'approve' ? '✅ تمت الموافقة الأولية وتم تحويل الطلب للمالية' : '❌ تم رفض الطلب');
+        setTimeout(() => setSuccessMessage(null), 4000);
+        await fetchData();
+      } else {
+        const error = await res.json().catch(() => ({}));
+        setSuccessMessage(`❌ ${error.error || 'حدث خطأ'}`);
+        setTimeout(() => setSuccessMessage(null), 4000);
+      }
+    } catch (err) {
+      console.error(err);
+      setSuccessMessage('❌ حدث خطأ أثناء معالجة الطلب');
+      setTimeout(() => setSuccessMessage(null), 4000);
+    }
+  }
+
+  async function handleWithdrawalComplete(requestId: string) {
+    const paymentRef = prompt('رقم المرجع/التحويل:') || '';
+    if (!paymentRef) {
+      setSuccessMessage('❌ يجب إدخال رقم المرجع');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+    
+    const notes = prompt('ملاحظات إضافية (اختياري):') || '';
+    
+    try {
+      const res = await fetch(`/api/ambassador/admin/financial-requests/${requestId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ payment_reference: paymentRef, notes })
+      });
+      if (res.ok) {
+        setSuccessMessage('✅ تم إتمام التحويل بنجاح');
+        setTimeout(() => setSuccessMessage(null), 4000);
+        await fetchData();
+      } else {
+        const error = await res.json().catch(() => ({}));
+        setSuccessMessage(`❌ ${error.error || 'حدث خطأ'}`);
+        setTimeout(() => setSuccessMessage(null), 4000);
+      }
+    } catch (err) {
+      console.error(err);
+      setSuccessMessage('❌ حدث خطأ أثناء إتمام التحويل');
+      setTimeout(() => setSuccessMessage(null), 4000);
     }
   }
 
@@ -352,6 +425,7 @@ export default function AmbassadorAdminPage() {
   const tabs = [
     { id: 'overview' as TabType, label: 'نظرة عامة', icon: BarChart3 },
     { id: 'requests' as TabType, label: 'الطلبات', icon: Gift },
+    { id: 'withdrawals' as TabType, label: 'طلبات السحب', icon: Award },
     { id: 'buildings' as TabType, label: 'المباني', icon: Building2 },
     { id: 'settings' as TabType, label: 'الإعدادات', icon: Settings },
   ];
@@ -526,6 +600,9 @@ export default function AmbassadorAdminPage() {
                 {tab.id === 'requests' && pendingRequests.length > 0 && (
                   <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{pendingRequests.length}</span>
                 )}
+                {tab.id === 'withdrawals' && (stats?.pending_withdrawal_requests || 0) > 0 && (
+                  <span className="bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full">{stats?.pending_withdrawal_requests || 0}</span>
+                )}
               </button>
             ))}
           </div>
@@ -538,11 +615,12 @@ export default function AmbassadorAdminPage() {
             <>
               {activeTab === 'overview' && (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <StatCard icon={Users} label="إجمالي السفراء" value={stats?.total_ambassadors || 0} color="blue" />
                     <StatCard icon={UserCheck} label="إجمالي الإحالات" value={stats?.total_referrals || 0} color="green" />
                     <StatCard icon={Award} label="المكافآت الممنوحة" value={stats?.total_rewards_given || 0} color="gold" />
                     <StatCard icon={Clock} label="طلبات معلقة" value={stats?.pending_requests || 0} color="amber" />
+                    <StatCard icon={Award} label="طلبات سحب معلقة" value={stats?.pending_withdrawal_requests || 0} color="orange" />
                     <StatCard icon={Building2} label="عمارات نشطة" value={stats?.active_buildings || 0} color="purple" />
                   </div>
                   <div className="bg-white rounded-xl border border-slate-200 p-6">
@@ -607,6 +685,99 @@ export default function AmbassadorAdminPage() {
                                     <X className="w-4 h-4" />
                                   </button>
                                 </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'withdrawals' && (
+                <div className="bg-white rounded-xl border border-slate-200">
+                  <div className="p-4 border-b border-slate-200">
+                    <h2 className="text-lg font-bold text-[#003366]">طلبات السحب المالية</h2>
+                    <p className="text-sm text-slate-500 mt-1">مراجعة طلبات سحب الأموال من السفراء</p>
+                  </div>
+                  
+                  {withdrawalRequests.length === 0 ? (
+                    <div className="p-8 text-center text-slate-500">لا توجد طلبات سحب حالياً</div>
+                  ) : (
+                    <div className="divide-y divide-slate-200">
+                      {withdrawalRequests.map((request) => (
+                        <div key={request.id} className="p-4 hover:bg-slate-50">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold">
+                                ${((request.amount_cents || 0) / 100).toFixed(2)}
+                              </div>
+                              <div>
+                                <p className="font-medium text-[#003366]">{request.user_name || 'مستخدم'}</p>
+                                <p className="text-sm text-slate-500">{request.user_email}</p>
+                                <p className="text-xs text-slate-400 mt-1">
+                                  {new Date(request.created_at).toLocaleDateString('ar-SA', { 
+                                    year: 'numeric', 
+                                    month: 'long', 
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </p>
+                                {request.risk_score && (
+                                  <p className={`text-xs mt-1 ${
+                                    request.risk_score >= 60 ? 'text-red-600' :
+                                    request.risk_score >= 30 ? 'text-amber-600' :
+                                    'text-green-600'
+                                  }`}>
+                                    درجة المخاطرة: {request.risk_score} ({request.risk_level || 'low'})
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-3">
+                              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                                request.status === 'pending' ? 'bg-amber-100 text-amber-700 border border-amber-300' :
+                                request.status === 'finance_review' ? 'bg-blue-100 text-blue-700 border border-blue-300' :
+                                request.status === 'completed' ? 'bg-green-100 text-green-700 border border-green-300' :
+                                request.status === 'rejected' ? 'bg-red-100 text-red-700 border border-red-300' :
+                                'bg-slate-100 text-slate-700 border border-slate-300'
+                              }`}>
+                                {request.status === 'pending' ? '⏳ في انتظار مراجعة السفراء' :
+                                 request.status === 'finance_review' ? '💰 في انتظار المالية' :
+                                 request.status === 'completed' ? '✅ مكتمل' :
+                                 request.status === 'rejected' ? '❌ مرفوض' : request.status}
+                              </span>
+                              
+                              {request.status === 'pending' && (
+                                <div className="flex gap-2">
+                                  <button 
+                                    onClick={() => handleWithdrawalReview(request.id, 'approve')} 
+                                    className="px-4 py-2 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:shadow-lg transition font-medium flex items-center gap-2"
+                                  >
+                                    <Check className="w-4 h-4" />
+                                    موافقة أولية
+                                  </button>
+                                  <button 
+                                    onClick={() => handleWithdrawalReview(request.id, 'reject')} 
+                                    className="px-4 py-2 rounded-lg bg-gradient-to-r from-red-500 to-red-600 text-white hover:shadow-lg transition font-medium flex items-center gap-2"
+                                  >
+                                    <X className="w-4 h-4" />
+                                    رفض
+                                  </button>
+                                </div>
+                              )}
+                              
+                              {request.status === 'finance_review' && (
+                                <button 
+                                  onClick={() => handleWithdrawalComplete(request.id)} 
+                                  className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:shadow-lg transition font-medium flex items-center gap-2"
+                                >
+                                  <CheckCircle className="w-4 h-4" />
+                                  إتمام التحويل
+                                </button>
                               )}
                             </div>
                           </div>
