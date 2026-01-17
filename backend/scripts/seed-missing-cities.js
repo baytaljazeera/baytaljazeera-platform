@@ -148,40 +148,49 @@ async function seedMissingCities() {
       { name_ar: 'فاريا', name_en: 'Faraya', region_ar: 'جبل لبنان', region_en: 'Mount Lebanon', is_popular: true, lat: 33.9875, lng: 35.8167 },
     ];
 
-    // Insert cities for each country
+    // Insert cities for each country (skip if already exists by name_en + country_id)
     const insertCity = async (city, countryId, displayOrder) => {
+      const existing = await db.query(
+        'SELECT id FROM cities WHERE name_en = $1 AND country_id = $2',
+        [city.name_en, countryId]
+      );
+      if (existing.rows.length > 0) return false;
+      
       await db.query(`
         INSERT INTO cities (name_ar, name_en, region_ar, region_en, country_id, is_popular, display_order, is_active, latitude, longitude)
         VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9)
-        ON CONFLICT DO NOTHING
       `, [city.name_ar, city.name_en, city.region_ar, city.region_en, countryId, city.is_popular, displayOrder, city.lat, city.lng]);
+      return true;
     };
 
     // Insert Turkey cities
     if (countryMap.TR) {
       console.log('🇹🇷 Inserting Turkey cities...');
+      let inserted = 0;
       for (let i = 0; i < turkeyCities.length; i++) {
-        await insertCity(turkeyCities[i], countryMap.TR.id, i + 1);
+        if (await insertCity(turkeyCities[i], countryMap.TR.id, i + 1)) inserted++;
       }
-      console.log(`✅ Inserted ${turkeyCities.length} Turkey cities`);
+      console.log(`✅ Turkey: ${inserted} new, ${turkeyCities.length - inserted} existed`);
     }
 
     // Insert Egypt cities
     if (countryMap.EG) {
       console.log('🇪🇬 Inserting Egypt cities...');
+      let inserted = 0;
       for (let i = 0; i < egyptCities.length; i++) {
-        await insertCity(egyptCities[i], countryMap.EG.id, i + 1);
+        if (await insertCity(egyptCities[i], countryMap.EG.id, i + 1)) inserted++;
       }
-      console.log(`✅ Inserted ${egyptCities.length} Egypt cities`);
+      console.log(`✅ Egypt: ${inserted} new, ${egyptCities.length - inserted} existed`);
     }
 
     // Insert Lebanon cities
     if (countryMap.LB) {
       console.log('🇱🇧 Inserting Lebanon cities...');
+      let inserted = 0;
       for (let i = 0; i < lebanonCities.length; i++) {
-        await insertCity(lebanonCities[i], countryMap.LB.id, i + 1);
+        if (await insertCity(lebanonCities[i], countryMap.LB.id, i + 1)) inserted++;
       }
-      console.log(`✅ Inserted ${lebanonCities.length} Lebanon cities`);
+      console.log(`✅ Lebanon: ${inserted} new, ${lebanonCities.length - inserted} existed`);
     }
 
     // Verify counts
