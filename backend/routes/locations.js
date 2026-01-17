@@ -15,7 +15,7 @@ router.get("/countries", asyncHandler(async (req, res) => {
 }));
 
 router.get("/cities", asyncHandler(async (req, res) => {
-  const { country_id, popular_only } = req.query;
+  const { country_id, country_code, popular_only } = req.query;
   
   let query = `
     SELECT c.id, c.name_ar, c.name_en, c.region_ar, c.region_en, c.is_popular, c.display_order,
@@ -30,6 +30,9 @@ router.get("/cities", asyncHandler(async (req, res) => {
   if (country_id) {
     params.push(country_id);
     query += ` AND c.country_id = $${params.length}`;
+  } else if (country_code) {
+    params.push(country_code.toUpperCase());
+    query += ` AND UPPER(co.code) = $${params.length}`;
   }
   
   if (popular_only === 'true') {
