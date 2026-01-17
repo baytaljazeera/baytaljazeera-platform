@@ -2934,8 +2934,9 @@ export default function ReferralPage() {
           </div>
         )}
       </div>
+    </div>
 
-      {stats && (
+    {stats && (
         <>
           <SocialShareModal
             isOpen={showShareModal}
