@@ -2352,7 +2352,19 @@ router.delete("/dev/clear-test-referrals", combinedAuthMiddleware, asyncHandler(
     [userId]
   );
   
-  const deletedCount = deleted.rowCount || 0;
+  const deletedTestCount = deleted.rowCount || 0;
+  
+  // حذف جميع الإحالات المنهارة (flagged_fraud) للمستخدم - لحل مشكلة الطوابق المنهارة المتبقية
+  const deletedFlagged = await db.query(
+    `DELETE FROM referrals 
+     WHERE referrer_id = $1 
+     AND status = 'flagged_fraud'
+     RETURNING id`,
+    [userId]
+  );
+  
+  const deletedFlaggedCount = deletedFlagged.rowCount || 0;
+  const deletedCount = deletedTestCount + deletedFlaggedCount;
   
   // حذف المستخدمين الاختباريين
   const deletedUsers = await db.query(
@@ -2381,12 +2393,20 @@ router.delete("/dev/clear-test-referrals", combinedAuthMiddleware, asyncHandler(
   const newCount = updateResult.rows[0]?.referral_count || 0;
   const newFloors = updateResult.rows[0]?.ambassador_floors || 0;
   
-  console.log(`✅ Cleared test referrals: ${deletedCount} referrals, ${deletedUsers.rowCount} users. New count: ${newCount}`);
+  console.log(`✅ Cleared test referrals: ${deletedTestCount} test referrals, ${deletedFlaggedCount} flagged referrals, ${deletedUsers.rowCount} users. New count: ${newCount}`);
+  
+  let message = `تم حذف ${deletedTestCount} إحالة اختبارية`;
+  if (deletedFlaggedCount > 0) {
+    message += ` و ${deletedFlaggedCount} إحالة منهارة`;
+  }
+  message += ` و ${deletedUsers.rowCount} مستخدم اختباري. العدد الحالي: ${newCount}`;
   
   res.json({ 
     success: true, 
-    message: `تم حذف ${deletedCount} إحالة اختبارية و ${deletedUsers.rowCount} مستخدم اختباري. العدد الحالي: ${newCount}`,
+    message: message,
     deleted_referrals: deletedCount,
+    deleted_test_referrals: deletedTestCount,
+    deleted_flagged_referrals: deletedFlaggedCount,
     deleted_users: deletedUsers.rowCount,
     current_count: newCount,
     current_floors: newFloors
