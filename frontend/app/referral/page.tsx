@@ -2859,17 +2859,18 @@ export default function ReferralPage() {
               {/* حصالة السفير الجذابة تحت المبنى */}
               {walletData?.settings?.financial_rewards_enabled && (() => {
                 const buildingsPerDollar = walletData?.settings?.buildings_per_dollar || 5;
-                // حساب المباني المكتملة تلقائياً من الطوابق المبنية
-                const calculatedBuildings = Math.floor(builtFloors / maxFloors);
-                const totalBuildings = Math.max(calculatedBuildings, walletData?.wallet?.total_buildings_completed || 0);
+                // حساب المباني المكتملة من الطوابق المتاحة (بعد طرح المستهلك) - نفس حساب SimpleWalletCard
+                const completedBuildings = Math.floor(availableFloors / maxFloors);
+                const totalBuildings = Math.max(completedBuildings, walletData?.wallet?.total_buildings_completed || 0);
                 const completedDollars = Math.floor(totalBuildings / buildingsPerDollar);
                 const currentCycleProgress = totalBuildings % buildingsPerDollar;
                 const totalRows = completedDollars + 1;
                 
-                // مبدأ الشفافية: حساب الرصيد الجزئي التقديري
-                const dbBalance = (walletData?.wallet?.balance_cents || 0) / 100;
-                const estimatedBalance = totalBuildings / buildingsPerDollar;
-                const displayBalance = Math.max(dbBalance, estimatedBalance);
+                // حساب الرصيد بناءً على المباني المكتملة المتاحة (مطابق لـ SimpleWalletCard)
+                const availableBalance = walletData?.wallet ? (
+                  Math.max(0, (Number(walletData.wallet.balance_cents) - (Number(walletData.pending_withdrawal?.amount_cents) || 0)) / 100)
+                ) : (totalBuildings / buildingsPerDollar);
+                const displayBalance = Math.max(0, availableBalance);
                 
                 return (
                   <div className="relative overflow-hidden rounded-2xl border-2 border-amber-400/50 shadow-xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
