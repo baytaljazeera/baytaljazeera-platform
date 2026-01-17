@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { 
   Building2, 
   Copy, 
@@ -2678,7 +2678,7 @@ export default function ReferralPage() {
             </div>
 
             <div className="lg:col-span-2 lg:sticky lg:top-4 space-y-4">
-              <div data-building-view className="rounded-3xl shadow-xl overflow-hidden border border-[#D4AF37]/30">
+              <div ref={buildingRef} data-building-view className="rounded-3xl shadow-xl overflow-hidden border border-[#D4AF37]/30">
                 <RealisticBuilding 
                   currentFloors={currentFloors} 
                   maxFloors={maxFloors}
