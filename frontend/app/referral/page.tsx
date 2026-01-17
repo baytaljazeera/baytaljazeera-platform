@@ -2760,7 +2760,7 @@ export default function ReferralPage() {
               <div className="lg:col-span-2 space-y-6">
                 {/* سلم المكافآت */}
                 <div className="bg-white/80 backdrop-blur-sm rounded-2xl sm:rounded-3xl shadow-xl p-5 sm:p-8 border border-[#D4AF37]/30">
-                <div className="flex items-center justify-between flex-wrap gap-3 mb-5 sm:mb-6">
+                  <div className="flex items-center justify-between flex-wrap gap-3 mb-5 sm:mb-6">
                   <h2 className="text-lg sm:text-xl font-bold text-[#003366] flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#D4AF37] to-[#B8860B] flex items-center justify-center shadow-lg">
                       <Star className="w-5 h-5 text-[#003366]" />
@@ -2898,10 +2898,10 @@ export default function ReferralPage() {
                       </div>
                     );
                   })}
+                  </div>
                 </div>
-              </div>
 
-              {stats.referrals && stats.referrals.length > 0 && (
+                {stats.referrals && stats.referrals.length > 0 && (
                 <div className="bg-white/80 backdrop-blur-sm rounded-2xl sm:rounded-3xl shadow-xl p-5 sm:p-8 border border-[#D4AF37]/30">
                   <h2 className="text-lg sm:text-xl font-bold text-[#003366] mb-5 flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center shadow-lg">
