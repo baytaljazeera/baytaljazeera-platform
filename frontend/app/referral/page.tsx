@@ -1935,9 +1935,8 @@ export default function ReferralPage() {
     }
   };
 
-  // أدوات اختبارية - قابلة للإزالة بعد الاختبار
+  // [DEV ONLY] إضافة إحالات اختبارية
   const addTestReferrals = async (count: number) => {
-    setTestToolsLoading(true);
     try {
       const res = await fetch('/api/ambassador/dev/add-test-referrals', {
         method: 'POST',
@@ -1951,14 +1950,11 @@ export default function ReferralPage() {
       }
     } catch (err) {
       console.error(err);
-    } finally {
-      setTestToolsLoading(false);
     }
   };
 
-  // أدوات اختبارية - حذف الإحالات الاختبارية
+  // [DEV ONLY] حذف الإحالات الاختبارية
   const clearTestReferrals = async () => {
-    setTestToolsLoading(true);
     try {
       const res = await fetch('/api/ambassador/dev/clear-test-referrals', {
         method: 'DELETE',
@@ -1970,8 +1966,6 @@ export default function ReferralPage() {
       }
     } catch (err) {
       console.error(err);
-    } finally {
-      setTestToolsLoading(false);
     }
   };
 
