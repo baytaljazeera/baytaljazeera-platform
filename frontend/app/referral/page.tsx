@@ -2438,8 +2438,17 @@ export default function ReferralPage() {
 
   const buildingsData = buildBuildingsData();
 
+  const buildingRef = useRef<HTMLDivElement>(null);
+
   const handleBuildingClick = (building: BuildingData) => {
     setSelectedBuilding(building);
+    // Scroll to building visualization
+    setTimeout(() => {
+      buildingRef.current?.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'start' 
+      });
+    }, 100);
   };
   
   const clearSelectedBuilding = () => {
