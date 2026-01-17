@@ -151,6 +151,7 @@ export default function AmbassadorAdminPage() {
   const [aiScanError, setAiScanError] = useState<string | null>(null);
   const [aiScanMode, setAiScanMode] = useState<boolean>(false); // وضع اختيار المباني للفحص
   const [selectedBuildingsForScan, setSelectedBuildingsForScan] = useState<number[]>([]);
+  const [aiScanModal, setAiScanModal] = useState<{show: boolean; userId: string; selectedBuildings: number[]} | null>(null);
   
   // System toggle state
   const [systemStatus, setSystemStatus] = useState<{ambassador_enabled: boolean; consumption_enabled: boolean; financial_rewards_enabled: boolean} | null>(null);
@@ -942,7 +943,7 @@ export default function AmbassadorAdminPage() {
                           
                           {/* AI Scan Button */}
                           <button
-                            onClick={toggleAIScanMode}
+                            onClick={() => toggleAIScanMode()}
                             disabled={aiScanning}
                             className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all ${
                               aiScanning 
