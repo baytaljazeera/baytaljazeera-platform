@@ -2356,12 +2356,12 @@ export default function ReferralPage() {
   }
 
   // استخدام الحسابات الجديدة من الـ API
-  const builtFloors = stats?.built_floors || stats?.current_floors || 0;
-  const collapsedFloors = stats?.collapsed_floors || stats?.flagged_floors || 0;
-  const healthyFloors = stats?.healthy_floors || (builtFloors - collapsedFloors);
-  const floorsConsumed = stats?.floors_consumed ?? (stats?.consumptions?.reduce((sum: number, c: any) => sum + (c.floors_consumed || 0), 0) || 0);
-  const availableFloors = stats?.available_floors || (healthyFloors - floorsConsumed);
-  const maxFloors = stats?.max_floors || 20;
+  const builtFloors = Math.max(0, Number(stats?.built_floors) || Number(stats?.current_floors) || 0);
+  const collapsedFloors = Math.max(0, Number(stats?.collapsed_floors) || Number(stats?.flagged_floors) || 0);
+  const healthyFloors = Math.max(0, Number(stats?.healthy_floors) || Math.max(0, builtFloors - collapsedFloors));
+  const floorsConsumed = Math.max(0, Number(stats?.floors_consumed) ?? (stats?.consumptions?.reduce((sum: number, c: any) => sum + Number(c.floors_consumed || 0), 0) || 0));
+  const availableFloors = Math.max(0, Number(stats?.available_floors) ?? Math.max(0, healthyFloors - floorsConsumed));
+  const maxFloors = Math.max(20, Number(stats?.max_floors) || 20);
   
   // للتوافق مع الكود القديم
   const currentFloors = builtFloors;
@@ -2503,13 +2503,22 @@ export default function ReferralPage() {
               />
               
               <SimpleWalletCard 
-                amount={walletData?.wallet ? (
-                  Math.max(0, (walletData.wallet.balance_cents - (walletData.pending_withdrawal?.amount_cents || 0)) / 100)
-                ) : (Math.floor((availableFloors || 0) / 20) / 5)}
-                buildings={Math.floor((availableFloors || 0) / 20)}
+                amount={(() => {
+                  if (walletData?.wallet) {
+                    const balance = Number(walletData.wallet.balance_cents) || 0;
+                    const pending = Number(walletData.pending_withdrawal?.amount_cents) || 0;
+                    return Math.max(0, (balance - pending) / 100);
+                  }
+                  const calculated = Math.floor(Math.max(0, availableFloors) / 20) / 5;
+                  return isNaN(calculated) || !isFinite(calculated) ? 0 : calculated;
+                })()}
+                buildings={(() => {
+                  const calculated = Math.floor(Math.max(0, availableFloors) / 20);
+                  return isNaN(calculated) || !isFinite(calculated) ? 0 : calculated;
+                })()}
                 onWithdraw={() => setShowWithdrawModal(true)}
-                pendingAmount={walletData?.pending_withdrawal ? (walletData.pending_withdrawal.amount_cents / 100) : 0}
-                withdrawnAmount={walletData?.wallet?.total_withdrawn_cents ? (walletData.wallet.total_withdrawn_cents / 100) : 0}
+                pendingAmount={walletData?.pending_withdrawal ? (Number(walletData.pending_withdrawal.amount_cents) || 0) / 100 : 0}
+                withdrawnAmount={walletData?.wallet?.total_withdrawn_cents ? (Number(walletData.wallet.total_withdrawn_cents) || 0) / 100 : 0}
               />
 
               <div className="bg-white/80 backdrop-blur-sm rounded-2xl sm:rounded-3xl shadow-xl p-5 sm:p-8 border border-[#D4AF37]/30">
