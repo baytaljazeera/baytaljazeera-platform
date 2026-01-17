@@ -2443,12 +2443,18 @@ export default function ReferralPage() {
   const handleBuildingClick = (building: BuildingData) => {
     setSelectedBuilding(building);
     // Scroll to building visualization
-    setTimeout(() => {
-      buildingRef.current?.scrollIntoView({ 
-        behavior: 'smooth', 
-        block: 'start' 
-      });
-    }, 100);
+    if (buildingRef.current) {
+      setTimeout(() => {
+        try {
+          buildingRef.current?.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'start' 
+          });
+        } catch (err) {
+          console.error('Scroll error:', err);
+        }
+      }, 100);
+    }
   };
   
   const clearSelectedBuilding = () => {
@@ -2498,9 +2504,9 @@ export default function ReferralPage() {
               
               <SimpleWalletCard 
                 amount={walletData?.wallet ? (
-                  (walletData.wallet.balance_cents - (walletData.pending_withdrawal?.amount_cents || 0)) / 100
-                ) : (Math.floor(availableFloors / 20) / 5)}
-                buildings={Math.floor(availableFloors / 20)}
+                  Math.max(0, (walletData.wallet.balance_cents - (walletData.pending_withdrawal?.amount_cents || 0)) / 100)
+                ) : (Math.floor((availableFloors || 0) / 20) / 5)}
+                buildings={Math.floor((availableFloors || 0) / 20)}
                 onWithdraw={() => setShowWithdrawModal(true)}
                 pendingAmount={walletData?.pending_withdrawal ? (walletData.pending_withdrawal.amount_cents / 100) : 0}
                 withdrawnAmount={walletData?.wallet?.total_withdrawn_cents ? (walletData.wallet.total_withdrawn_cents / 100) : 0}
