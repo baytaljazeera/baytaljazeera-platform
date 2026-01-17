@@ -65,26 +65,45 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
     const settings = settingsResult.rows[0] || { max_floors: 20, floors_per_reward: [], consumption_enabled: true, require_first_listing: false, require_email_verified: false };
     console.log(`✅ Settings loaded: max_floors=${settings.max_floors}`);
     
-    // جلب الإحالات - مع معالجة حالة عدم وجود جدول referral_risk_scores
+    // جلب الإحالات - استخدام query بسيط بدون referral_risk_scores لتجنب المشاكل
+    console.log(`📋 Fetching referrals for user ${userId}...`);
     let referralsResult;
     try {
-      console.log(`📋 Fetching referrals for user ${userId}...`);
-      referralsResult = await db.query(
-        `SELECT r.id, r.status, r.created_at, r.collapse_reason, r.collapsed_at,
-                COALESCE(u.name, 'مستخدم اختباري') as referred_name, 
-                COALESCE(u.email, 'test@test.com') as referred_email,
-                rs.risk_score, rs.risk_level, rs.triggered_rules, rs.ai_explanation
-         FROM referrals r
-         LEFT JOIN users u ON u.id = r.referred_id
-         LEFT JOIN referral_risk_scores rs ON rs.referral_id::BIGINT = r.id
-         WHERE r.referrer_id = $1 AND r.status IN ('completed', 'flagged_fraud')
-         ORDER BY r.created_at ASC`,
-        [userId]
-      );
-      console.log(`✅ Referrals fetched: ${referralsResult.rows.length}`);
-    } catch (joinError) {
-      // إذا فشل الـ JOIN بسبب عدم وجود الجدول أو type mismatch، استخدم query بدون referral_risk_scores
-      console.warn('⚠️ referral_risk_scores join failed, using fallback query:', joinError.message);
+      // محاولة استخدام query مع referral_risk_scores (إذا كان الجدول موجوداً)
+      const hasRiskScoresTable = await db.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'referral_risk_scores'
+        );
+      `);
+      
+      if (hasRiskScoresTable.rows[0]?.exists) {
+        console.log('✅ referral_risk_scores table exists, using full query');
+        try {
+          referralsResult = await db.query(
+            `SELECT r.id, r.status, r.created_at, r.collapse_reason, r.collapsed_at,
+                    COALESCE(u.name, 'مستخدم اختباري') as referred_name, 
+                    COALESCE(u.email, 'test@test.com') as referred_email,
+                    rs.risk_score, rs.risk_level, rs.triggered_rules, rs.ai_explanation
+             FROM referrals r
+             LEFT JOIN users u ON u.id = r.referred_id
+             LEFT JOIN referral_risk_scores rs ON CAST(rs.referral_id AS BIGINT) = r.id
+             WHERE r.referrer_id = $1 AND r.status IN ('completed', 'flagged_fraud')
+             ORDER BY r.created_at ASC`,
+            [userId]
+          );
+          console.log(`✅ Referrals fetched with risk scores: ${referralsResult.rows.length}`);
+        } catch (joinError) {
+          console.warn('⚠️ JOIN with referral_risk_scores failed, using fallback:', joinError.message);
+          throw joinError; // سيستخدم fallback query
+        }
+      } else {
+        throw new Error('Table does not exist'); // سيستخدم fallback query
+      }
+    } catch (error) {
+      // استخدام query بدون referral_risk_scores (fallback)
+      console.log('📋 Using fallback query without referral_risk_scores');
       referralsResult = await db.query(
         `SELECT r.id, r.status, r.created_at, r.collapse_reason, r.collapsed_at,
                 COALESCE(u.name, 'مستخدم اختباري') as referred_name, 
