@@ -1993,7 +1993,7 @@ router.post("/dev/add-test-referrals", combinedAuthMiddleware, requireDevEnviron
       );
       
       // تحديث referral_count في جدول users
-      await db.query(
+      const updateResult = await db.query(
         `UPDATE users 
          SET referral_count = (
            SELECT COUNT(*) FROM referrals 
@@ -2003,9 +2003,19 @@ router.post("/dev/add-test-referrals", combinedAuthMiddleware, requireDevEnviron
            SELECT COUNT(*) FROM referrals 
            WHERE referrer_id = $1 AND status IN ('completed', 'flagged_fraud')
          )
-         WHERE id = $1`,
+         WHERE id = $1
+         RETURNING referral_count, ambassador_floors`,
         [userId]
       );
+      
+      // التحقق من عدد الإحالات الفعلي
+      const verifyResult = await db.query(
+        `SELECT COUNT(*) as count FROM referrals WHERE referrer_id = $1 AND status IN ('completed', 'flagged_fraud')`,
+        [userId]
+      );
+      
+      const actualCount = parseInt(verifyResult.rows[0]?.count || 0);
+      console.log(`✅ Test referrals added: ${added.length}, Updated count: ${updateResult.rows[0]?.referral_count}, Actual count: ${actualCount}`);
     } catch (refError) {
       console.error('Error creating referrals:', refError);
       // حذف المستخدمين الذين تم إنشاؤهم لأن الإحالات فشلت
