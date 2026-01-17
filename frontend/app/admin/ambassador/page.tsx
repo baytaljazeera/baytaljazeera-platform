@@ -149,6 +149,7 @@ export default function AmbassadorAdminPage() {
   const [aiScanResult, setAiScanResult] = useState<any>(null);
   const [aiScanning, setAiScanning] = useState(false);
   const [aiScanError, setAiScanError] = useState<string | null>(null);
+  const [aiScanModal, setAiScanModal] = useState<{show: boolean; userId: string; selectedBuildings: number[]} | null>(null);
   
   // System toggle state
   const [systemStatus, setSystemStatus] = useState<{ambassador_enabled: boolean; consumption_enabled: boolean; financial_rewards_enabled: boolean} | null>(null);
@@ -516,17 +517,26 @@ export default function AmbassadorAdminPage() {
     }
   }
   
-  // AI Fraud Scan
-  async function runAIFraudScan(userId: string, buildingNumber?: number) {
+  // AI Fraud Scan - with building selection
+  async function runAIFraudScan(userId: string, buildingNumbers?: number[]) {
     setAiScanning(true);
     setAiScanResult(null);
     setAiScanError(null);
+    setAiScanModal(null); // Close modal
+    
     try {
+      // If multiple buildings selected, scan all (backend will handle)
+      // For now, we'll scan one at a time or all if empty
+      const buildingNumber = buildingNumbers && buildingNumbers.length === 1 ? buildingNumbers[0] : undefined;
+      
       const res = await fetch(`/api/ambassador/admin/ai-scan/${userId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ buildingNumber })
+        body: JSON.stringify({ 
+          buildingNumber,
+          buildingNumbers: buildingNumbers && buildingNumbers.length > 1 ? buildingNumbers : undefined
+        })
       });
       if (res.ok) {
         const data = await res.json();
@@ -547,6 +557,15 @@ export default function AmbassadorAdminPage() {
     } finally {
       setAiScanning(false);
     }
+  }
+
+  // Open AI Scan Modal
+  function openAIScanModal(userId: string, preselectedBuilding?: number) {
+    setAiScanModal({
+      show: true,
+      userId,
+      selectedBuildings: preselectedBuilding ? [preselectedBuilding] : []
+    });
   }
   
   // Load ambassadors when switching to buildings tab
@@ -889,7 +908,7 @@ export default function AmbassadorAdminPage() {
                           
                           {/* AI Scan Button */}
                           <button
-                            onClick={() => runAIFraudScan(selectedAmbassador.user.id)}
+                            onClick={() => openAIScanModal(selectedAmbassador.user.id)}
                             disabled={aiScanning}
                             className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all ${
                               aiScanning 
@@ -1063,7 +1082,7 @@ export default function AmbassadorAdminPage() {
                           <h4 className="font-medium text-[#003366]">طوابق المبنى ({selectedBuilding.total_floors} طابق)</h4>
                           {selectedAmbassador && (
                             <button
-                              onClick={() => runAIFraudScan(selectedAmbassador.user.id, selectedBuilding.building_number)}
+                              onClick={() => openAIScanModal(selectedAmbassador.user.id, selectedBuilding.building_number)}
                               disabled={aiScanning}
                               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
                                 aiScanning 
@@ -1177,6 +1196,126 @@ export default function AmbassadorAdminPage() {
                       <button
                         onClick={() => setFlagFloorModal(null)}
                         className="flex-1 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-medium hover:bg-slate-200"
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* AI Scan Modal - Building Selection */}
+              {aiScanModal?.show && selectedAmbassador && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                    <h3 className="text-lg font-bold text-[#003366] mb-4 flex items-center gap-2">
+                      <Brain className="w-5 h-5 text-purple-600" />
+                      اختيار المباني للفحص بالذكاء الاصطناعي
+                    </h3>
+                    <p className="text-slate-600 mb-4">
+                      اختر المبنى أو المباني التي تريد فحصها. يمكنك اختيار مبنى واحد، عدة مباني، أو كل المباني.
+                    </p>
+                    
+                    <div className="mb-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <button
+                          onClick={() => {
+                            const allBuildingNumbers = selectedAmbassador.buildings.map(b => b.building_number);
+                            setAiScanModal({ ...aiScanModal, selectedBuildings: allBuildingNumbers });
+                          }}
+                          className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 text-sm font-medium"
+                        >
+                          ✓ اختيار كل المباني
+                        </button>
+                        <button
+                          onClick={() => setAiScanModal({ ...aiScanModal, selectedBuildings: [] })}
+                          className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-sm font-medium"
+                        >
+                          ✗ إلغاء الاختيار
+                        </button>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                        {selectedAmbassador.buildings.map((building) => {
+                          const isSelected = aiScanModal.selectedBuildings.includes(building.building_number);
+                          return (
+                            <div
+                              key={building.building_number}
+                              onClick={() => {
+                                const current = aiScanModal.selectedBuildings;
+                                const newSelection = isSelected
+                                  ? current.filter(b => b !== building.building_number)
+                                  : [...current, building.building_number];
+                                setAiScanModal({ ...aiScanModal, selectedBuildings: newSelection });
+                              }}
+                              className={`p-4 rounded-xl border-2 cursor-pointer transition-all hover:scale-105 ${
+                                isSelected
+                                  ? 'bg-purple-50 border-purple-500 shadow-lg'
+                                  : 'bg-slate-50 border-slate-200 hover:border-purple-300'
+                              }`}
+                            >
+                              <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-2 mx-auto ${
+                                building.has_issues ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'
+                              }`}>
+                                <Building2 className="w-5 h-5" />
+                              </div>
+                              <p className="text-center font-bold text-[#003366]">#{building.building_number}</p>
+                              <p className="text-xs text-center text-slate-500 mt-1">
+                                {building.completed_floors}/{building.total_floors}
+                              </p>
+                              {isSelected && (
+                                <div className="flex justify-center mt-2">
+                                  <div className="w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center">
+                                    <Check className="w-4 h-4 text-white" />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      
+                      {aiScanModal.selectedBuildings.length > 0 && (
+                        <div className="mt-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                          <p className="text-sm font-medium text-purple-800">
+                            {aiScanModal.selectedBuildings.length === selectedAmbassador.buildings.length
+                              ? '✓ تم اختيار كل المباني'
+                              : `✓ تم اختيار ${aiScanModal.selectedBuildings.length} من ${selectedAmbassador.buildings.length} مبنى`
+                            }
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => {
+                          if (aiScanModal.selectedBuildings.length === 0) {
+                            // If no selection, scan all
+                            runAIFraudScan(aiScanModal.userId);
+                          } else {
+                            runAIFraudScan(aiScanModal.userId, aiScanModal.selectedBuildings);
+                          }
+                        }}
+                        disabled={aiScanning}
+                        className="flex-1 py-2.5 bg-gradient-to-l from-purple-600 to-indigo-600 text-white rounded-xl font-medium hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {aiScanning ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            جارٍ الفحص...
+                          </>
+                        ) : (
+                          <>
+                            <Brain className="w-4 h-4" />
+                            بدء الفحص
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setAiScanModal(null)}
+                        disabled={aiScanning}
+                        className="flex-1 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-medium hover:bg-slate-200 disabled:opacity-50"
                       >
                         إلغاء
                       </button>
