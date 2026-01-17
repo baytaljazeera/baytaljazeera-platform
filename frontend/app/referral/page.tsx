@@ -1801,11 +1801,23 @@ export default function ReferralPage() {
   async function requestWithdrawal(amountInDollars?: number) {
     if (!walletData?.wallet || !walletData.settings.financial_rewards_enabled) return;
     
+    // التحقق من صحة المبلغ
     const amountCents = amountInDollars 
       ? Math.round(amountInDollars * 100) 
       : walletData.wallet.balance_cents;
     
+    if (amountCents < (walletData.settings.min_withdrawal_cents || 100)) {
+      setError(`الحد الأدنى للسحب هو $${((walletData.settings.min_withdrawal_cents || 100) / 100).toFixed(2)}`);
+      return;
+    }
+    
+    if (amountCents > walletData.wallet.balance_cents) {
+      setError('المبلغ أكبر من الرصيد المتاح!');
+      return;
+    }
+    
     setWithdrawing(true);
+    setError('');
     try {
       const res = await fetch('/api/ambassador/wallet/withdraw', {
         method: 'POST',
@@ -1816,17 +1828,28 @@ export default function ReferralPage() {
           payment_method: 'bank_transfer'
         })
       });
+      
       if (res.ok) {
+        const result = await res.json();
+        // تحديث البيانات
         await fetchWalletData();
-        setSuccessMessage(`تم تقديم طلب سحب $${(amountCents / 100).toFixed(2)} بنجاح!`);
+        await fetchStats(); // تحديث الإحصائيات لتحديث العدد المتاح
+        
+        // رسالة نجاح واضحة
+        setSuccessMessage(`✅ تم إرسال طلب سحب $${(amountCents / 100).toFixed(2)} بنجاح! سيتم مراجعة طلبك قريباً.`);
+        setTimeout(() => setSuccessMessage(null), 5000);
+        
+        // إغلاق الـ modal وتنظيف الحقول
+        setShowWithdrawModal(false);
         setWithdrawAmount('full');
         setCustomAmount('');
       } else {
-        const err = await res.json();
-        alert(err.error || 'حدث خطأ');
+        const err = await res.json().catch(() => ({ error: 'حدث خطأ غير متوقع' }));
+        setError(err.error || 'حدث خطأ أثناء إرسال الطلب');
       }
-    } catch (err) {
-      alert('حدث خطأ في الاتصال');
+    } catch (err: any) {
+      console.error('Withdrawal error:', err);
+      setError('حدث خطأ في الاتصال. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.');
     } finally {
       setWithdrawing(false);
     }
@@ -3042,6 +3065,13 @@ export default function ReferralPage() {
                     )}
                   </div>
                   
+                  {/* رسالة خطأ */}
+                  {error && (
+                    <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm text-center animate-in slide-in-from-top-2 duration-200">
+                      {error}
+                    </div>
+                  )}
+                  
                   {/* زر تأكيد السحب */}
                   <button
                     onClick={async () => {
@@ -3050,22 +3080,27 @@ export default function ReferralPage() {
                         : parseFloat(customAmount) || 0;
                       
                       if (amountToWithdraw <= 0) {
-                        alert('الرجاء إدخال مبلغ صحيح');
+                        setError('الرجاء إدخال مبلغ صحيح');
                         return;
                       }
                       if (amountToWithdraw > balanceAmount) {
-                        alert('المبلغ أكبر من الرصيد المتاح!');
+                        setError('المبلغ أكبر من الرصيد المتاح!');
                         return;
                       }
                       
-                      setShowWithdrawModal(false);
+                      // لا تُغلق الـ modal قبل إرسال الطلب - سيُغلق بعد النجاح تلقائياً
                       await requestWithdrawal(amountToWithdraw);
                     }}
                     disabled={withdrawing || (withdrawAmount === 'custom' && (!customAmount || parseFloat(customAmount) <= 0 || parseFloat(customAmount) > balanceAmount))}
-                    className="w-full py-3.5 bg-gradient-to-r from-[#D4AF37] via-[#B8860B] to-[#D4AF37] hover:from-[#B8860B] hover:to-[#D4AF37] text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-[#D4AF37]/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className={`w-full py-3.5 bg-gradient-to-r from-[#D4AF37] via-[#B8860B] to-[#D4AF37] hover:from-[#B8860B] hover:to-[#D4AF37] text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-[#D4AF37]/30 disabled:opacity-50 disabled:cursor-not-allowed ${
+                      withdrawing ? 'cursor-wait' : 'cursor-pointer'
+                    }`}
                   >
                     {withdrawing ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span>جاري إرسال الطلب...</span>
+                      </>
                     ) : (
                       <>
                         <ArrowDownCircle className="w-5 h-5" />
