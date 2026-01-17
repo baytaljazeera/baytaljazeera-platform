@@ -2335,6 +2335,138 @@ export default function ReferralPage() {
                 />
               </div>
               
+              {/* أدوات تجريبية - للاختبار قبل الإطلاق - تظهر دائماً بعد المبنى */}
+              <div className={`rounded-2xl border-2 transition-all duration-300 overflow-hidden ${
+                showTestTools 
+                  ? 'bg-gradient-to-br from-amber-50/90 via-yellow-50/80 to-amber-50/90 border-amber-400/60 shadow-lg' 
+                  : 'bg-slate-100/50 border-slate-300/30'
+              }`}>
+                {/* Header with Toggle */}
+                <div 
+                  onClick={() => setShowTestTools(!showTestTools)}
+                  className="p-3 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border-b border-amber-400/30 cursor-pointer hover:from-amber-500/30 hover:to-yellow-500/30 transition-all flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-yellow-600 rounded-lg flex items-center justify-center shadow-md">
+                      <Zap className="w-4 h-4 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-amber-900 flex items-center gap-2">
+                        🧪 أدوات تجريبية
+                      </p>
+                      <p className="text-[10px] text-amber-700">للاستخدام قبل الإطلاق - قابلة للإزالة لاحقاً</p>
+                    </div>
+                  </div>
+                  <ChevronDown className={`w-5 h-5 text-amber-700 transition-transform duration-300 ${showTestTools ? 'rotate-180' : ''}`} />
+                </div>
+                
+                {/* Test Tools Content */}
+                {showTestTools && (
+                  <div className="p-4 space-y-3">
+                    <div className="bg-white/60 rounded-xl p-3 border border-amber-200">
+                      <p className="text-xs text-amber-900 font-medium mb-3">إضافة عملاء تجريبيين:</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <button
+                          onClick={() => addTestReferrals(10)}
+                          disabled={testToolsLoading}
+                          className="px-3 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                        >
+                          {testToolsLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <Plus className="w-3.5 h-3.5" />
+                              10 عملاء
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => addTestReferrals(50)}
+                          disabled={testToolsLoading}
+                          className="px-3 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                        >
+                          {testToolsLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <Plus className="w-3.5 h-3.5" />
+                              50 عميل
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => addTestReferrals(100)}
+                          disabled={testToolsLoading}
+                          className="px-3 py-2.5 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                        >
+                          {testToolsLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <Plus className="w-3.5 h-3.5" />
+                              100 عميل
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => addTestReferrals(maxFloors)}
+                          disabled={testToolsLoading}
+                          className="px-3 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                        >
+                          {testToolsLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <Building2 className="w-3.5 h-3.5" />
+                              مبنى واحد ({maxFloors})
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      
+                      <div className="mt-3 pt-3 border-t border-amber-200">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => addTestReferrals(maxFloors * 5)}
+                            disabled={testToolsLoading}
+                            className="flex-1 px-3 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                          >
+                            {testToolsLoading ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <>
+                                <Plus className="w-3.5 h-3.5" />
+                                5 مباني ({maxFloors * 5} إحالة)
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={clearTestReferrals}
+                            disabled={testToolsLoading}
+                            className="flex-1 px-3 py-2.5 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                          >
+                            {testToolsLoading ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <>
+                                <Trash2 className="w-3.5 h-3.5" />
+                                حذف الكل
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-amber-100/50 rounded-lg p-2 border border-amber-300/50">
+                      <p className="text-[10px] text-amber-800 text-center leading-relaxed">
+                        ⚠️ <strong>ملاحظة:</strong> هذه الأدوات للاختبار فقط قبل الإطلاق. يمكن إزالتها لاحقاً من الكود.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
               {/* حصالة السفير الجذابة تحت المبنى */}
               {walletData?.settings?.financial_rewards_enabled && (() => {
                 const buildingsPerDollar = walletData?.settings?.buildings_per_dollar || 5;
@@ -2506,138 +2638,6 @@ export default function ReferralPage() {
                   </div>
                 );
               })()}
-              
-              {/* أدوات تجريبية - للاختبار قبل الإطلاق - تظهر دائماً */}
-              <div className={`rounded-2xl border-2 transition-all duration-300 overflow-hidden ${
-                showTestTools 
-                  ? 'bg-gradient-to-br from-amber-50/90 via-yellow-50/80 to-amber-50/90 border-amber-400/60 shadow-lg' 
-                  : 'bg-slate-100/50 border-slate-300/30'
-              }`}>
-                {/* Header with Toggle */}
-                <div 
-                  onClick={() => setShowTestTools(!showTestTools)}
-                  className="p-3 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border-b border-amber-400/30 cursor-pointer hover:from-amber-500/30 hover:to-yellow-500/30 transition-all flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-yellow-600 rounded-lg flex items-center justify-center shadow-md">
-                      <Zap className="w-4 h-4 text-white" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-amber-900 flex items-center gap-2">
-                        🧪 أدوات تجريبية
-                      </p>
-                      <p className="text-[10px] text-amber-700">للاستخدام قبل الإطلاق - قابلة للإزالة لاحقاً</p>
-                    </div>
-                  </div>
-                  <ChevronDown className={`w-5 h-5 text-amber-700 transition-transform duration-300 ${showTestTools ? 'rotate-180' : ''}`} />
-                </div>
-                
-                {/* Test Tools Content */}
-                {showTestTools && (
-                  <div className="p-4 space-y-3">
-                    <div className="bg-white/60 rounded-xl p-3 border border-amber-200">
-                      <p className="text-xs text-amber-900 font-medium mb-3">إضافة عملاء تجريبيين:</p>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        <button
-                          onClick={() => addTestReferrals(10)}
-                          disabled={testToolsLoading}
-                          className="px-3 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                        >
-                          {testToolsLoading ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <>
-                              <Plus className="w-3.5 h-3.5" />
-                              10 عملاء
-                            </>
-                          )}
-                        </button>
-                        <button
-                          onClick={() => addTestReferrals(50)}
-                          disabled={testToolsLoading}
-                          className="px-3 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                        >
-                          {testToolsLoading ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <>
-                              <Plus className="w-3.5 h-3.5" />
-                              50 عميل
-                            </>
-                          )}
-                        </button>
-                        <button
-                          onClick={() => addTestReferrals(100)}
-                          disabled={testToolsLoading}
-                          className="px-3 py-2.5 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                        >
-                          {testToolsLoading ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <>
-                              <Plus className="w-3.5 h-3.5" />
-                              100 عميل
-                            </>
-                          )}
-                        </button>
-                        <button
-                          onClick={() => addTestReferrals(maxFloors)}
-                          disabled={testToolsLoading}
-                          className="px-3 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                        >
-                          {testToolsLoading ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <>
-                              <Building2 className="w-3.5 h-3.5" />
-                              مبنى واحد ({maxFloors})
-                            </>
-                          )}
-                        </button>
-                      </div>
-                      
-                      <div className="mt-3 pt-3 border-t border-amber-200">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => addTestReferrals(maxFloors * 5)}
-                            disabled={testToolsLoading}
-                            className="flex-1 px-3 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                          >
-                            {testToolsLoading ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <>
-                                <Plus className="w-3.5 h-3.5" />
-                                5 مباني ({maxFloors * 5} إحالة)
-                              </>
-                            )}
-                          </button>
-                          <button
-                            onClick={clearTestReferrals}
-                            disabled={testToolsLoading}
-                            className="flex-1 px-3 py-2.5 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                          >
-                            {testToolsLoading ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <>
-                                <Trash2 className="w-3.5 h-3.5" />
-                                حذف الكل
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="bg-amber-100/50 rounded-lg p-2 border border-amber-300/50">
-                      <p className="text-[10px] text-amber-800 text-center leading-relaxed">
-                        ⚠️ <strong>ملاحظة:</strong> هذه الأدوات للاختبار فقط قبل الإطلاق. يمكن إزالتها لاحقاً من الكود.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         )}
