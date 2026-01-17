@@ -149,7 +149,8 @@ export default function AmbassadorAdminPage() {
   const [aiScanResult, setAiScanResult] = useState<any>(null);
   const [aiScanning, setAiScanning] = useState(false);
   const [aiScanError, setAiScanError] = useState<string | null>(null);
-  const [aiScanModal, setAiScanModal] = useState<{show: boolean; userId: string; selectedBuildings: number[]} | null>(null);
+  const [aiScanMode, setAiScanMode] = useState<boolean>(false); // وضع اختيار المباني للفحص
+  const [selectedBuildingsForScan, setSelectedBuildingsForScan] = useState<number[]>([]);
   
   // System toggle state
   const [systemStatus, setSystemStatus] = useState<{ambassador_enabled: boolean; consumption_enabled: boolean; financial_rewards_enabled: boolean} | null>(null);
@@ -522,7 +523,7 @@ export default function AmbassadorAdminPage() {
     setAiScanning(true);
     setAiScanResult(null);
     setAiScanError(null);
-    setAiScanModal(null); // Close modal
+    setAiScanMode(false); // أغلق وضع الاختيار بعد بدء الفحص
     
     try {
       // If multiple buildings selected, scan all (backend will handle)
@@ -559,19 +560,46 @@ export default function AmbassadorAdminPage() {
     }
   }
 
-  // Open AI Scan Modal
-  function openAIScanModal(userId: string, preselectedBuilding?: number) {
-    console.log('🔍 Opening AI Scan Modal:', { userId, preselectedBuilding, selectedAmbassador });
-    if (!selectedAmbassador) {
-      console.error('❌ selectedAmbassador is null!');
-      setAiScanError('يجب اختيار سفير أولاً');
-      return;
+  // Toggle AI Scan Mode (show/hide building selection)
+  function toggleAIScanMode() {
+    if (aiScanMode) {
+      // إذا كان في وضع الاختيار، ابدأ الفحص
+      if (selectedBuildingsForScan.length === 0) {
+        // إذا لم يتم اختيار شيء، فحص كل المباني
+        runAIFraudScan(selectedAmbassador!.user.id, []);
+      } else {
+        runAIFraudScan(selectedAmbassador!.user.id, selectedBuildingsForScan);
+      }
+    } else {
+      // افتح وضع الاختيار
+      setAiScanMode(true);
+      setSelectedBuildingsForScan([]);
+      setAiScanResult(null);
+      setAiScanError(null);
     }
-    setAiScanModal({
-      show: true,
-      userId,
-      selectedBuildings: preselectedBuilding ? [preselectedBuilding] : []
+  }
+
+  // Toggle building selection for scan
+  function toggleBuildingSelection(buildingNumber: number) {
+    setSelectedBuildingsForScan(prev => {
+      if (prev.includes(buildingNumber)) {
+        return prev.filter(b => b !== buildingNumber);
+      } else {
+        return [...prev, buildingNumber];
+      }
     });
+  }
+
+  // Select all buildings
+  function selectAllBuildings() {
+    if (selectedAmbassador) {
+      setSelectedBuildingsForScan(selectedAmbassador.buildings.map(b => b.building_number));
+    }
+  }
+
+  // Deselect all buildings
+  function deselectAllBuildings() {
+    setSelectedBuildingsForScan([]);
   }
   
   // Load ambassadors when switching to buildings tab
@@ -914,18 +942,25 @@ export default function AmbassadorAdminPage() {
                           
                           {/* AI Scan Button */}
                           <button
-                            onClick={() => openAIScanModal(selectedAmbassador.user.id)}
+                            onClick={toggleAIScanMode}
                             disabled={aiScanning}
                             className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all ${
                               aiScanning 
                                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
-                                : 'bg-gradient-to-l from-purple-600 to-indigo-600 text-white hover:shadow-lg hover:scale-105'
+                                : aiScanMode
+                                  ? 'bg-gradient-to-l from-green-600 to-emerald-600 text-white hover:shadow-lg hover:scale-105'
+                                  : 'bg-gradient-to-l from-purple-600 to-indigo-600 text-white hover:shadow-lg hover:scale-105'
                             }`}
                           >
                             {aiScanning ? (
                               <>
                                 <Loader2 className="w-4 h-4 animate-spin" />
                                 جارٍ الفحص...
+                              </>
+                            ) : aiScanMode ? (
+                              <>
+                                <Brain className="w-4 h-4" />
+                                ابدأ التحليل
                               </>
                             ) : (
                               <>
@@ -1017,34 +1052,81 @@ export default function AmbassadorAdminPage() {
                       )}
                       
                       <div className="bg-white rounded-xl border border-slate-200 p-4">
-                        <h4 className="text-sm font-medium text-slate-700 mb-4">اختر مبنى لعرض طوابقه:</h4>
+                        {aiScanMode ? (
+                          <>
+                            <div className="flex items-center justify-between mb-4">
+                              <h4 className="text-sm font-medium text-slate-700">اختر المباني للفحص:</h4>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={selectAllBuildings}
+                                  className="px-3 py-1 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 text-xs font-medium"
+                                >
+                                  ✓ كل المباني
+                                </button>
+                                <button
+                                  onClick={deselectAllBuildings}
+                                  className="px-3 py-1 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-xs font-medium"
+                                >
+                                  ✗ إلغاء
+                                </button>
+                              </div>
+                            </div>
+                            {selectedBuildingsForScan.length > 0 && (
+                              <div className="mb-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                                <p className="text-sm font-medium text-purple-800">
+                                  تم اختيار {selectedBuildingsForScan.length} من {selectedAmbassador.buildings.length} مبنى
+                                </p>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <h4 className="text-sm font-medium text-slate-700 mb-4">اختر مبنى لعرض طوابقه:</h4>
+                        )}
                         <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3">
-                          {selectedAmbassador.buildings.map((building) => (
+                          {selectedAmbassador.buildings.map((building) => {
+                            const isSelectedForScan = selectedBuildingsForScan.includes(building.building_number);
+                            return (
                             <div
                               key={building.building_number}
-                              onClick={() => setSelectedBuilding(building)}
+                              onClick={() => aiScanMode ? toggleBuildingSelection(building.building_number) : setSelectedBuilding(building)}
                               className={`relative p-3 rounded-xl cursor-pointer transition-all hover:scale-105 ${
-                                building.has_issues 
-                                  ? 'bg-red-100 border-2 border-red-400 hover:bg-red-200' 
-                                  : building.is_complete
-                                    ? 'bg-emerald-100 border-2 border-emerald-400 hover:bg-emerald-200'
-                                    : 'bg-amber-100 border-2 border-amber-400 hover:bg-amber-200'
+                                aiScanMode
+                                  ? isSelectedForScan
+                                    ? 'bg-purple-100 border-2 border-purple-500 shadow-lg'
+                                    : 'bg-slate-50 border-2 border-slate-200 hover:border-purple-300'
+                                  : building.has_issues 
+                                    ? 'bg-red-100 border-2 border-red-400 hover:bg-red-200' 
+                                    : building.is_complete
+                                      ? 'bg-emerald-100 border-2 border-emerald-400 hover:bg-emerald-200'
+                                      : 'bg-amber-100 border-2 border-amber-400 hover:bg-amber-200'
                               }`}
                             >
                               <div className="text-center">
                                 <Building2 className={`w-8 h-8 mx-auto mb-1 ${
-                                  building.has_issues ? 'text-red-600' :
-                                  building.is_complete ? 'text-emerald-600' : 'text-amber-600'
+                                  aiScanMode
+                                    ? isSelectedForScan ? 'text-purple-600' : 'text-slate-400'
+                                    : building.has_issues ? 'text-red-600' :
+                                      building.is_complete ? 'text-emerald-600' : 'text-amber-600'
                                 }`} />
                                 <p className="text-xs font-bold text-slate-700">#{building.building_number}</p>
                                 <p className="text-[10px] text-slate-500">{building.total_floors}/20</p>
+                                {aiScanMode && building.floors && building.floors.length > 0 && (
+                                  <p className="text-[9px] text-slate-400 mt-1 truncate" title={building.floors.map((f: any) => f.referred_email).join(', ')}>
+                                    {building.floors[0]?.referred_email || ''}
+                                  </p>
+                                )}
                               </div>
-                              {building.has_issues && (
+                              {aiScanMode && isSelectedForScan && (
+                                <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center">
+                                  <Check className="w-3 h-3 text-white" />
+                                </div>
+                              )}
+                              {!aiScanMode && building.has_issues && (
                                 <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
                                   <AlertTriangle className="w-3 h-3 text-white" />
                                 </div>
                               )}
-                              {building.is_complete && !building.has_issues && (
+                              {!aiScanMode && building.is_complete && !building.has_issues && (
                                 <div className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center">
                                   <Check className="w-3 h-3 text-white" />
                                 </div>
