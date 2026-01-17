@@ -43,56 +43,61 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
     const ambassadorCode = user.ambassador_code || user.referral_code;
     console.log(`✅ User found: ${ambassadorCode}`);
   
-  // حساب العدد الفعلي من جدول الإحالات (كل الطوابق المبنية: completed + flagged_fraud)
-  const allFloorsResult = await db.query(
-    `SELECT COUNT(*) as count FROM referrals WHERE referrer_id = $1 AND status IN ('completed', 'flagged_fraud')`,
-    [userId]
-  );
-  const currentFloors = parseInt(allFloorsResult.rows[0]?.count || 0);
-  console.log(`✅ Current floors: ${currentFloors}`);
-  
-  // حساب عدد الإحالات الموصومة (الطوابق المنهارة - مواصفات غير سليمة)
-  const flaggedReferralsResult = await db.query(
-    `SELECT COUNT(*) as count FROM referrals WHERE referrer_id = $1 AND status = 'flagged_fraud'`,
-    [userId]
-  );
-  const flaggedFloors = parseInt(flaggedReferralsResult.rows[0]?.count || 0);
-  
-  const settingsResult = await db.query(
-    `SELECT max_floors, floors_per_reward, consumption_enabled, require_first_listing, require_email_verified FROM ambassador_settings WHERE id = 1`
-  );
-  const settings = settingsResult.rows[0] || { max_floors: 20, floors_per_reward: [], consumption_enabled: true, require_first_listing: false, require_email_verified: false };
-  
-  // جلب الإحالات - مع معالجة حالة عدم وجود جدول referral_risk_scores
-  let referralsResult;
-  try {
-    referralsResult = await db.query(
-      `SELECT r.id, r.status, r.created_at, r.collapse_reason, r.collapsed_at,
-              COALESCE(u.name, 'مستخدم اختباري') as referred_name, 
-              COALESCE(u.email, 'test@test.com') as referred_email,
-              rs.risk_score, rs.risk_level, rs.triggered_rules, rs.ai_explanation
-       FROM referrals r
-       LEFT JOIN users u ON u.id = r.referred_id
-       LEFT JOIN referral_risk_scores rs ON rs.referral_id = r.id
-       WHERE r.referrer_id = $1 AND r.status IN ('completed', 'flagged_fraud')
-       ORDER BY r.created_at ASC`,
+    // حساب العدد الفعلي من جدول الإحالات (كل الطوابق المبنية: completed + flagged_fraud)
+    const allFloorsResult = await db.query(
+      `SELECT COUNT(*) as count FROM referrals WHERE referrer_id = $1 AND status IN ('completed', 'flagged_fraud')`,
       [userId]
     );
-  } catch (joinError) {
-    // إذا فشل الـ JOIN بسبب عدم وجود الجدول، استخدم query بدون referral_risk_scores
-    console.warn('⚠️ referral_risk_scores table not found, using fallback query:', joinError.message);
-    referralsResult = await db.query(
-      `SELECT r.id, r.status, r.created_at, r.collapse_reason, r.collapsed_at,
-              COALESCE(u.name, 'مستخدم اختباري') as referred_name, 
-              COALESCE(u.email, 'test@test.com') as referred_email,
-              NULL::DECIMAL as risk_score, NULL::VARCHAR as risk_level, NULL::JSONB as triggered_rules, NULL::TEXT as ai_explanation
-       FROM referrals r
-       LEFT JOIN users u ON u.id = r.referred_id
-       WHERE r.referrer_id = $1 AND r.status IN ('completed', 'flagged_fraud')
-       ORDER BY r.created_at ASC`,
+    const currentFloors = parseInt(allFloorsResult.rows[0]?.count || 0);
+    console.log(`✅ Current floors: ${currentFloors}`);
+    
+    // حساب عدد الإحالات الموصومة (الطوابق المنهارة - مواصفات غير سليمة)
+    const flaggedReferralsResult = await db.query(
+      `SELECT COUNT(*) as count FROM referrals WHERE referrer_id = $1 AND status = 'flagged_fraud'`,
       [userId]
     );
-  }
+    const flaggedFloors = parseInt(flaggedReferralsResult.rows[0]?.count || 0);
+    console.log(`✅ Flagged floors: ${flaggedFloors}`);
+    
+    const settingsResult = await db.query(
+      `SELECT max_floors, floors_per_reward, consumption_enabled, require_first_listing, require_email_verified FROM ambassador_settings WHERE id = 1`
+    );
+    const settings = settingsResult.rows[0] || { max_floors: 20, floors_per_reward: [], consumption_enabled: true, require_first_listing: false, require_email_verified: false };
+    console.log(`✅ Settings loaded: max_floors=${settings.max_floors}`);
+    
+    // جلب الإحالات - مع معالجة حالة عدم وجود جدول referral_risk_scores
+    let referralsResult;
+    try {
+      console.log(`📋 Fetching referrals for user ${userId}...`);
+      referralsResult = await db.query(
+        `SELECT r.id, r.status, r.created_at, r.collapse_reason, r.collapsed_at,
+                COALESCE(u.name, 'مستخدم اختباري') as referred_name, 
+                COALESCE(u.email, 'test@test.com') as referred_email,
+                rs.risk_score, rs.risk_level, rs.triggered_rules, rs.ai_explanation
+         FROM referrals r
+         LEFT JOIN users u ON u.id = r.referred_id
+         LEFT JOIN referral_risk_scores rs ON rs.referral_id::BIGINT = r.id
+         WHERE r.referrer_id = $1 AND r.status IN ('completed', 'flagged_fraud')
+         ORDER BY r.created_at ASC`,
+        [userId]
+      );
+      console.log(`✅ Referrals fetched: ${referralsResult.rows.length}`);
+    } catch (joinError) {
+      // إذا فشل الـ JOIN بسبب عدم وجود الجدول أو type mismatch، استخدم query بدون referral_risk_scores
+      console.warn('⚠️ referral_risk_scores join failed, using fallback query:', joinError.message);
+      referralsResult = await db.query(
+        `SELECT r.id, r.status, r.created_at, r.collapse_reason, r.collapsed_at,
+                COALESCE(u.name, 'مستخدم اختباري') as referred_name, 
+                COALESCE(u.email, 'test@test.com') as referred_email,
+                NULL::DECIMAL as risk_score, NULL::VARCHAR as risk_level, NULL::JSONB as triggered_rules, NULL::TEXT as ai_explanation
+         FROM referrals r
+         LEFT JOIN users u ON u.id = r.referred_id
+         WHERE r.referrer_id = $1 AND r.status IN ('completed', 'flagged_fraud')
+         ORDER BY r.created_at ASC`,
+        [userId]
+      );
+      console.log(`✅ Fallback query succeeded: ${referralsResult.rows.length} referrals`);
+    }
   
   // جلب الطوابق الموصومة بالتفصيل
   const flaggedFloorsResult = await db.query(
