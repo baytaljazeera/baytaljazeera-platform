@@ -1920,29 +1920,45 @@ router.post("/dev/add-test-referrals", combinedAuthMiddleware, requireDevEnviron
     return res.status(400).json({ error: "لا يوجد كود سفير لهذا المستخدم" });
   }
   
-  // إنشاء مستخدمين وهميين وإحالات
+  // إنشاء مستخدمين وهميين وإحالات - محسّن للأداء (Batch Insert)
+  const timestamp = Date.now();
   const added = [];
+  
+  // إعداد البيانات للـ Batch Insert للمستخدمين
+  const userPlaceholders = [];
+  const userParams = [];
+  
   for (let i = 0; i < count; i++) {
-    const testEmail = `test_ref_${Date.now()}_${i}@test.com`;
-    const testName = `مستخدم اختباري ${i + 1}`;
-    
-    // إنشاء مستخدم وهمي
-    const userResult = await db.query(
-      `INSERT INTO users (name, email, password_hash) 
-       VALUES ($1, $2, 'test_hash_not_usable')
-       RETURNING id`,
-      [testName, testEmail]
-    );
-    const newUserId = userResult.rows[0].id;
-    
-    // إضافة الإحالة مع كود السفير
+    const paramIndex = i * 2 + 1;
+    userPlaceholders.push(`($${paramIndex}, $${paramIndex + 1}, 'test_hash_not_usable')`);
+    userParams.push(`مستخدم اختباري ${i + 1}`, `test_ref_${timestamp}_${i}@test.com`);
+  }
+  
+  // Batch Insert للمستخدمين - أسرع بكثير من الحلقة المتسلسلة
+  const userResult = await db.query(
+    `INSERT INTO users (name, email, password_hash) 
+     VALUES ${userPlaceholders.join(', ')}
+     RETURNING id, name, email`,
+    userParams
+  );
+  
+  // Batch Insert للإحالات
+  const referralPlaceholders = [];
+  const referralParams = [];
+  
+  userResult.rows.forEach((user, i) => {
+    const paramIndex = i * 3 + 1;
+    referralPlaceholders.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, 'completed', NOW() - INTERVAL '${i} days')`);
+    referralParams.push(userId, user.id, referralCode);
+    added.push({ id: user.id, name: user.name, email: user.email });
+  });
+  
+  if (referralPlaceholders.length > 0) {
     await db.query(
       `INSERT INTO referrals (referrer_id, referred_id, referral_code, status, created_at)
-       VALUES ($1, $2, $3, 'completed', NOW() - INTERVAL '${i} days')`,
-      [userId, newUserId, referralCode]
+       VALUES ${referralPlaceholders.join(', ')}`,
+      referralParams
     );
-    
-    added.push({ id: newUserId, name: testName, email: testEmail });
   }
   
   res.json({ 
