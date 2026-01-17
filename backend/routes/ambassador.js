@@ -175,45 +175,82 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
     console.log(`✅ Pending listing count: ${pendingListingCount}`);
     
     console.log(`✅ All queries completed successfully, preparing response...`);
-    console.log(`📊 Response data:`, {
+    console.log(`📊 Response data summary:`, {
       currentFloors,
       flaggedFloors,
       referralsCount: referralsWithFloorNumbers.length,
       consumptionsCount: consumptionsResult.rows.length
     });
 
+    // تحضير البيانات بشكل آمن - تحويل أي Date objects إلى strings
+    const safeReferrals = referralsWithFloorNumbers.map(ref => ({
+      ...ref,
+      created_at: ref.created_at ? new Date(ref.created_at).toISOString() : null,
+      collapse_reason: ref.collapse_reason || null,
+      collapsed_at: ref.collapsed_at ? new Date(ref.collapsed_at).toISOString() : null
+    }));
+    
+    const safeFlaggedFloorsDetails = flaggedFloorsResult.rows.map(floor => ({
+      ...floor,
+      created_at: floor.created_at ? new Date(floor.created_at).toISOString() : null,
+      collapse_reason: floor.collapse_reason || null,
+      collapsed_at: floor.collapsed_at ? new Date(floor.collapsed_at).toISOString() : null
+    }));
+    
+    const safeConsumptions = consumptionsResult.rows.map(cons => ({
+      ...cons,
+      consumed_at: cons.consumed_at ? new Date(cons.consumed_at).toISOString() : null
+    }));
+    
+    const safePendingRequest = pendingRequestResult.rows[0] ? {
+      ...pendingRequestResult.rows[0],
+      created_at: pendingRequestResult.rows[0].created_at ? new Date(pendingRequestResult.rows[0].created_at).toISOString() : null,
+      updated_at: pendingRequestResult.rows[0].updated_at ? new Date(pendingRequestResult.rows[0].updated_at).toISOString() : null,
+      reviewed_at: pendingRequestResult.rows[0].reviewed_at ? new Date(pendingRequestResult.rows[0].reviewed_at).toISOString() : null
+    } : null;
+
     const responseData = {
-      ambassador_code: ambassadorCode,
+      ambassador_code: ambassadorCode || '',
       // الإحصائيات الرئيسية
-      built_floors: currentFloors,           // الطوابق المبنية (completed + flagged_fraud)
-      collapsed_floors: flaggedFloors,       // الطوابق المنهارة (flagged_fraud)
-      healthy_floors: healthyFloors,         // الطوابق السليمة (built - collapsed)
-      floors_consumed: floorsConsumed,       // الطوابق المستهلكة للمكافآت
-      available_floors: availableFloors,     // الطوابق المتاحة للاستخدام (healthy - consumed)
-      pending_listing_count: pendingListingCount, // إحالات بانتظار أول إعلان
+      built_floors: currentFloors,
+      collapsed_floors: flaggedFloors,
+      healthy_floors: healthyFloors,
+      floors_consumed: floorsConsumed,
+      available_floors: availableFloors,
+      pending_listing_count: pendingListingCount,
       // للتوافق مع الكود القديم
       current_floors: currentFloors,
       flagged_floors: flaggedFloors,
-      flagged_floors_details: flaggedFloorsResult.rows,
-      total_floors_earned: user.total_floors_earned || currentFloors,
-      max_floors: settings.max_floors,
-      rewards_config: rewards,
-      available_reward: availableReward,
-      can_consume: canConsume,
-      consumption_enabled: settings.consumption_enabled,
-      pending_request: pendingRequestResult.rows[0] || null,
-      referrals: referralsWithFloorNumbers,
-      consumptions: consumptionsResult.rows,
+      flagged_floors_details: safeFlaggedFloorsDetails,
+      total_floors_earned: user.total_floors_earned || currentFloors || 0,
+      max_floors: settings.max_floors || 20,
+      rewards_config: Array.isArray(rewards) ? rewards : [],
+      available_reward: availableReward ? {
+        floors: availableReward.floors,
+        plan_name: availableReward.plan_name || '',
+        plan_tier: availableReward.plan_tier || '',
+        plan_months: availableReward.plan_months || 0
+      } : null,
+      can_consume: Boolean(canConsume),
+      consumption_enabled: Boolean(settings.consumption_enabled),
+      pending_request: safePendingRequest,
+      referrals: safeReferrals,
+      consumptions: safeConsumptions,
       // شروط الإحالة
       requirements: {
-        require_first_listing: settings.require_first_listing || false,
-        require_email_verified: settings.require_email_verified || false
+        require_first_listing: Boolean(settings.require_first_listing) || false,
+        require_email_verified: Boolean(settings.require_email_verified) || false
       }
     };
     
     console.log(`✅ Response prepared, sending...`);
-    res.json(responseData);
-    console.log(`✅ Response sent successfully`);
+    try {
+      res.json(responseData);
+      console.log(`✅ Response sent successfully`);
+    } catch (jsonError) {
+      console.error('❌ JSON serialization error:', jsonError);
+      throw jsonError;
+    }
   } catch (error) {
     console.error('❌ Error in /my-stats:', error);
     console.error('Error message:', error.message);
