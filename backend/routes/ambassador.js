@@ -2151,11 +2151,11 @@ router.delete("/dev/clear-test-referrals", combinedAuthMiddleware, asyncHandler(
   const deleted = await db.query(
     `DELETE FROM referrals 
      WHERE referrer_id = $1 
-     AND (
-       referred_id IN (SELECT id FROM users WHERE email LIKE 'test_ref_%@test.com')
-       OR referred_id IN (SELECT id FROM users WHERE email LIKE 'test_%@test.com')
-       OR referred_id IN (SELECT id FROM users WHERE email LIKE '%@test.com')
-       OR referred_email LIKE '%@test.com'
+     AND referred_id IN (
+       SELECT id FROM users 
+       WHERE email LIKE 'test_ref_%@test.com' 
+          OR email LIKE 'test_%@test.com'
+          OR email LIKE '%@test.com'
      )
      RETURNING id`,
     [userId]
