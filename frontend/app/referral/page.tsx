@@ -3104,7 +3104,7 @@ export default function ReferralPage() {
                     ) : (
                       <>
                         <ArrowDownCircle className="w-5 h-5" />
-                        تأكيد السحب
+                        <span>تأكيد السحب</span>
                       </>
                     )}
                   </button>
