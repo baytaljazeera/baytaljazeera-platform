@@ -1865,26 +1865,47 @@ export default function ReferralPage() {
         });
         setStats(data);
       } else {
-        const fallback = {
-          ambassador_code: (user as any)?.ambassador_code || generateTempCode(),
-          current_floors: 0,
-          flagged_floors: 0,
-          total_floors_earned: 0,
-          max_floors: 20,
-          rewards_config: [
-            { floors: 5, plan_name: 'باقة الصفوة', plan_tier: 'elite', plan_months: 1 },
-            { floors: 10, plan_name: 'باقة الصفوة', plan_tier: 'elite', plan_months: 2 },
-            { floors: 15, plan_name: 'باقة التميز', plan_tier: 'premium', plan_months: 2 },
-            { floors: 20, plan_name: 'باقة رجال الأعمال', plan_tier: 'business', plan_months: 2 },
-          ],
-          available_reward: null,
-          can_consume: false,
-          consumption_enabled: true,
-          pending_request: null,
-          referrals: [],
-          consumptions: []
-        };
-        setStats(fallback as AmbassadorStats);
+        // محاولة قراءة رسالة الخطأ من السيرفر
+        let errorData;
+        try {
+          const text = await res.text();
+          errorData = text ? JSON.parse(text) : { error: `HTTP ${res.status}` };
+        } catch {
+          errorData = { error: `HTTP ${res.status}` };
+        }
+        
+        console.error('❌ fetchStats failed:', {
+          status: res.status,
+          statusText: res.statusText,
+          error: errorData
+        });
+        
+        // عرض رسالة خطأ واضحة للمستخدم
+        setError(`خطأ ${res.status}: ${errorData.error || errorData.details || 'فشل جلب الإحصائيات'}`);
+        
+        // استخدام fallback فقط إذا لم يكن هناك stats حالية
+        if (!stats || stats.current_floors === undefined) {
+          const fallback = {
+            ambassador_code: (user as any)?.ambassador_code || generateTempCode(),
+            current_floors: 0,
+            flagged_floors: 0,
+            total_floors_earned: 0,
+            max_floors: 20,
+            rewards_config: [
+              { floors: 5, plan_name: 'باقة الصفوة', plan_tier: 'elite', plan_months: 1 },
+              { floors: 10, plan_name: 'باقة الصفوة', plan_tier: 'elite', plan_months: 2 },
+              { floors: 15, plan_name: 'باقة التميز', plan_tier: 'premium', plan_months: 2 },
+              { floors: 20, plan_name: 'باقة رجال الأعمال', plan_tier: 'business', plan_months: 2 },
+            ],
+            available_reward: null,
+            can_consume: false,
+            consumption_enabled: true,
+            pending_request: null,
+            referrals: [],
+            consumptions: []
+          };
+          setStats(fallback as AmbassadorStats);
+        }
       }
     } catch (err) {
       setError("حدث خطأ في الاتصال");
