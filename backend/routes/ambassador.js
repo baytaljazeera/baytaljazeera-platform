@@ -1766,23 +1766,55 @@ router.post('/wallet/withdraw', combinedAuthMiddleware, requireAmbassadorEnabled
     // لا نوقف العملية إذا فشل تسجيل المعاملة
   }
   
-  // Notify ambassador admins
+  // إرسال إشعارات للمسؤولين (المالية + المديرين)
   try {
-    const admins = await db.query(`SELECT id FROM users WHERE role IN ('super_admin', 'ambassador_admin')`);
+    // جلب المالية والمديرين
+    const admins = await db.query(`
+      SELECT id, email, role, name 
+      FROM users 
+      WHERE role IN ('super_admin', 'ambassador_admin', 'finance_admin')
+    `);
+    
+    console.log(`📧 Sending notifications to ${admins.rows.length} admins`);
+    
     for (const admin of admins.rows) {
       try {
+        let title, message;
+        
+        // رسالة مختلفة للمالية
+        if (admin.role === 'finance_admin') {
+          title = '💰 طلب سحب مالي - يحتاج دفع';
+          message = `طلب سحب جديد بقيمة $${(amount_cents/100).toFixed(2)} من مستخدم يحتاج إلى المراجعة والدفع. رقم الطلب: ${result.rows[0].id}`;
+        } else {
+          title = '💰 طلب سحب مالي جديد';
+          message = `طلب سحب جديد بقيمة $${(amount_cents/100).toFixed(2)} يحتاج مراجعة. رقم الطلب: ${result.rows[0].id}`;
+        }
+        
         await db.query(`
           INSERT INTO notifications (user_id, type, title, message)
-          VALUES ($1, 'ambassador_withdrawal', '💰 طلب سحب مالي جديد', 'طلب سحب جديد بقيمة $' || $2 || ' يحتاج مراجعة')
-        `, [admin.id, (amount_cents/100).toFixed(2)]);
+          VALUES ($1, 'ambassador_withdrawal', $2, $3)
+        `, [admin.id, title, message]);
+        
+        console.log(`✅ Notification sent to ${admin.role} (${admin.email})`);
       } catch (notifError) {
-        console.error('Error sending notification to admin:', notifError);
+        console.error(`Error sending notification to admin ${admin.email}:`, notifError);
         // لا نوقف العملية إذا فشل إرسال الإشعار
       }
     }
   } catch (adminError) {
     console.error('Error fetching admins for notification:', adminError);
     // لا نوقف العملية إذا فشل جلب الأدمن
+  }
+  
+  // إرسال إشعار للمستخدم أيضاً
+  try {
+    await db.query(`
+      INSERT INTO notifications (user_id, type, title, message)
+      VALUES ($1, 'ambassador_withdrawal', '✅ تم استقبال طلب السحب', 'تم استقبال طلب السحب بقيمة $' || $2 || ' بنجاح. سيتم مراجعته من قبل المالية قريباً.')
+    `, [userId, (amount_cents/100).toFixed(2)]);
+    console.log(`✅ User notification sent`);
+  } catch (userNotifError) {
+    console.error('Error sending user notification:', userNotifError);
   }
   
   console.log(`✅ Withdrawal request completed successfully: ${result.rows[0].id} for user ${userId}, amount: $${(amount_cents/100).toFixed(2)}`);

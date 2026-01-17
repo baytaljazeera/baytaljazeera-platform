@@ -2150,6 +2150,15 @@ async function initializeDatabase() {
       SELECT 1, 20
       WHERE NOT EXISTS (SELECT 1 FROM ambassador_settings WHERE id = 1);
     `);
+    
+    // Ensure financial_rewards_enabled is true (activate financial rewards)
+    await db.query(`
+      UPDATE ambassador_settings 
+      SET financial_rewards_enabled = true,
+          buildings_per_dollar = COALESCE(buildings_per_dollar, 5),
+          min_withdrawal_cents = COALESCE(min_withdrawal_cents, 100)
+      WHERE id = 1;
+    `);
 
     // Ambassador reward requests (user requests to admin)
     await db.query(`
@@ -2289,7 +2298,7 @@ async function initializeDatabase() {
           ALTER TABLE ambassador_settings ADD COLUMN min_withdrawal_cents INTEGER DEFAULT 100;
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ambassador_settings' AND column_name = 'financial_rewards_enabled') THEN
-          ALTER TABLE ambassador_settings ADD COLUMN financial_rewards_enabled BOOLEAN DEFAULT false;
+          ALTER TABLE ambassador_settings ADD COLUMN financial_rewards_enabled BOOLEAN DEFAULT true;
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ambassador_settings' AND column_name = 'ambassador_enabled') THEN
           ALTER TABLE ambassador_settings ADD COLUMN ambassador_enabled BOOLEAN DEFAULT true;
