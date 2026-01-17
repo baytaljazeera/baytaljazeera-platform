@@ -615,9 +615,9 @@ export default function FinancePage() {
                   )}
                 </span>
               )}
-              {tab.id === 'withdrawals' && tab.pendingCount > 0 && (
+              {tab.id === 'withdrawals' && (tab.pendingCount || 0) > 0 && (
                 <span className="bg-amber-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center">
-                  {tab.pendingCount}
+                  {tab.pendingCount || 0}
                 </span>
               )}
             </button>
@@ -708,7 +708,7 @@ export default function FinancePage() {
               icon={Wallet}
               label="طلبات سحب سفراء معلقة"
               value={stats.revenue.pendingWithdrawalRequestsCount || 0}
-              color="orange"
+              color="yellow"
               subtext={formatCurrency(stats.revenue.pendingWithdrawalRequests || 0)}
             />
           </div>
