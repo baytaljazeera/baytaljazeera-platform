@@ -1799,12 +1799,26 @@ export default function ReferralPage() {
   }
 
   async function requestWithdrawal(amountInDollars?: number) {
-    if (!walletData?.wallet || !walletData.settings.financial_rewards_enabled) return;
+    console.log('📞 requestWithdrawal called with:', { amountInDollars, walletData: walletData ? 'exists' : 'null' });
+    
+    if (!walletData?.wallet) {
+      console.error('❌ Wallet data not available in requestWithdrawal');
+      setError('بيانات المحفظة غير متوفرة. يرجى تحديث الصفحة.');
+      return;
+    }
+    
+    if (!walletData.settings?.financial_rewards_enabled) {
+      console.error('❌ Financial rewards disabled in requestWithdrawal');
+      setError('المكافآت المالية غير مفعلة حالياً');
+      return;
+    }
     
     // التحقق من صحة المبلغ
     const amountCents = amountInDollars 
       ? Math.round(amountInDollars * 100) 
       : walletData.wallet.balance_cents;
+    
+    console.log('💰 Calculated amount_cents:', amountCents);
     
     if (amountCents < (walletData.settings.min_withdrawal_cents || 100)) {
       setError(`الحد الأدنى للسحب هو $${((walletData.settings.min_withdrawal_cents || 100) / 100).toFixed(2)}`);
@@ -3100,19 +3114,49 @@ export default function ReferralPage() {
                   
                   {/* زر تأكيد السحب */}
                   <button
-                    onClick={async () => {
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      
+                      console.log('🔘 Withdraw button clicked', {
+                        withdrawAmount,
+                        balanceAmount,
+                        customAmount,
+                        walletData: walletData ? 'exists' : 'null',
+                        financial_rewards_enabled: walletData?.settings?.financial_rewards_enabled
+                      });
+                      
                       const amountToWithdraw = withdrawAmount === 'full' 
                         ? balanceAmount
                         : parseFloat(customAmount) || 0;
                       
+                      console.log('💰 Amount to withdraw:', amountToWithdraw);
+                      
                       if (amountToWithdraw <= 0) {
+                        console.error('❌ Invalid amount:', amountToWithdraw);
                         setError('الرجاء إدخال مبلغ صحيح');
                         return;
                       }
                       if (amountToWithdraw > balanceAmount) {
+                        console.error('❌ Amount exceeds balance:', { amountToWithdraw, balanceAmount });
                         setError('المبلغ أكبر من الرصيد المتاح!');
                         return;
                       }
+                      
+                      // التحقق من walletData قبل الاستمرار
+                      if (!walletData?.wallet) {
+                        console.error('❌ Wallet data not available');
+                        setError('بيانات المحفظة غير متوفرة. يرجى تحديث الصفحة.');
+                        return;
+                      }
+                      
+                      if (!walletData?.settings?.financial_rewards_enabled) {
+                        console.error('❌ Financial rewards disabled');
+                        setError('المكافآت المالية غير مفعلة حالياً');
+                        return;
+                      }
+                      
+                      console.log('✅ All validations passed, calling requestWithdrawal...');
                       
                       // لا تُغلق الـ modal قبل إرسال الطلب - سيُغلق بعد النجاح تلقائياً
                       await requestWithdrawal(amountToWithdraw);
@@ -3121,6 +3165,7 @@ export default function ReferralPage() {
                     className={`w-full py-3.5 bg-gradient-to-r from-[#D4AF37] via-[#B8860B] to-[#D4AF37] hover:from-[#B8860B] hover:to-[#D4AF37] text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-[#D4AF37]/30 disabled:opacity-50 disabled:cursor-not-allowed ${
                       withdrawing ? 'cursor-wait' : 'cursor-pointer'
                     }`}
+                    type="button"
                   >
                     {withdrawing ? (
                       <>
