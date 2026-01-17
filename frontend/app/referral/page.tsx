@@ -2413,373 +2413,51 @@ export default function ReferralPage() {
         )}
 
         {stats && (
-          <div className="space-y-6">
-            {/* القسم العلوي: الكود والمحفظة - تصميم محسّن */}
-            <div className="grid md:grid-cols-2 gap-4">
-              {/* كود السفير */}
-              <div className="order-1">
-                <AmbassadorCodeCard 
-                  code={stats.ambassador_code}
-                  onCopy={() => setCopied(true)}
-                  onShare={() => setShowShareModal(true)}
-                  termsAccepted={termsAccepted}
-                  onActivate={() => setShowTermsModal(true)}
-                />
-              </div>
+          <div className="grid lg:grid-cols-5 gap-6">
+            <div className="lg:col-span-3 space-y-6">
+              <InfoGuideStrip 
+                code={stats.ambassador_code} 
+                requirements={stats.requirements}
+                pendingListingCount={stats.pending_listing_count}
+              />
               
-              {/* المحفظة */}
-              <div className="order-2">
-                <SimpleWalletCard 
-                  amount={walletData?.wallet ? (walletData.wallet.balance_cents / 100) : (Math.floor(availableFloors / 20) / 5)}
-                  buildings={Math.floor(availableFloors / 20)}
-                  onWithdraw={() => setShowWithdrawModal(true)}
-                  pendingAmount={walletData?.pending_withdrawal ? (walletData.pending_withdrawal.amount_cents / 100) : 0}
-                  withdrawnAmount={walletData?.wallet?.total_withdrawn_cents ? (walletData.wallet.total_withdrawn_cents / 100) : 0}
-                />
-              </div>
-            </div>
+              <AmbassadorCodeCard 
+                code={stats.ambassador_code}
+                onCopy={() => setCopied(true)}
+                onShare={() => setShowShareModal(true)}
+                termsAccepted={termsAccepted}
+                onActivate={() => setShowTermsModal(true)}
+              />
+              
+              <SimpleWalletCard 
+                amount={walletData?.wallet ? (walletData.wallet.balance_cents / 100) : (Math.floor(availableFloors / 20) / 5)}
+                buildings={Math.floor(availableFloors / 20)}
+                onWithdraw={() => setShowWithdrawModal(true)}
+                pendingAmount={walletData?.pending_withdrawal ? (walletData.pending_withdrawal.amount_cents / 100) : 0}
+                withdrawnAmount={walletData?.wallet?.total_withdrawn_cents ? (walletData.wallet.total_withdrawn_cents / 100) : 0}
+              />
 
-            {/* شريط المعلومات السريع */}
-            <InfoGuideStrip 
-              code={stats.ambassador_code} 
-              requirements={stats.requirements}
-              pendingListingCount={stats.pending_listing_count}
-            />
-
-            {/* القسم الرئيسي: المبنى والمكافآت */}
-            <div className="grid lg:grid-cols-3 gap-6">
-              {/* العمود الأيسر: المبنى والحصالة */}
-              <div className="lg:col-span-1 space-y-4">
-                {/* المبنى */}
-                <div data-building-view className="rounded-3xl shadow-xl overflow-hidden border border-[#D4AF37]/30 bg-white/90 backdrop-blur-sm">
-                  <RealisticBuilding 
-                    currentFloors={currentFloors} 
-                    maxFloors={maxFloors}
-                    consumedFloors={consumedFloors}
-                    flaggedFloors={flaggedFloors}
-                    referrals={stats?.referrals as ReferralData[] || []}
-                    onFloorClick={handleFloorClick}
-                    highlightedFloor={highlightedFloor}
-                    selectedBuilding={selectedBuilding}
-                    onClearSelection={clearSelectedBuilding}
-                  />
+              <div className="bg-white/80 backdrop-blur-sm rounded-2xl sm:rounded-3xl shadow-xl p-5 sm:p-8 border border-[#D4AF37]/30">
+                <div className="flex items-center justify-between flex-wrap gap-3 mb-5 sm:mb-6">
+                  <h2 className="text-lg sm:text-xl font-bold text-[#003366] flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#D4AF37] to-[#B8860B] flex items-center justify-center shadow-lg">
+                      <Star className="w-5 h-5 text-[#003366]" />
+                    </div>
+                    <span>سلم المكافآت</span>
+                  </h2>
+                  <div className="flex items-center gap-3 flex-wrap text-[11px]">
+                    <span className="text-blue-600"><Building2 className="w-3 h-3 inline ml-1" />{builtFloors} طابق</span>
+                    <span className="text-emerald-600"><Check className="w-3 h-3 inline ml-1" />{availableFloors} متاح</span>
+                    <span className="text-[#B8860B]"><Gift className="w-3 h-3 inline ml-1" />{floorsConsumed} مستهلك</span>
+                    {collapsedFloors > 0 && (
+                      <button onClick={scrollToFlaggedFloor} className="text-red-600 hover:text-red-500">
+                        <Flag className="w-3 h-3 inline ml-1" />{collapsedFloors} منهار
+                      </button>
+                    )}
+                  </div>
                 </div>
                 
-                {/* حصالة السفير */}
-                {walletData?.settings?.financial_rewards_enabled && (() => {
-                  const buildingsPerDollar = walletData?.settings?.buildings_per_dollar || 5;
-                  const calculatedBuildings = Math.floor(builtFloors / maxFloors);
-                  const totalBuildings = Math.max(calculatedBuildings, walletData?.wallet?.total_buildings_completed || 0);
-                  const completedDollars = Math.floor(totalBuildings / buildingsPerDollar);
-                  const currentCycleProgress = totalBuildings % buildingsPerDollar;
-                  const totalRows = completedDollars + 1;
-                  const dbBalance = (walletData?.wallet?.balance_cents || 0) / 100;
-                  const estimatedBalance = totalBuildings / buildingsPerDollar;
-                  const displayBalance = Math.max(dbBalance, estimatedBalance);
-                  
-                  return (
-                    <div className="relative overflow-hidden rounded-2xl border-2 border-amber-400/50 shadow-xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-                      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-500/20 via-transparent to-emerald-500/10" />
-                      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 animate-pulse" />
-                      
-                      <div className="relative p-4 border-b border-amber-400/20">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="relative">
-                              <div className="w-12 h-12 bg-gradient-to-br from-amber-400 via-yellow-400 to-amber-500 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/30 animate-pulse">
-                                <Banknote className="w-6 h-6 text-amber-900" />
-                              </div>
-                              {totalBuildings > 0 && (
-                                <div className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center text-[8px] font-bold text-white border-2 border-slate-900">
-                                  {completedDollars}$
-                                </div>
-                              )}
-                            </div>
-                            <div>
-                              <h3 className="text-amber-400 font-bold text-sm">حصالة الأرباح</h3>
-                              <p className="text-slate-400 text-[10px]">اجمع المباني واكسب!</p>
-                            </div>
-                          </div>
-                          <div className="text-left">
-                            <p className="text-3xl font-black bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 bg-clip-text text-transparent">
-                              ${displayBalance.toFixed(2)}
-                            </p>
-                            <p className="text-[10px] text-emerald-400">{totalBuildings} مبنى مكتمل</p>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="relative p-4 space-y-3 max-h-48 overflow-y-auto">
-                        {Array.from({ length: totalRows }).map((_, rowIndex) => {
-                          const isCurrentRow = rowIndex === completedDollars;
-                          const isCompletedRow = rowIndex < completedDollars;
-                          const buildingsInThisRow = isCurrentRow ? currentCycleProgress : buildingsPerDollar;
-                          
-                          return (
-                            <div key={rowIndex} className={`flex items-center gap-3 p-3 rounded-2xl transition-all ${
-                              isCompletedRow 
-                                ? 'bg-[#d4edda] border-2 border-emerald-400' 
-                                : isCurrentRow 
-                                  ? 'bg-slate-700/40 border border-amber-400/30' 
-                                  : 'bg-slate-800/30'
-                            }`}>
-                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
-                                isCompletedRow 
-                                  ? 'bg-gradient-to-br from-amber-400 to-yellow-500 shadow-lg shadow-amber-500/40' 
-                                  : 'bg-slate-700 border-2 border-dashed border-slate-500'
-                              }`}>
-                                <DollarSign className={`w-5 h-5 ${isCompletedRow ? 'text-amber-900' : 'text-slate-500'}`} />
-                              </div>
-                              
-                              <div className="flex-1 flex items-center justify-center gap-2">
-                                {Array.from({ length: buildingsPerDollar }).map((_, buildingIndex) => {
-                                  const globalBuildingIndex = rowIndex * buildingsPerDollar + buildingIndex;
-                                  const building = buildingsData[globalBuildingIndex];
-                                  const isBuilt = isCompletedRow || (isCurrentRow && buildingIndex < buildingsInThisRow);
-                                  const isFlagged = building?.status === 'flagged';
-                                  const hasSuspicious = building?.suspiciousCount > 0;
-                                  const hasAnyFloors = building?.totalFloors > 0;
-                                  const isClickable = building && (hasAnyFloors || isFlagged || hasSuspicious);
-                                  
-                                  return (
-                                    <div 
-                                      key={buildingIndex}
-                                      onClick={() => isClickable && handleBuildingClick(building)}
-                                      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 relative ${
-                                        isFlagged
-                                          ? 'bg-gradient-to-br from-red-500 to-red-600 shadow-md shadow-red-500/40 cursor-pointer hover:scale-110 animate-pulse'
-                                          : hasSuspicious
-                                            ? 'bg-gradient-to-br from-amber-500 to-orange-500 shadow-md shadow-amber-500/40 cursor-pointer hover:scale-110'
-                                            : isBuilt 
-                                              ? 'bg-gradient-to-br from-amber-400 to-yellow-500 shadow-md shadow-amber-400/30 cursor-pointer hover:scale-105' 
-                                              : hasAnyFloors
-                                                ? 'bg-gradient-to-br from-amber-300 to-yellow-400 shadow-md shadow-amber-300/20 cursor-pointer hover:scale-105 opacity-80'
-                                                : 'bg-slate-700/60 border border-slate-600'
-                                      }`}
-                                    >
-                                      {isFlagged ? (
-                                        <Building2 className="w-4 h-4 text-white" />
-                                      ) : hasSuspicious ? (
-                                        <Building2 className="w-4 h-4 text-white" />
-                                      ) : isBuilt ? (
-                                        <Building2 className="w-4 h-4 text-amber-900" />
-                                      ) : (
-                                        <Building2 className="w-4 h-4 text-slate-500" />
-                                      )}
-                                      {(isFlagged || hasSuspicious) && (
-                                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full flex items-center justify-center">
-                                          <Flag className={`w-2 h-2 ${isFlagged ? 'text-red-600' : 'text-amber-600'}`} />
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                              
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-                                isCompletedRow 
-                                  ? 'bg-emerald-500 text-white' 
-                                  : 'bg-slate-700 text-slate-400 border border-slate-600'
-                              }`}>
-                                {isCompletedRow ? <Check className="w-4 h-4" /> : rowIndex + 1}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      
-                      <div className="px-4 pb-2">
-                        <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
-                          <span>تقدم الدولار التالي</span>
-                          <span className="text-amber-400 font-bold">{currentCycleProgress}/{buildingsPerDollar}</span>
-                        </div>
-                        <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 rounded-full transition-all duration-500"
-                            style={{ width: `${(currentCycleProgress / buildingsPerDollar) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                      
-                      <div className="p-4 pt-2 border-t border-amber-400/20">
-                        {walletData?.pending_withdrawal ? (
-                          <div className="py-2 px-3 bg-amber-500/20 text-amber-400 rounded-xl text-xs text-center font-medium flex items-center justify-center gap-2 border border-amber-500/30">
-                            <Clock className="w-4 h-4 animate-spin" />
-                            طلب سحب ${(walletData.pending_withdrawal.amount_cents / 100).toFixed(2)} قيد المراجعة
-                          </div>
-                        ) : (walletData?.wallet?.balance_cents || 0) >= (walletData?.settings?.min_withdrawal_cents || 100) ? (
-                          <button
-                            onClick={() => setShowWithdrawModal(true)}
-                            className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-emerald-500/30"
-                          >
-                            <ArrowDownCircle className="w-4 h-4" />
-                            اسحب أموالك
-                          </button>
-                        ) : (
-                          <div className="py-2 px-3 bg-slate-700/50 text-slate-400 rounded-xl text-xs text-center">
-                            الحد الأدنى للسحب: ${((walletData?.settings?.min_withdrawal_cents || 100) / 100).toFixed(2)}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-                
-                {/* أدوات تجريبية */}
-                <div className={`rounded-2xl border-2 transition-all duration-300 overflow-hidden ${
-                  showTestTools 
-                    ? 'bg-gradient-to-br from-amber-50/90 via-yellow-50/80 to-amber-50/90 border-amber-400/60 shadow-lg' 
-                    : 'bg-slate-100/50 border-slate-300/30'
-                }`}>
-                  <div 
-                    onClick={() => setShowTestTools(!showTestTools)}
-                    className="p-3 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border-b border-amber-400/30 cursor-pointer hover:from-amber-500/30 hover:to-yellow-500/30 transition-all flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-yellow-600 rounded-lg flex items-center justify-center shadow-md">
-                        <Zap className="w-4 h-4 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-amber-900 flex items-center gap-2">
-                          🧪 أدوات تجريبية
-                        </p>
-                        <p className="text-[10px] text-amber-700">للاستخدام قبل الإطلاق - قابلة للإزالة لاحقاً</p>
-                      </div>
-                    </div>
-                    <ChevronDown className={`w-5 h-5 text-amber-700 transition-transform duration-300 ${showTestTools ? 'rotate-180' : ''}`} />
-                  </div>
-                  
-                  {showTestTools && (
-                    <div className="p-4 space-y-3">
-                      <div className="bg-white/60 rounded-xl p-3 border border-amber-200">
-                        <p className="text-xs text-amber-900 font-medium mb-3">إضافة عملاء تجريبيين:</p>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          <button
-                            onClick={() => addTestReferrals(10)}
-                            disabled={testToolsLoading}
-                            className="px-3 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                          >
-                            {testToolsLoading ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <>
-                                <Plus className="w-3.5 h-3.5" />
-                                10 عملاء
-                              </>
-                            )}
-                          </button>
-                          <button
-                            onClick={() => addTestReferrals(50)}
-                            disabled={testToolsLoading}
-                            className="px-3 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                          >
-                            {testToolsLoading ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <>
-                                <Plus className="w-3.5 h-3.5" />
-                                50 عميل
-                              </>
-                            )}
-                          </button>
-                          <button
-                            onClick={() => addTestReferrals(100)}
-                            disabled={testToolsLoading}
-                            className="px-3 py-2.5 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                          >
-                            {testToolsLoading ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <>
-                                <Plus className="w-3.5 h-3.5" />
-                                100 عميل
-                              </>
-                            )}
-                          </button>
-                          <button
-                            onClick={() => addTestReferrals(maxFloors)}
-                            disabled={testToolsLoading}
-                            className="px-3 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                          >
-                            {testToolsLoading ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <>
-                                <Building2 className="w-3.5 h-3.5" />
-                                مبنى ({maxFloors})
-                              </>
-                            )}
-                          </button>
-                        </div>
-                        
-                        <div className="mt-3 pt-3 border-t border-amber-200">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => addTestReferrals(maxFloors * 5)}
-                              disabled={testToolsLoading}
-                              className="flex-1 px-3 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                            >
-                              {testToolsLoading ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <>
-                                  <Plus className="w-3.5 h-3.5" />
-                                  5 مباني ({maxFloors * 5})
-                                </>
-                              )}
-                            </button>
-                            <button
-                              onClick={clearTestReferrals}
-                              disabled={testToolsLoading}
-                              className="px-4 py-2.5 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                            >
-                              {testToolsLoading ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <>
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  حذف الكل
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                        
-                        <div className="bg-amber-100/50 rounded-lg p-2 border border-amber-300/50 mt-3">
-                          <p className="text-[10px] text-amber-800 text-center leading-relaxed">
-                            ⚠️ <strong>ملاحظة:</strong> هذه الأدوات للاختبار فقط قبل الإطلاق. يمكن إزالتها لاحقاً من الكود.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* العمود الأيمن: المكافآت والتسجيلات */}
-              <div className="lg:col-span-2 space-y-6">
-                {/* سلم المكافآت */}
-                <div className="bg-white/80 backdrop-blur-sm rounded-2xl sm:rounded-3xl shadow-xl p-5 sm:p-8 border border-[#D4AF37]/30">
-                  <div className="flex items-center justify-between flex-wrap gap-3 mb-5 sm:mb-6">
-                    <h2 className="text-lg sm:text-xl font-bold text-[#003366] flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#D4AF37] to-[#B8860B] flex items-center justify-center shadow-lg">
-                        <Star className="w-5 h-5 text-[#003366]" />
-                      </div>
-                      <span>سلم المكافآت</span>
-                    </h2>
-                    <div className="flex items-center gap-3 flex-wrap text-[11px]">
-                      <span className="text-blue-600"><Building2 className="w-3 h-3 inline ml-1" />{builtFloors} طابق</span>
-                      <span className="text-emerald-600"><Check className="w-3 h-3 inline ml-1" />{availableFloors} متاح</span>
-                      <span className="text-[#B8860B]"><Gift className="w-3 h-3 inline ml-1" />{floorsConsumed} مستهلك</span>
-                      {collapsedFloors > 0 && (
-                        <button onClick={scrollToFlaggedFloor} className="text-red-600 hover:text-red-500">
-                          <Flag className="w-3 h-3 inline ml-1" />{collapsedFloors} منهار
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-3">
+                <div className="space-y-3">
                   {stats.rewards_config?.map((reward, idx) => {
                     const isAchieved = availableFloors >= reward.floors;
                     const progress = Math.min((availableFloors / reward.floors) * 100, 100);
@@ -2898,10 +2576,10 @@ export default function ReferralPage() {
                       </div>
                     );
                   })}
-                  </div>
                 </div>
+              </div>
 
-                {stats.referrals && stats.referrals.length > 0 && (
+              {stats.referrals && stats.referrals.length > 0 && (
                 <div className="bg-white/80 backdrop-blur-sm rounded-2xl sm:rounded-3xl shadow-xl p-5 sm:p-8 border border-[#D4AF37]/30">
                   <h2 className="text-lg sm:text-xl font-bold text-[#003366] mb-5 flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center shadow-lg">
@@ -2930,7 +2608,326 @@ export default function ReferralPage() {
                   </div>
                 </div>
               )}
+            </div>
+
+            <div className="lg:col-span-2 lg:sticky lg:top-4 space-y-4">
+              <div data-building-view className="rounded-3xl shadow-xl overflow-hidden border border-[#D4AF37]/30">
+                <RealisticBuilding 
+                  currentFloors={currentFloors} 
+                  maxFloors={maxFloors}
+                  consumedFloors={consumedFloors}
+                  flaggedFloors={flaggedFloors}
+                  referrals={stats?.referrals as ReferralData[] || []}
+                  onFloorClick={handleFloorClick}
+                  highlightedFloor={highlightedFloor}
+                  selectedBuilding={selectedBuilding}
+                  onClearSelection={clearSelectedBuilding}
+                />
               </div>
+              
+              {/* أدوات تجريبية - للاختبار قبل الإطلاق - تظهر دائماً بعد المبنى */}
+              <div className={`rounded-2xl border-2 transition-all duration-300 overflow-hidden ${
+                showTestTools 
+                  ? 'bg-gradient-to-br from-amber-50/90 via-yellow-50/80 to-amber-50/90 border-amber-400/60 shadow-lg' 
+                  : 'bg-slate-100/50 border-slate-300/30'
+              }`}>
+                {/* Header with Toggle */}
+                <div 
+                  onClick={() => setShowTestTools(!showTestTools)}
+                  className="p-3 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border-b border-amber-400/30 cursor-pointer hover:from-amber-500/30 hover:to-yellow-500/30 transition-all flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-yellow-600 rounded-lg flex items-center justify-center shadow-md">
+                      <Zap className="w-4 h-4 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-amber-900 flex items-center gap-2">
+                        🧪 أدوات تجريبية
+                      </p>
+                      <p className="text-[10px] text-amber-700">للاستخدام قبل الإطلاق - قابلة للإزالة لاحقاً</p>
+                    </div>
+                  </div>
+                  <ChevronDown className={`w-5 h-5 text-amber-700 transition-transform duration-300 ${showTestTools ? 'rotate-180' : ''}`} />
+                </div>
+                
+                {/* Test Tools Content */}
+                {showTestTools && (
+                  <div className="p-4 space-y-3">
+                    <div className="bg-white/60 rounded-xl p-3 border border-amber-200">
+                      <p className="text-xs text-amber-900 font-medium mb-3">إضافة عملاء تجريبيين:</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <button
+                          onClick={() => addTestReferrals(10)}
+                          disabled={testToolsLoading}
+                          className="px-3 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                        >
+                          {testToolsLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <Plus className="w-3.5 h-3.5" />
+                              10 عملاء
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => addTestReferrals(50)}
+                          disabled={testToolsLoading}
+                          className="px-3 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                        >
+                          {testToolsLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <Plus className="w-3.5 h-3.5" />
+                              50 عميل
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => addTestReferrals(100)}
+                          disabled={testToolsLoading}
+                          className="px-3 py-2.5 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                        >
+                          {testToolsLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <Plus className="w-3.5 h-3.5" />
+                              100 عميل
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => addTestReferrals(maxFloors)}
+                          disabled={testToolsLoading}
+                          className="px-3 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                        >
+                          {testToolsLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <Building2 className="w-3.5 h-3.5" />
+                              مبنى واحد ({maxFloors})
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      
+                      <div className="mt-3 pt-3 border-t border-amber-200">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => addTestReferrals(maxFloors * 5)}
+                            disabled={testToolsLoading}
+                            className="flex-1 px-3 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                          >
+                            {testToolsLoading ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <>
+                                <Plus className="w-3.5 h-3.5" />
+                                5 مباني ({maxFloors * 5} إحالة)
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={clearTestReferrals}
+                            disabled={testToolsLoading}
+                            className="flex-1 px-3 py-2.5 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white text-xs font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                          >
+                            {testToolsLoading ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <>
+                                <Trash2 className="w-3.5 h-3.5" />
+                                حذف الكل
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-amber-100/50 rounded-lg p-2 border border-amber-300/50">
+                      <p className="text-[10px] text-amber-800 text-center leading-relaxed">
+                        ⚠️ <strong>ملاحظة:</strong> هذه الأدوات للاختبار فقط قبل الإطلاق. يمكن إزالتها لاحقاً من الكود.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {/* حصالة السفير الجذابة تحت المبنى */}
+              {walletData?.settings?.financial_rewards_enabled && (() => {
+                const buildingsPerDollar = walletData?.settings?.buildings_per_dollar || 5;
+                // حساب المباني المكتملة تلقائياً من الطوابق المبنية
+                const calculatedBuildings = Math.floor(builtFloors / maxFloors);
+                const totalBuildings = Math.max(calculatedBuildings, walletData?.wallet?.total_buildings_completed || 0);
+                const completedDollars = Math.floor(totalBuildings / buildingsPerDollar);
+                const currentCycleProgress = totalBuildings % buildingsPerDollar;
+                const totalRows = completedDollars + 1;
+                
+                // مبدأ الشفافية: حساب الرصيد الجزئي التقديري
+                const dbBalance = (walletData?.wallet?.balance_cents || 0) / 100;
+                const estimatedBalance = totalBuildings / buildingsPerDollar;
+                const displayBalance = Math.max(dbBalance, estimatedBalance);
+                
+                return (
+                  <div className="relative overflow-hidden rounded-2xl border-2 border-amber-400/50 shadow-xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+                    {/* خلفية متحركة */}
+                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-500/20 via-transparent to-emerald-500/10" />
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 animate-pulse" />
+                    
+                    {/* العنوان الرئيسي */}
+                    <div className="relative p-4 border-b border-amber-400/20">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="relative">
+                            <div className="w-12 h-12 bg-gradient-to-br from-amber-400 via-yellow-400 to-amber-500 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/30 animate-pulse">
+                              <Banknote className="w-6 h-6 text-amber-900" />
+                            </div>
+                            {totalBuildings > 0 && (
+                              <div className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center text-[8px] font-bold text-white border-2 border-slate-900">
+                                {completedDollars}$
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <h3 className="text-amber-400 font-bold text-sm">حصالة الأرباح</h3>
+                            <p className="text-slate-400 text-[10px]">اجمع المباني واكسب!</p>
+                          </div>
+                        </div>
+                        <div className="text-left">
+                          <p className="text-3xl font-black bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 bg-clip-text text-transparent">
+                            ${displayBalance.toFixed(2)}
+                          </p>
+                          <p className="text-[10px] text-emerald-400">{totalBuildings} مبنى مكتمل</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* صفوف المباني - تصميم جديد */}
+                    <div className="relative p-4 space-y-3 max-h-48 overflow-y-auto">
+                      {Array.from({ length: totalRows }).map((_, rowIndex) => {
+                        const isCurrentRow = rowIndex === completedDollars;
+                        const isCompletedRow = rowIndex < completedDollars;
+                        const buildingsInThisRow = isCurrentRow ? currentCycleProgress : buildingsPerDollar;
+                        
+                        return (
+                          <div key={rowIndex} className={`flex items-center gap-3 p-3 rounded-2xl transition-all ${
+                            isCompletedRow 
+                              ? 'bg-[#d4edda] border-2 border-emerald-400' 
+                              : isCurrentRow 
+                                ? 'bg-slate-700/40 border border-amber-400/30' 
+                                : 'bg-slate-800/30'
+                          }`}>
+                            {/* أيقونة الدولار */}
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
+                              isCompletedRow 
+                                ? 'bg-gradient-to-br from-amber-400 to-yellow-500 shadow-lg shadow-amber-500/40' 
+                                : 'bg-slate-700 border-2 border-dashed border-slate-500'
+                            }`}>
+                              <DollarSign className={`w-5 h-5 ${isCompletedRow ? 'text-amber-900' : 'text-slate-500'}`} />
+                            </div>
+                            
+                            {/* المباني كدوائر تقدم - مع الألوان حسب الحالة */}
+                            <div className="flex-1 flex items-center justify-center gap-2">
+                              {Array.from({ length: buildingsPerDollar }).map((_, buildingIndex) => {
+                                const globalBuildingIndex = rowIndex * buildingsPerDollar + buildingIndex;
+                                const building = buildingsData[globalBuildingIndex];
+                                const isBuilt = isCompletedRow || (isCurrentRow && buildingIndex < buildingsInThisRow);
+                                const isFlagged = building?.status === 'flagged';
+                                const hasSuspicious = building?.suspiciousCount > 0;
+                                
+                                const hasAnyFloors = building?.totalFloors > 0;
+                                const isClickable = building && (hasAnyFloors || isFlagged || hasSuspicious);
+                                
+                                return (
+                                  <div 
+                                    key={buildingIndex}
+                                    onClick={() => isClickable && handleBuildingClick(building)}
+                                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 relative ${
+                                      isFlagged
+                                        ? 'bg-gradient-to-br from-red-500 to-red-600 shadow-md shadow-red-500/40 cursor-pointer hover:scale-110 animate-pulse'
+                                        : hasSuspicious
+                                          ? 'bg-gradient-to-br from-amber-500 to-orange-500 shadow-md shadow-amber-500/40 cursor-pointer hover:scale-110'
+                                          : isBuilt 
+                                            ? 'bg-gradient-to-br from-amber-400 to-yellow-500 shadow-md shadow-amber-400/30 cursor-pointer hover:scale-105' 
+                                            : hasAnyFloors
+                                              ? 'bg-gradient-to-br from-amber-300 to-yellow-400 shadow-md shadow-amber-300/20 cursor-pointer hover:scale-105 opacity-80'
+                                              : 'bg-slate-700/60 border border-slate-600'
+                                    }`}
+                                  >
+                                    {isFlagged ? (
+                                      <Building2 className="w-4 h-4 text-white" />
+                                    ) : hasSuspicious ? (
+                                      <Building2 className="w-4 h-4 text-white" />
+                                    ) : isBuilt ? (
+                                      <Building2 className="w-4 h-4 text-amber-900" />
+                                    ) : (
+                                      <Building2 className="w-4 h-4 text-slate-500" />
+                                    )}
+                                    {(isFlagged || hasSuspicious) && (
+                                      <div className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full flex items-center justify-center">
+                                        <Flag className={`w-2 h-2 ${isFlagged ? 'text-red-600' : 'text-amber-600'}`} />
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            
+                            {/* رقم الصف وعلامة الاكتمال */}
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                              isCompletedRow 
+                                ? 'bg-emerald-500 text-white' 
+                                : 'bg-slate-700 text-slate-400 border border-slate-600'
+                            }`}>
+                              {isCompletedRow ? <Check className="w-4 h-4" /> : rowIndex + 1}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    {/* شريط التقدم */}
+                    <div className="px-4 pb-2">
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                        <span>تقدم الدولار التالي</span>
+                        <span className="text-amber-400 font-bold">{currentCycleProgress}/{buildingsPerDollar}</span>
+                      </div>
+                      <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 rounded-full transition-all duration-500"
+                          style={{ width: `${(currentCycleProgress / buildingsPerDollar) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* زر السحب */}
+                    <div className="p-4 pt-2 border-t border-amber-400/20">
+                      {walletData?.pending_withdrawal ? (
+                        <div className="py-2 px-3 bg-amber-500/20 text-amber-400 rounded-xl text-xs text-center font-medium flex items-center justify-center gap-2 border border-amber-500/30">
+                          <Clock className="w-4 h-4 animate-spin" />
+                          طلب سحب ${(walletData.pending_withdrawal.amount_cents / 100).toFixed(2)} قيد المراجعة
+                        </div>
+                      ) : (walletData?.wallet?.balance_cents || 0) >= (walletData?.settings?.min_withdrawal_cents || 100) ? (
+                        <button
+                          onClick={() => setShowWithdrawModal(true)}
+                          className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-emerald-500/30"
+                        >
+                          <ArrowDownCircle className="w-4 h-4" />
+                          اسحب أموالك
+                        </button>
+                      ) : (
+                        <div className="text-center text-[10px] text-slate-400">
+                          <p>أكمل <span className="text-amber-400 font-bold">{buildingsPerDollar - currentCycleProgress}</span> مباني أخرى للدولار التالي</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
