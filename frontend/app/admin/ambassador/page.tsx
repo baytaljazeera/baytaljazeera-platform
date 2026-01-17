@@ -1132,7 +1132,8 @@ export default function AmbassadorAdminPage() {
                                 </div>
                               )}
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
