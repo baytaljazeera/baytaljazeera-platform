@@ -2009,6 +2009,54 @@ async function initializeDatabase() {
         UNIQUE(referred_id)
       );
     `);
+    
+    // Fraud Detection Tables - جداول اكتشاف الاحتيال
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS referral_risk_scores (
+        id SERIAL PRIMARY KEY,
+        referral_id BIGINT REFERENCES referrals(id) ON DELETE CASCADE,
+        ambassador_id UUID,
+        risk_score DECIMAL(5,2) DEFAULT 0,
+        risk_level VARCHAR(20) DEFAULT 'low',
+        triggered_rules JSONB DEFAULT '[]',
+        ai_analysis TEXT,
+        ai_explanation TEXT,
+        recommended_action VARCHAR(50),
+        assessed_at TIMESTAMPTZ DEFAULT NOW(),
+        assessed_by VARCHAR(50) DEFAULT 'system',
+        UNIQUE(referral_id)
+      );
+    `);
+    
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS ai_fraud_scans (
+        id SERIAL PRIMARY KEY,
+        ambassador_id UUID,
+        building_number INTEGER,
+        scan_type VARCHAR(20) DEFAULT 'manual',
+        status VARCHAR(20) DEFAULT 'pending',
+        total_referrals INTEGER DEFAULT 0,
+        flagged_count INTEGER DEFAULT 0,
+        high_risk_count INTEGER DEFAULT 0,
+        medium_risk_count INTEGER DEFAULT 0,
+        low_risk_count INTEGER DEFAULT 0,
+        summary TEXT,
+        ai_report JSONB,
+        started_at TIMESTAMPTZ DEFAULT NOW(),
+        completed_at TIMESTAMPTZ,
+        triggered_by UUID
+      );
+    `);
+    
+    // Add indexes for fraud detection tables
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS idx_risk_scores_referral ON referral_risk_scores(referral_id);
+      CREATE INDEX IF NOT EXISTS idx_risk_scores_level ON referral_risk_scores(risk_level);
+      CREATE INDEX IF NOT EXISTS idx_risk_scores_ambassador ON referral_risk_scores(ambassador_id);
+    `);
+    
+    console.log("✅ Fraud detection tables created");
+    `);
 
     // Add referral_code column to users if not exists
     await db.query(`
