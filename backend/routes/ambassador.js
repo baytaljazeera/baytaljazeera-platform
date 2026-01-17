@@ -1914,10 +1914,28 @@ router.post("/dev/add-test-referrals", combinedAuthMiddleware, requireDevEnviron
     `SELECT ambassador_code FROM users WHERE id = $1`,
     [userId]
   );
-  const referralCode = userInfo.rows[0]?.ambassador_code;
   
+  if (!userInfo.rows || userInfo.rows.length === 0) {
+    return res.status(404).json({ error: "المستخدم غير موجود" });
+  }
+  
+  let referralCode = userInfo.rows[0]?.ambassador_code;
+  
+  // إذا لم يكن هناك كود سفير، قم بإنشائه
   if (!referralCode) {
-    return res.status(400).json({ error: "لا يوجد كود سفير لهذا المستخدم" });
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = 'AQR';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    
+    // تحديث كود السفير
+    await db.query(
+      `UPDATE users SET ambassador_code = $1 WHERE id = $2`,
+      [code, userId]
+    );
+    
+    referralCode = code;
   }
   
   // إنشاء مستخدمين وهميين وإحالات - محسّن للأداء (Batch Insert)
@@ -1935,12 +1953,25 @@ router.post("/dev/add-test-referrals", combinedAuthMiddleware, requireDevEnviron
   }
   
   // Batch Insert للمستخدمين - أسرع بكثير من الحلقة المتسلسلة
-  const userResult = await db.query(
-    `INSERT INTO users (name, email, password_hash) 
-     VALUES ${userPlaceholders.join(', ')}
-     RETURNING id, name, email`,
-    userParams
-  );
+  let userResult;
+  try {
+    userResult = await db.query(
+      `INSERT INTO users (name, email, password_hash) 
+       VALUES ${userPlaceholders.join(', ')}
+       RETURNING id, name, email`,
+      userParams
+    );
+  } catch (dbError) {
+    console.error('Error creating test users:', dbError);
+    return res.status(500).json({ 
+      error: "حدث خطأ أثناء إنشاء المستخدمين الاختباريين",
+      details: process.env.NODE_ENV === 'development' ? dbError.message : undefined
+    });
+  }
+  
+  if (!userResult.rows || userResult.rows.length === 0) {
+    return res.status(500).json({ error: "فشل إنشاء المستخدمين الاختباريين" });
+  }
   
   // Batch Insert للإحالات
   const referralPlaceholders = [];
@@ -1954,11 +1985,25 @@ router.post("/dev/add-test-referrals", combinedAuthMiddleware, requireDevEnviron
   });
   
   if (referralPlaceholders.length > 0) {
-    await db.query(
-      `INSERT INTO referrals (referrer_id, referred_id, referral_code, status, created_at)
-       VALUES ${referralPlaceholders.join(', ')}`,
-      referralParams
-    );
+    try {
+      await db.query(
+        `INSERT INTO referrals (referrer_id, referred_id, referral_code, status, created_at)
+         VALUES ${referralPlaceholders.join(', ')}`,
+        referralParams
+      );
+    } catch (refError) {
+      console.error('Error creating referrals:', refError);
+      // حذف المستخدمين الذين تم إنشاؤهم لأن الإحالات فشلت
+      const userIds = userResult.rows.map(u => u.id);
+      await db.query(
+        `DELETE FROM users WHERE id = ANY($1::uuid[])`,
+        [userIds]
+      );
+      return res.status(500).json({ 
+        error: "حدث خطأ أثناء إنشاء الإحالات",
+        details: process.env.NODE_ENV === 'development' ? refError.message : undefined
+      });
+    }
   }
   
   res.json({ 

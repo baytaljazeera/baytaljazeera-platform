@@ -2010,12 +2010,27 @@ export default function ReferralPage() {
         credentials: 'include',
         body: JSON.stringify({ count })
       });
+      
+      const data = await res.json();
+      
       if (res.ok) {
+        setSuccessMessage(`✅ ${data.message || `تمت إضافة ${count} عميل بنجاح!`}`);
+        setTimeout(() => setSuccessMessage(null), 5000);
         await fetchStats();
         await fetchWalletData();
+      } else {
+        const errorMsg = data.error || 'حدث خطأ أثناء إضافة العملاء';
+        setError(errorMsg);
+        console.error('Add test referrals error:', data);
+        alert(`❌ ${errorMsg}`);
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error('Add test referrals error:', err);
+      const errorMsg = err.message?.includes('fetch') 
+        ? 'لا يمكن الاتصال بالسيرفر. تحقق من اتصالك بالإنترنت.'
+        : 'حدث خطأ غير متوقع. حاول مرة أخرى.';
+      setError(errorMsg);
+      alert(`❌ ${errorMsg}`);
     } finally {
       setTestToolsLoading(false);
     }
@@ -2023,13 +2038,22 @@ export default function ReferralPage() {
 
   // أدوات اختبارية - حذف الإحالات الاختبارية
   const clearTestReferrals = async () => {
+    if (!confirm('هل أنت متأكد من حذف جميع العملاء التجريبيين؟')) {
+      return;
+    }
+    
     setTestToolsLoading(true);
     try {
       const res = await fetch('/api/ambassador/dev/clear-test-referrals', {
         method: 'DELETE',
         credentials: 'include'
       });
+      
+      const data = await res.json();
+      
       if (res.ok) {
+        setSuccessMessage(`✅ ${data.message || 'تم حذف جميع العملاء التجريبيين بنجاح!'}`);
+        setTimeout(() => setSuccessMessage(null), 5000);
         await fetchStats();
         await fetchWalletData();
       }
