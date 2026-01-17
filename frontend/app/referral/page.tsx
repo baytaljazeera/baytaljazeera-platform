@@ -3012,15 +3012,41 @@ export default function ReferralPage() {
             const calculatedBalance = Math.floor(availableFloors / 20) / 5;
             // استخدام قيمة API إذا متوفرة، وإلا الحساب المحلي كـ fallback
             const balanceAmount = walletData?.wallet ? (apiBalanceCents / 100) : calculatedBalance;
+
+            // إغلاق عند الضغط على Escape
+            const handleEscape = (e: KeyboardEvent) => {
+              if (e.key === 'Escape') {
+                setShowWithdrawModal(false);
+                setError('');
+              }
+            };
             
+            if (typeof window !== 'undefined') {
+              window.addEventListener('keydown', handleEscape);
+              setTimeout(() => window.removeEventListener('keydown', handleEscape), 100);
+            }
+
             return (
-            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-3xl border-2 border-[#D4AF37]/40 shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-300">
+            <div 
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
+              onClick={(e) => {
+                // إغلاق عند النقر خارج الـ modal
+                if (e.target === e.currentTarget) {
+                  setShowWithdrawModal(false);
+                  setError('');
+                }
+              }}
+            >
+              <div className="bg-white rounded-2xl border-2 border-[#D4AF37]/40 shadow-2xl w-full max-w-xs overflow-hidden animate-in zoom-in-95 duration-300 relative">
                 {/* Header */}
-                <div className="relative p-5 border-b border-[#D4AF37]/20 bg-gradient-to-r from-[#D4AF37]/10 to-emerald-500/10">
+                <div className="relative p-4 border-b border-[#D4AF37]/20 bg-gradient-to-r from-[#D4AF37]/10 to-emerald-500/10">
                   <button 
-                    onClick={() => setShowWithdrawModal(false)}
-                    className="absolute top-4 left-4 p-1.5 hover:bg-[#003366]/10 rounded-full transition"
+                    onClick={() => {
+                      setShowWithdrawModal(false);
+                      setError('');
+                    }}
+                    className="absolute top-3 right-3 p-1.5 hover:bg-[#003366]/10 rounded-full transition z-10"
+                    aria-label="إغلاق"
                   >
                     <X className="w-5 h-5 text-[#003366]" />
                   </button>
