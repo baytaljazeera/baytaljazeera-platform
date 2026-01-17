@@ -25,6 +25,8 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
   const userId = req.user.id;
   
   try {
+    console.log(`📊 Fetching stats for user: ${userId}`);
+    
     const userResult = await db.query(
       `SELECT 
         ambassador_code, ambassador_floors, total_floors_earned,
@@ -39,6 +41,7 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
     
     const user = userResult.rows[0];
     const ambassadorCode = user.ambassador_code || user.referral_code;
+    console.log(`✅ User found: ${ambassadorCode}`);
   
   // حساب العدد الفعلي من جدول الإحالات (كل الطوابق المبنية: completed + flagged_fraud)
   const allFloorsResult = await db.query(
@@ -46,6 +49,7 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
     [userId]
   );
   const currentFloors = parseInt(allFloorsResult.rows[0]?.count || 0);
+  console.log(`✅ Current floors: ${currentFloors}`);
   
   // حساب عدد الإحالات الموصومة (الطوابق المنهارة - مواصفات غير سليمة)
   const flaggedReferralsResult = await db.query(
@@ -196,10 +200,18 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
     });
   } catch (error) {
     console.error('❌ Error in /my-stats:', error);
+    console.error('Error message:', error.message);
+    console.error('Error code:', error.code);
+    console.error('Error detail:', error.detail);
     console.error('Error stack:', error.stack);
+    
+    // إرجاع رسالة خطأ واضحة
+    const errorMessage = error.message || 'Unknown error';
+    const errorDetail = error.detail || error.code || '';
+    
     return res.status(500).json({ 
       error: "حدث خطأ أثناء جلب الإحصائيات",
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      details: process.env.NODE_ENV === 'development' ? `${errorMessage} ${errorDetail}` : undefined,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
