@@ -1894,7 +1894,23 @@ router.get('/admin/financial-requests', combinedAuthMiddleware, requireRoles(['s
   const { status = 'all', page = 1, limit = 20 } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
   
-  console.log(`📋 Fetching withdrawal requests: status=${status}, page=${page}, limit=${limit}, offset=${offset}`);
+  console.log(`📋 [ADMIN] Fetching withdrawal requests: status=${status}, page=${page}, limit=${limit}, offset=${offset}`);
+  
+  // First, check total count without filters
+  const totalCheck = await db.query(`SELECT COUNT(*) as total FROM ambassador_withdrawal_requests`);
+  console.log(`📊 [ADMIN] Total withdrawal requests in DB: ${totalCheck.rows[0].total}`);
+  
+  // Check pending count
+  const pendingCheck = await db.query(`SELECT COUNT(*) as total FROM ambassador_withdrawal_requests WHERE status = 'pending'`);
+  console.log(`📊 [ADMIN] Pending withdrawal requests: ${pendingCheck.rows[0].total}`);
+  
+  // Check all statuses
+  const statusBreakdown = await db.query(`
+    SELECT status, COUNT(*) as count 
+    FROM ambassador_withdrawal_requests 
+    GROUP BY status
+  `);
+  console.log(`📊 [ADMIN] Status breakdown:`, statusBreakdown.rows.map(r => `${r.status}: ${r.count}`));
   
   let statusFilter = '';
   const params = [parseInt(limit), parseInt(offset)];
@@ -1921,6 +1937,16 @@ router.get('/admin/financial-requests', combinedAuthMiddleware, requireRoles(['s
     LIMIT $1 OFFSET $2
   `, params);
   
+  console.log(`📋 [ADMIN] Query executed. Found ${requests.rows.length} requests after filtering`);
+  if (requests.rows.length > 0) {
+    console.log(`📋 [ADMIN] Sample request:`, {
+      id: requests.rows[0].id,
+      user_name: requests.rows[0].user_name,
+      amount: requests.rows[0].amount_cents,
+      status: requests.rows[0].status
+    });
+  }
+  
   const countParams = status !== 'all' ? [status] : [];
   const countResult = await db.query(`
     SELECT COUNT(*) FROM ambassador_withdrawal_requests ${status !== 'all' ? 'WHERE status = $1' : ''}
@@ -1931,15 +1957,21 @@ router.get('/admin/financial-requests', combinedAuthMiddleware, requireRoles(['s
     SELECT COUNT(*) FROM ambassador_withdrawal_requests WHERE status = 'pending'
   `);
   
-  console.log(`✅ Found ${requests.rows.length} withdrawal requests (total: ${countResult.rows[0].count}, pending: ${pendingCount.rows[0].count})`);
-  
-  res.json({
+  const response = {
     requests: requests.rows,
     total: parseInt(countResult.rows[0].count),
     pending_count: parseInt(pendingCount.rows[0].count),
     page: parseInt(page),
     limit: parseInt(limit)
+  };
+  
+  console.log(`✅ [ADMIN] Sending response:`, {
+    requests_count: response.requests.length,
+    total: response.total,
+    pending_count: response.pending_count
   });
+  
+  res.json(response);
 }));
 
 // Admin: Review withdrawal request (ambassador admin step)

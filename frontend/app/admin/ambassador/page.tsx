@@ -259,10 +259,20 @@ export default function AmbassadorAdminPage() {
       }
       if (withdrawalRes.ok) {
         const data = await withdrawalRes.json();
-        console.log('📋 Withdrawal requests fetched:', data);
+        console.log('📋 [FRONTEND] Withdrawal requests fetched:', {
+          count: data.requests?.length || 0,
+          total: data.total,
+          pending_count: data.pending_count,
+          requests: data.requests
+        });
         setWithdrawalRequests(data.requests || []);
       } else {
-        console.error('❌ Failed to fetch withdrawal requests:', withdrawalRes.status, await withdrawalRes.text().catch(() => ''));
+        const errorText = await withdrawalRes.text().catch(() => '');
+        console.error('❌ [FRONTEND] Failed to fetch withdrawal requests:', {
+          status: withdrawalRes.status,
+          statusText: withdrawalRes.statusText,
+          error: errorText
+        });
       }
       if (settingsRes.ok) setSettings(await settingsRes.json());
     } catch (err) {
