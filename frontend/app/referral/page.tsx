@@ -2026,11 +2026,19 @@ export default function ReferralPage() {
         setSuccessMessage(successMsg);
         setTimeout(() => setSuccessMessage(null), 5000);
         
-        // تحديث الإحصائيات
+        console.log('✅ Test referrals added successfully:', data);
+        
+        // تحديث الإحصائيات - إضافة timeout للتأكد من تحديث الـ database
+        await new Promise(resolve => setTimeout(resolve, 500));
         await fetchStats();
         await fetchWalletData();
         
-        console.log('✅ Test referrals added successfully:', data);
+        // تحقق من البيانات بعد التحديث
+        console.log('📊 Stats after update:', {
+          currentFloors: stats?.current_floors,
+          builtFloors: stats?.built_floors,
+          referrals: stats?.referrals?.length
+        });
       } else {
         const errorMsg = data.error || `حدث خطأ أثناء إضافة العملاء (${res.status})`;
         setError(errorMsg);
