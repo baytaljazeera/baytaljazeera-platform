@@ -2056,7 +2056,6 @@ async function initializeDatabase() {
     `);
     
     console.log("✅ Fraud detection tables created");
-    `);
 
     // Add referral_code column to users if not exists
     await db.query(`
