@@ -1730,6 +1730,9 @@ export default function ReferralPage() {
   const [acceptingTerms, setAcceptingTerms] = useState(false);
   const [showTestTools, setShowTestTools] = useState(true); // Toggle for test tools
   const [testToolsLoading, setTestToolsLoading] = useState(false);
+  
+  // Building ref for scroll functionality - must be at top level
+  const buildingRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function verifyAuth() {
@@ -2437,8 +2440,6 @@ export default function ReferralPage() {
   };
 
   const buildingsData = buildBuildingsData();
-
-  const buildingRef = useRef<HTMLDivElement>(null);
 
   const handleBuildingClick = (building: BuildingData) => {
     setSelectedBuilding(building);
