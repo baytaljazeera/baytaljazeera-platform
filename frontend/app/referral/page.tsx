@@ -3204,9 +3204,8 @@ export default function ReferralPage() {
             </div>
             <button 
               onClick={() => setSuccessMessage(null)}
-              className="flex-shrink-0 p-1.5 hover:bg-white/20 rounded-full transition"
+              className="flex-shrink-0 mr-2 p-1.5 hover:bg-white/20 rounded-full transition"
               aria-label="إغلاق"
-              className="mr-2 p-1 hover:bg-white/20 rounded-full transition"
             >
               <X className="w-5 h-5" />
             </button>
