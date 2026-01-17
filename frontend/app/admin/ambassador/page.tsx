@@ -561,6 +561,12 @@ export default function AmbassadorAdminPage() {
 
   // Open AI Scan Modal
   function openAIScanModal(userId: string, preselectedBuilding?: number) {
+    console.log('🔍 Opening AI Scan Modal:', { userId, preselectedBuilding, selectedAmbassador });
+    if (!selectedAmbassador) {
+      console.error('❌ selectedAmbassador is null!');
+      setError('يجب اختيار سفير أولاً');
+      return;
+    }
     setAiScanModal({
       show: true,
       userId,
