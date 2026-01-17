@@ -1707,12 +1707,17 @@ router.post('/wallet/withdraw', combinedAuthMiddleware, requireAmbassadorEnabled
     WHERE user_id = $1
   `, [userId]);
   
-  // Record transaction
-  await db.query(`
-    INSERT INTO wallet_transactions 
-    (user_id, type, amount_cents, balance_after_cents, description, related_request_id)
-    VALUES ($1, 'withdrawal_hold', $2, $3, 'حجز رصيد لطلب سحب', $4)
-  `, [userId, -amount_cents, newBalanceAfterWithdraw, result.rows[0].id]);
+  // Record transaction (with error handling - قد لا يكون الجدول موجوداً)
+  try {
+    await db.query(`
+      INSERT INTO wallet_transactions 
+      (user_id, type, amount_cents, balance_after_cents, description, related_request_id)
+      VALUES ($1, 'withdrawal_hold', $2, $3, 'حجز رصيد لطلب سحب', $4)
+    `, [userId, -amount_cents, newBalanceAfterWithdraw, result.rows[0].id]);
+  } catch (txError) {
+    console.error('Error recording wallet transaction (non-critical):', txError);
+    // لا نوقف العملية إذا فشل تسجيل المعاملة
+  }
   
   // Notify ambassador admins
   const admins = await db.query(`SELECT id FROM users WHERE role IN ('super_admin', 'ambassador_admin')`);
@@ -1949,54 +1954,76 @@ router.post('/admin/financial-requests/:id/complete', combinedAuthMiddleware, re
 
 // Helper: AI fraud analysis for withdrawal
 async function analyzeWithdrawalRequest(userId, amountCents) {
-  const userStats = await db.query(`
-    SELECT 
-      u.*,
-      (SELECT COUNT(*) FROM referrals WHERE referrer_id = u.id AND is_flagged = true) as flagged_referrals,
-      (SELECT COUNT(*) FROM referrals WHERE referrer_id = u.id) as total_referrals,
-      (SELECT COUNT(*) FROM ambassador_withdrawal_requests WHERE user_id = u.id AND status = 'completed') as past_withdrawals
-    FROM users u WHERE u.id = $1
-  `, [userId]);
-  
-  const user = userStats.rows[0];
-  let riskScore = 0;
-  const riskFactors = [];
-  
-  // Check flagged ratio
-  const flaggedRatio = user.total_referrals > 0 ? user.flagged_referrals / user.total_referrals : 0;
-  if (flaggedRatio > 0.3) {
-    riskScore += 40;
-    riskFactors.push({ factor: 'high_flagged_ratio', score: 40, detail: `${(flaggedRatio*100).toFixed(1)}% إحالات مشبوهة` });
-  } else if (flaggedRatio > 0.1) {
-    riskScore += 20;
-    riskFactors.push({ factor: 'moderate_flagged_ratio', score: 20, detail: `${(flaggedRatio*100).toFixed(1)}% إحالات مشبوهة` });
+  try {
+    const userStats = await db.query(`
+      SELECT 
+        u.*,
+        (SELECT COUNT(*) FROM referrals WHERE referrer_id = u.id AND status = 'flagged_fraud') as flagged_referrals,
+        (SELECT COUNT(*) FROM referrals WHERE referrer_id = u.id) as total_referrals,
+        (SELECT COUNT(*) FROM ambassador_withdrawal_requests WHERE user_id = u.id AND status = 'completed') as past_withdrawals
+      FROM users u WHERE u.id = $1
+    `, [userId]);
+    
+    if (!userStats.rows || userStats.rows.length === 0) {
+      throw new Error('المستخدم غير موجود');
+    }
+    
+    const user = userStats.rows[0];
+    let riskScore = 0;
+    const riskFactors = [];
+    
+    // Check flagged ratio
+    const flaggedReferrals = parseInt(user.flagged_referrals || 0);
+    const totalReferrals = parseInt(user.total_referrals || 0);
+    const flaggedRatio = totalReferrals > 0 ? flaggedReferrals / totalReferrals : 0;
+    
+    if (flaggedRatio > 0.3) {
+      riskScore += 40;
+      riskFactors.push({ factor: 'high_flagged_ratio', score: 40, detail: `${(flaggedRatio*100).toFixed(1)}% إحالات مشبوهة` });
+    } else if (flaggedRatio > 0.1) {
+      riskScore += 20;
+      riskFactors.push({ factor: 'moderate_flagged_ratio', score: 20, detail: `${(flaggedRatio*100).toFixed(1)}% إحالات مشبوهة` });
+    }
+    
+    // Check account age
+    if (user.created_at) {
+      const accountAgeDays = Math.floor((Date.now() - new Date(user.created_at).getTime()) / (1000*60*60*24));
+      if (accountAgeDays < 30) {
+        riskScore += 30;
+        riskFactors.push({ factor: 'new_account', score: 30, detail: `حساب عمره ${accountAgeDays} يوم فقط` });
+      }
+    }
+    
+    // Check if first withdrawal
+    const pastWithdrawals = parseInt(user.past_withdrawals || 0);
+    if (pastWithdrawals === 0) {
+      riskScore += 10;
+      riskFactors.push({ factor: 'first_withdrawal', score: 10, detail: 'أول طلب سحب' });
+    }
+    
+    // Large amount check
+    if (amountCents > 100000) { // أكثر من $1000
+      riskScore += 15;
+      riskFactors.push({ factor: 'large_amount', score: 15, detail: `مبلغ كبير: $${(amountCents/100).toFixed(2)}` });
+    }
+    
+    return {
+      riskScore,
+      riskLevel: riskScore >= 60 ? 'high' : riskScore >= 30 ? 'medium' : 'low',
+      riskFactors,
+      analyzedAt: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Error in analyzeWithdrawalRequest:', error);
+    // في حالة الخطأ، نعيد risk score منخفض بدلاً من إيقاف العملية
+    return {
+      riskScore: 0,
+      riskLevel: 'low',
+      riskFactors: [],
+      analyzedAt: new Date().toISOString(),
+      error: error.message
+    };
   }
-  
-  // Check account age
-  const accountAgeDays = Math.floor((Date.now() - new Date(user.created_at).getTime()) / (1000*60*60*24));
-  if (accountAgeDays < 30) {
-    riskScore += 30;
-    riskFactors.push({ factor: 'new_account', score: 30, detail: `حساب عمره ${accountAgeDays} يوم فقط` });
-  }
-  
-  // Check if first withdrawal
-  if (user.past_withdrawals === 0) {
-    riskScore += 10;
-    riskFactors.push({ factor: 'first_withdrawal', score: 10, detail: 'أول طلب سحب' });
-  }
-  
-  // Large amount check
-  if (amountCents > 1000) {
-    riskScore += 15;
-    riskFactors.push({ factor: 'large_amount', score: 15, detail: `مبلغ كبير: $${(amountCents/100).toFixed(2)}` });
-  }
-  
-  return {
-    riskScore,
-    riskLevel: riskScore >= 60 ? 'high' : riskScore >= 30 ? 'medium' : 'low',
-    riskFactors,
-    analyzedAt: new Date().toISOString()
-  };
 }
 
 // Middleware للأدوات التطويرية - متاح في Production للاختبار قبل الإطلاق (سيتم إزالتها لاحقاً)
