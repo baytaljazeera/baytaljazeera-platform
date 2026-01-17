@@ -440,32 +440,74 @@ function InfoGuideStrip({ code, requirements, pendingListingCount }: {
 function SimpleWalletCard({ 
   amount, 
   buildings, 
-  onWithdraw 
+  onWithdraw,
+  pendingAmount = 0,
+  withdrawnAmount = 0
 }: { 
   amount: number; 
   buildings: number; 
   onWithdraw: () => void;
+  pendingAmount?: number;
+  withdrawnAmount?: number;
 }) {
+  const availableAmount = amount; // المبلغ المتاح (أخضر)
+  const pending = pendingAmount; // المبلغ قيد المراجعة (أصفر)
+  const withdrawn = withdrawnAmount; // المبلغ المسحوب/المدفوع (أحمر)
+  
   return (
-    <div className="flex items-center justify-between bg-white/90 backdrop-blur-sm rounded-xl px-4 py-3 border border-[#D4AF37]/30 shadow-sm">
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#D4AF37] to-[#B8860B] flex items-center justify-center">
-          <DollarSign className="w-4 h-4 text-white" />
+    <div className="bg-white/90 backdrop-blur-sm rounded-xl px-4 py-3 border border-[#D4AF37]/30 shadow-sm">
+      {/* المبلغ المتاح (أخضر) */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center">
+            <DollarSign className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <p className="text-xs text-slate-600 mb-0.5">المتاح</p>
+            <p className="text-lg font-bold text-emerald-600">${availableAmount.toFixed(2)}</p>
+          </div>
         </div>
-        <div>
-          <p className="text-lg font-bold text-[#003366]">${amount.toFixed(2)}</p>
-          <p className="text-[10px] text-[#5a4a2a]">{buildings} مبنى مكتمل</p>
-        </div>
+        {availableAmount >= 1 && (
+          <button
+            onClick={onWithdraw}
+            className="text-xs text-emerald-600 hover:text-emerald-500 font-medium flex items-center gap-1 transition"
+          >
+            <Wallet className="w-3 h-3" />
+            سحب
+          </button>
+        )}
       </div>
-      {amount >= 1 && (
-        <button
-          onClick={onWithdraw}
-          className="text-xs text-emerald-600 hover:text-emerald-500 font-medium flex items-center gap-1 transition"
-        >
-          <Wallet className="w-3 h-3" />
-          سحب
-        </button>
+      
+      {/* المبلغ قيد المراجعة (أصفر) */}
+      {pending > 0 && (
+        <div className="flex items-center gap-3 mb-2 pt-2 border-t border-amber-200/50">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center">
+            <Clock className="w-4 h-4 text-white" />
+          </div>
+          <div className="flex-1">
+            <p className="text-xs text-slate-600 mb-0.5">قيد المراجعة</p>
+            <p className="text-base font-bold text-amber-600">${pending.toFixed(2)}</p>
+          </div>
+        </div>
       )}
+      
+      {/* المبلغ المسحوب (أحمر) */}
+      {withdrawn > 0 && (
+        <div className="flex items-center gap-3 pt-2 border-t border-red-200/50">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center">
+            <Check className="w-4 h-4 text-white" />
+          </div>
+          <div className="flex-1">
+            <p className="text-xs text-slate-600 mb-0.5">تم السحب</p>
+            <p className="text-base font-bold text-red-600">${withdrawn.toFixed(2)}</p>
+          </div>
+        </div>
+      )}
+      
+      {/* عدد المباني */}
+      <div className="mt-2 pt-2 border-t border-slate-200/50">
+        <p className="text-[10px] text-[#5a4a2a] text-center">{buildings} مبنى مكتمل</p>
+      </div>
     </div>
   );
 }
