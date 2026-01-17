@@ -98,7 +98,7 @@ async function analyzeAmbassadorReferrals(ambassadorId, options = {}) {
   let query = `
     SELECT 
       r.id, r.referrer_id, r.referred_id, r.status, r.created_at,
-      r.ip_address, r.user_agent, r.device_fingerprint,
+      NULL::TEXT as ip_address, NULL::TEXT as user_agent, NULL::TEXT as device_fingerprint,
       u.email, u.name, u.created_at as user_created_at
     FROM referrals r
     JOIN users u ON u.id = r.referred_id
