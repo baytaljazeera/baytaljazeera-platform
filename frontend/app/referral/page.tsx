@@ -1848,9 +1848,21 @@ export default function ReferralPage() {
     try {
       setLoading(true);
       setError("");
-      const res = await fetch('/api/ambassador/my-stats', { credentials: 'include' });
+      const res = await fetch('/api/ambassador/my-stats', { 
+        credentials: 'include',
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      });
       if (res.ok) {
         const data = await res.json();
+        console.log('📊 Fetched stats:', {
+          current_floors: data.current_floors,
+          built_floors: data.built_floors,
+          referrals_count: data.referrals?.length,
+          total_data: data
+        });
         setStats(data);
       } else {
         const fallback = {
