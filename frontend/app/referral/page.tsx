@@ -2497,7 +2497,9 @@ export default function ReferralPage() {
               />
               
               <SimpleWalletCard 
-                amount={walletData?.wallet ? (walletData.wallet.balance_cents / 100) : (Math.floor(availableFloors / 20) / 5)}
+                amount={walletData?.wallet ? (
+                  (walletData.wallet.balance_cents - (walletData.pending_withdrawal?.amount_cents || 0)) / 100
+                ) : (Math.floor(availableFloors / 20) / 5)}
                 buildings={Math.floor(availableFloors / 20)}
                 onWithdraw={() => setShowWithdrawModal(true)}
                 pendingAmount={walletData?.pending_withdrawal ? (walletData.pending_withdrawal.amount_cents / 100) : 0}
