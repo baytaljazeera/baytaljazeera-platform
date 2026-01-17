@@ -110,9 +110,17 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
     [userId]
   );
   
-  let rewards = settings.floors_per_reward;
+  let rewards = settings.floors_per_reward || [];
   if (typeof rewards === 'string') {
-    rewards = JSON.parse(rewards);
+    try {
+      rewards = JSON.parse(rewards);
+    } catch (parseError) {
+      console.error('Error parsing floors_per_reward:', parseError);
+      rewards = [];
+    }
+  }
+  if (!Array.isArray(rewards)) {
+    rewards = [];
   }
   
   // حساب الطوابق السليمة (المبنية - المنهارة)
@@ -169,10 +177,12 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
       }
     });
   } catch (error) {
-    console.error('Error in /my-stats:', error);
+    console.error('❌ Error in /my-stats:', error);
+    console.error('Error stack:', error.stack);
     return res.status(500).json({ 
       error: "حدث خطأ أثناء جلب الإحصائيات",
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }));
