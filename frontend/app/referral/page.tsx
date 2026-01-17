@@ -2003,6 +2003,7 @@ export default function ReferralPage() {
   // أدوات اختبارية - قابلة للإزالة بعد الاختبار
   const addTestReferrals = async (count: number) => {
     setTestToolsLoading(true);
+    setError("");
     try {
       const res = await fetch('/api/ambassador/dev/add-test-referrals', {
         method: 'POST',
@@ -2011,26 +2012,42 @@ export default function ReferralPage() {
         body: JSON.stringify({ count })
       });
       
-      const data = await res.json();
+      let data;
+      try {
+        const text = await res.text();
+        data = text ? JSON.parse(text) : {};
+      } catch (parseError) {
+        console.error('JSON parse error:', parseError, 'Response text:', await res.text());
+        throw new Error('فشل قراءة الاستجابة من السيرفر');
+      }
       
       if (res.ok) {
-        setSuccessMessage(`✅ ${data.message || `تمت إضافة ${count} عميل بنجاح!`}`);
+        const successMsg = data.message || `✅ تمت إضافة ${count} عميل بنجاح!`;
+        setSuccessMessage(successMsg);
         setTimeout(() => setSuccessMessage(null), 5000);
+        
+        // تحديث الإحصائيات
         await fetchStats();
         await fetchWalletData();
+        
+        console.log('✅ Test referrals added successfully:', data);
       } else {
-        const errorMsg = data.error || 'حدث خطأ أثناء إضافة العملاء';
+        const errorMsg = data.error || `حدث خطأ أثناء إضافة العملاء (${res.status})`;
         setError(errorMsg);
-        console.error('Add test referrals error:', data);
+        console.error('❌ Add test referrals error:', {
+          status: res.status,
+          statusText: res.statusText,
+          data
+        });
         alert(`❌ ${errorMsg}`);
       }
     } catch (err: any) {
-      console.error('Add test referrals error:', err);
-      const errorMsg = err.message?.includes('fetch') 
+      console.error('❌ Add test referrals exception:', err);
+      const errorMsg = err.message?.includes('fetch') || err.message?.includes('Network')
         ? 'لا يمكن الاتصال بالسيرفر. تحقق من اتصالك بالإنترنت.'
-        : 'حدث خطأ غير متوقع. حاول مرة أخرى.';
+        : err.message || 'حدث خطأ غير متوقع. حاول مرة أخرى.';
       setError(errorMsg);
-      alert(`❌ ${errorMsg}`);
+      alert(`❌ ${errorMsg}\n\nافتح Console (F12) لمعرفة التفاصيل.`);
     } finally {
       setTestToolsLoading(false);
     }
