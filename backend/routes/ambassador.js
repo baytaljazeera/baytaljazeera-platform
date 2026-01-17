@@ -59,18 +59,36 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
   );
   const settings = settingsResult.rows[0] || { max_floors: 20, floors_per_reward: [], consumption_enabled: true, require_first_listing: false, require_email_verified: false };
   
-  const referralsResult = await db.query(
-    `SELECT r.id, r.status, r.created_at, r.collapse_reason, r.collapsed_at,
-            COALESCE(u.name, 'مستخدم اختباري') as referred_name, 
-            COALESCE(u.email, 'test@test.com') as referred_email,
-            rs.risk_score, rs.risk_level, rs.triggered_rules, rs.ai_explanation
-     FROM referrals r
-     LEFT JOIN users u ON u.id = r.referred_id
-     LEFT JOIN referral_risk_scores rs ON rs.referral_id = r.id
-     WHERE r.referrer_id = $1 AND r.status IN ('completed', 'flagged_fraud')
-     ORDER BY r.created_at ASC`,
-    [userId]
-  );
+  // جلب الإحالات - مع معالجة حالة عدم وجود جدول referral_risk_scores
+  let referralsResult;
+  try {
+    referralsResult = await db.query(
+      `SELECT r.id, r.status, r.created_at, r.collapse_reason, r.collapsed_at,
+              COALESCE(u.name, 'مستخدم اختباري') as referred_name, 
+              COALESCE(u.email, 'test@test.com') as referred_email,
+              rs.risk_score, rs.risk_level, rs.triggered_rules, rs.ai_explanation
+       FROM referrals r
+       LEFT JOIN users u ON u.id = r.referred_id
+       LEFT JOIN referral_risk_scores rs ON rs.referral_id = r.id
+       WHERE r.referrer_id = $1 AND r.status IN ('completed', 'flagged_fraud')
+       ORDER BY r.created_at ASC`,
+      [userId]
+    );
+  } catch (joinError) {
+    // إذا فشل الـ JOIN بسبب عدم وجود الجدول، استخدم query بدون referral_risk_scores
+    console.warn('⚠️ referral_risk_scores table not found, using fallback query:', joinError.message);
+    referralsResult = await db.query(
+      `SELECT r.id, r.status, r.created_at, r.collapse_reason, r.collapsed_at,
+              COALESCE(u.name, 'مستخدم اختباري') as referred_name, 
+              COALESCE(u.email, 'test@test.com') as referred_email,
+              NULL::DECIMAL as risk_score, NULL::VARCHAR as risk_level, NULL::JSONB as triggered_rules, NULL::TEXT as ai_explanation
+       FROM referrals r
+       LEFT JOIN users u ON u.id = r.referred_id
+       WHERE r.referrer_id = $1 AND r.status IN ('completed', 'flagged_fraud')
+       ORDER BY r.created_at ASC`,
+      [userId]
+    );
+  }
   
   // جلب الطوابق الموصومة بالتفصيل
   const flaggedFloorsResult = await db.query(
