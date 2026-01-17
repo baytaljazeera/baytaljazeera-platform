@@ -1859,10 +1859,16 @@ export default function ReferralPage() {
         await fetchWalletData();
         await fetchStats(); // تحديث الإحصائيات لتحديث العدد المتاح
         
-        // رسالة نجاح واضحة
-        const successMsg = result.message || `✅ تم إرسال طلب سحب $${(amountCents / 100).toFixed(2)} بنجاح! سيتم مراجعة طلبك قريباً.`;
+        // رسالة نجاح واضحة وخضراء جميلة
+        const successMsg = result.message || `✅ تم استقبال طلب السحب بقيمة $${(amountCents / 100).toFixed(2)} بنجاح! سيتم مراجعة طلبك من قبل المالية قريباً.`;
         setSuccessMessage(successMsg);
-        setTimeout(() => setSuccessMessage(null), 5000);
+        setTimeout(() => setSuccessMessage(null), 8000); // رسالة تبقى أطول قليلاً
+        
+        // إظهار إشعار في الصفحة الرئيسية أيضاً
+        console.log('✅ Withdrawal request completed successfully:', {
+          amount: `$${(amountCents / 100).toFixed(2)}`,
+          request_id: result.request?.id
+        });
         
         // إغلاق الـ modal وتنظيف الحقول
         setShowWithdrawModal(false);
@@ -3188,16 +3194,18 @@ export default function ReferralPage() {
       )}
 
       {successMessage && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
-          <div className="bg-gradient-to-r from-emerald-500 to-green-500 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 border border-emerald-400/50">
-            <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-              <Check className="w-6 h-6" />
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-md w-full mx-4">
+          <div className="bg-gradient-to-r from-emerald-500 via-green-500 to-emerald-600 text-white px-6 py-5 rounded-2xl shadow-2xl flex items-center gap-4 border-2 border-emerald-400/50 backdrop-blur-sm">
+            <div className="w-12 h-12 bg-white/30 rounded-full flex items-center justify-center flex-shrink-0 animate-pulse">
+              <Check className="w-7 h-7 text-white font-bold" strokeWidth={3} />
             </div>
-            <div>
-              <p className="font-bold text-base">{successMessage}</p>
+            <div className="flex-1">
+              <p className="font-bold text-base leading-relaxed">{successMessage}</p>
             </div>
             <button 
               onClick={() => setSuccessMessage(null)}
+              className="flex-shrink-0 p-1.5 hover:bg-white/20 rounded-full transition"
+              aria-label="إغلاق"
               className="mr-2 p-1 hover:bg-white/20 rounded-full transition"
             >
               <X className="w-5 h-5" />
