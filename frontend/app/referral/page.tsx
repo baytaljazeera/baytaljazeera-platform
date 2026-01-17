@@ -1730,6 +1730,23 @@ export default function ReferralPage() {
     }
   }, [isAuthenticated, systemEnabled]);
 
+  // إغلاق modal عند الضغط على Escape
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showWithdrawModal) {
+        setShowWithdrawModal(false);
+        setError('');
+      }
+    };
+    
+    if (showWithdrawModal) {
+      window.addEventListener('keydown', handleEscape);
+      return () => {
+        window.removeEventListener('keydown', handleEscape);
+      };
+    }
+  }, [showWithdrawModal]);
+
   async function fetchTermsStatus() {
     try {
       const res = await fetch('/api/ambassador/terms-status', { credentials: 'include' });
