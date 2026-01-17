@@ -175,8 +175,14 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
     console.log(`✅ Pending listing count: ${pendingListingCount}`);
     
     console.log(`✅ All queries completed successfully, preparing response...`);
+    console.log(`📊 Response data:`, {
+      currentFloors,
+      flaggedFloors,
+      referralsCount: referralsWithFloorNumbers.length,
+      consumptionsCount: consumptionsResult.rows.length
+    });
 
-    res.json({
+    const responseData = {
       ambassador_code: ambassadorCode,
       // الإحصائيات الرئيسية
       built_floors: currentFloors,           // الطوابق المبنية (completed + flagged_fraud)
@@ -203,7 +209,11 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
         require_first_listing: settings.require_first_listing || false,
         require_email_verified: settings.require_email_verified || false
       }
-    });
+    };
+    
+    console.log(`✅ Response prepared, sending...`);
+    res.json(responseData);
+    console.log(`✅ Response sent successfully`);
   } catch (error) {
     console.error('❌ Error in /my-stats:', error);
     console.error('Error message:', error.message);
