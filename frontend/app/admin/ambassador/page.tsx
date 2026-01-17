@@ -712,8 +712,13 @@ export default function AmbassadorAdminPage() {
                     <p className="text-sm text-slate-500 mt-1">مراجعة طلبات سحب الأموال من السفراء</p>
                   </div>
                   
-                  {withdrawalRequests.length === 0 ? (
-                    <div className="p-8 text-center text-slate-500">لا توجد طلبات سحب حالياً</div>
+                  {loading ? (
+                    <div className="p-8 text-center text-slate-500">جاري التحميل...</div>
+                  ) : withdrawalRequests.length === 0 ? (
+                    <div className="p-8 text-center">
+                      <p className="text-slate-500 mb-2">لا توجد طلبات سحب حالياً</p>
+                      <p className="text-xs text-slate-400 mt-2">عدد الطلبات المحملة: {withdrawalRequests.length}</p>
+                    </div>
                   ) : (
                     <div className="divide-y divide-slate-200">
                       {withdrawalRequests.map((request) => (
