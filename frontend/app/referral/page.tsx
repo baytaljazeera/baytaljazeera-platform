@@ -1820,13 +1820,20 @@ export default function ReferralPage() {
     
     console.log('💰 Calculated amount_cents:', amountCents);
     
+    // التحقق من الرصيد أولاً
+    if (!walletData.wallet || walletData.wallet.balance_cents <= 0) {
+      setError('رصيدك لا يكفي للسحب. يجب أن يكون لديك رصيد متاح للسحب.');
+      return;
+    }
+    
     if (amountCents < (walletData.settings.min_withdrawal_cents || 100)) {
       setError(`الحد الأدنى للسحب هو $${((walletData.settings.min_withdrawal_cents || 100) / 100).toFixed(2)}`);
       return;
     }
     
     if (amountCents > walletData.wallet.balance_cents) {
-      setError('المبلغ أكبر من الرصيد المتاح!');
+      const available = (walletData.wallet.balance_cents / 100).toFixed(2);
+      setError(`رصيدك لا يكفي. الرصيد المتاح: $${available} فقط`);
       return;
     }
     
@@ -3138,14 +3145,22 @@ export default function ReferralPage() {
                       
                       console.log('💰 Amount to withdraw:', amountToWithdraw);
                       
-                      if (amountToWithdraw <= 0) {
-                        console.error('❌ Invalid amount:', amountToWithdraw);
-                        setError('الرجاء إدخال مبلغ صحيح');
+                      // التحقق من الرصيد أولاً
+                      if (!walletData?.wallet || balanceAmount <= 0) {
+                        console.error('❌ Insufficient balance:', { balanceAmount, walletData: walletData ? 'exists' : 'null' });
+                        setError('رصيدك لا يكفي للسحب. يجب أن يكون لديك رصيد متاح للسحب.');
                         return;
                       }
+                      
+                      if (amountToWithdraw <= 0) {
+                        console.error('❌ Invalid amount:', amountToWithdraw);
+                        setError('الرجاء إدخال مبلغ صحيح أكبر من الصفر');
+                        return;
+                      }
+                      
                       if (amountToWithdraw > balanceAmount) {
                         console.error('❌ Amount exceeds balance:', { amountToWithdraw, balanceAmount });
-                        setError('المبلغ أكبر من الرصيد المتاح!');
+                        setError(`رصيدك لا يكفي. الرصيد المتاح: $${balanceAmount.toFixed(2)} فقط`);
                         return;
                       }
                       
@@ -3159,6 +3174,13 @@ export default function ReferralPage() {
                       if (!walletData?.settings?.financial_rewards_enabled) {
                         console.error('❌ Financial rewards disabled');
                         setError('المكافآت المالية غير مفعلة حالياً');
+                        return;
+                      }
+                      
+                      // التحقق من الرصيد المتاح قبل الاستمرار
+                      if (balanceAmount <= 0) {
+                        console.error('❌ Balance is zero or negative:', balanceAmount);
+                        setError('رصيدك لا يكفي للسحب. يجب أن يكون لديك رصيد متاح للسحب.');
                         return;
                       }
                       
