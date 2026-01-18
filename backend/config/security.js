@@ -115,6 +115,11 @@ const corsOptions = {
       return callback(null, true);
     }
     
+    // Allow custom domain baytaljazeera.com (with and without www)
+    if (origin.includes('baytaljazeera.com')) {
+      return callback(null, true);
+    }
+    
     // Allow localhost in development
     if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
       return callback(null, true);
