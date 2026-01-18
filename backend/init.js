@@ -1393,6 +1393,14 @@ async function initializeDatabase() {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+    
+    // Ensure maintenance mode is disabled by default
+    await db.query(`
+      INSERT INTO app_settings (key, value, updated_at)
+      VALUES ('maintenance_mode', 'false', NOW())
+      ON CONFLICT (key) DO UPDATE SET value = 'false', updated_at = NOW()
+    `);
+    console.log("✅ Maintenance mode disabled by default");
 
     await db.query(`
       INSERT INTO app_settings (key, value) VALUES ('ai_support_enabled', 'true')
