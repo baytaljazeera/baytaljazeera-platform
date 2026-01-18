@@ -24,7 +24,7 @@ type EliteReservation = {
 };
 
 type Listing = {
-  id: number;
+  id: string; // Changed to string (UUID) to fix 404 when editing
   title: string;
   property_type: string;
   purpose: string;
@@ -68,10 +68,10 @@ export default function MyListingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
-  const [deleting, setDeleting] = useState<number | null>(null);
-  const [openDealDropdown, setOpenDealDropdown] = useState<number | null>(null);
-  const [updatingDealStatus, setUpdatingDealStatus] = useState<number | null>(null);
-  const [updatingVisibility, setUpdatingVisibility] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [openDealDropdown, setOpenDealDropdown] = useState<string | null>(null);
+  const [updatingDealStatus, setUpdatingDealStatus] = useState<string | null>(null);
+  const [updatingVisibility, setUpdatingVisibility] = useState<string | null>(null);
 
   useEffect(() => {
     fetchListings();
@@ -133,7 +133,7 @@ export default function MyListingsPage() {
     }
   }
 
-  async function handleDelete(id: number) {
+  async function handleDelete(id: string) {
     if (!confirm("هل أنت متأكد من حذف هذا الإعلان؟ لا يمكن التراجع عن هذا الإجراء.")) {
       return;
     }
@@ -160,7 +160,7 @@ export default function MyListingsPage() {
     }
   }
 
-  async function handleDealStatusChange(id: number, newStatus: string, purpose: string) {
+  async function handleDealStatusChange(id: string, newStatus: string, purpose: string) {
     setUpdatingDealStatus(id);
     setOpenDealDropdown(null);
     
@@ -192,7 +192,7 @@ export default function MyListingsPage() {
     }
   }
 
-  async function handleVisibilityChange(id: number, currentStatus: string) {
+  async function handleVisibilityChange(id: string, currentStatus: string) {
     const newStatus = currentStatus === 'hidden' ? 'approved' : 'hidden';
     const actionText = newStatus === 'hidden' ? 'إخفاء' : 'إظهار';
     
