@@ -708,7 +708,7 @@ export default function SettingsPage() {
               >
                 <div
                   className={`w-5 h-5 bg-white rounded-full shadow absolute top-0.5 transition-all ${
-                    settings.allowRegistration ? "right-0.5" : "right-6"
+                    settings.allowRegistration ? "left-0.5" : "left-6"
                   }`}
                 />
               </button>
