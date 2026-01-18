@@ -1094,7 +1094,7 @@ export default function EditListingPage() {
                   <div key={img.id || i} className="relative group">
                     <div className={`w-24 h-24 rounded-xl overflow-hidden border-2 shadow-sm ${i === 0 ? 'border-[#D4AF37] ring-2 ring-[#D4AF37]/30' : 'border-slate-200'}`}>
                       <img 
-                        src={typeof img === 'string' ? img : img.url} 
+                        src={getImageUrl(typeof img === 'string' ? img : img.url)} 
                         alt={`صورة ${i + 1}`} 
                         className="w-full h-full object-cover" 
                       />
