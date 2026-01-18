@@ -13,6 +13,7 @@ import {
   AlertCircle, Loader2, Home, Search, Filter,
   TrendingUp, Star, Crown, Handshake, Archive, ChevronDown
 } from "lucide-react";
+import { getImageUrl } from "@/lib/utils";
 
 type EliteReservation = {
   id: string;
@@ -478,7 +479,7 @@ export default function MyListingsPage() {
                     <div className="relative h-48 bg-slate-200">
                       {listing.image_url || listing.cover_image ? (
                         <img
-                          src={listing.image_url || listing.cover_image || ""}
+                          src={getImageUrl(listing.image_url || listing.cover_image)}
                           alt={listing.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />

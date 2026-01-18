@@ -16,6 +16,7 @@ import {
 import ShareButton from "@/components/shared/ShareButton";
 import AdvertiserReputation from "@/components/ratings/AdvertiserReputation";
 import RatingModal from "@/components/ratings/RatingModal";
+import { getImageUrl } from "@/lib/utils";
 
 type ListingDetail = {
   id: string;
@@ -614,7 +615,7 @@ export default function ListingDetailPage() {
     ? listing.images 
     : [{ id: "default", url: `/images/property${(parseInt(listing.id.slice(-2), 16) % 10) + 1}.jpg`, is_cover: true }];
 
-  const currentImageUrl = images[currentImageIndex]?.url || "/images/property1.jpg";
+  const currentImageUrl = getImageUrl(images[currentImageIndex]?.url) || "/images/property1.jpg";
 
   return (
     <div dir="rtl" className="min-h-screen bg-[#fdf6db]">
@@ -748,7 +749,7 @@ export default function ListingDetailPage() {
                       }`}
                     >
                       <img
-                        src={img.url}
+                        src={getImageUrl(img.url)}
                         alt={`صورة ${idx + 1}`}
                         className="w-full h-full object-cover"
                         onError={(e) => {

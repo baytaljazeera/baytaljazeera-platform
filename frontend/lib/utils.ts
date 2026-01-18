@@ -169,3 +169,14 @@ export function formatPhone(phone: string | null | undefined): string {
   if (cleaned.length < 9) return phone;
   return cleaned;
 }
+
+/**
+ * Fix image URLs by adding /uploads/ prefix if needed
+ */
+export function getImageUrl(url: string | null | undefined): string {
+  if (!url || url.trim() === "") return "";
+  const trimmedUrl = url.trim();
+  if (trimmedUrl.startsWith("http://") || trimmedUrl.startsWith("https://")) return trimmedUrl;
+  if (trimmedUrl.startsWith("/")) return trimmedUrl;
+  return `/uploads/${trimmedUrl}`;
+}
