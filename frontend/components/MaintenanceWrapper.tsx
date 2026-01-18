@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import MaintenancePage from "./MaintenancePage";
 
@@ -13,33 +13,52 @@ export default function MaintenanceWrapper({ children }: { children: React.React
   
   const isAdminRoute = pathname?.startsWith("/admin");
 
+  const checkMaintenance = useCallback(async () => {
+    if (isAdminRoute) return;
+    
+    try {
+      const res = await fetch(`${API_URL}/api/settings/maintenance-status`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setIsMaintenanceMode(data.maintenanceMode === true);
+      }
+    } catch (err) {
+      console.log("Could not check maintenance status");
+    } finally {
+      setIsChecking(false);
+    }
+  }, [isAdminRoute]);
+
   useEffect(() => {
     if (isAdminRoute) {
       setIsChecking(false);
       return;
     }
 
-    const checkMaintenance = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/settings/maintenance-status`, {
-          cache: "no-store",
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setIsMaintenanceMode(data.maintenanceMode === true);
-        }
-      } catch (err) {
-        console.log("Could not check maintenance status");
-      } finally {
-        setIsChecking(false);
-      }
-    };
-
     checkMaintenance();
     
-    const interval = setInterval(checkMaintenance, 60000);
-    return () => clearInterval(interval);
-  }, [isAdminRoute]);
+    const interval = setInterval(checkMaintenance, 5000);
+    
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        checkMaintenance();
+      }
+    };
+    
+    const handleFocus = () => checkMaintenance();
+    
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [isAdminRoute, checkMaintenance]);
 
   if (isChecking) {
     return <>{children}</>;
