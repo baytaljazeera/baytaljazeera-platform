@@ -8,6 +8,20 @@ const { validatePassword, PASSWORD_POLICY, sanitizeInput } = require("../config/
 
 const router = express.Router();
 
+// Cookie configuration for cross-domain support (Vercel frontend ↔ Railway backend)
+const getCookieOptions = () => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  // Use 'none' for cross-domain (different origins), 'lax' for same-domain
+  const isCrossDomain = !!process.env.FRONTEND_URL && !process.env.FRONTEND_URL.includes('localhost');
+  
+  return {
+    httpOnly: true,
+    secure: isProduction || isCrossDomain, // Must be true for sameSite: 'none'
+    sameSite: isCrossDomain ? 'none' : 'lax', // 'none' allows cross-domain cookies
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  };
+};
+
 function generateReferralCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = 'AQR';
@@ -229,12 +243,7 @@ router.post("/register", asyncHandler(async (req, res) => {
     );
 
     res
-      .cookie("token", token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      })
+      .cookie("token", token, getCookieOptions())
       .json({ 
         ok: true,
         user: {
@@ -425,12 +434,7 @@ router.post("/login", asyncHandler(async (req, res) => {
   }
 
   res
-    .cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    })
+    .cookie("token", token, getCookieOptions())
     .json({
       ok: true,
       user: {
@@ -455,19 +459,10 @@ router.post("/logout", (req, res) => {
     });
   }
   
+  const clearOpts = { ...getCookieOptions(), path: "/" };
   res
-    .clearCookie("token", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      path: "/"
-    })
-    .clearCookie("connect.sid", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      path: "/"
-    })
+    .clearCookie("token", clearOpts)
+    .clearCookie("connect.sid", clearOpts)
     .json({ ok: true, message: "تم تسجيل الخروج بنجاح" });
 });
 
