@@ -1,6 +1,9 @@
 import "./globals.css";
 import { Tajawal, Cairo } from "next/font/google";
-import Providers from "@/components/Providers";
+import ClientProviders from "@/components/ClientProviders";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const tajawal = Tajawal({
   subsets: ["arabic"],
@@ -28,9 +31,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="google" content="notranslate" />
       </head>
       <body className="font-tajawal bg-beige text-royalblue min-h-screen flex flex-col" suppressHydrationWarning>
-        <Providers>
+        <ClientProviders>
           {children}
-        </Providers>
+        </ClientProviders>
       </body>
     </html>
   );

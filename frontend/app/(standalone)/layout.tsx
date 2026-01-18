@@ -1,5 +1,13 @@
-import { Toaster } from "sonner";
+import nextDynamic from "next/dynamic";
 import "../globals.css";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const ToasterClient = nextDynamic(
+  () => import("@/components/ToasterClient"),
+  { ssr: false }
+);
 
 export default function StandaloneLayout({
   children,
@@ -8,7 +16,7 @@ export default function StandaloneLayout({
 }) {
   return (
     <>
-      <Toaster position="top-center" richColors />
+      <ToasterClient />
       {children}
     </>
   );
