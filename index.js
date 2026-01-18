@@ -235,6 +235,21 @@ async function runDatabaseInit() {
       console.log("⚠️ GCC cities seeding skipped:", seedErr.message);
     }
     
+    // Remove duplicate cities (one-time cleanup)
+    try {
+      const dupResult = await db.query(`
+        DELETE FROM cities 
+        WHERE id NOT IN (
+          SELECT MIN(id) FROM cities GROUP BY name_ar, country_id
+        );
+      `);
+      if (dupResult.rowCount > 0) {
+        console.log(`🧹 Removed ${dupResult.rowCount} duplicate cities`);
+      }
+    } catch (dupErr) {
+      console.log("⚠️ Duplicate cleanup skipped:", dupErr.message);
+    }
+    
     // إنشاء جدول flagged_conversations
     await db.query(`
       CREATE TABLE IF NOT EXISTS flagged_conversations (
