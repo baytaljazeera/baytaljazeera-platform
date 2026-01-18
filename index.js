@@ -153,16 +153,21 @@ app.use(setCsrfToken);
 app.get('/api/csrf-token', getCsrfToken);
 
 // 🔧 Maintenance Mode Middleware
+// Note: This middleware allows ALL /api routes to work normally.
+// The frontend checks /api/settings/maintenance-status and displays a maintenance page if needed.
+// This ensures the site doesn't break when maintenance mode is enabled.
 const maintenanceModeMiddleware = async (req, res, next) => {
+  // Allow ALL API routes - frontend handles maintenance display
+  // Allow admin routes for management
+  // Allow uploads for static files
   const excludedPaths = [
-    '/api/auth/login',
-    '/api/auth/me', 
-    '/api/admin',
-    '/api/settings',
-    '/api/health',
+    '/api',         // All API routes work normally
     '/admin',
     '/admin-login',
-    '/uploads'
+    '/uploads',
+    '/_next',       // Next.js assets
+    '/favicon',
+    '/static'
   ];
   
   const isExcluded = excludedPaths.some(path => req.path.startsWith(path));
@@ -177,11 +182,67 @@ const maintenanceModeMiddleware = async (req, res, next) => {
     const isMaintenanceMode = result.rows.length > 0 && result.rows[0].value === 'true';
     
     if (isMaintenanceMode) {
-      return res.status(503).json({
-        error: "الموقع تحت الصيانة",
-        errorEn: "Site is under maintenance",
-        maintenance: true
-      });
+      // For direct browser access to non-API routes, return maintenance page
+      return res.status(503).send(`
+        <!DOCTYPE html>
+        <html dir="rtl" lang="ar">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>بيت الجزيرة - تحت الصيانة</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+              font-family: 'Segoe UI', Tahoma, sans-serif;
+              background: linear-gradient(135deg, #01273C 0%, #0B6B4C 100%);
+              min-height: 100vh;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: white;
+            }
+            .container {
+              text-align: center;
+              padding: 40px;
+              max-width: 600px;
+            }
+            .icon {
+              font-size: 80px;
+              margin-bottom: 30px;
+              animation: pulse 2s infinite;
+            }
+            @keyframes pulse {
+              0%, 100% { transform: scale(1); }
+              50% { transform: scale(1.1); }
+            }
+            h1 {
+              font-size: 2.5rem;
+              margin-bottom: 20px;
+              color: #D4AF37;
+            }
+            p {
+              font-size: 1.2rem;
+              line-height: 1.8;
+              opacity: 0.9;
+            }
+            .logo {
+              margin-top: 40px;
+              font-size: 1.5rem;
+              color: #D4AF37;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="icon">🔧</div>
+            <h1>الموقع تحت الصيانة</h1>
+            <p>نعمل على تحسين تجربتكم. سنعود قريباً بإذن الله.</p>
+            <p style="margin-top: 20px; font-size: 1rem;">نعتذر عن أي إزعاج</p>
+            <div class="logo">🏠 بيت الجزيرة</div>
+          </div>
+        </body>
+        </html>
+      `);
     }
   } catch (err) {
     console.error("Error checking maintenance mode:", err.message);
