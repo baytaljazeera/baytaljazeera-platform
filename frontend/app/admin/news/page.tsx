@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect } from "react";
 import { 
   Newspaper, Plus, Edit, Trash2, Eye, EyeOff, Calendar, RefreshCw, Save, X, 

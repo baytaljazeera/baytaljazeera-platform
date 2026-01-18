@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect } from "react";
 import { Settings, Globe, Bell, Shield, Database, Save, RefreshCw, Loader2, AlertCircle, CheckCircle, Link as LinkIcon, Plus, Trash2 } from "lucide-react";
 

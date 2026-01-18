@@ -1,8 +1,10 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState, FormEvent, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 import {
   MapPin, Image as ImageIcon, Video, ChevronRight, ChevronLeft,
   CheckCircle2, AlertTriangle, X, Upload, Star, Home, Building2,
@@ -13,7 +15,7 @@ import {
 import { toast } from "sonner";
 import SliderInput from "@/components/SliderInput";
 
-const LeafletLocationPicker = dynamic(
+const LeafletLocationPicker = nextDynamic(
   () => import("@/components/LeafletLocationPicker"),
   { ssr: false, loading: () => (
     <div className="h-[400px] bg-slate-100 rounded-2xl flex items-center justify-center">

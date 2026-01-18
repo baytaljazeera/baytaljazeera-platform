@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect, useRef } from "react";
 import { 
   MapPin, Plus, Edit, Trash2, Eye, EyeOff, RefreshCw, Save, X, 

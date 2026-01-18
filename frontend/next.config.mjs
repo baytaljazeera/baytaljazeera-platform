@@ -1,19 +1,16 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  devIndicators: false,
-  experimental: {
-    serverActions: {
-      bodySizeLimit: '100mb',
-    },
-    proxyClientMaxBodySize: '50mb',
-  },
-  allowedDevOrigins: ['*.replit.dev', '*.spock.replit.dev', '127.0.0.1', 'localhost'],
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: 'standalone',
   typescript: {
     ignoreBuildErrors: true,
   },
   eslint: {
     ignoreDuringBuilds: true,
+  },
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '100mb',
+    },
   },
   images: {
     remotePatterns: [
@@ -25,15 +22,11 @@ const nextConfig: NextConfig = {
       { hostname: "**.cloudinary.com" },
     ],
   },
-  // Proxy API requests to backend
   async rewrites() {
-    // In production, NEXT_PUBLIC_API_URL must be set
     if (process.env.NODE_ENV === 'production') {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL;
       if (!apiUrl) {
-        console.warn('⚠️ WARNING: NEXT_PUBLIC_API_URL is not set in production!');
-        console.warn('   API requests will fail. Please set NEXT_PUBLIC_API_URL in Vercel environment variables.');
-        // Return empty rewrites to prevent routing to localhost
+        console.warn('WARNING: NEXT_PUBLIC_API_URL is not set in production!');
         return [];
       }
       return [
@@ -47,7 +40,6 @@ const nextConfig: NextConfig = {
         },
       ];
     }
-    // Development: use local backend
     return [
       {
         source: "/api/:path*",
@@ -59,7 +51,6 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  // Security headers - CORS handled by backend, frontend adds security headers only
   async headers() {
     return [
       {

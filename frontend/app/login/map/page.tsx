@@ -1,17 +1,19 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import {
   useEffect,
   useMemo,
   useState,
   type ChangeEvent,
 } from "react";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 import Link from "next/link";
 import { MapPin } from "lucide-react";
 
 // مكوّن الخريطة (اللي فوق)
-const MapClient = dynamic(() => import("@/components/MapClient"), {
+const MapClient = nextDynamic(() => import("@/components/MapClient"), {
   ssr: false,
 });
 

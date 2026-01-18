@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useRef, useEffect } from "react";
 import { BrainCircuit, Sparkles, MessageSquare, Wand2, BarChart3, Send, Loader2, Bot, User, Settings, FileText, Users, Building, ChevronDown, Copy, Check, RefreshCw } from "lucide-react";
 

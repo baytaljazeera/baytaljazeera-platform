@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Headset, MessageCircle, DollarSign, Settings, UserCircle, Plus, ArrowRight, Send, AlertCircle, X } from "lucide-react";

@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect } from "react";
 import { 
   UserPlus2, Check, X, Clock, Eye, Mail, Phone, Calendar, 

@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect, useCallback } from "react";
 import { Headset, MessageCircle, Clock, CheckCircle, AlertCircle, Search, RefreshCw, Send, User, Mail, Phone } from "lucide-react";
 

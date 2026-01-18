@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect } from "react";
 import { FileText, Search, Plus, Trash2, Eye, EyeOff, RefreshCw, MapPin, Home, Check, X, Loader2, Image as ImageIcon, Video, ChevronLeft, ChevronRight, Clock, DollarSign, Maximize2, User, Mail, Phone, Crown } from "lucide-react";
 import Link from "next/link";
