@@ -158,16 +158,18 @@ export default function LeafletLocationPicker({
   }, [selectedCity, selectedCountry, reverseGeocode]);
 
   useEffect(() => {
-    if (isInitializedRef.current) return;
+    if (isInitializedRef.current || !mapRef.current) return;
+    
+    let isMounted = true;
     
     const initMap = async () => {
       try {
         const L = (await import("leaflet")).default;
         await import("leaflet/dist/leaflet.css");
         
+        if (!isMounted || !mapRef.current || isInitializedRef.current) return;
+        
         leafletRef.current = L;
-
-        if (!mapRef.current) return;
         isInitializedRef.current = true;
 
         const customIcon = L.divIcon({
@@ -191,6 +193,8 @@ export default function LeafletLocationPicker({
           center: [defaultCenter.lat, defaultCenter.lng],
           zoom: 14,
           zoomControl: true,
+          fadeAnimation: false,
+          zoomAnimation: true,
         });
 
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -216,27 +220,31 @@ export default function LeafletLocationPicker({
         mapInstanceRef.current = map;
         markerRef.current = marker;
 
+        setTimeout(() => {
+          map.invalidateSize();
+        }, 100);
+
         if (initialLocation) {
           reverseGeocode(initialLocation.lat, initialLocation.lng);
         }
 
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       } catch (error) {
         console.error("Error loading Leaflet:", error);
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
     initMap();
 
     return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-        isInitializedRef.current = false;
-      }
+      isMounted = false;
     };
-  }, [defaultCenter, initialLocation, reverseGeocode]);
+  }, []);
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;

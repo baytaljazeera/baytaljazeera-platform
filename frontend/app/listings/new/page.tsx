@@ -927,9 +927,14 @@ export default function NewListingPage() {
       if (location.address) updates.formattedAddress = location.address;
       if (location.city && !prev.city) updates.city = location.city;
       if (location.district && !prev.district) updates.district = location.district;
+      
+      const coordsChanged = Math.abs((prev.latitude || 0) - location.lat) > 0.0001 || Math.abs((prev.longitude || 0) - location.lng) > 0.0001;
+      if (coordsChanged) {
+        setTimeout(() => setLocationConfirmed(false), 0);
+      }
+      
       return { ...prev, ...updates };
     });
-    setLocationConfirmed(false);
   }, []);
 
   function scrollToFirstError(errorKeys: string[]) {
