@@ -6,6 +6,7 @@ import { Toaster } from "sonner";
 import { Tajawal, Cairo } from "next/font/google";
 import ChatbotWrapper from "@/components/ChatbotWrapper";
 import GlobalPromotions from "@/components/GlobalPromotions";
+import MaintenanceWrapper from "@/components/MaintenanceWrapper";
 
 const tajawal = Tajawal({
   subsets: ["arabic"],
@@ -33,13 +34,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="google" content="notranslate" />
       </head>
       <body className="font-tajawal bg-beige text-royalblue min-h-screen flex flex-col" suppressHydrationWarning>
-        <Toaster position="top-center" richColors />
-        <Navbar />
-        <NewsTicker />
-        <GlobalPromotions />
-        <main className="flex-1">{children}</main>
-        <Footer />
-        <ChatbotWrapper />
+        <MaintenanceWrapper>
+          <Toaster position="top-center" richColors />
+          <Navbar />
+          <NewsTicker />
+          <GlobalPromotions />
+          <main className="flex-1">{children}</main>
+          <Footer />
+          <ChatbotWrapper />
+        </MaintenanceWrapper>
       </body>
     </html>
   );
