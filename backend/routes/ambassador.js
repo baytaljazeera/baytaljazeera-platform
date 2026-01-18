@@ -1471,11 +1471,9 @@ router.get('/wallet', combinedAuthMiddleware, requireAmbassadorEnabled, asyncHan
   const healthyFloors = Math.max(0, currentFloors - flaggedFloors);
   const availableFloors = Math.max(0, healthyFloors - floorsConsumed);
   
-  // حساب المباني المكتملة (للعرض فقط - total_buildings_completed في database)
+  // حساب المباني المكتملة والرصيد الإجمالي بالسنتات
   const completedBuildings = Math.floor(availableFloors / 20);
-  // حساب الرصيد مباشرة من الطوابق المتاحة (يأخذ في الاعتبار الطوابق الجزئية)
-  // مثال: 99 طابق → (99 / (20 * 5)) * 100 = 99 cents = $0.99 (بدلاً من $0.80)
-  const grossBalanceCents = Math.floor((availableFloors / (20 * buildingsPerDollar)) * 100);
+  const grossBalanceCents = Math.floor((completedBuildings / buildingsPerDollar) * 100);
   
   // جلب الأموال المحجوزة (pending withdrawals)
   const pendingWithdrawalsResult = await db.query(`
@@ -1676,11 +1674,9 @@ router.post('/wallet/withdraw', combinedAuthMiddleware, requireAmbassadorEnabled
   const healthyFloors = Math.max(0, currentFloors - flaggedFloors);
   const availableFloors = Math.max(0, healthyFloors - floorsConsumed);
   
-  // حساب المباني المكتملة (للعرض فقط - total_buildings_completed في database)
+  // حساب المباني المكتملة والرصيد الإجمالي بالسنتات
   const completedBuildings = Math.floor(availableFloors / 20);
-  // حساب الرصيد مباشرة من الطوابق المتاحة (يأخذ في الاعتبار الطوابق الجزئية)
-  // مثال: 99 طابق → (99 / (20 * 5)) * 100 = 99 cents = $0.99 (بدلاً من $0.80)
-  const grossBalanceCents = Math.floor((availableFloors / (20 * buildingsPerDollar)) * 100);
+  const grossBalanceCents = Math.floor((completedBuildings / buildingsPerDollar) * 100);
   
   // جلب الأموال المحجوزة حالياً (pending withdrawals) - لا نحجز نفس المبلغ مرتين
   const pendingWithdrawalsResult = await db.query(`
@@ -2493,9 +2489,7 @@ router.delete("/dev/clear-withdrawal-requests", combinedAuthMiddleware, asyncHan
     const healthyFloors = Math.max(0, currentFloors - flaggedFloors);
     const availableFloors = Math.max(0, healthyFloors - floorsConsumed);
     const completedBuildings = Math.floor(availableFloors / 20);
-    // حساب الرصيد مباشرة من الطوابق المتاحة (يأخذ في الاعتبار الطوابق الجزئية)
-    // مثال: 99 طابق → (99 / (20 * 5)) * 100 = 99 cents = $0.99 (بدلاً من $0.80)
-    const newBalanceCents = Math.floor((availableFloors / (20 * buildingsPerDollar)) * 100);
+    const newBalanceCents = Math.floor((completedBuildings / buildingsPerDollar) * 100);
     
     await db.query(`
       UPDATE ambassador_wallet 
