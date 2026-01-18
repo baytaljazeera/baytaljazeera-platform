@@ -321,11 +321,22 @@ async function initializeDatabase() {
       );
     `);
 
+    // Add user_plan_id column to quota_buckets if it doesn't exist
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'quota_buckets' AND column_name = 'user_plan_id') THEN
+          ALTER TABLE quota_buckets ADD COLUMN user_plan_id BIGINT REFERENCES user_plans(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+    `);
+
     // Add indexes for quota_buckets
     await db.query(`
       CREATE INDEX IF NOT EXISTS idx_quota_buckets_user ON quota_buckets(user_id);
       CREATE INDEX IF NOT EXISTS idx_quota_buckets_plan ON quota_buckets(plan_id);
       CREATE INDEX IF NOT EXISTS idx_quota_buckets_active ON quota_buckets(user_id, active);
+      CREATE INDEX IF NOT EXISTS idx_quota_buckets_user_plan ON quota_buckets(user_plan_id);
     `);
 
     // Create properties table
