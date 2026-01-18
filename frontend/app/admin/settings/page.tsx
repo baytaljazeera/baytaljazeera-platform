@@ -65,6 +65,8 @@ export default function SettingsPage() {
   const [accountLinks, setAccountLinks] = useState<FooterLink[]>([]);
   const [isMaintenanceActive, setIsMaintenanceActive] = useState(false);
   const [togglingMaintenance, setTogglingMaintenance] = useState(false);
+  const [siteStatus, setSiteStatus] = useState<'normal' | 'maintenance' | 'coming_soon'>('normal');
+  const [changingSiteStatus, setChangingSiteStatus] = useState(false);
 
   const parseLinks = (jsonString: string): FooterLink[] => {
     try {
@@ -140,15 +142,50 @@ export default function SettingsPage() {
   const checkMaintenanceStatus = async () => {
     try {
       const apiBase = getApiBase();
-      const res = await fetch(`${apiBase}/api/settings/maintenance-status`, {
+      const res = await fetch(`${apiBase}/api/settings/site-status`, {
         credentials: "include",
       });
       if (res.ok) {
         const data = await res.json();
-        setIsMaintenanceActive(data.maintenanceMode === true);
+        const status = data.status || 'normal';
+        setSiteStatus(status);
+        setIsMaintenanceActive(status === 'maintenance');
       }
     } catch (error) {
-      console.error("Error checking maintenance status:", error);
+      console.error("Error checking site status:", error);
+    }
+  };
+
+  const changeSiteStatus = async (newStatus: 'normal' | 'maintenance' | 'coming_soon') => {
+    try {
+      setChangingSiteStatus(true);
+      setMessage(null);
+      
+      const apiBase = getApiBase();
+      const res = await fetch(`${apiBase}/api/settings/site-status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status: newStatus }),
+      });
+      
+      if (res.ok) {
+        setSiteStatus(newStatus);
+        setIsMaintenanceActive(newStatus === 'maintenance');
+        const statusLabels = {
+          normal: 'الموقع مفتوح الآن',
+          maintenance: 'تم تفعيل وضع الصيانة',
+          coming_soon: 'تم تفعيل صفحة ترقب الافتتاح'
+        };
+        setMessage({ type: 'success', text: statusLabels[newStatus] });
+      } else {
+        const data = await res.json();
+        setMessage({ type: 'error', text: data.error || 'حدث خطأ في تغيير حالة الموقع' });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'حدث خطأ في الاتصال بالخادم' });
+    } finally {
+      setChangingSiteStatus(false);
     }
   };
 
@@ -585,41 +622,77 @@ export default function SettingsPage() {
             </div>
           </div>
           <div className="p-4 space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="space-y-4">
               <div>
-                <p className="text-sm font-medium text-slate-700">وضع الصيانة</p>
-                <p className="text-xs text-slate-500">إغلاق الموقع مؤقتاً</p>
+                <p className="text-sm font-medium text-slate-700 mb-2">حالة الموقع</p>
+                <p className="text-xs text-slate-500 mb-3">اختر حالة الموقع للزوار</p>
               </div>
-              <div className="flex items-center gap-2">
-                {isMaintenanceActive && (
-                  <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full font-medium">
-                    مفعّل الآن
-                  </span>
-                )}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <button
-                  onClick={toggleMaintenanceMode}
-                  disabled={togglingMaintenance}
-                  className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
-                    togglingMaintenance
-                      ? "bg-slate-200 text-slate-400 cursor-not-allowed"
-                      : isMaintenanceActive
-                      ? "bg-green-500 hover:bg-green-600 text-white"
-                      : "bg-red-500 hover:bg-red-600 text-white"
-                  }`}
+                  onClick={() => changeSiteStatus('normal')}
+                  disabled={changingSiteStatus}
+                  className={`p-4 rounded-xl border-2 transition-all ${
+                    siteStatus === 'normal'
+                      ? 'border-green-500 bg-green-50'
+                      : 'border-slate-200 hover:border-green-300'
+                  } ${changingSiteStatus ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  {togglingMaintenance ? (
-                    <span className="flex items-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      جاري التغيير...
+                  <div className="text-3xl mb-2">🌐</div>
+                  <p className="font-bold text-slate-800">موقع مفتوح</p>
+                  <p className="text-xs text-slate-500">الموقع يعمل بشكل طبيعي</p>
+                  {siteStatus === 'normal' && (
+                    <span className="inline-block mt-2 text-xs px-2 py-1 bg-green-500 text-white rounded-full">
+                      الحالة الحالية
                     </span>
-                  ) : isMaintenanceActive ? (
-                    "فتح الموقع"
-                  ) : (
-                    "تفعيل الصيانة"
+                  )}
+                </button>
+                
+                <button
+                  onClick={() => changeSiteStatus('maintenance')}
+                  disabled={changingSiteStatus}
+                  className={`p-4 rounded-xl border-2 transition-all ${
+                    siteStatus === 'maintenance'
+                      ? 'border-amber-500 bg-amber-50'
+                      : 'border-slate-200 hover:border-amber-300'
+                  } ${changingSiteStatus ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <div className="text-3xl mb-2">🔧</div>
+                  <p className="font-bold text-slate-800">وضع الصيانة</p>
+                  <p className="text-xs text-slate-500">إغلاق الموقع للصيانة</p>
+                  {siteStatus === 'maintenance' && (
+                    <span className="inline-block mt-2 text-xs px-2 py-1 bg-amber-500 text-white rounded-full">
+                      الحالة الحالية
+                    </span>
+                  )}
+                </button>
+                
+                <button
+                  onClick={() => changeSiteStatus('coming_soon')}
+                  disabled={changingSiteStatus}
+                  className={`p-4 rounded-xl border-2 transition-all ${
+                    siteStatus === 'coming_soon'
+                      ? 'border-purple-500 bg-purple-50'
+                      : 'border-slate-200 hover:border-purple-300'
+                  } ${changingSiteStatus ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <div className="text-3xl mb-2">🎉</div>
+                  <p className="font-bold text-slate-800">ترقب الافتتاح</p>
+                  <p className="text-xs text-slate-500">صفحة الافتتاح الكبير</p>
+                  {siteStatus === 'coming_soon' && (
+                    <span className="inline-block mt-2 text-xs px-2 py-1 bg-purple-500 text-white rounded-full">
+                      الحالة الحالية
+                    </span>
                   )}
                 </button>
               </div>
+              {changingSiteStatus && (
+                <div className="flex items-center justify-center gap-2 text-slate-500">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">جاري تغيير حالة الموقع...</span>
+                </div>
+              )}
             </div>
+            <hr className="border-slate-200" />
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-700">السماح بالتسجيل</p>
@@ -648,8 +721,10 @@ export default function SettingsPage() {
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
         <p className="font-medium mb-1">ملاحظة مهمة:</p>
         <ul className="list-disc list-inside space-y-1 text-amber-700">
-          <li>تفعيل وضع الصيانة سيمنع الزوار من الوصول للموقع</li>
-          <li>إيقاف السماح بالتسجيل سيمنع المستخدمين الجدد من إنشاء حسابات</li>
+          <li><strong>موقع مفتوح:</strong> الموقع يعمل بشكل طبيعي للجميع</li>
+          <li><strong>وضع الصيانة:</strong> يظهر للزوار صفحة "الموقع تحت الصيانة"</li>
+          <li><strong>ترقب الافتتاح:</strong> يظهر للزوار صفحة "الافتتاح الكبير قريباً" مع عداد تنازلي</li>
+          <li>لوحة الأدمن تبقى تعمل في جميع الحالات</li>
         </ul>
       </div>
     </div>

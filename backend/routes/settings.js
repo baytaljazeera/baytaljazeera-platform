@@ -15,6 +15,7 @@ const GENERAL_SETTINGS_KEYS = [
   'account_links_title',
   'account_links',
   'maintenance_mode',
+  'site_status',
   'allow_registration',
   'email_notifications',
   'sms_notifications',
@@ -22,6 +23,8 @@ const GENERAL_SETTINGS_KEYS = [
   'max_images_per_listing',
   'listing_duration_days'
 ];
+
+const SITE_STATUS_VALUES = ['normal', 'maintenance', 'coming_soon'];
 
 const DEFAULT_SETTINGS = {
   site_name: 'بيت الجزيرة',
@@ -42,6 +45,7 @@ const DEFAULT_SETTINGS = {
     { href: "/complaint", label: "تقديم شكوى" }
   ]),
   maintenance_mode: 'false',
+  site_status: 'normal',
   allow_registration: 'true',
   email_notifications: 'true',
   sms_notifications: 'false',
@@ -50,21 +54,61 @@ const DEFAULT_SETTINGS = {
   listing_duration_days: '30'
 };
 
+router.get("/site-status", asyncHandler(async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT value FROM app_settings WHERE key = 'site_status'`
+    );
+    const status = result.rows.length > 0 ? result.rows[0].value : 'normal';
+    res.json({ status, valid: SITE_STATUS_VALUES.includes(status) });
+  } catch (err) {
+    res.json({ status: 'normal', valid: true });
+  }
+}));
+
+router.post("/site-status", authMiddleware, requireRoles(['super_admin', 'admin']), asyncHandler(async (req, res) => {
+  const { status } = req.body;
+  
+  if (!SITE_STATUS_VALUES.includes(status)) {
+    return res.status(400).json({ 
+      error: `Invalid status. Must be one of: ${SITE_STATUS_VALUES.join(', ')}` 
+    });
+  }
+  
+  await db.query(`
+    INSERT INTO app_settings (key, value, updated_at)
+    VALUES ('site_status', $1, NOW())
+    ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()
+  `, [status]);
+  
+  res.json({ ok: true, status });
+}));
+
 router.get("/maintenance-status", asyncHandler(async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT value FROM app_settings WHERE key = 'maintenance_mode'`
+      `SELECT key, value FROM app_settings WHERE key IN ('maintenance_mode', 'site_status')`
     );
-    const maintenanceMode = result.rows.length > 0 && result.rows[0].value === 'true';
-    res.json({ maintenanceMode });
+    const settings = {};
+    result.rows.forEach(r => settings[r.key] = r.value);
+    
+    const siteStatus = settings.site_status || 'normal';
+    const maintenanceMode = settings.maintenance_mode === 'true' || siteStatus === 'maintenance';
+    
+    res.json({ 
+      maintenanceMode, 
+      siteStatus,
+      isComingSoon: siteStatus === 'coming_soon'
+    });
   } catch (err) {
-    res.json({ maintenanceMode: false });
+    res.json({ maintenanceMode: false, siteStatus: 'normal', isComingSoon: false });
   }
 }));
 
 router.post("/maintenance-toggle", authMiddleware, requireRoles(['super_admin', 'admin']), asyncHandler(async (req, res) => {
   const { maintenanceMode } = req.body;
   const value = maintenanceMode === true ? 'true' : 'false';
+  const siteStatus = maintenanceMode === true ? 'maintenance' : 'normal';
   
   await db.query(`
     INSERT INTO app_settings (key, value, updated_at)
@@ -72,7 +116,13 @@ router.post("/maintenance-toggle", authMiddleware, requireRoles(['super_admin', 
     ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()
   `, [value]);
   
-  res.json({ ok: true, maintenanceMode: maintenanceMode === true });
+  await db.query(`
+    INSERT INTO app_settings (key, value, updated_at)
+    VALUES ('site_status', $2, NOW())
+    ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()
+  `, [value, siteStatus]);
+  
+  res.json({ ok: true, maintenanceMode: maintenanceMode === true, siteStatus });
 }));
 
 router.get("/public", asyncHandler(async (req, res) => {
