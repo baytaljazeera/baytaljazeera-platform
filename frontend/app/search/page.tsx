@@ -106,6 +106,16 @@ function getApiBase(): string {
   return "";
 }
 
+// دالة معالجة روابط الصور
+function getImageUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (url.startsWith("/uploads/")) return url;
+  if (url.startsWith("/images/")) return url;
+  if (url.startsWith("/")) return url;
+  return `/uploads/${url}`;
+}
+
 // استيراد دالة تنسيق السعر الموحدة من currencyStore
 import { formatListingPriceByCountry as formatListingPrice } from "@/lib/stores/currencyStore";
 
@@ -1944,7 +1954,7 @@ function SearchPage() {
                         >
                           <div className="relative aspect-[4/3]">
                             <Image
-                              src={prop.cover_image || prop.image_url || '/images/property1.jpg'}
+                              src={getImageUrl(prop.cover_image || prop.image_url) || '/images/property1.jpg'}
                               alt={prop.title}
                               fill
                               sizes="(max-width: 768px) 50vw, 25vw"
@@ -2766,7 +2776,7 @@ function PropertyCard({
   const priceText = formatListingPrice(listing.price, listing.country);
   const isPromo = listing.is_promotional;
 
-  const imageSrc = listing.image_url || `https://picsum.photos/400/300?random=${listing.id}`;
+  const imageSrc = getImageUrl(listing.image_url) || `/images/property${(parseInt(String(listing.id).slice(-2), 16) % 5) + 1}.jpg`;
 
   return (
     <Link 

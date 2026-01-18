@@ -12,6 +12,15 @@ import {
   Clock, XCircle, Crown, Star
 } from "lucide-react";
 
+function getImageUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (url.startsWith("/uploads/")) return url;
+  if (url.startsWith("/images/")) return url;
+  if (url.startsWith("/")) return url;
+  return `/uploads/${url}`;
+}
+
 type Listing = {
   id: string;
   title: string;
@@ -329,7 +338,7 @@ export default function MyListingsPage() {
               >
                 <div className="relative h-48">
                   <Image
-                    src={listing.image_url || `/images/property${(parseInt(listing.id.slice(-2), 16) % 10) + 1}.jpg`}
+                    src={getImageUrl(listing.image_url) || `/images/property${(parseInt(listing.id.slice(-2), 16) % 10) + 1}.jpg`}
                     alt={listing.title}
                     fill
                     className={`object-cover ${listing.status === "hidden" ? "grayscale" : ""}`}

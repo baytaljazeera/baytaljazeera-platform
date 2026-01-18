@@ -10,6 +10,15 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import PlansHighlightSection from "@/components/home/PlansHighlightSection";
 
+function getImageUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (url.startsWith("/uploads/")) return url;
+  if (url.startsWith("/images/")) return url;
+  if (url.startsWith("/")) return url;
+  return `/uploads/${url}`;
+}
+
 const cities = [
   { title: "مكة المكرمة", img: "/makkah.jpg" },
   { title: "المدينة المنورة", img: "/madinah.jpg" },
@@ -343,7 +352,7 @@ function FeaturedPropertiesSection() {
                 >
                   <div className="relative h-52">
                     <Image
-                      src={slot.data.cover_image || slot.data.image_url || '/images/property1.jpg'}
+                      src={getImageUrl(slot.data.cover_image || slot.data.image_url) || '/images/property1.jpg'}
                       alt={slot.data.title}
                       fill
                       sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"

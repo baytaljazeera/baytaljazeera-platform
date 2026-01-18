@@ -6,6 +6,15 @@ import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { MapPin, BedDouble, Bath, Square } from "lucide-react";
 
+function getImageUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (url.startsWith("/uploads/")) return url;
+  if (url.startsWith("/images/")) return url;
+  if (url.startsWith("/")) return url;
+  return `/uploads/${url}`;
+}
+
 type Listing = {
   id: string;
   title: string;
@@ -116,7 +125,7 @@ function ReportContent() {
           {listing.image_url && (
             <div className="relative w-full bg-gray-200" style={{aspectRatio: "16/10"}}>
               <img
-                src={listing.image_url}
+                src={getImageUrl(listing.image_url)}
                 alt={listing.title}
                 className="object-cover w-full h-full"
                 onError={(e) => {
