@@ -13,8 +13,8 @@ import {
 import { toast } from "sonner";
 import SliderInput from "@/components/SliderInput";
 
-const GoogleMapsLocationPicker = dynamic(
-  () => import("@/components/GoogleMapsLocationPicker"),
+const LeafletLocationPicker = dynamic(
+  () => import("@/components/LeafletLocationPicker"),
   { ssr: false, loading: () => (
     <div className="h-[400px] bg-slate-100 rounded-2xl flex items-center justify-center">
       <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37]" />
@@ -2775,7 +2775,7 @@ export default function NewListingPage() {
                 </h2>
 
                 <div id="field-location">
-                  <GoogleMapsLocationPicker
+                  <LeafletLocationPicker
                     onLocationSelect={handleLocationSelect}
                     initialLocation={form.latitude && form.longitude ? { lat: form.latitude, lng: form.longitude } : undefined}
                     selectedCity={form.city}
