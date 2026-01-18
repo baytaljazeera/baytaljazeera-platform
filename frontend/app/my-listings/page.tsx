@@ -475,11 +475,28 @@ export default function MyListingsPage() {
                     className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-100 hover:shadow-xl transition-all group"
                   >
                     <div className="relative h-48 bg-slate-200">
-                      {listing.image_url || listing.cover_image ? (
+                      {(listing.images && listing.images.length > 0) || listing.image_url || listing.cover_image ? (
                         <img
-                          src={getImageUrl(listing.image_url || listing.cover_image)}
+                          src={getImageUrl(
+                            (listing.images && listing.images.length > 0) 
+                              ? listing.images[0] 
+                              : (listing.image_url || listing.cover_image || "")
+                          )}
                           alt={listing.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            if (listing.images && listing.images.length > 1) {
+                              const nextIndex = listing.images.findIndex(img => img === target.src) + 1;
+                              if (nextIndex < listing.images.length) {
+                                target.src = getImageUrl(listing.images[nextIndex]);
+                              } else {
+                                target.src = "/images/property1.jpg";
+                              }
+                            } else {
+                              target.src = "/images/property1.jpg";
+                            }
+                          }}
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200">
