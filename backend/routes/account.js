@@ -117,9 +117,37 @@ router.get("/my-listings", authMiddleware, asyncHandler(async (req, res) => {
     [req.user.id]
   );
   
-  const listings = result.rows.map(listing => ({
-    ...listing,
-    image_url: listing.cover_image || (listing.images && listing.images[0]) || null
+  const listings = await Promise.all(result.rows.map(async (listing) => {
+    // Fetch images from listing_media table (like /api/listings/:id does)
+    let images = [];
+    try {
+      const mediaResult = await db.query(
+        `SELECT id, url, kind, is_cover FROM listing_media WHERE listing_id = $1 ORDER BY is_cover DESC, sort_order ASC`,
+        [listing.id]
+      );
+      images = mediaResult.rows.filter(m => m.kind === 'image' || !m.kind);
+    } catch (mediaErr) {
+      console.error("Error fetching media:", mediaErr);
+    }
+    
+    // Fallback to cover_image or images array from properties table
+    if (images.length === 0) {
+      if (listing.cover_image) {
+        images = [{ id: 'cover', url: listing.cover_image, is_cover: true }];
+      } else if (listing.images && Array.isArray(listing.images) && listing.images.length > 0) {
+        images = listing.images.map((url, idx) => ({
+          id: `img-${idx}`,
+          url: url,
+          is_cover: idx === 0
+        }));
+      }
+    }
+    
+    return {
+      ...listing,
+      images: images.map(img => img.url), // Return as array of URLs for compatibility
+      image_url: images[0]?.url || listing.cover_image || (listing.images && listing.images[0]) || null
+    };
   }));
   
   res.json({ listings });

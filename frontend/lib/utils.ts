@@ -169,3 +169,16 @@ export function formatPhone(phone: string | null | undefined): string {
   if (cleaned.length < 9) return phone;
   return cleaned;
 }
+
+/**
+ * Get correct image URL - handles both absolute URLs and relative paths
+ */
+export function getImageUrl(url: string | null | undefined): string {
+  if (!url || url.trim() === "") return "";
+  // If already absolute URL (http://, https://) or starts with /
+  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("/")) {
+    return url;
+  }
+  // If relative path, prepend /uploads/
+  return `/uploads/${url}`;
+}
