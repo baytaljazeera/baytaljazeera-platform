@@ -10,10 +10,23 @@ import dynamicImport from "next/dynamic";
 
 const MapClient = dynamicImport(() => import("../../components/MapClient"), {
   ssr: false,
+  loading: () => (
+    <div className="w-full h-full flex items-center justify-center bg-slate-100">
+      <div className="text-center text-[#002845]/70">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#002845] mx-auto mb-2"></div>
+        <span className="text-sm">جاري تحميل الخريطة...</span>
+      </div>
+    </div>
+  ),
 });
 
 const SyncedMapPane = dynamicImport(() => import("../../components/search/SyncedMapPane"), {
   ssr: false,
+  loading: () => (
+    <div className="w-full h-full flex items-center justify-center bg-slate-100">
+      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#002845]"></div>
+    </div>
+  ),
 });
 import {
   Heart,
@@ -608,7 +621,6 @@ function SearchPage() {
         const res = await fetch(`${apiBase}/api/listings`);
         if (!res.ok) throw new Error("فشل في تحميل الإعلانات من الخادم");
         const data = await res.json();
-        // API returns { listings: [...], pagination: {...} }
         const listingsArray = Array.isArray(data) ? data : (data.listings || []);
         setListings(listingsArray);
       } catch (err) {
