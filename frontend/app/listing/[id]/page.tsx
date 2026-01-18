@@ -69,6 +69,15 @@ type ListingDetail = {
   } | null;
 };
 
+function getImageUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (url.startsWith("/uploads/")) return url;
+  if (url.startsWith("/images/")) return url;
+  if (url.startsWith("/")) return url;
+  return `/uploads/${url}`;
+}
+
 export default function ListingDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -611,7 +620,7 @@ export default function ListingDetailPage() {
   const isPendingOrHidden = listing.status === "pending" || listing.status === "hidden" || listing.status === "rejected";
   
   const images = listing.images && listing.images.length > 0 
-    ? listing.images 
+    ? listing.images.map(img => ({ ...img, url: getImageUrl(img.url) }))
     : [{ id: "default", url: `/images/property${(parseInt(listing.id.slice(-2), 16) % 10) + 1}.jpg`, is_cover: true }];
 
   const currentImageUrl = images[currentImageIndex]?.url || "/images/property1.jpg";

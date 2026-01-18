@@ -63,6 +63,14 @@ const statusConfig: Record<string, { label: string; color: string; icon: any; bg
   expired: { label: "منتهي", color: "text-gray-500", icon: AlertCircle, bg: "bg-gray-50 border-gray-200" },
 };
 
+function getImageUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (url.startsWith("/uploads/")) return url;
+  if (url.startsWith("/")) return url;
+  return `/uploads/${url}`;
+}
+
 export default function MyListingsPage() {
   const router = useRouter();
   const [listings, setListings] = useState<Listing[]>([]);
@@ -478,7 +486,7 @@ export default function MyListingsPage() {
                     <div className="relative h-48 bg-slate-200">
                       {listing.image_url || listing.cover_image ? (
                         <img
-                          src={listing.image_url || listing.cover_image || ""}
+                          src={getImageUrl(listing.image_url || listing.cover_image)}
                           alt={listing.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
