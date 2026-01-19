@@ -2100,6 +2100,156 @@ router.post('/admin/financial-requests/:id/complete', combinedAuthMiddleware, re
   res.json({ success: true });
 }));
 
+// Finance: Approve withdrawal and move to in_progress
+router.post('/admin/financial-requests/:id/approve', combinedAuthMiddleware, requireRoles(['super_admin', 'finance_admin']), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { notes } = req.body;
+  const adminId = req.user.id;
+  
+  const request = await db.query(`SELECT * FROM ambassador_withdrawal_requests WHERE id = $1`, [id]);
+  if (!request.rows[0]) {
+    return res.status(404).json({ error: "الطلب غير موجود" });
+  }
+  
+  if (request.rows[0].status !== 'finance_review') {
+    return res.status(400).json({ error: "الطلب ليس في مرحلة المراجعة المالية" });
+  }
+  
+  await db.query(`
+    UPDATE ambassador_withdrawal_requests 
+    SET status = 'in_progress', finance_notes = $1, finance_reviewed_by = $2, finance_reviewed_at = NOW(), updated_at = NOW()
+    WHERE id = $3
+  `, [notes || 'تمت الموافقة', adminId, id]);
+  
+  // Notify user
+  await db.query(`
+    INSERT INTO notifications (user_id, type, title, message)
+    VALUES ($1, 'ambassador_withdrawal', '✅ تمت الموافقة على طلب السحب', 'تمت الموافقة على طلب السحب بقيمة $' || $2 || '. سيتم التحويل قريباً وسنخطرك عند إتمامه.')
+  `, [request.rows[0].user_id, (request.rows[0].amount_cents/100).toFixed(2)]);
+  
+  res.json({ success: true, new_status: 'in_progress' });
+}));
+
+// Finance: Reject withdrawal
+router.post('/admin/financial-requests/:id/reject', combinedAuthMiddleware, requireRoles(['super_admin', 'finance_admin']), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { notes } = req.body;
+  const adminId = req.user.id;
+  
+  if (!notes || notes.trim().length === 0) {
+    return res.status(400).json({ error: "يجب إدخال سبب الرفض" });
+  }
+  
+  const request = await db.query(`SELECT * FROM ambassador_withdrawal_requests WHERE id = $1`, [id]);
+  if (!request.rows[0]) {
+    return res.status(404).json({ error: "الطلب غير موجود" });
+  }
+  
+  if (!['finance_review', 'in_progress'].includes(request.rows[0].status)) {
+    return res.status(400).json({ error: "لا يمكن رفض هذا الطلب في حالته الحالية" });
+  }
+  
+  // Refund the held amount
+  const wallet = await db.query(`SELECT * FROM ambassador_wallet WHERE user_id = $1`, [request.rows[0].user_id]);
+  const newBalance = (wallet.rows[0]?.balance_cents || 0) + request.rows[0].amount_cents;
+  await db.query(`
+    UPDATE ambassador_wallet SET balance_cents = $1, updated_at = NOW() WHERE user_id = $2
+  `, [newBalance, request.rows[0].user_id]);
+  
+  await db.query(`
+    INSERT INTO wallet_transactions 
+    (user_id, type, amount_cents, balance_after_cents, description, related_request_id, created_by)
+    VALUES ($1, 'withdrawal_refund', $2, $3, 'استرجاع رصيد - طلب مرفوض من المالية', $4, $5)
+  `, [request.rows[0].user_id, request.rows[0].amount_cents, newBalance, id, adminId]);
+  
+  await db.query(`
+    UPDATE ambassador_withdrawal_requests 
+    SET status = 'rejected', finance_notes = $1, finance_reviewed_by = $2, finance_reviewed_at = NOW(), updated_at = NOW()
+    WHERE id = $3
+  `, [notes, adminId, id]);
+  
+  // Notify user
+  await db.query(`
+    INSERT INTO notifications (user_id, type, title, message)
+    VALUES ($1, 'ambassador_withdrawal', '❌ تم رفض طلب السحب', $2)
+  `, [request.rows[0].user_id, `تم رفض طلب السحب بقيمة $${(request.rows[0].amount_cents/100).toFixed(2)}. السبب: ${notes}`]);
+  
+  res.json({ success: true, new_status: 'rejected' });
+}));
+
+// Finance: Convert withdrawal to subscription
+router.post('/admin/financial-requests/:id/convert-to-subscription', combinedAuthMiddleware, requireRoles(['super_admin', 'finance_admin']), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { plan_id, notes } = req.body;
+  const adminId = req.user.id;
+  
+  if (!plan_id) {
+    return res.status(400).json({ error: "يجب اختيار الباقة" });
+  }
+  
+  const request = await db.query(`SELECT * FROM ambassador_withdrawal_requests WHERE id = $1`, [id]);
+  if (!request.rows[0]) {
+    return res.status(404).json({ error: "الطلب غير موجود" });
+  }
+  
+  if (!['finance_review', 'in_progress'].includes(request.rows[0].status)) {
+    return res.status(400).json({ error: "لا يمكن تحويل هذا الطلب في حالته الحالية" });
+  }
+  
+  // Get plan details
+  const plan = await db.query(`SELECT * FROM plans WHERE id = $1`, [plan_id]);
+  if (!plan.rows[0]) {
+    return res.status(404).json({ error: "الباقة غير موجودة" });
+  }
+  
+  // Create subscription for user
+  const startDate = new Date();
+  const expiresAt = new Date(startDate.getTime() + (plan.rows[0].duration_days * 24 * 60 * 60 * 1000));
+  
+  // Check if user has existing subscription
+  const existingSub = await db.query(
+    `SELECT * FROM user_plans WHERE user_id = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
+    [request.rows[0].user_id]
+  );
+  
+  if (existingSub.rows[0]) {
+    // Extend existing subscription
+    const newExpiry = new Date(Math.max(new Date(existingSub.rows[0].expires_at).getTime(), startDate.getTime()) + (plan.rows[0].duration_days * 24 * 60 * 60 * 1000));
+    await db.query(`
+      UPDATE user_plans SET expires_at = $1, updated_at = NOW() WHERE id = $2
+    `, [newExpiry, existingSub.rows[0].id]);
+  } else {
+    // Create new subscription
+    await db.query(`
+      INSERT INTO user_plans (user_id, plan_id, started_at, expires_at, paid_amount, payment_method, status)
+      VALUES ($1, $2, $3, $4, 0, 'ambassador_conversion', 'active')
+    `, [request.rows[0].user_id, plan_id, startDate, expiresAt]);
+  }
+  
+  // Mark withdrawal as converted
+  await db.query(`
+    UPDATE ambassador_withdrawal_requests 
+    SET status = 'converted_to_subscription', finance_notes = $1, finance_reviewed_by = $2, finance_reviewed_at = NOW(), 
+        payment_method = 'subscription_conversion', updated_at = NOW()
+    WHERE id = $3
+  `, [notes || `تحويل إلى باقة: ${plan.rows[0].name_ar}`, adminId, id]);
+  
+  // Remove held amount from wallet (it's been used for subscription)
+  await db.query(`
+    INSERT INTO wallet_transactions 
+    (user_id, type, amount_cents, balance_after_cents, description, related_request_id, created_by)
+    VALUES ($1, 'subscription_conversion', $2, 0, $3, $4, $5)
+  `, [request.rows[0].user_id, -request.rows[0].amount_cents, `تحويل رصيد لاشتراك: ${plan.rows[0].name_ar}`, id, adminId]);
+  
+  // Notify user
+  await db.query(`
+    INSERT INTO notifications (user_id, type, title, message)
+    VALUES ($1, 'ambassador_withdrawal', '🎁 تم تحويل رصيدك لاشتراك!', $2)
+  `, [request.rows[0].user_id, `تم تحويل رصيد $${(request.rows[0].amount_cents/100).toFixed(2)} إلى اشتراك ${plan.rows[0].name_ar}. استمتع بمزايا الباقة!`]);
+  
+  res.json({ success: true, new_status: 'converted_to_subscription', plan_name: plan.rows[0].name_ar });
+}));
+
 // Helper: AI fraud analysis for withdrawal
 async function analyzeWithdrawalRequest(userId, amountCents) {
   try {

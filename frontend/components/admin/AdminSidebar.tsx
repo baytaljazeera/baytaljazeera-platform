@@ -445,7 +445,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     if (href === '/admin/roles') return { newCount: pendingCounts.membershipNew, inProgressCount: pendingCounts.membershipInProgress };
     if (href === '/admin/messages') return { newCount: pendingCounts.messagesNew, inProgressCount: 0 };
     if (href === '/admin/customer-service') return { newCount: pendingCounts.complaintsNew + pendingCounts.supportNew, inProgressCount: pendingCounts.complaintsInProgress + pendingCounts.supportInProgress };
-    if (href === '/admin/finance') return { newCount: pendingCounts.refundsNew, inProgressCount: pendingCounts.refundsInProgress };
+    if (href === '/admin/finance') return { newCount: pendingCounts.refundsNew + pendingCounts.ambassadorWithdrawals, inProgressCount: pendingCounts.refundsInProgress };
     if (href === '/admin/ambassador') return { newCount: pendingCounts.ambassadorPending + pendingCounts.ambassadorWithdrawals, inProgressCount: 0 };
     return { newCount: 0, inProgressCount: 0 };
   };

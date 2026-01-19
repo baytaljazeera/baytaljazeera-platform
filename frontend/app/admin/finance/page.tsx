@@ -160,6 +160,35 @@ export default function FinancePage() {
     loading: boolean;
   }>({ isOpen: false, subscriber: null, reason: "", loading: false });
 
+  const [withdrawalModal, setWithdrawalModal] = useState<{
+    isOpen: boolean;
+    request: any | null;
+    action: "approve" | "reject" | "complete" | "convert";
+    notes: string;
+    bankReference: string;
+    selectedPlanId: number | null;
+    loading: boolean;
+  }>({ isOpen: false, request: null, action: "approve", notes: "", bankReference: "", selectedPlanId: null, loading: false });
+
+  const [withdrawalFilter, setWithdrawalFilter] = useState<"all" | "finance_review" | "in_progress" | "completed" | "rejected">("finance_review");
+  const [plans, setPlans] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetchPlans();
+  }, []);
+
+  async function fetchPlans() {
+    try {
+      const res = await fetch("/api/plans", { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setPlans(data.plans || []);
+      }
+    } catch (err) {
+      console.error("Error fetching plans:", err);
+    }
+  }
+
   useEffect(() => {
     fetchStats();
     fetchSubscribers();
@@ -173,7 +202,8 @@ export default function FinancePage() {
 
   async function fetchWithdrawalRequests() {
     try {
-      const res = await fetch("/api/ambassador/admin/financial-requests?status=finance_review", { credentials: "include" });
+      const status = withdrawalFilter === "all" ? "all" : withdrawalFilter;
+      const res = await fetch(`/api/ambassador/admin/financial-requests?status=${status}`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setWithdrawalRequests(data.requests || []);
@@ -183,37 +213,112 @@ export default function FinancePage() {
     }
   }
 
-  async function handleWithdrawalComplete(requestId: string) {
-    const paymentRef = prompt('رقم المرجع/التحويل:') || '';
-    if (!paymentRef) {
-      alert('يجب إدخال رقم المرجع');
+  useEffect(() => {
+    fetchWithdrawalRequests();
+  }, [withdrawalFilter]);
+
+  function openWithdrawalModal(request: any, action: "approve" | "reject" | "complete" | "convert") {
+    setWithdrawalModal({
+      isOpen: true,
+      request,
+      action,
+      notes: "",
+      bankReference: "",
+      selectedPlanId: null,
+      loading: false
+    });
+  }
+
+  async function handleWithdrawalAction() {
+    if (!withdrawalModal.request) return;
+    
+    const { request, action, notes, bankReference, selectedPlanId } = withdrawalModal;
+    
+    if (action === "reject" && !notes.trim()) {
+      setSuccessModal({ isOpen: true, message: '❌ يجب إدخال سبب الرفض', type: 'error' });
       return;
     }
     
-    const notes = prompt('ملاحظات إضافية (اختياري):') || '';
+    if (action === "complete" && !bankReference.trim()) {
+      setSuccessModal({ isOpen: true, message: '❌ يجب إدخال رقم المرجع', type: 'error' });
+      return;
+    }
+    
+    if (action === "convert" && !selectedPlanId) {
+      setSuccessModal({ isOpen: true, message: '❌ يجب اختيار الباقة', type: 'error' });
+      return;
+    }
+    
+    setWithdrawalModal(prev => ({ ...prev, loading: true }));
     
     try {
-      const res = await fetch(`/api/ambassador/admin/financial-requests/${requestId}/complete`, {
+      let endpoint = '';
+      let body: any = {};
+      
+      switch (action) {
+        case "approve":
+          endpoint = `/api/ambassador/admin/financial-requests/${request.id}/approve`;
+          body = { notes };
+          break;
+        case "reject":
+          endpoint = `/api/ambassador/admin/financial-requests/${request.id}/reject`;
+          body = { notes };
+          break;
+        case "complete":
+          endpoint = `/api/ambassador/admin/financial-requests/${request.id}/complete`;
+          body = { payment_reference: bankReference, notes };
+          break;
+        case "convert":
+          endpoint = `/api/ambassador/admin/financial-requests/${request.id}/convert-to-subscription`;
+          body = { plan_id: selectedPlanId, notes };
+          break;
+      }
+      
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ payment_reference: paymentRef, notes })
+        body: JSON.stringify(body)
       });
+      
       if (res.ok) {
-        setSuccessModal({ isOpen: true, message: '✅ تم إتمام التحويل بنجاح', type: 'success' });
-        setTimeout(() => setSuccessModal({ isOpen: false, message: '', type: 'success' }), 3000);
+        const messages: Record<string, string> = {
+          approve: '✅ تمت الموافقة بنجاح - سيتم إشعار العميل',
+          reject: '❌ تم رفض الطلب - سيتم إشعار العميل',
+          complete: '🎉 تم إتمام التحويل بنجاح',
+          convert: '🎁 تم تحويل الرصيد لاشتراك بنجاح'
+        };
+        setSuccessModal({ isOpen: true, message: messages[action], type: 'success' });
+        setWithdrawalModal({ isOpen: false, request: null, action: "approve", notes: "", bankReference: "", selectedPlanId: null, loading: false });
         await fetchWithdrawalRequests();
         await fetchStats();
       } else {
         const error = await res.json().catch(() => ({}));
         setSuccessModal({ isOpen: true, message: `❌ ${error.error || 'حدث خطأ'}`, type: 'error' });
-        setTimeout(() => setSuccessModal({ isOpen: false, message: '', type: 'success' }), 3000);
       }
     } catch (err) {
       console.error(err);
-      setSuccessModal({ isOpen: true, message: '❌ حدث خطأ أثناء إتمام التحويل', type: 'error' });
-      setTimeout(() => setSuccessModal({ isOpen: false, message: '', type: 'success' }), 3000);
+      setSuccessModal({ isOpen: true, message: '❌ حدث خطأ في الاتصال', type: 'error' });
     }
+    
+    setWithdrawalModal(prev => ({ ...prev, loading: false }));
+  }
+
+  function getWithdrawalStatusBadge(status: string) {
+    const statusConfig: Record<string, { label: string; color: string; icon: string }> = {
+      pending: { label: 'معلق', color: 'bg-gray-100 text-gray-700 border-gray-300', icon: '⏳' },
+      finance_review: { label: 'في انتظار المالية', color: 'bg-blue-100 text-blue-700 border-blue-300', icon: '💰' },
+      in_progress: { label: 'قيد التنفيذ', color: 'bg-amber-100 text-amber-700 border-amber-300', icon: '⚡' },
+      completed: { label: 'مكتمل', color: 'bg-green-100 text-green-700 border-green-300', icon: '✅' },
+      rejected: { label: 'مرفوض', color: 'bg-red-100 text-red-700 border-red-300', icon: '❌' },
+      converted_to_subscription: { label: 'تحويل لاشتراك', color: 'bg-purple-100 text-purple-700 border-purple-300', icon: '🎁' }
+    };
+    const config = statusConfig[status] || statusConfig.pending;
+    return (
+      <span className={`px-3 py-1 rounded-full text-sm font-medium ${config.color} border`}>
+        {config.icon} {config.label}
+      </span>
+    );
   }
 
   async function fetchAllRefunds() {
@@ -1214,48 +1319,121 @@ export default function FinancePage() {
       {activeTab === "withdrawals" && (
         <div className="bg-white rounded-2xl border border-gray-200">
           <div className="p-4 border-b border-gray-200">
-            <h2 className="text-lg font-bold text-[#002845]">طلبات سحب السفراء</h2>
-            <p className="text-sm text-gray-500 mt-1">طلبات السحب التي تحتاج إلى مراجعة مالية</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-[#002845]">طلبات سحب السفراء</h2>
+                <p className="text-sm text-gray-500 mt-1">إدارة طلبات السحب المالية للسفراء</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {(["finance_review", "in_progress", "completed", "rejected", "all"] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => setWithdrawalFilter(filter)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                      withdrawalFilter === filter
+                        ? "bg-[#002845] text-white"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    }`}
+                  >
+                    {filter === "finance_review" && "💰 بانتظار المالية"}
+                    {filter === "in_progress" && "⚡ قيد التنفيذ"}
+                    {filter === "completed" && "✅ مكتمل"}
+                    {filter === "rejected" && "❌ مرفوض"}
+                    {filter === "all" && "📋 الكل"}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
           
           {withdrawalRequests.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">لا توجد طلبات سحب حالياً</div>
+            <div className="p-12 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
+                <Wallet className="w-8 h-8 text-gray-400" />
+              </div>
+              <p className="text-gray-500 font-medium">لا توجد طلبات سحب بهذه الحالة</p>
+            </div>
           ) : (
             <div className="divide-y divide-gray-200">
               {withdrawalRequests.map((request) => (
-                <div key={request.id} className="p-4 hover:bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold">
-                        ${((request.amount_cents || 0) / 100).toFixed(2)}
+                <div key={request.id} className="p-5 hover:bg-gray-50 transition">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold shadow-lg">
+                        ${((request.amount_cents || 0) / 100).toFixed(0)}
                       </div>
                       <div>
-                        <p className="font-medium text-[#002845]">{request.user_name || 'مستخدم'}</p>
+                        <p className="font-bold text-[#002845] text-lg">{request.user_name || 'مستخدم'}</p>
                         <p className="text-sm text-gray-500">{request.user_email}</p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {new Date(request.created_at).toLocaleDateString('ar-SA', { 
-                            year: 'numeric', 
-                            month: 'long', 
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </p>
+                        <div className="flex items-center gap-3 mt-2">
+                          {getWithdrawalStatusBadge(request.status)}
+                          <span className="text-xs text-gray-400">
+                            {new Date(request.created_at).toLocaleDateString('ar-SA', { 
+                              year: 'numeric', 
+                              month: 'short', 
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
+                        </div>
+                        {request.finance_notes && (
+                          <p className="text-sm text-gray-600 mt-2 bg-gray-50 px-3 py-2 rounded-lg">
+                            📝 {request.finance_notes}
+                          </p>
+                        )}
+                        {request.payment_reference && (
+                          <p className="text-sm text-green-600 mt-2">
+                            🧾 رقم المرجع: {request.payment_reference}
+                          </p>
+                        )}
                       </div>
                     </div>
                     
-                    <div className="flex items-center gap-3">
-                      <span className="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-700 border border-blue-300">
-                        💰 في انتظار المالية
-                      </span>
-                      
-                      <button 
-                        onClick={() => handleWithdrawalComplete(request.id)} 
-                        className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:shadow-lg transition font-medium flex items-center gap-2"
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                        إتمام التحويل
-                      </button>
+                    <div className="flex flex-col gap-2">
+                      {request.status === 'finance_review' && (
+                        <>
+                          <button 
+                            onClick={() => openWithdrawalModal(request, 'approve')} 
+                            className="px-4 py-2 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:shadow-lg transition font-medium flex items-center gap-2"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                            موافقة
+                          </button>
+                          <button 
+                            onClick={() => openWithdrawalModal(request, 'reject')} 
+                            className="px-4 py-2 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 transition font-medium flex items-center gap-2"
+                          >
+                            <XCircle className="w-4 h-4" />
+                            رفض
+                          </button>
+                          <button 
+                            onClick={() => openWithdrawalModal(request, 'convert')} 
+                            className="px-4 py-2 rounded-lg bg-purple-100 text-purple-600 hover:bg-purple-200 transition font-medium flex items-center gap-2"
+                          >
+                            <CreditCard className="w-4 h-4" />
+                            تحويل لاشتراك
+                          </button>
+                        </>
+                      )}
+                      {request.status === 'in_progress' && (
+                        <>
+                          <button 
+                            onClick={() => openWithdrawalModal(request, 'complete')} 
+                            className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:shadow-lg transition font-medium flex items-center gap-2"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                            تأكيد التحويل
+                          </button>
+                          <button 
+                            onClick={() => openWithdrawalModal(request, 'convert')} 
+                            className="px-4 py-2 rounded-lg bg-purple-100 text-purple-600 hover:bg-purple-200 transition font-medium flex items-center gap-2"
+                          >
+                            <CreditCard className="w-4 h-4" />
+                            تحويل لاشتراك
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1720,6 +1898,155 @@ export default function FinancePage() {
                 onClick={() => setActivateModal({ isOpen: false, subscriber: null, reason: "", loading: false })}
                 className="flex-1 py-3 border-2 border-gray-300 text-gray-600 rounded-xl font-medium hover:bg-white transition"
                 disabled={activateModal.loading}
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {withdrawalModal.isOpen && withdrawalModal.request && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-[#D4AF37]/30">
+            <div className={`p-6 ${
+              withdrawalModal.action === "approve" ? "bg-gradient-to-r from-green-600 to-emerald-600" :
+              withdrawalModal.action === "reject" ? "bg-gradient-to-r from-red-600 to-rose-600" :
+              withdrawalModal.action === "complete" ? "bg-gradient-to-r from-blue-600 to-indigo-600" :
+              "bg-gradient-to-r from-purple-600 to-violet-600"
+            }`}>
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center">
+                  {withdrawalModal.action === "approve" && <CheckCircle2 className="w-7 h-7 text-white" />}
+                  {withdrawalModal.action === "reject" && <XCircle className="w-7 h-7 text-white" />}
+                  {withdrawalModal.action === "complete" && <Wallet className="w-7 h-7 text-white" />}
+                  {withdrawalModal.action === "convert" && <CreditCard className="w-7 h-7 text-white" />}
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white">
+                    {withdrawalModal.action === "approve" && "الموافقة على طلب السحب"}
+                    {withdrawalModal.action === "reject" && "رفض طلب السحب"}
+                    {withdrawalModal.action === "complete" && "تأكيد التحويل المالي"}
+                    {withdrawalModal.action === "convert" && "تحويل لاشتراك"}
+                  </h3>
+                  <p className="text-white/80 text-sm mt-1">{withdrawalModal.request.user_name}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">المبلغ:</span>
+                  <span className="font-bold text-[#D4AF37] text-lg">${((withdrawalModal.request.amount_cents || 0) / 100).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">البريد:</span>
+                  <span className="text-gray-800">{withdrawalModal.request.user_email}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">تاريخ الطلب:</span>
+                  <span className="text-gray-800">{new Date(withdrawalModal.request.created_at).toLocaleDateString('ar-SA')}</span>
+                </div>
+              </div>
+              
+              {withdrawalModal.action === "approve" && (
+                <div className="bg-green-50 rounded-2xl p-4 border border-green-200">
+                  <p className="text-green-700 text-sm">
+                    ✅ سيتم إشعار العميل بالموافقة على طلبه وأن التحويل قيد التنفيذ.
+                  </p>
+                </div>
+              )}
+              
+              {withdrawalModal.action === "reject" && (
+                <div className="bg-red-50 rounded-2xl p-4 border border-red-200">
+                  <p className="text-red-700 text-sm">
+                    ⚠️ سيتم إرجاع المبلغ لمحفظة العميل وإشعاره بسبب الرفض.
+                  </p>
+                </div>
+              )}
+              
+              {withdrawalModal.action === "complete" && (
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    رقم المرجع / التحويل <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={withdrawalModal.bankReference}
+                    onChange={(e) => setWithdrawalModal(prev => ({ ...prev, bankReference: e.target.value }))}
+                    placeholder="أدخل رقم مرجع التحويل البنكي..."
+                    className="w-full border-2 border-gray-200 focus:border-[#D4AF37] rounded-xl px-4 py-3 text-sm transition outline-none"
+                  />
+                </div>
+              )}
+              
+              {withdrawalModal.action === "convert" && (
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    اختر الباقة <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={withdrawalModal.selectedPlanId || ""}
+                    onChange={(e) => setWithdrawalModal(prev => ({ ...prev, selectedPlanId: parseInt(e.target.value) }))}
+                    className="w-full border-2 border-gray-200 focus:border-[#D4AF37] rounded-xl px-4 py-3 text-sm transition outline-none"
+                  >
+                    <option value="">اختر باقة...</option>
+                    {plans.map((plan) => (
+                      <option key={plan.id} value={plan.id}>
+                        {plan.name_ar} - {plan.price} ر.س
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-purple-600 mt-2">
+                    🎁 سيتم تحويل رصيد العميل إلى اشتراك بالباقة المختارة
+                  </p>
+                </div>
+              )}
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  ملاحظات {withdrawalModal.action === "reject" ? <span className="text-red-500">*</span> : "(اختياري)"}
+                </label>
+                <textarea
+                  value={withdrawalModal.notes}
+                  onChange={(e) => setWithdrawalModal(prev => ({ ...prev, notes: e.target.value }))}
+                  rows={2}
+                  placeholder={
+                    withdrawalModal.action === "reject" ? "اكتب سبب الرفض (مطلوب)..." : 
+                    "أي ملاحظات إضافية..."
+                  }
+                  className="w-full border-2 border-gray-200 focus:border-[#D4AF37] rounded-xl px-4 py-3 text-sm transition outline-none resize-none"
+                />
+              </div>
+            </div>
+            
+            <div className="p-4 bg-slate-50 flex gap-3">
+              <button
+                onClick={handleWithdrawalAction}
+                disabled={withdrawalModal.loading}
+                className={`flex-1 py-3 text-white rounded-xl font-bold transition disabled:opacity-50 flex items-center justify-center gap-2 ${
+                  withdrawalModal.action === "approve" ? "bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600" :
+                  withdrawalModal.action === "reject" ? "bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600" :
+                  withdrawalModal.action === "complete" ? "bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600" :
+                  "bg-gradient-to-r from-purple-500 to-violet-500 hover:from-purple-600 hover:to-violet-600"
+                }`}
+              >
+                {withdrawalModal.loading ? (
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>
+                    {withdrawalModal.action === "approve" && <><CheckCircle2 className="w-5 h-5" /> موافقة</>}
+                    {withdrawalModal.action === "reject" && <><XCircle className="w-5 h-5" /> رفض</>}
+                    {withdrawalModal.action === "complete" && <><CheckCircle2 className="w-5 h-5" /> تأكيد التحويل</>}
+                    {withdrawalModal.action === "convert" && <><CreditCard className="w-5 h-5" /> تحويل لاشتراك</>}
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => setWithdrawalModal({ isOpen: false, request: null, action: "approve", notes: "", bankReference: "", selectedPlanId: null, loading: false })}
+                className="flex-1 py-3 border-2 border-gray-300 text-gray-600 rounded-xl font-medium hover:bg-white transition"
+                disabled={withdrawalModal.loading}
               >
                 إلغاء
               </button>

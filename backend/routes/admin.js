@@ -33,7 +33,7 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
       UNION ALL SELECT 'support_new', COUNT(*)::int FROM support_tickets WHERE status IN ('new', 'open')
       UNION ALL SELECT 'support_in_progress', COUNT(*)::int FROM support_tickets WHERE status = 'in_progress'
       UNION ALL SELECT 'ambassador_pending', COUNT(*)::int FROM ambassador_requests WHERE status IN ('pending', 'under_review')
-      UNION ALL SELECT 'ambassador_withdrawals', COUNT(*)::int FROM ambassador_withdrawal_requests WHERE status = 'pending'
+      UNION ALL SELECT 'ambassador_withdrawals', COUNT(*)::int FROM ambassador_withdrawal_requests WHERE status IN ('pending', 'finance_review', 'in_progress')
     )
     SELECT 
       MAX(CASE WHEN key = 'listings_new' THEN cnt END) as listings_new,
