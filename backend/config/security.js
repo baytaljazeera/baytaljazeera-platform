@@ -4,7 +4,7 @@ const isDevelopment = process.env.NODE_ENV !== 'production';
 
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: isDevelopment ? 1000 : 300,
+  max: isDevelopment ? 1000 : 500,
   message: { error: "تم تجاوز الحد المسموح من الطلبات، حاول لاحقاً", errorEn: "Too many requests" },
   standardHeaders: true,
   legacyHeaders: false,
@@ -13,7 +13,7 @@ const generalLimiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 20,
   message: { error: "محاولات كثيرة، حاول بعد 15 دقيقة", errorEn: "Too many login attempts" },
   standardHeaders: true,
   legacyHeaders: false,
