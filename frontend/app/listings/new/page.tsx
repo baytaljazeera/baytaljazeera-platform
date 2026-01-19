@@ -2916,8 +2916,17 @@ export default function NewListingPage() {
                   {imagePreviews.length > 0 && (
                     <div className="grid grid-cols-3 md:grid-cols-5 gap-3 mt-4">
                       {imagePreviews.map((preview, idx) => (
-                        <div key={idx} className="relative group aspect-square rounded-xl overflow-hidden border-2 border-slate-200">
-                          <img src={preview} alt={`صورة ${idx + 1}`} className="w-full h-full object-cover" />
+                        <div 
+                          key={idx} 
+                          className="relative group aspect-square rounded-xl overflow-hidden border-2 border-slate-200"
+                          onContextMenu={(e) => e.preventDefault()}
+                        >
+                          <img 
+                            src={preview} 
+                            alt={`صورة ${idx + 1}`} 
+                            className="w-full h-full object-cover pointer-events-none select-none" 
+                            draggable={false}
+                          />
                           {idx === 0 && (
                             <div className="absolute top-2 right-2 bg-[#D4AF37] text-white text-xs px-2 py-1 rounded-full flex items-center gap-1">
                               <Star className="w-3 h-3" />
