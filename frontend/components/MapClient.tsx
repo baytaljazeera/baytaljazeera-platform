@@ -937,7 +937,11 @@ export default function MapClient({
   };
 
   const validListings = useMemo(() => 
-    listings.filter((l) => typeof l.latitude === "number" && typeof l.longitude === "number"),
+    listings.filter((l) => {
+      const lat = typeof l.latitude === "string" ? parseFloat(l.latitude) : l.latitude;
+      const lng = typeof l.longitude === "string" ? parseFloat(l.longitude) : l.longitude;
+      return typeof lat === "number" && typeof lng === "number" && !isNaN(lat) && !isNaN(lng);
+    }),
     [listings]
   );
 
