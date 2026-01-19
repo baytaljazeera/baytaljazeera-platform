@@ -9,15 +9,7 @@ import { Search as SearchIcon, Crown, Sparkles, Star, X, MapPin, Navigation } fr
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import PlansHighlightSection from "@/components/home/PlansHighlightSection";
-
-function getImageUrl(url: string | null | undefined): string {
-  if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  if (url.startsWith("/uploads/")) return url;
-  if (url.startsWith("/images/")) return url;
-  if (url.startsWith("/")) return url;
-  return `/uploads/${url}`;
-}
+import { getImageUrl } from "@/lib/imageUrl";
 
 const cities = [
   { title: "مكة المكرمة", img: "/makkah.jpg" },

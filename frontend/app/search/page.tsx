@@ -45,6 +45,7 @@ import {
 import { useSearchMapStore } from "@/lib/stores/searchMapStore";
 import { useCurrencyStore } from "@/lib/stores/currencyStore";
 import type { PropertyMarker } from "@/components/search/SyncedMapPane";
+import { getImageUrl } from "@/lib/imageUrl";
 
 // نوع الإعلان القادم من /api/listings
 type Listing = {
@@ -117,16 +118,6 @@ type ViewMode = "list" | "map";
 // دالة بناء رابط الـ API - نستخدم مسار نسبي لأن Next.js rewrites يتولى تحويل الطلبات
 function getApiBase(): string {
   return "";
-}
-
-// دالة معالجة روابط الصور
-function getImageUrl(url: string | null | undefined): string {
-  if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  if (url.startsWith("/uploads/")) return url;
-  if (url.startsWith("/images/")) return url;
-  if (url.startsWith("/")) return url;
-  return `/uploads/${url}`;
 }
 
 // استيراد دالة تنسيق السعر الموحدة من currencyStore

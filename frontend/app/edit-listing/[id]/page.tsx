@@ -6,20 +6,12 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowRight, Save, Loader2, Home, MapPin, DollarSign, Ruler, BedDouble, Bath, Camera, Video, Building2, Crown, Sparkles, Rocket, CheckCircle2, AlertTriangle, X, Upload, Trash2, Plus, ImagePlus, Star } from "lucide-react";
 import Link from "next/link";
+import { getImageUrl } from "@/lib/imageUrl";
 
 interface MediaItem {
   id: string;
   url: string;
   is_cover?: boolean;
-}
-
-function getImageUrl(url: string | null | undefined): string {
-  if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  if (url.startsWith("/uploads/")) return url;
-  if (url.startsWith("/images/")) return url;
-  if (url.startsWith("/")) return url;
-  return `/uploads/${url}`;
 }
 
 interface Listing {

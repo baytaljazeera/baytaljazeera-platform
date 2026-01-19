@@ -11,15 +11,7 @@ import {
   RotateCcw, Trash2, MoreVertical, AlertCircle, CheckCircle,
   Clock, XCircle, Crown, Star
 } from "lucide-react";
-
-function getImageUrl(url: string | null | undefined): string {
-  if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  if (url.startsWith("/uploads/")) return url;
-  if (url.startsWith("/images/")) return url;
-  if (url.startsWith("/")) return url;
-  return `/uploads/${url}`;
-}
+import { getImageUrl } from "@/lib/imageUrl";
 
 type Listing = {
   id: string;

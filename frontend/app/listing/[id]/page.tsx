@@ -16,6 +16,7 @@ import {
 import ShareButton from "@/components/shared/ShareButton";
 import AdvertiserReputation from "@/components/ratings/AdvertiserReputation";
 import RatingModal from "@/components/ratings/RatingModal";
+import { getImageUrl } from "@/lib/imageUrl";
 
 type ListingDetail = {
   id: string;
@@ -68,15 +69,6 @@ type ListingDetail = {
     expires_at?: string;
   } | null;
 };
-
-function getImageUrl(url: string | null | undefined): string {
-  if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  if (url.startsWith("/uploads/")) return url;
-  if (url.startsWith("/images/")) return url;
-  if (url.startsWith("/")) return url;
-  return `/uploads/${url}`;
-}
 
 export default function ListingDetailPage() {
   const params = useParams();

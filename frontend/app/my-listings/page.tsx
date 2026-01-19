@@ -13,6 +13,7 @@ import {
   AlertCircle, Loader2, Home, Search, Filter,
   TrendingUp, Star, Crown, Handshake, Archive, ChevronDown
 } from "lucide-react";
+import { getImageUrl } from "@/lib/imageUrl";
 
 type EliteReservation = {
   id: string;
@@ -62,14 +63,6 @@ const statusConfig: Record<string, { label: string; color: string; icon: any; bg
   hidden: { label: "مخفي", color: "text-slate-500", icon: EyeOff, bg: "bg-slate-50 border-slate-200" },
   expired: { label: "منتهي", color: "text-gray-500", icon: AlertCircle, bg: "bg-gray-50 border-gray-200" },
 };
-
-function getImageUrl(url: string | null | undefined): string {
-  if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  if (url.startsWith("/uploads/")) return url;
-  if (url.startsWith("/")) return url;
-  return `/uploads/${url}`;
-}
 
 export default function MyListingsPage() {
   const router = useRouter();

@@ -7,15 +7,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { MapPin, BedDouble, Bath, Square, Heart, Trash2 } from "lucide-react";
-
-function getImageUrl(url: string | null | undefined): string {
-  if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  if (url.startsWith("/uploads/")) return url;
-  if (url.startsWith("/images/")) return url;
-  if (url.startsWith("/")) return url;
-  return `/uploads/${url}`;
-}
+import { getImageUrl } from "@/lib/imageUrl";
 
 type Listing = {
   id: string;
