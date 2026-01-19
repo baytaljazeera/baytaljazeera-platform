@@ -375,6 +375,7 @@ function ListingPopupCard({
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
   const [lastTap, setLastTap] = useState<number>(0);
+  const [imgError, setImgError] = useState(false);
   const router = useRouter();
 
   const allImages = (
@@ -421,15 +422,23 @@ function ListingPopupCard({
   const goPrev = (e?: React.MouseEvent | React.TouchEvent) => {
     e?.stopPropagation();
     e?.preventDefault();
+    if (e && 'nativeEvent' in e) {
+      (e as React.MouseEvent).nativeEvent.stopImmediatePropagation();
+    }
     if (!hasImages) return;
     setImgIndex((prev) => (prev === 0 ? allImages.length - 1 : prev - 1));
+    setLastTap(0); // إلغاء double-tap detection
   };
 
   const goNext = (e?: React.MouseEvent | React.TouchEvent) => {
     e?.stopPropagation();
     e?.preventDefault();
+    if (e && 'nativeEvent' in e) {
+      (e as React.MouseEvent).nativeEvent.stopImmediatePropagation();
+    }
     if (!hasImages) return;
     setImgIndex((prev) => (prev === allImages.length - 1 ? 0 : prev + 1));
+    setLastTap(0); // إلغاء double-tap detection
   };
 
   const onTouchStart = (e: React.TouchEvent) => {
@@ -509,13 +518,14 @@ function ListingPopupCard({
           borderRadius: "14px 14px 0 0", 
           overflow: "hidden" 
         }}>
-          {hasImages ? (
+          {hasImages && !imgError ? (
             <img
               key={`${listing.id}-img-${imgIndex}`}
               src={allImages[imgIndex]}
               alt={listing.title || "صورة العقار"}
               loading="eager"
               draggable={false}
+              onError={() => setImgError(true)}
               style={{ 
                 width: "100%", 
                 height: "100%", 
@@ -530,14 +540,17 @@ function ListingPopupCard({
                 width: "100%",
                 height: "100%",
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 14,
+                fontSize: 12,
                 color: "#9ca3af",
-                background: "linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%)",
+                background: "linear-gradient(135deg, #01273C 0%, #0B6B4C 100%)",
+                gap: 8,
               }}
             >
-              📷 لا توجد صور
+              <span style={{ fontSize: 32 }}>🏠</span>
+              <span>{imgError ? "الصورة غير متاحة" : "لا توجد صور"}</span>
             </div>
           )}
         </div>
