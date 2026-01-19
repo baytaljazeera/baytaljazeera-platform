@@ -88,8 +88,10 @@ const CITY_CENTER: Record<string, LatLngExpression> = {
 };
 
 function getPos(listing: MapListing): LatLngExpression | null {
-  if (typeof listing.latitude === "number" && typeof listing.longitude === "number") {
-    return [listing.latitude, listing.longitude];
+  const lat = typeof listing.latitude === "string" ? parseFloat(listing.latitude) : listing.latitude;
+  const lng = typeof listing.longitude === "string" ? parseFloat(listing.longitude) : listing.longitude;
+  if (typeof lat === "number" && typeof lng === "number" && !isNaN(lat) && !isNaN(lng)) {
+    return [lat, lng];
   }
   return null;
 }
