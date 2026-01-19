@@ -379,7 +379,8 @@ function SearchPage() {
   
   const [listings, setListings] = useState<Listing[]>([]);
   const [filters, setFilters] = useState<Filters>({ dealStatus: "active" }); // ✅ الديفولت نشط
-  const [purposeTab, setPurposeTab] = useState<PurposeTab>("all"); // ✅ الديفولت الكل (إيجار + بيع)
+  const [purposeTab, setPurposeTab] = useState<PurposeTab>("all"); // سيتم تعيينه بناءً على الإعلانات
+  const [purposeInitialized, setPurposeInitialized] = useState(false); // لتجنب إعادة التعيين
   const [usageTab, setUsageTab] = useState<UsageTab>("residential");
   const [activePanel, setActivePanel] = useState<ActivePanel>("none");
   const [sortOption, setSortOption] = useState<SortOption>("recommended");
@@ -614,6 +615,21 @@ function SearchPage() {
         const data = await res.json();
         const listingsArray = Array.isArray(data) ? data : (data.listings || []);
         setListings(listingsArray);
+        
+        // تعيين الـ tab الافتراضي بناءً على الإعلانات الموجودة
+        if (!purposeInitialized && listingsArray.length > 0) {
+          const hasSell = listingsArray.some((l: Listing) => l.purpose === "بيع" || l.purpose === "للبيع");
+          const hasRent = listingsArray.some((l: Listing) => l.purpose === "إيجار" || l.purpose === "للإيجار");
+          
+          if (hasSell && !hasRent) {
+            setPurposeTab("sell");
+          } else if (hasRent && !hasSell) {
+            setPurposeTab("rent");
+          } else {
+            setPurposeTab("sell"); // إذا كان هناك كلاهما، نبدأ بالبيع
+          }
+          setPurposeInitialized(true);
+        }
       } catch (err) {
         console.error("Error loading listings:", err);
         setError("تعذّر تحميل الإعلانات، يرجى المحاولة لاحقًا.");
@@ -622,7 +638,7 @@ function SearchPage() {
       }
     }
     loadListings();
-  }, []);
+  }, [purposeInitialized]);
 
 
   // 🧠 فلترة + ترتيب الإعلانات

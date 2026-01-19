@@ -25,6 +25,8 @@ import {
   Navigation,
 } from "lucide-react";
 import { useSearchMapStore } from "@/lib/stores/searchMapStore";
+import { getImageUrl } from "@/lib/imageUrl";
+import { getCurrencySymbol, getCurrencyCodeByCountry } from "@/lib/stores/currencyStore";
 
 export type MapListing = {
   id: string;
@@ -32,6 +34,8 @@ export type MapListing = {
   description?: string;
   city?: string;
   district?: string;
+  country?: string;
+  currency_code?: string;
   price?: number;
   area?: number;
   bedrooms?: number;
@@ -373,12 +377,13 @@ function ListingPopupCard({
   const [lastTap, setLastTap] = useState<number>(0);
   const router = useRouter();
 
-  const allImages =
+  const allImages = (
     listing.images && listing.images.length > 0
       ? listing.images
       : listing.image_url
       ? [listing.image_url]
-      : [];
+      : []
+  ).map(img => getImageUrl(img));
 
   const hasImages = allImages.length > 0;
 
@@ -388,7 +393,7 @@ function ListingPopupCard({
       : listing.city
     : "";
 
-  const formatPrice = (price: number | string | undefined | null) => {
+  const formatPriceWithCurrency = (price: number | string | undefined | null, country?: string, currencyCode?: string) => {
     let numPrice: number | undefined;
 
     if (typeof price === "string") {
@@ -398,16 +403,20 @@ function ListingPopupCard({
       numPrice = price;
     }
 
+    // استخدم currency_code من الإعلان إذا متوفر، وإلا احسب من الدولة
+    const code = currencyCode || getCurrencyCodeByCountry(country);
+    const symbol = getCurrencySymbol(code);
+
     if (numPrice && numPrice > 0) {
       if (numPrice >= 1_000_000) {
-        return `${(numPrice / 1_000_000).toFixed(1)} مليون ريال`;
+        return `${(numPrice / 1_000_000).toFixed(1)} مليون ${symbol}`;
       }
-      return `${numPrice.toLocaleString("en-US")} ريال`;
+      return `${numPrice.toLocaleString("ar-SA")} ${symbol}`;
     }
     return "السعر غير محدد";
   };
 
-  const priceText = formatPrice(listing.price);
+  const priceText = formatPriceWithCurrency(listing.price, listing.country, listing.currency_code);
 
   const goPrev = (e?: React.MouseEvent | React.TouchEvent) => {
     e?.stopPropagation();

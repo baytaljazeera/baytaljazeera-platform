@@ -166,10 +166,45 @@ export function getCurrencySymbol(currencyCode?: string): string {
     KWD: 'د.ك',
     OMR: 'ر.ع',
     BHD: 'د.ب',
+    AED: 'د.إ',
     EGP: 'ج.م',
     TRY: '₺',
     LBP: 'ل.ل',
     USD: '$'
   };
   return symbols[currencyCode || 'SAR'] || 'ر.س';
+}
+
+export function getCurrencyCodeByCountry(countryNameOrCode?: string): string {
+  if (!countryNameOrCode) return 'SAR';
+  const countryToCurrency: { [key: string]: string } = {
+    'السعودية': 'SAR',
+    'Saudi Arabia': 'SAR',
+    'SA': 'SAR',
+    'الإمارات': 'AED',
+    'UAE': 'AED',
+    'AE': 'AED',
+    'الكويت': 'KWD',
+    'Kuwait': 'KWD',
+    'KW': 'KWD',
+    'قطر': 'QAR',
+    'Qatar': 'QAR',
+    'QA': 'QAR',
+    'البحرين': 'BHD',
+    'Bahrain': 'BHD',
+    'BH': 'BHD',
+    'عمان': 'OMR',
+    'Oman': 'OMR',
+    'OM': 'OMR',
+    'مصر': 'EGP',
+    'Egypt': 'EGP',
+    'EG': 'EGP',
+    'لبنان': 'LBP',
+    'Lebanon': 'LBP',
+    'LB': 'LBP',
+    'تركيا': 'TRY',
+    'Turkey': 'TRY',
+    'TR': 'TRY',
+  };
+  return countryToCurrency[countryNameOrCode] || 'SAR';
 }
