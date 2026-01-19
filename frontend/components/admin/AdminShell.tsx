@@ -15,8 +15,8 @@ export default function AdminShell({ children }: AdminShellProps) {
 
   return (
     <AdminGuard>
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100" dir="rtl">
-        <div className="flex min-h-screen">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 overflow-x-hidden" dir="rtl">
+        <div className="flex min-h-screen overflow-hidden">
           <AdminSidebar />
           
           {mobileMenuOpen && (
