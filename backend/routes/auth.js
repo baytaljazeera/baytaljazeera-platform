@@ -1,10 +1,12 @@
 const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const db = require("../db");
 const { JWT_SECRET, JWT_CONFIG, JWT_VERIFY_OPTIONS } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
-const { validatePassword, PASSWORD_POLICY, sanitizeInput } = require("../config/security");
+const { validatePassword, PASSWORD_POLICY, sanitizeInput, strictAuthLimiter } = require("../config/security");
+const { sendPasswordResetEmail } = require("../services/emailService");
 
 const router = express.Router();
 
@@ -506,6 +508,109 @@ router.get("/me", asyncHandler(async (req, res) => {
       phoneVerified: !!user.phone_verified_at,
     },
     plan: planResult.rows[0] || null,
+  });
+}));
+
+router.post("/forgot-password", strictAuthLimiter, asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({ error: "البريد الإلكتروني مطلوب", errorEn: "Email is required" });
+  }
+
+  const sanitizedEmail = sanitizeInput(email.toLowerCase().trim());
+  
+  const userResult = await db.query(
+    `SELECT id, email, name FROM users WHERE email = $1`,
+    [sanitizedEmail]
+  );
+
+  if (userResult.rows.length > 0) {
+    const user = userResult.rows[0];
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    await db.query(
+      `DELETE FROM password_reset_tokens WHERE user_id = $1`,
+      [user.id]
+    );
+
+    await db.query(
+      `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+       VALUES ($1, $2, $3)`,
+      [user.id, tokenHash, expiresAt]
+    );
+
+    try {
+      await sendPasswordResetEmail(user.email, resetToken, user.name);
+      console.log(`📧 Password reset email sent to ${user.email}`);
+    } catch (emailErr) {
+      console.error('❌ Failed to send password reset email:', emailErr);
+    }
+  }
+
+  res.json({ 
+    ok: true, 
+    message: "إذا كان البريد الإلكتروني مسجلاً لدينا، ستصلك رسالة تحتوي على رابط إعادة التعيين" 
+  });
+}));
+
+router.post("/reset-password", strictAuthLimiter, asyncHandler(async (req, res) => {
+  const { token, password } = req.body;
+  
+  if (!token || !password) {
+    return res.status(400).json({ 
+      error: "الرمز وكلمة المرور الجديدة مطلوبان", 
+      errorEn: "Token and new password are required" 
+    });
+  }
+
+  const passwordValidation = validatePassword(password);
+  if (!passwordValidation.valid) {
+    return res.status(400).json({ 
+      error: passwordValidation.errorMessage, 
+      errorEn: "Password does not meet security requirements",
+      requirements: passwordValidation.errors
+    });
+  }
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+  const tokenResult = await db.query(
+    `SELECT prt.*, u.email, u.name 
+     FROM password_reset_tokens prt
+     JOIN users u ON prt.user_id = u.id
+     WHERE prt.token_hash = $1 AND prt.expires_at > NOW() AND prt.used_at IS NULL`,
+    [tokenHash]
+  );
+
+  if (tokenResult.rows.length === 0) {
+    return res.status(400).json({ 
+      error: "الرابط غير صالح أو منتهي الصلاحية", 
+      errorEn: "Invalid or expired reset link" 
+    });
+  }
+
+  const resetRecord = tokenResult.rows[0];
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  await db.query(
+    `UPDATE users SET password_hash = $1, failed_login_attempts = 0, lockout_until = NULL, updated_at = NOW()
+     WHERE id = $2`,
+    [hashedPassword, resetRecord.user_id]
+  );
+
+  await db.query(
+    `UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1`,
+    [resetRecord.id]
+  );
+
+  console.log(`✅ Password reset successful for user ${resetRecord.email}`);
+
+  res.json({ 
+    ok: true, 
+    message: "تم إعادة تعيين كلمة المرور بنجاح! يمكنك الآن تسجيل الدخول." 
   });
 }));
 
