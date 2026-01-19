@@ -866,8 +866,8 @@ function SearchPage() {
         bedrooms: l.bedrooms,
         bathrooms: l.bathrooms,
         area: l.land_area,
-        lat: l.latitude!,
-        lng: l.longitude!,
+        lat: typeof l.latitude === 'string' ? parseFloat(l.latitude) : l.latitude!,
+        lng: typeof l.longitude === 'string' ? parseFloat(l.longitude) : l.longitude!,
         image_url: l.image_url,
         images: l.images,
         deal_status: l.deal_status,
@@ -970,7 +970,9 @@ function SearchPage() {
                     setActiveListingId(item.id);
                     setStoreActiveId(item.id);
                     if (item.latitude && item.longitude) {
-                      setMapCenter([item.latitude, item.longitude]);
+                      const lat = typeof item.latitude === 'string' ? parseFloat(item.latitude) : item.latitude;
+                      const lng = typeof item.longitude === 'string' ? parseFloat(item.longitude) : item.longitude;
+                      setMapCenter([lat, lng]);
                     }
                   }}
                   isActive={activeListingId === item.id}
