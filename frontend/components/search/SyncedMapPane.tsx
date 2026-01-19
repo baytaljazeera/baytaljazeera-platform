@@ -254,6 +254,19 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
     return () => clearInterval(timer);
   }, [leaflet]);
 
+  useEffect(() => {
+    if (!activeListingId || !mapRef.current || !markers.length) return;
+    
+    const activeMarker = markers.find(m => m.id === activeListingId);
+    if (activeMarker && activeMarker.lat && activeMarker.lng) {
+      const lat = parseFloat(String(activeMarker.lat));
+      const lng = parseFloat(String(activeMarker.lng));
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        mapRef.current.flyTo([lat, lng], 15, { animate: true, duration: 0.8 });
+      }
+    }
+  }, [activeListingId, markers]);
+
   if (!leaflet || !MapContainer || !TileLayer || !Marker || !Popup || !useMap) {
     return (
       <div className="w-full h-full bg-[#001a2c] rounded-xl flex items-center justify-center">
