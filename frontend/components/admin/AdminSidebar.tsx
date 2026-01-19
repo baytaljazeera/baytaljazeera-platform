@@ -243,6 +243,7 @@ type PendingCounts = {
   supportNew: number;
   messagesNew: number;
   ambassadorPending: number;
+  ambassadorWithdrawals: number;
   listingsInProgress: number;
   reportsInProgress: number;
   membershipInProgress: number;
@@ -270,7 +271,8 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     complaintsNew: 0, complaintsInProgress: 0,
     supportNew: 0, supportInProgress: 0,
     messagesNew: 0,
-    ambassadorPending: 0
+    ambassadorPending: 0,
+    ambassadorWithdrawals: 0
   });
   const [visibleSections, setVisibleSections] = useState<string[]>([]);
   const [loadingVisibility, setLoadingVisibility] = useState(true);
@@ -444,7 +446,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     if (href === '/admin/messages') return { newCount: pendingCounts.messagesNew, inProgressCount: 0 };
     if (href === '/admin/customer-service') return { newCount: pendingCounts.complaintsNew + pendingCounts.supportNew, inProgressCount: pendingCounts.complaintsInProgress + pendingCounts.supportInProgress };
     if (href === '/admin/finance') return { newCount: pendingCounts.refundsNew, inProgressCount: pendingCounts.refundsInProgress };
-    if (href === '/admin/ambassador') return { newCount: pendingCounts.ambassadorPending, inProgressCount: 0 };
+    if (href === '/admin/ambassador') return { newCount: pendingCounts.ambassadorPending + pendingCounts.ambassadorWithdrawals, inProgressCount: 0 };
     return { newCount: 0, inProgressCount: 0 };
   };
 
