@@ -147,11 +147,11 @@ const corsOptions = {
 };
 
 const PASSWORD_POLICY = {
-  minLength: 12,
+  minLength: 8,
   requireUppercase: true,
   requireLowercase: true,
   requireNumber: true,
-  requireSpecial: true,
+  requireSpecial: false,
   maxLoginAttempts: 5,
   lockoutDuration: 30 * 60 * 1000,
 };
