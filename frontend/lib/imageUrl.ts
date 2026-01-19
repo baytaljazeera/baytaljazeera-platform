@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://baytaljazeera-platform-production.up.railway.app';
 
 export function getImageUrl(url: string | null | undefined): string {
   if (!url) return "";
