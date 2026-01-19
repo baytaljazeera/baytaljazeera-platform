@@ -12,6 +12,7 @@ const {
   scheduleListingExpiryReminder 
 } = require('../services/planService');
 const { generateListingSlideshow } = require('../services/videoService');
+const { uploadImage, uploadVideo, isCloudinaryConfigured } = require('../services/cloudinaryService');
 
 const PROPERTY_IMAGES = {
   "2d165bb9-3feb-4632-b9f5-0f1ec0ff8d78": "/images/property1.jpg",
@@ -429,7 +430,21 @@ router.post("/:id/add-images", authMiddleware, upload.fields([
     }
   }
 
-  const newImageUrls = newImages.map(file => `/uploads/listings/${file.filename}`);
+  const newImageUrls = [];
+  if (isCloudinaryConfigured()) {
+    for (const file of newImages) {
+      const uploadResult = await uploadImage(file.path, 'listings');
+      if (uploadResult.success) {
+        newImageUrls.push(uploadResult.url);
+      } else {
+        console.error('[Cloudinary] Failed to upload:', uploadResult.error);
+        newImageUrls.push(`/uploads/listings/${file.filename}`);
+      }
+    }
+    cleanupUploadedFiles(req.files);
+  } else {
+    newImages.forEach(file => newImageUrls.push(`/uploads/listings/${file.filename}`));
+  }
   const updatedImages = [...currentImages, ...newImageUrls];
 
   const previousStatus = property.status;
@@ -1238,14 +1253,41 @@ router.post("/create", authMiddleware, upload.fields([
     }
   }
 
-  const imageUrls = images.map(file => `/uploads/listings/${file.filename}`);
+  const imageUrls = [];
+  if (isCloudinaryConfigured()) {
+    for (const file of images) {
+      const uploadResult = await uploadImage(file.path, 'listings');
+      if (uploadResult.success) {
+        imageUrls.push(uploadResult.url);
+      } else {
+        console.error('[Cloudinary] Failed to upload:', uploadResult.error);
+        imageUrls.push(`/uploads/listings/${file.filename}`);
+      }
+    }
+  } else {
+    images.forEach(file => imageUrls.push(`/uploads/listings/${file.filename}`));
+  }
   const coverImage = imageUrls[0];
 
   let videoUrl = null;
   if (videos.length > 0) {
-    videoUrl = `/uploads/listings/${videos[0].filename}`;
+    if (isCloudinaryConfigured()) {
+      const videoResult = await uploadVideo(videos[0].path, 'videos');
+      if (videoResult.success) {
+        videoUrl = videoResult.url;
+      } else {
+        console.error('[Cloudinary] Failed to upload video:', videoResult.error);
+        videoUrl = `/uploads/listings/${videos[0].filename}`;
+      }
+    } else {
+      videoUrl = `/uploads/listings/${videos[0].filename}`;
+    }
   } else if (req.body.aiVideoUrl) {
     videoUrl = req.body.aiVideoUrl;
+  }
+  
+  if (isCloudinaryConfigured()) {
+    cleanupUploadedFiles(req.files);
   }
 
   let newListing;

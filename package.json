@@ -30,6 +30,7 @@
     "bcrypt": "^6.0.0",
     "bidi-js": "^1.0.3",
     "bullmq": "^5.66.4",
+    "cloudinary": "^2.9.0",
     "connect-pg-simple": "^10.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
