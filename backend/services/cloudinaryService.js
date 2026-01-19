@@ -1,11 +1,18 @@
 const cloudinary = require('cloudinary').v2;
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-  secure: true
-});
+// Support both CLOUDINARY_URL (single variable) and individual variables
+if (process.env.CLOUDINARY_URL) {
+  // CLOUDINARY_URL format: cloudinary://API_KEY:API_SECRET@CLOUD_NAME
+  cloudinary.config(process.env.CLOUDINARY_URL);
+  cloudinary.config({ secure: true });
+} else {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true
+  });
+}
 
 async function uploadImage(filePath, folder = 'listings') {
   try {
@@ -91,24 +98,25 @@ async function deleteImage(publicId) {
 }
 
 function isCloudinaryConfigured() {
-  const configured = !!(
+  // Support both CLOUDINARY_URL and individual variables
+  const hasCloudinaryUrl = !!process.env.CLOUDINARY_URL;
+  const hasIndividualVars = !!(
     process.env.CLOUDINARY_CLOUD_NAME &&
     process.env.CLOUDINARY_API_KEY &&
     process.env.CLOUDINARY_API_SECRET
   );
+  const configured = hasCloudinaryUrl || hasIndividualVars;
   
   // Log configuration status on first check
   if (!isCloudinaryConfigured._logged) {
     isCloudinaryConfigured._logged = true;
-    if (configured) {
+    if (hasCloudinaryUrl) {
+      console.log('[Cloudinary] ✅ Configured via CLOUDINARY_URL');
+    } else if (hasIndividualVars) {
       console.log('[Cloudinary] ✅ Configured with cloud:', process.env.CLOUDINARY_CLOUD_NAME);
     } else {
       console.warn('[Cloudinary] ⚠️ NOT configured - missing secrets. Images will be stored locally.');
-      console.warn('[Cloudinary] Missing:', {
-        CLOUDINARY_CLOUD_NAME: !!process.env.CLOUDINARY_CLOUD_NAME,
-        CLOUDINARY_API_KEY: !!process.env.CLOUDINARY_API_KEY,
-        CLOUDINARY_API_SECRET: !!process.env.CLOUDINARY_API_SECRET
-      });
+      console.warn('[Cloudinary] Add CLOUDINARY_URL or individual variables (CLOUD_NAME, API_KEY, API_SECRET)');
     }
   }
   
