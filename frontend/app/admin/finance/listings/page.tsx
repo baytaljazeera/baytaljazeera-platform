@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { useState, useEffect } from "react";
 import { FileText, Search, Plus, Trash2, Eye, EyeOff, RefreshCw, MapPin, Home, Check, X, Loader2, Image as ImageIcon, Video, ChevronLeft, ChevronRight, Clock, DollarSign, Maximize2, User, Mail, Phone, Crown } from "lucide-react";
 import Link from "next/link";
+import { getImageUrl } from "@/lib/imageUrl";
 
 interface MediaItem {
   id: string;
@@ -400,9 +401,9 @@ export default function ListingsPage() {
   const getListingImages = (listing: Listing): string[] => {
     if (listing.images && listing.images.length > 0) {
       if (typeof listing.images[0] === 'string') {
-        return listing.images as string[];
+        return (listing.images as string[]).map(url => getImageUrl(url));
       }
-      return (listing.images as MediaItem[]).map(img => img.url);
+      return (listing.images as MediaItem[]).map(img => getImageUrl(img.url));
     }
     return [`/images/property${(parseInt(listing.id.slice(-1), 16) % 5) + 1}.jpg`];
   };
@@ -835,7 +836,7 @@ export default function ListingsPage() {
                     {(reviewModal.images as MediaItem[]).map((img, idx) => (
                       <div key={img.id} className="relative group aspect-square rounded-xl overflow-hidden bg-slate-100">
                         <img
-                          src={img.url}
+                          src={getImageUrl(img.url)}
                           alt={`صورة ${idx + 1}`}
                           className="w-full h-full object-cover"
                           onError={(e) => { (e.target as HTMLImageElement).src = "/images/property1.jpg"; }}
