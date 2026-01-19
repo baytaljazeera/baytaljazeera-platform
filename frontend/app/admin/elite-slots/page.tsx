@@ -701,7 +701,7 @@ export default function AdminEliteSlotsPage() {
                               )}
                             </button>
                             <Link
-                              href={`/property/${res.property_id}`}
+                              href={`/listing/${res.property_id}`}
                               target="_blank"
                               className="bg-[#002845] hover:bg-[#003d5c] text-white px-6 py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2"
                             >
