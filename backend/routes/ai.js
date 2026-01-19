@@ -1153,6 +1153,34 @@ Dialogue: 0,${toAssTime(t3)},${toAssTime(endTime)},Price,,0,0,0,,${bottomLine}
   return outPath;
 }
 
+// 📥 تنزيل صورة من URL إلى ملف محلي
+async function downloadImage(url, destPath) {
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith('https') ? https : http;
+    const file = require('fs').createWriteStream(destPath);
+    
+    protocol.get(url, (response) => {
+      if (response.statusCode === 301 || response.statusCode === 302) {
+        // Handle redirect
+        downloadImage(response.headers.location, destPath).then(resolve).catch(reject);
+        return;
+      }
+      if (response.statusCode !== 200) {
+        reject(new Error(`Failed to download: ${response.statusCode}`));
+        return;
+      }
+      response.pipe(file);
+      file.on('finish', () => {
+        file.close();
+        resolve(destPath);
+      });
+    }).on('error', (err) => {
+      require('fs').unlink(destPath, () => {});
+      reject(err);
+    });
+  });
+}
+
 // 🎬 إنشاء فيديو شرائح احترافي مع نصوص عربية
 async function createSlideshowVideo(imagePaths, outputPath, promoText, duration = 20) {
   const tempDir = path.join(__dirname, "../../public/uploads/temp");
@@ -1174,11 +1202,30 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
   
   // Verify images exist and get valid paths
   const validPaths = [];
+  const downloadedFiles = []; // Track downloaded files for cleanup
+  
   for (const imgPath of imagePaths) {
     // 🔒 Security: Validate input type
-    if (typeof imgPath !== 'string' || imgPath.length > 500) {
+    if (typeof imgPath !== 'string' || imgPath.length > 1000) {
       console.log(`[Video] ❌ Invalid image path type or too long`);
       continue;
+    }
+    
+    // 🌐 Handle Cloudinary/remote URLs
+    if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
+      try {
+        const ext = path.extname(new URL(imgPath).pathname) || '.jpg';
+        const tempFile = path.join(tempDir, `remote_${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
+        console.log(`[Video] 📥 Downloading remote image: ${imgPath.substring(0, 80)}...`);
+        await downloadImage(imgPath, tempFile);
+        validPaths.push(tempFile);
+        downloadedFiles.push(tempFile);
+        console.log(`[Video] ✅ Downloaded to: ${tempFile}`);
+        continue;
+      } catch (dlErr) {
+        console.log(`[Video] ❌ Failed to download: ${dlErr.message}`);
+        continue;
+      }
     }
     
     // 🔒 Security: Block path traversal attempts
@@ -1225,6 +1272,13 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
   if (validPaths.length === 0) {
     throw new Error("لم يتم العثور على صور صالحة");
   }
+  
+  // Store downloadedFiles for cleanup after video generation
+  const cleanupDownloads = async () => {
+    for (const f of downloadedFiles) {
+      try { await fs.unlink(f); } catch {}
+    }
+  };
   
   // Create ASS subtitle file
   const assPath = path.join(tempDir, `captions_${Date.now()}.ass`);
@@ -1349,6 +1403,8 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
     ff.on("close", async (code) => {
       // Cleanup temp files
       await fs.unlink(assPath).catch(() => {});
+      // Cleanup downloaded remote images
+      await cleanupDownloads();
       
       if (code === 0) {
         console.log("[Video] FFmpeg completed successfully");
