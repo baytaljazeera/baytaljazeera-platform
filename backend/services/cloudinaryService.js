@@ -91,11 +91,28 @@ async function deleteImage(publicId) {
 }
 
 function isCloudinaryConfigured() {
-  return !!(
+  const configured = !!(
     process.env.CLOUDINARY_CLOUD_NAME &&
     process.env.CLOUDINARY_API_KEY &&
     process.env.CLOUDINARY_API_SECRET
   );
+  
+  // Log configuration status on first check
+  if (!isCloudinaryConfigured._logged) {
+    isCloudinaryConfigured._logged = true;
+    if (configured) {
+      console.log('[Cloudinary] ✅ Configured with cloud:', process.env.CLOUDINARY_CLOUD_NAME);
+    } else {
+      console.warn('[Cloudinary] ⚠️ NOT configured - missing secrets. Images will be stored locally.');
+      console.warn('[Cloudinary] Missing:', {
+        CLOUDINARY_CLOUD_NAME: !!process.env.CLOUDINARY_CLOUD_NAME,
+        CLOUDINARY_API_KEY: !!process.env.CLOUDINARY_API_KEY,
+        CLOUDINARY_API_SECRET: !!process.env.CLOUDINARY_API_SECRET
+      });
+    }
+  }
+  
+  return configured;
 }
 
 function getOptimizedUrl(url, options = {}) {
