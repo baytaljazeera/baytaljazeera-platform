@@ -786,14 +786,15 @@ router.delete("/:id", authMiddleware, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
   
-  const listingId = parseInt(id);
-  if (isNaN(listingId)) {
+  // Validate UUID format
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(id)) {
     return res.status(400).json({ error: "معرف الإعلان غير صالح" });
   }
   
   const checkResult = await db.query(
     `SELECT user_id FROM properties WHERE id = $1`,
-    [listingId]
+    [id]
   );
   
   if (checkResult.rows.length === 0) {
@@ -804,8 +805,10 @@ router.delete("/:id", authMiddleware, asyncHandler(async (req, res) => {
     return res.status(403).json({ error: "لا تملك صلاحية حذف هذا الإعلان" });
   }
   
-  await db.query(`DELETE FROM listing_media WHERE listing_id = $1`, [listingId]);
-  await db.query(`DELETE FROM properties WHERE id = $1`, [listingId]);
+  // Delete related data first
+  await db.query(`DELETE FROM listing_media WHERE listing_id = $1`, [id]);
+  await db.query(`DELETE FROM elite_slot_reservations WHERE property_id = $1`, [id]);
+  await db.query(`DELETE FROM properties WHERE id = $1`, [id]);
   
   res.json({ success: true, message: "تم حذف الإعلان بنجاح" });
 }));

@@ -26,7 +26,7 @@ type EliteReservation = {
 };
 
 type Listing = {
-  id: number;
+  id: string;
   title: string;
   property_type: string;
   purpose: string;
@@ -70,10 +70,11 @@ export default function MyListingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
-  const [deleting, setDeleting] = useState<number | null>(null);
-  const [openDealDropdown, setOpenDealDropdown] = useState<number | null>(null);
-  const [updatingDealStatus, setUpdatingDealStatus] = useState<number | null>(null);
-  const [updatingVisibility, setUpdatingVisibility] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{ open: boolean; listing: Listing | null }>({ open: false, listing: null });
+  const [openDealDropdown, setOpenDealDropdown] = useState<string | null>(null);
+  const [updatingDealStatus, setUpdatingDealStatus] = useState<string | null>(null);
+  const [updatingVisibility, setUpdatingVisibility] = useState<string | null>(null);
 
   useEffect(() => {
     fetchListings();
@@ -135,25 +136,35 @@ export default function MyListingsPage() {
     }
   }
 
-  async function handleDelete(id: number) {
-    if (!confirm("هل أنت متأكد من حذف هذا الإعلان؟ لا يمكن التراجع عن هذا الإجراء.")) {
-      return;
-    }
+  function openDeleteModal(listing: Listing) {
+    setDeleteModal({ open: true, listing });
+  }
 
-    setDeleting(id);
+  function closeDeleteModal() {
+    setDeleteModal({ open: false, listing: null });
+  }
+
+  async function confirmDelete() {
+    const listing = deleteModal.listing;
+    if (!listing) return;
+
+    setDeleting(listing.id);
+    closeDeleteModal();
+    
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`/api/listings/${id}`, {
+      const res = await fetch(`/api/listings/${listing.id}`, {
         method: "DELETE",
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
       if (!res.ok) {
-        throw new Error("فشل في حذف الإعلان");
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "فشل في حذف الإعلان");
       }
 
-      setListings(prev => prev.filter(l => l.id !== id));
+      setListings(prev => prev.filter(l => l.id !== listing.id));
       toast.success('تم حذف الإعلان بنجاح');
     } catch (err: any) {
       toast.error(err.message);
@@ -162,7 +173,7 @@ export default function MyListingsPage() {
     }
   }
 
-  async function handleDealStatusChange(id: number, newStatus: string, purpose: string) {
+  async function handleDealStatusChange(id: string, newStatus: string, purpose: string) {
     setUpdatingDealStatus(id);
     setOpenDealDropdown(null);
     
@@ -194,7 +205,7 @@ export default function MyListingsPage() {
     }
   }
 
-  async function handleVisibilityChange(id: number, currentStatus: string) {
+  async function handleVisibilityChange(id: string, currentStatus: string) {
     const newStatus = currentStatus === 'hidden' ? 'approved' : 'hidden';
     const actionText = newStatus === 'hidden' ? 'إخفاء' : 'إظهار';
     
@@ -703,9 +714,10 @@ export default function MyListingsPage() {
                         </Link>
                         
                         <button
-                          onClick={() => handleDelete(listing.id)}
+                          onClick={() => openDeleteModal(listing)}
                           disabled={deleting === listing.id}
                           className="flex items-center justify-center p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition disabled:opacity-50"
+                          title="حذف الإعلان"
                         >
                           {deleting === listing.id ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -722,6 +734,72 @@ export default function MyListingsPage() {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deleteModal.open && deleteModal.listing && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={closeDeleteModal}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              transition={{ type: "spring", duration: 0.4 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="bg-gradient-to-l from-red-500 to-red-600 p-6 text-center">
+                <div className="w-16 h-16 bg-white/20 rounded-full mx-auto flex items-center justify-center mb-4">
+                  <Trash2 className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="text-xl font-bold text-white">تأكيد حذف الإعلان</h3>
+              </div>
+              
+              {/* Content */}
+              <div className="p-6 text-center">
+                <p className="text-gray-600 mb-4">
+                  هل أنت متأكد من حذف هذا الإعلان؟
+                </p>
+                <div className="bg-gray-50 rounded-xl p-4 mb-4">
+                  <p className="font-bold text-[#003366] text-lg mb-1">
+                    {deleteModal.listing.title}
+                  </p>
+                  <p className="text-gray-500 text-sm">
+                    {deleteModal.listing.district}، {deleteModal.listing.city}
+                  </p>
+                </div>
+                <div className="flex items-center justify-center gap-2 text-amber-600 bg-amber-50 rounded-xl p-3">
+                  <AlertCircle className="w-5 h-5" />
+                  <span className="text-sm font-medium">لا يمكن التراجع عن هذا الإجراء</span>
+                </div>
+              </div>
+              
+              {/* Actions */}
+              <div className="flex gap-3 p-6 pt-0">
+                <button
+                  onClick={closeDeleteModal}
+                  className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition"
+                >
+                  إلغاء
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  className="flex-1 px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium transition flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  حذف الإعلان
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
