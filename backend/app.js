@@ -170,6 +170,16 @@ function createApp() {
     }
   });
 
+  // Cloudinary status check
+  app.get('/api/cloudinary-status', (req, res) => {
+    const { isCloudinaryConfigured } = require('./services/cloudinaryService');
+    res.json({
+      configured: isCloudinaryConfigured(),
+      hasCloudinaryUrl: !!process.env.CLOUDINARY_URL,
+      hasIndividualVars: !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET)
+    });
+  });
+
   // API Routes
   app.use("/api/auth", authRoutes);
   app.use("/api/favorites", favoritesRoutes);

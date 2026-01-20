@@ -320,6 +320,16 @@ app.get("/api/health", async (req, res) => {
   res.status(health.status === "healthy" ? 200 : 503).json(health);
 });
 
+// Cloudinary status check
+app.get('/api/cloudinary-status', (req, res) => {
+  const { isCloudinaryConfigured } = require('./backend/services/cloudinaryService');
+  res.json({
+    configured: isCloudinaryConfigured(),
+    hasCloudinaryUrl: !!process.env.CLOUDINARY_URL,
+    hasIndividualVars: !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET)
+  });
+});
+
 // 📦 Listings routes moved to backend/routes/listings.js
 
 // 🟢 مسار إرسال التذكيرات المستحقة (محمي للمشرفين فقط)
