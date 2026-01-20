@@ -80,12 +80,15 @@ const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
 });
 
-// Initialize Google GenAI for video generation (using user's Gemini key)
-// Try Gemeni2 first (with billing), then fall back to Gemeni
-const geminiApiKey = process.env.Gemeni2 || process.env.Gemeni;
+// Initialize Google GenAI for video generation
+// Priority: GEMINI_API_KEY > Gemeni2 > Gemeni
+const geminiApiKey = process.env.GEMINI_API_KEY || process.env.Gemeni2 || process.env.Gemeni;
 let genAI = null;
 if (geminiApiKey) {
   genAI = new GoogleGenAI({ apiKey: geminiApiKey });
+  console.log('[AI] ✅ Gemini API configured for video generation');
+} else {
+  console.warn('[AI] ⚠️ Gemini API not configured - Veo video generation disabled');
 }
 
 // In-memory storage for video generation operations with automatic cleanup
