@@ -1090,13 +1090,19 @@ export default function EditListingPage() {
               </div>
 
               <div className="flex gap-3 flex-wrap">
-                {listing.images.map((img, i) => (
+                {listing.images.map((img, i) => {
+                  const imageUrl = getImageUrl(typeof img === 'string' ? img : img.url);
+                  return (
                   <div key={img.id || i} className="relative group">
                     <div className={`w-24 h-24 rounded-xl overflow-hidden border-2 shadow-sm ${i === 0 ? 'border-[#D4AF37] ring-2 ring-[#D4AF37]/30' : 'border-slate-200'}`}>
                       <img 
-                        src={getImageUrl(typeof img === 'string' ? img : img.url)} 
+                        src={imageUrl} 
                         alt={`صورة ${i + 1}`} 
                         className="w-full h-full object-cover" 
+                        onError={(e) => {
+                          console.error('Failed to load image:', imageUrl);
+                          (e.target as HTMLImageElement).src = '/images/property1.jpg';
+                        }}
                       />
                     </div>
                     
@@ -1140,7 +1146,8 @@ export default function EditListingPage() {
                       </span>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {imageQuota?.canAddMore && (

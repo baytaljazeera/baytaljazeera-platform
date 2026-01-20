@@ -23,11 +23,7 @@ const nextConfig = {
   },
   async rewrites() {
     if (process.env.NODE_ENV === 'production') {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-      if (!apiUrl) {
-        console.warn('WARNING: NEXT_PUBLIC_API_URL is not set in production!');
-        return [];
-      }
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://baytaljazeera-platform-production.up.railway.app';
       return [
         {
           source: "/api/:path*",

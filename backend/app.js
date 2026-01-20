@@ -124,6 +124,10 @@ function createApp() {
       if (origin.includes('.vercel.app') || origin.includes('vercel.app')) {
         return callback(null, true);
       }
+      // Allow custom domain baytaljazeera.com (with and without www)
+      if (origin.includes('baytaljazeera.com')) {
+        return callback(null, true);
+      }
       // Allow localhost in development
       if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
         return callback(null, true);
@@ -132,6 +136,8 @@ function createApp() {
       return callback(null, true);
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   }));
 
   app.use(cookieParser());

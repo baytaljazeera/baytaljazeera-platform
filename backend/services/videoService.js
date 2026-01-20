@@ -242,7 +242,7 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     cleanupTempFiles(String(listingId));
     
     await db.query(
-      `UPDATE properties SET video_url = $1, video_status = 'ready' WHERE id = $1`,
+      `UPDATE properties SET video_url = $1, video_status = 'ready' WHERE id = $2`,
       [finalVideoUrl, listingId]
     );
     
