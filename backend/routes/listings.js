@@ -227,6 +227,8 @@ router.get("/:id", asyncHandler(async (req, res) => {
     );
     images = mediaResult.rows.filter(m => m.kind === 'image' || !m.kind);
     videos = mediaResult.rows.filter(m => m.kind === 'video');
+    console.log(`[Listing ${id}] Found ${images.length} images and ${videos.length} videos from listing_media`);
+    console.log(`[Listing ${id}] Image URLs:`, images.map(img => img.url));
   } catch (mediaErr) {
     console.error("Error fetching media:", mediaErr);
   }

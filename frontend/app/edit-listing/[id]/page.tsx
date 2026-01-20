@@ -179,6 +179,10 @@ export default function EditListingPage() {
         const data = await res.json();
         const l = data.listing || data;
         
+        // Debug: Log images to see what we're getting
+        console.log('Listing images:', l.images);
+        console.log('Listing data:', l);
+        
         setListing(l);
         setFormData({
           title: l.title || "",
@@ -625,14 +629,17 @@ export default function EditListingPage() {
     setRegenerateMessage("");
     
     try {
+      console.log('[Video] Starting video generation for listing:', listingId);
       const res = await fetch(`/api/listings/${listingId}/regenerate-video`, {
         method: 'POST',
         credentials: 'include'
       });
       
       const data = await res.json();
+      console.log('[Video] Response:', data);
       
       if (!res.ok) {
+        console.error('[Video] Error:', data.error);
         setRegenerateMessage(`❌ ${data.error || 'حدث خطأ'}`);
       } else {
         setRegenerateMessage("✅ جاري إنشاء الفيديو... سيظهر تلقائياً عند الانتهاء");
@@ -640,8 +647,9 @@ export default function EditListingPage() {
           setListing({ ...listing, video_status: 'processing' });
         }
       }
-    } catch (err) {
-      setRegenerateMessage("❌ حدث خطأ في الاتصال");
+    } catch (err: any) {
+      console.error('[Video] Request failed:', err);
+      setRegenerateMessage(`❌ حدث خطأ في الاتصال: ${err.message || 'خطأ غير معروف'}`);
     } finally {
       setRegeneratingVideo(false);
     }
@@ -1091,7 +1099,9 @@ export default function EditListingPage() {
 
               <div className="flex gap-3 flex-wrap">
                 {listing.images.map((img, i) => {
-                  const imageUrl = getImageUrl(typeof img === 'string' ? img : img.url);
+                  const rawUrl = typeof img === 'string' ? img : img.url;
+                  const imageUrl = getImageUrl(rawUrl);
+                  console.log(`[Image ${i}] Raw: ${rawUrl}, Processed: ${imageUrl}`);
                   return (
                   <div key={img.id || i} className="relative group">
                     <div className={`w-24 h-24 rounded-xl overflow-hidden border-2 shadow-sm ${i === 0 ? 'border-[#D4AF37] ring-2 ring-[#D4AF37]/30' : 'border-slate-200'}`}>
@@ -1100,8 +1110,11 @@ export default function EditListingPage() {
                         alt={`صورة ${i + 1}`} 
                         className="w-full h-full object-cover" 
                         onError={(e) => {
-                          console.error('Failed to load image:', imageUrl);
+                          console.error(`[Image ${i}] Failed to load:`, imageUrl, 'Raw URL:', rawUrl);
                           (e.target as HTMLImageElement).src = '/images/property1.jpg';
+                        }}
+                        onLoad={() => {
+                          console.log(`[Image ${i}] Loaded successfully:`, imageUrl);
                         }}
                       />
                     </div>
