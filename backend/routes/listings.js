@@ -861,17 +861,8 @@ router.post("/:id/regenerate-video", authMiddleware, asyncHandler(async (req, re
     return res.status(400).json({ error: "لا توجد صور للإعلان" });
   }
   
-  const imagePaths = mediaResult.rows.map(row => {
-    const url = row.url;
-    if (url.startsWith('/uploads/')) {
-      return path.join(__dirname, '../../public', url);
-    }
-    return path.join(__dirname, '../../public/uploads/listings', path.basename(url));
-  }).filter(p => fs.existsSync(p));
-  
-  if (imagePaths.length === 0) {
-    return res.status(400).json({ error: "لم يتم العثور على ملفات الصور" });
-  }
+  // Get image URLs - can be local paths or Cloudinary URLs
+  const imageUrls = mediaResult.rows.map(row => row.url);
   
   await db.query(
     `UPDATE properties SET video_status = 'processing' WHERE id = $1`,
@@ -884,7 +875,7 @@ router.post("/:id/regenerate-video", authMiddleware, asyncHandler(async (req, re
     status: "processing"
   });
   
-  generateListingSlideshow(id, imagePaths, {
+  generateListingSlideshow(id, imageUrls, {
     propertyType: listing.type,
     purpose: listing.purpose,
     city: listing.city,
