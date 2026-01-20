@@ -3,6 +3,7 @@ const fs = require('fs');
 const https = require('https');
 const http = require('http');
 const db = require('../db');
+const { uploadVideo, isCloudinaryConfigured } = require('./cloudinaryService');
 
 let createSlideshowVideo, generateDynamicPromoText, generatePromotionalText;
 
@@ -135,10 +136,24 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     
     const videoFilename = `slideshow_${listingId}_${Date.now()}.mp4`;
     const videoPath = path.join(videoDir, videoFilename);
-    const videoUrl = `/uploads/videos/${videoFilename}`;
+    let finalVideoUrl = `/uploads/videos/${videoFilename}`;
     
     if (createSlideshowVideo) {
       await createSlideshowVideo(imagePaths, videoPath, promoText, 20);
+    }
+    
+    // Upload video to Cloudinary if configured
+    if (isCloudinaryConfigured() && fs.existsSync(videoPath)) {
+      console.log(`[Slideshow] Uploading video to Cloudinary...`);
+      const cloudinaryResult = await uploadVideo(videoPath, 'videos');
+      if (cloudinaryResult.success) {
+        finalVideoUrl = cloudinaryResult.url;
+        console.log(`[Slideshow] ✅ Video uploaded to Cloudinary: ${finalVideoUrl}`);
+        // Delete local video file after successful upload
+        fs.unlinkSync(videoPath);
+      } else {
+        console.warn(`[Slideshow] ⚠️ Cloudinary upload failed, keeping local: ${cloudinaryResult.error}`);
+      }
     }
     
     // Cleanup temp files
@@ -146,7 +161,7 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     
     await db.query(
       `UPDATE properties SET video_url = $1, video_status = 'ready' WHERE id = $2`,
-      [videoUrl, listingId]
+      [finalVideoUrl, listingId]
     );
     
     // Check if video already exists in media
@@ -158,17 +173,17 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     if (existingVideo.rows.length > 0) {
       await db.query(
         `UPDATE listing_media SET url = $1 WHERE listing_id = $2 AND kind = 'video'`,
-        [videoUrl, listingId]
+        [finalVideoUrl, listingId]
       );
     } else {
       await db.query(
         `INSERT INTO listing_media (listing_id, url, kind, is_cover, sort_order) VALUES ($1, $2, 'video', false, 999)`,
-        [listingId, videoUrl]
+        [listingId, finalVideoUrl]
       );
     }
     
-    console.log(`[Slideshow] ✅ Video ready for listing ${listingId}: ${videoUrl}`);
-    return videoUrl;
+    console.log(`[Slideshow] ✅ Video ready for listing ${listingId}: ${finalVideoUrl}`);
+    return finalVideoUrl;
     
   } catch (error) {
     console.error(`[Slideshow] ❌ Error for listing ${listingId}:`, error.message);
