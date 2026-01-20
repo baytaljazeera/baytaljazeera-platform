@@ -4,6 +4,7 @@
 Bait Al-Jazeera is a **Gulf-wide (GCC)** real estate marketplace serving Saudi Arabia, UAE, Kuwait, Qatar, Bahrain, and Oman. The platform provides a sophisticated, user-friendly experience with a luxury, Islamic/royal aesthetic. It offers premium subscription plans, advanced property search with interactive maps, and AI-powered features. The platform focuses on comprehensive property transactions, elite property showcases, quota management, and a robust admin system for finance, marketing, and user management, with a vision to become a leading real estate platform across the Gulf region.
 
 ## User Preferences
+- **CRITICAL: Push to GitHub after every change** - Railway/Vercel deploy from GitHub, NOT Replit. Always run `git push origin main` after completing any task.
 - **Gulf-wide platform** (NOT Saudi-only) - content must be neutral for all GCC countries
 - Luxury, premium design aesthetic
 - Arabic RTL interface
