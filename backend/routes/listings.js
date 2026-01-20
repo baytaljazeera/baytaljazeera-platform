@@ -432,17 +432,21 @@ router.post("/:id/add-images", authMiddleware, upload.fields([
 
   const newImageUrls = [];
   if (isCloudinaryConfigured()) {
+    console.log('[Cloudinary] ✅ Uploading', newImages.length, 'new images to Cloudinary');
     for (const file of newImages) {
       const uploadResult = await uploadImage(file.path, 'listings');
       if (uploadResult.success) {
+        console.log('[Cloudinary] ✅ Uploaded:', uploadResult.url);
         newImageUrls.push(uploadResult.url);
       } else {
-        console.error('[Cloudinary] Failed to upload:', uploadResult.error);
-        newImageUrls.push(`/uploads/listings/${file.filename}`);
+        console.error('[Cloudinary] ❌ Failed to upload:', uploadResult.error);
+        cleanupUploadedFiles(req.files);
+        return res.status(500).json({ error: 'فشل رفع الصور. يرجى المحاولة مرة أخرى.' });
       }
     }
     cleanupUploadedFiles(req.files);
   } else {
+    console.log('[Cloudinary] ⚠️ Not configured, using local storage');
     newImages.forEach(file => newImageUrls.push(`/uploads/listings/${file.filename}`));
   }
   const updatedImages = [...currentImages, ...newImageUrls];
@@ -1249,16 +1253,20 @@ router.post("/create", authMiddleware, upload.fields([
 
   const imageUrls = [];
   if (isCloudinaryConfigured()) {
+    console.log('[Cloudinary] ✅ Uploading', images.length, 'images to Cloudinary');
     for (const file of images) {
       const uploadResult = await uploadImage(file.path, 'listings');
       if (uploadResult.success) {
+        console.log('[Cloudinary] ✅ Uploaded:', uploadResult.url);
         imageUrls.push(uploadResult.url);
       } else {
-        console.error('[Cloudinary] Failed to upload:', uploadResult.error);
-        imageUrls.push(`/uploads/listings/${file.filename}`);
+        console.error('[Cloudinary] ❌ Failed to upload:', uploadResult.error);
+        cleanupUploadedFiles(req.files);
+        return res.status(500).json({ error: 'فشل رفع الصور. يرجى المحاولة مرة أخرى.' });
       }
     }
   } else {
+    console.log('[Cloudinary] ⚠️ Not configured, using local storage');
     images.forEach(file => imageUrls.push(`/uploads/listings/${file.filename}`));
   }
   const coverImage = imageUrls[0];
@@ -1266,14 +1274,18 @@ router.post("/create", authMiddleware, upload.fields([
   let videoUrl = null;
   if (videos.length > 0) {
     if (isCloudinaryConfigured()) {
+      console.log('[Cloudinary] ✅ Uploading video to Cloudinary');
       const videoResult = await uploadVideo(videos[0].path, 'videos');
       if (videoResult.success) {
+        console.log('[Cloudinary] ✅ Video uploaded:', videoResult.url);
         videoUrl = videoResult.url;
       } else {
-        console.error('[Cloudinary] Failed to upload video:', videoResult.error);
-        videoUrl = `/uploads/listings/${videos[0].filename}`;
+        console.error('[Cloudinary] ❌ Failed to upload video:', videoResult.error);
+        cleanupUploadedFiles(req.files);
+        return res.status(500).json({ error: 'فشل رفع الفيديو. يرجى المحاولة مرة أخرى.' });
       }
     } else {
+      console.log('[Cloudinary] ⚠️ Not configured for video, using local storage');
       videoUrl = `/uploads/listings/${videos[0].filename}`;
     }
   } else if (req.body.aiVideoUrl) {
