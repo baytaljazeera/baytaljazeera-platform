@@ -397,6 +397,14 @@ export default function LeafletLocationPicker({
         </div>
       )}
 
+      <div className="mt-3 p-3 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-lg">
+        <p className="text-sm text-amber-800 text-center font-medium mb-1">
+          📍 تأكد جيداً من تحديد الموقع بدقة
+        </p>
+        <p className="text-xs text-amber-700 text-center">
+          الموقع الدقيق يظهر على الخريطة للباحثين ويزيد فرصك في البيع أو الإيجار بشكل كبير
+        </p>
+      </div>
       <p className="mt-2 text-xs text-slate-500 text-center">
         اضغط على الخريطة أو اسحب المؤشر لتحديد الموقع
       </p>
