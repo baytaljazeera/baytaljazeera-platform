@@ -5,6 +5,7 @@ const deleteListingCascade = async (listingId) => {
   await db.query("DELETE FROM listing_reports WHERE listing_id = $1", [listingId]);
   await db.query("DELETE FROM notifications WHERE listing_id = $1", [listingId]);
   await db.query("DELETE FROM listing_messages WHERE listing_id = $1", [listingId]);
+  await db.query("DELETE FROM listing_media WHERE listing_id = $1", [listingId]);
   
   try {
     await db.query("DELETE FROM elite_slot_reservations WHERE property_id = $1", [listingId]);
