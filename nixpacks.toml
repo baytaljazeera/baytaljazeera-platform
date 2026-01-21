@@ -1,11 +1,14 @@
+[providers]
+node = "20"
+
 [phases.setup]
 nixPkgs = ["nodejs_20", "npm-9_x", "ffmpeg"]
 
 [phases.install]
-cmds = ["npm ci"]
+cmds = ["npm ci --production=false"]
 
 [phases.build]
 cmds = []
 
 [start]
-cmd = "node index.js"
+cmd = "npm start"
