@@ -4,10 +4,11 @@ RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY backend/package*.json ./
+COPY package*.json ./
 RUN npm install --omit=dev
 
-COPY backend/ .
+COPY backend/ ./backend/
+COPY index.js ./
 
 EXPOSE 8080
 
