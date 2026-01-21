@@ -26,7 +26,10 @@ if (process.env.CLOUDINARY_URL) {
     });
     console.log('[Cloudinary] ✅ Configured with cloud:', cloudName);
   } else {
-    console.warn('[Cloudinary] ⚠️ Missing configuration variables');
+    console.warn('[Cloudinary] ⚠️ NOT configured - missing secrets');
+    console.warn('[Cloudinary] CLOUD_NAME:', !!cloudName);
+    console.warn('[Cloudinary] API_KEY:', !!apiKey);
+    console.warn('[Cloudinary] API_SECRET:', !!apiSecret);
   }
 }
 

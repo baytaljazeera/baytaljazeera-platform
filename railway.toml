@@ -1,0 +1,5 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+dockerContext = "."
+watchPatterns = ["backend/**", "package.json", "package-lock.json", "index.js"]
