@@ -423,7 +423,18 @@ app.get("/api/user/ai-level", async (req, res) => {
   try {
     const jwt = require("jsonwebtoken");
     const JWT_SECRET = process.env.SESSION_SECRET;
-    const payload = jwt.verify(token, JWT_SECRET);
+    if (!JWT_SECRET) {
+      console.error('[AI-Level] SESSION_SECRET is not set');
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
+    let payload;
+    try {
+      payload = jwt.verify(token, JWT_SECRET);
+    } catch (jwtErr) {
+      console.error('[AI-Level] JWT verification failed:', jwtErr.message);
+      // Return level 0 instead of error for invalid tokens
+      return res.json({ level: 0, levelName: "غير مشترك", planName: "" });
+    }
     
     const result = await db.query(
       `SELECT COALESCE(MAX(ai_level), 0) as ai_level, plan_name

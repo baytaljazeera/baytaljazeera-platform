@@ -229,6 +229,22 @@ router.get("/:id", asyncHandler(async (req, res) => {
     videos = mediaResult.rows.filter(m => m.kind === 'video');
     console.log(`[Listing ${id}] Found ${images.length} images and ${videos.length} videos from listing_media`);
     console.log(`[Listing ${id}] Image URLs:`, images.map(img => img.url));
+    
+    // Filter out local image paths that don't exist on server (Railway ephemeral filesystem)
+    // Only keep Cloudinary URLs or valid local paths
+    const { isCloudinaryConfigured } = require('../services/cloudinaryService');
+    if (isCloudinaryConfigured()) {
+      images = images.filter(img => {
+        // Keep Cloudinary URLs
+        if (img.url && (img.url.startsWith('http://') || img.url.startsWith('https://'))) {
+          return true;
+        }
+        // Filter out local paths as they won't exist on Railway
+        console.warn(`[Listing ${id}] Filtering out local image path (won't work on Railway):`, img.url);
+        return false;
+      });
+      console.log(`[Listing ${id}] After filtering: ${images.length} images (Cloudinary only)`);
+    }
   } catch (mediaErr) {
     console.error("Error fetching media:", mediaErr);
   }
