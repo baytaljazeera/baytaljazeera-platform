@@ -73,8 +73,3 @@ NEXT_DISABLE_DEVTOOLS = "1"
 
 [userenv.production]
 NEXT_PUBLIC_API_URL = "https://baytaljazeera-platform-production.up.railway.app"
-
-[deployment]
-deploymentTarget = "autoscale"
-run = ["bash", "-c", "node backend/index.js & cd frontend && npm start"]
-build = ["bash", "-c", "cd frontend && npm run build"]
