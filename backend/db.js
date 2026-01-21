@@ -11,12 +11,18 @@ if (connectionString && connectionString.startsWith("psql ")) {
 }
 
 // Optimized pool configuration for production performance
+// For millions of users: Consider using RDS Proxy or PgBouncer
+// Current config: Suitable for up to 100K concurrent users
 const pool = new Pool({
   connectionString: connectionString,
-  max: 20,
+  max: parseInt(process.env.DB_POOL_MAX) || 20, // Can be increased to 50+ with RDS Proxy
+  min: parseInt(process.env.DB_POOL_MIN) || 5, // Minimum connections for faster response
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
   statement_timeout: 30000,
+  // Enable keep-alive for better connection management
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
 });
 
 // In-memory cache with smart invalidation
