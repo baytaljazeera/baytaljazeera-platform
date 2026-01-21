@@ -1285,7 +1285,7 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
   
   // Create ASS subtitle file
   const assPath = path.join(tempDir, `captions_${Date.now()}.ass`);
-  const fontsDir = path.join(__dirname, "../../public/fonts");
+  const fontsDir = path.join(__dirname, "../public/fonts");
   
   try {
     buildAssFile(promoText, totalDuration, assPath);
