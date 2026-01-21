@@ -1,7 +1,4 @@
 [build]
 builder = "dockerfile"
-dockerfilePath = "backend/Dockerfile"
+dockerfilePath = "Dockerfile"
 watchPatterns = ["backend/**"]
-
-[deploy]
-startCommand = "cd backend && node index.js"
