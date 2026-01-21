@@ -449,23 +449,52 @@ router.post("/:id/add-images", authMiddleware, upload.fields([
   }
 
   const newImageUrls = [];
-  if (isCloudinaryConfigured()) {
-    console.log('[Cloudinary] ✅ Uploading', newImages.length, 'new images to Cloudinary');
-    for (const file of newImages) {
+  const isConfigured = isCloudinaryConfigured();
+  
+  console.log(`[Upload] Starting upload for listing ${id}:`);
+  console.log(`[Upload] - Files to upload: ${newImages.length}`);
+  console.log(`[Upload] - Cloudinary configured: ${isConfigured}`);
+  
+  if (isConfigured) {
+    console.log('[Upload] ✅ Cloudinary is configured, uploading to Cloudinary...');
+    for (let i = 0; i < newImages.length; i++) {
+      const file = newImages[i];
+      console.log(`[Upload] [${i + 1}/${newImages.length}] Processing file: ${file.originalname || file.filename}`);
+      console.log(`[Upload]    Path: ${file.path}`);
+      console.log(`[Upload]    Size: ${file.size ? (file.size / 1024).toFixed(2) + ' KB' : 'unknown'}`);
+      
+      // Validate file path exists
+      if (!file.path) {
+        console.error(`[Upload] ❌ File ${i + 1} has no path property`);
+        cleanupUploadedFiles(req.files);
+        return res.status(500).json({ error: 'خطأ في مسار الملف. يرجى المحاولة مرة أخرى.' });
+      }
+      
       const uploadResult = await uploadImage(file.path, 'listings');
       if (uploadResult.success) {
-        console.log('[Cloudinary] ✅ Uploaded:', uploadResult.url);
+        console.log(`[Upload] ✅ [${i + 1}/${newImages.length}] Successfully uploaded to Cloudinary`);
+        console.log(`[Upload]    URL: ${uploadResult.url}`);
         newImageUrls.push(uploadResult.url);
       } else {
-        console.error('[Cloudinary] ❌ Failed to upload:', uploadResult.error);
+        console.error(`[Upload] ❌ [${i + 1}/${newImages.length}] Failed to upload to Cloudinary`);
+        console.error(`[Upload]    Error: ${uploadResult.error}`);
+        console.error(`[Upload]    HTTP Code: ${uploadResult.http_code || 'N/A'}`);
         cleanupUploadedFiles(req.files);
-        return res.status(500).json({ error: 'فشل رفع الصور. يرجى المحاولة مرة أخرى.' });
+        return res.status(500).json({ 
+          error: `فشل رفع الصورة ${i + 1}: ${uploadResult.error || 'خطأ غير معروف'}` 
+        });
       }
     }
+    console.log(`[Upload] ✅ All ${newImages.length} images successfully uploaded to Cloudinary`);
     cleanupUploadedFiles(req.files);
   } else {
-    console.log('[Cloudinary] ⚠️ Not configured, using local storage');
-    newImages.forEach(file => newImageUrls.push(`/uploads/listings/${file.filename}`));
+    console.warn('[Upload] ⚠️ Cloudinary NOT configured, using local storage');
+    console.warn('[Upload] ⚠️ WARNING: Local files will be lost on server restart/redeploy');
+    newImages.forEach((file, idx) => {
+      const localPath = `/uploads/listings/${file.filename}`;
+      console.log(`[Upload] [${idx + 1}/${newImages.length}] Using local path: ${localPath}`);
+      newImageUrls.push(localPath);
+    });
   }
   const updatedImages = [...currentImages, ...newImageUrls];
 
@@ -1270,22 +1299,45 @@ router.post("/create", authMiddleware, upload.fields([
   }
 
   const imageUrls = [];
-  if (isCloudinaryConfigured()) {
-    console.log('[Cloudinary] ✅ Uploading', images.length, 'images to Cloudinary');
-    for (const file of images) {
+  const isConfigured = isCloudinaryConfigured();
+  
+  console.log(`[Create Listing] Starting image upload:`);
+  console.log(`[Create Listing] - Files to upload: ${images.length}`);
+  console.log(`[Create Listing] - Cloudinary configured: ${isConfigured}`);
+  
+  if (isConfigured) {
+    console.log('[Create Listing] ✅ Cloudinary is configured, uploading to Cloudinary...');
+    for (let i = 0; i < images.length; i++) {
+      const file = images[i];
+      console.log(`[Create Listing] [${i + 1}/${images.length}] Processing: ${file.originalname || file.filename}`);
+      console.log(`[Create Listing]    Path: ${file.path}`);
+      
+      if (!file.path) {
+        console.error(`[Create Listing] ❌ File ${i + 1} has no path property`);
+        cleanupUploadedFiles(req.files);
+        return res.status(500).json({ error: 'خطأ في مسار الملف. يرجى المحاولة مرة أخرى.' });
+      }
+      
       const uploadResult = await uploadImage(file.path, 'listings');
       if (uploadResult.success) {
-        console.log('[Cloudinary] ✅ Uploaded:', uploadResult.url);
+        console.log(`[Create Listing] ✅ [${i + 1}/${images.length}] Uploaded: ${uploadResult.url}`);
         imageUrls.push(uploadResult.url);
       } else {
-        console.error('[Cloudinary] ❌ Failed to upload:', uploadResult.error);
+        console.error(`[Create Listing] ❌ [${i + 1}/${images.length}] Failed: ${uploadResult.error}`);
         cleanupUploadedFiles(req.files);
-        return res.status(500).json({ error: 'فشل رفع الصور. يرجى المحاولة مرة أخرى.' });
+        return res.status(500).json({ 
+          error: `فشل رفع الصورة ${i + 1}: ${uploadResult.error || 'خطأ غير معروف'}` 
+        });
       }
     }
+    console.log(`[Create Listing] ✅ All ${images.length} images uploaded to Cloudinary`);
   } else {
-    console.log('[Cloudinary] ⚠️ Not configured, using local storage');
-    images.forEach(file => imageUrls.push(`/uploads/listings/${file.filename}`));
+    console.warn('[Create Listing] ⚠️ Cloudinary NOT configured, using local storage');
+    images.forEach((file, idx) => {
+      const localPath = `/uploads/listings/${file.filename}`;
+      console.log(`[Create Listing] [${idx + 1}/${images.length}] Local path: ${localPath}`);
+      imageUrls.push(localPath);
+    });
   }
   const coverImage = imageUrls[0];
 

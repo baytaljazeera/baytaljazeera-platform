@@ -177,13 +177,39 @@ function createApp() {
   });
 
   // Cloudinary status check
-  app.get('/api/cloudinary-status', (req, res) => {
-    const { isCloudinaryConfigured } = require('./services/cloudinaryService');
-    res.json({
-      configured: isCloudinaryConfigured(),
+  app.get('/api/cloudinary-status', async (req, res) => {
+    const { isCloudinaryConfigured, testCloudinaryConnection } = require('./services/cloudinaryService');
+    const configured = isCloudinaryConfigured();
+    
+    const status = {
+      configured,
       hasCloudinaryUrl: !!process.env.CLOUDINARY_URL,
-      hasIndividualVars: !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET)
-    });
+      hasIndividualVars: !!(
+        process.env.CLOUDINARY_CLOUD_NAME && 
+        process.env.CLOUDINARY_API_KEY && 
+        process.env.CLOUDINARY_API_SECRET
+      ),
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME || null,
+      apiKeyPrefix: process.env.CLOUDINARY_API_KEY ? 
+        `${process.env.CLOUDINARY_API_KEY.substring(0, 4)}...${process.env.CLOUDINARY_API_KEY.substring(process.env.CLOUDINARY_API_KEY.length - 4)}` : 
+        null,
+      connectionTest: null
+    };
+    
+    // Test connection if configured
+    if (configured) {
+      try {
+        const connectionTest = await testCloudinaryConnection();
+        status.connectionTest = connectionTest;
+      } catch (err) {
+        status.connectionTest = {
+          success: false,
+          error: err.message
+        };
+      }
+    }
+    
+    res.json(status);
   });
 
   // API Routes
