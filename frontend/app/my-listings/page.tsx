@@ -774,9 +774,15 @@ export default function MyListingsPage() {
                     {deleteModal.listing.district}، {deleteModal.listing.city}
                   </p>
                 </div>
-                <div className="flex items-center justify-center gap-2 text-amber-600 bg-amber-50 rounded-xl p-3">
-                  <AlertCircle className="w-5 h-5" />
-                  <span className="text-sm font-medium">لا يمكن التراجع عن هذا الإجراء</span>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-center gap-2 text-amber-600 bg-amber-50 rounded-xl p-3">
+                    <AlertCircle className="w-5 h-5" />
+                    <span className="text-sm font-medium">لا يمكن التراجع عن هذا الإجراء</span>
+                  </div>
+                  <div className="flex items-center justify-center gap-2 text-red-600 bg-red-50 rounded-xl p-3">
+                    <AlertCircle className="w-5 h-5" />
+                    <span className="text-sm font-medium">هذا الإعلان محسوب من رصيدك ولن يُسترد عند الحذف</span>
+                  </div>
                 </div>
               </div>
               

@@ -5,15 +5,11 @@ const deleteListingCascade = async (listingId) => {
   await db.query("DELETE FROM listing_reports WHERE listing_id = $1", [listingId]);
   await db.query("DELETE FROM notifications WHERE listing_id = $1", [listingId]);
   await db.query("DELETE FROM listing_messages WHERE listing_id = $1", [listingId]);
+  await db.query("DELETE FROM listing_media WHERE listing_id = $1", [listingId]);
   
   try {
     await db.query("DELETE FROM elite_slot_reservations WHERE property_id = $1", [listingId]);
   } catch (e) {}
-  
-  const listing = await getListingById(listingId);
-  if (listing?.bucket_id) {
-    await db.query("UPDATE quota_buckets SET used_slots = used_slots - 1 WHERE id = $1 AND used_slots > 0", [listing.bucket_id]);
-  }
   
   await db.query("DELETE FROM properties WHERE id = $1", [listingId]);
 };
