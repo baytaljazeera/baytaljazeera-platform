@@ -5,13 +5,20 @@ if (process.env.CLOUDINARY_URL) {
   // CLOUDINARY_URL format: cloudinary://API_KEY:API_SECRET@CLOUD_NAME
   cloudinary.config(process.env.CLOUDINARY_URL);
   cloudinary.config({ secure: true });
-} else {
+  console.log('[Cloudinary] ✅ Configured via CLOUDINARY_URL');
+} else if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
   cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET,
     secure: true
   });
+  console.log('[Cloudinary] ✅ Configured with cloud:', process.env.CLOUDINARY_CLOUD_NAME);
+} else {
+  console.warn('[Cloudinary] ⚠️ NOT configured - missing secrets');
+  console.warn('[Cloudinary] CLOUD_NAME:', !!process.env.CLOUDINARY_CLOUD_NAME);
+  console.warn('[Cloudinary] API_KEY:', !!process.env.CLOUDINARY_API_KEY);
+  console.warn('[Cloudinary] API_SECRET:', !!process.env.CLOUDINARY_API_SECRET);
 }
 
 async function uploadImage(filePath, folder = 'listings') {
