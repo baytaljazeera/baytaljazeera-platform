@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: baytaljazeera-backend
+    env: node
+    buildCommand: npm ci && npm run build || true
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8080
+    healthCheckPath: /api/health
