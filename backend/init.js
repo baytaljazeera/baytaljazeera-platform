@@ -2645,32 +2645,38 @@ async function initializeDatabase() {
     `);
 
     // Ensure all required columns exist (for existing tables)
-    await db.query(`
-      DO $$ 
-      BEGIN 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'region_ar') THEN
-          ALTER TABLE cities ADD COLUMN region_ar VARCHAR(100);
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'region_en') THEN
-          ALTER TABLE cities ADD COLUMN region_en VARCHAR(100);
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'is_active') THEN
-          ALTER TABLE cities ADD COLUMN is_active BOOLEAN DEFAULT true;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'is_popular') THEN
-          ALTER TABLE cities ADD COLUMN is_popular BOOLEAN DEFAULT false;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'display_order') THEN
-          ALTER TABLE cities ADD COLUMN display_order INTEGER DEFAULT 0;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'latitude') THEN
-          ALTER TABLE cities ADD COLUMN latitude DECIMAL(10, 7);
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'longitude') THEN
-          ALTER TABLE cities ADD COLUMN longitude DECIMAL(10, 7);
-        END IF;
-      END $$;
-    `);
+    try {
+      await db.query(`
+        DO $$ 
+        BEGIN 
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'region_ar') THEN
+            ALTER TABLE cities ADD COLUMN region_ar VARCHAR(100);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'region_en') THEN
+            ALTER TABLE cities ADD COLUMN region_en VARCHAR(100);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'is_active') THEN
+            ALTER TABLE cities ADD COLUMN is_active BOOLEAN DEFAULT true;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'is_popular') THEN
+            ALTER TABLE cities ADD COLUMN is_popular BOOLEAN DEFAULT false;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'display_order') THEN
+            ALTER TABLE cities ADD COLUMN display_order INTEGER DEFAULT 0;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'latitude') THEN
+            ALTER TABLE cities ADD COLUMN latitude DECIMAL(10, 7);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'longitude') THEN
+            ALTER TABLE cities ADD COLUMN longitude DECIMAL(10, 7);
+          END IF;
+        END $$;
+      `);
+      console.log("✅ Cities table columns verified/added");
+    } catch (colErr) {
+      console.error("⚠️ Error adding cities columns:", colErr.message);
+      // Continue anyway - columns might already exist
+    }
 
     await db.query(`CREATE INDEX IF NOT EXISTS idx_cities_country ON cities(country_id);`);
     // Create index on is_active only if column exists
