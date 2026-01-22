@@ -2687,6 +2687,34 @@ async function initializeDatabase() {
       console.log("⚠️ Skipping is_active index (column may not exist):", idxErr.message);
     }
 
+    // Ensure all required columns exist in countries table (for existing tables)
+    try {
+      await db.query(`
+        DO $$ 
+        BEGIN 
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'countries' AND column_name = 'display_order') THEN
+            ALTER TABLE countries ADD COLUMN display_order INTEGER DEFAULT 0;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'countries' AND column_name = 'latitude') THEN
+            ALTER TABLE countries ADD COLUMN latitude DECIMAL(10, 7);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'countries' AND column_name = 'longitude') THEN
+            ALTER TABLE countries ADD COLUMN longitude DECIMAL(10, 7);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'countries' AND column_name = 'default_zoom') THEN
+            ALTER TABLE countries ADD COLUMN default_zoom INTEGER DEFAULT 6;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'countries' AND column_name = 'is_active') THEN
+            ALTER TABLE countries ADD COLUMN is_active BOOLEAN DEFAULT true;
+          END IF;
+        END $$;
+      `);
+      console.log("✅ Countries table columns verified/added");
+    } catch (colErr) {
+      console.error("⚠️ Error adding countries columns:", colErr.message);
+      // Continue anyway - columns might already exist
+    }
+
     // Insert default GCC countries if not exist
     const countriesCheck = await db.query(`SELECT COUNT(*) as cnt FROM countries`);
     if (parseInt(countriesCheck.rows[0].cnt) === 0) {

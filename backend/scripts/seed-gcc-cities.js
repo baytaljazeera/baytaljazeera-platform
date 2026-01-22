@@ -288,13 +288,21 @@ async function seedGCCCities() {
     
     console.log(`✅ GCC cities: ${inserted} inserted, ${skipped} already existed`);
     
+    // Check if display_order column exists before using it in ORDER BY
+    const colCheck = await db.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'countries' AND column_name = 'display_order'
+    `);
+    const orderByClause = colCheck.rows.length > 0 ? 'ORDER BY co.display_order' : 'ORDER BY co.id';
+    
     const countResult = await db.query(`
       SELECT co.code, co.name_ar, COUNT(c.id) as city_count
       FROM countries co
       LEFT JOIN cities c ON c.country_id = co.id
       WHERE co.code IN ('SA', 'AE', 'KW', 'QA', 'BH', 'OM')
       GROUP BY co.id, co.code, co.name_ar
-      ORDER BY co.display_order
+      ${orderByClause}
     `);
     
     console.log('\n📊 GCC Cities count:');
