@@ -1301,12 +1301,26 @@ router.post("/create", authMiddleware, upload.fields([
     }
   }
 
+  // Parse selectedImageIndices if provided (for video generation)
+  let selectedImageIndices = [];
+  if (req.body.selectedImageIndices) {
+    try {
+      selectedImageIndices = typeof req.body.selectedImageIndices === 'string' 
+        ? JSON.parse(req.body.selectedImageIndices)
+        : req.body.selectedImageIndices;
+      console.log(`[Create Listing] Selected images for video:`, selectedImageIndices);
+    } catch (err) {
+      console.warn(`[Create Listing] Failed to parse selectedImageIndices:`, err.message);
+    }
+  }
+
   const imageUrls = [];
   const isConfigured = isCloudinaryConfigured();
   
   console.log(`[Create Listing] Starting image upload:`);
   console.log(`[Create Listing] - Files to upload: ${images.length}`);
   console.log(`[Create Listing] - Cloudinary configured: ${isConfigured}`);
+  console.log(`[Create Listing] - Selected images for video: ${selectedImageIndices.length > 0 ? selectedImageIndices.join(', ') : 'all images'}`);
   
   if (isConfigured) {
     console.log('[Create Listing] ✅ Cloudinary is configured, uploading to Cloudinary...');
@@ -1500,11 +1514,23 @@ router.post("/create", authMiddleware, upload.fields([
       [newListing.id]
     );
     
-    generateListingSlideshow(newListing.id, imageUrls, {
-      title, city, district, propertyType, purpose, price, description
-    }).catch(err => {
-      console.error("Background slideshow generation error:", err);
-    });
+    // Use selected images if provided, otherwise use all images
+    const imagesToUse = selectedImageIndices.length > 0 
+      ? selectedImageIndices.map((idx: number) => imageUrls[idx]).filter(Boolean)
+      : imageUrls;
+    
+    console.log(`[Create Listing] Video generation: using ${imagesToUse.length} images (${selectedImageIndices.length > 0 ? 'selected' : 'all'})`);
+    
+    // Only generate if we have images to use
+    if (imagesToUse.length > 0) {
+      generateListingSlideshow(newListing.id, imagesToUse, {
+        title, city, district, propertyType, purpose, price, description
+      }).catch(err => {
+        console.error("Background slideshow generation error:", err);
+      });
+    } else {
+      console.warn(`[Create Listing] No images available for video generation`);
+    }
   }
 
   res.status(201).json({

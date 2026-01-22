@@ -197,6 +197,7 @@ export default function NewListingPage() {
   });
   const [images, setImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [selectedImagesForVideo, setSelectedImagesForVideo] = useState<Set<number>>(new Set()); // Selected images for video generation
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string>("");
   const [errors, setErrors] = useState<ValidationErrors>({});
@@ -882,7 +883,42 @@ export default function NewListingPage() {
     URL.revokeObjectURL(imagePreviews[index]);
     setImages((prev) => prev.filter((_, i) => i !== index));
     setImagePreviews((prev) => prev.filter((_, i) => i !== index));
+    // Remove from selected images if it was selected
+    setSelectedImagesForVideo((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(index);
+      // Adjust indices for remaining images
+      const adjusted = new Set<number>();
+      newSet.forEach((idx) => {
+        if (idx > index) adjusted.add(idx - 1);
+        else if (idx < index) adjusted.add(idx);
+      });
+      return adjusted;
+    });
   }, [imagePreviews]);
+
+  // Toggle image selection for video generation
+  const toggleImageSelection = useCallback((index: number) => {
+    setSelectedImagesForVideo((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
+    });
+  }, []);
+
+  // Select all images for video
+  const selectAllImages = useCallback(() => {
+    setSelectedImagesForVideo(new Set(images.map((_, i) => i)));
+  }, [images]);
+
+  // Deselect all images
+  const deselectAllImages = useCallback(() => {
+    setSelectedImagesForVideo(new Set());
+  }, []);
 
   const handleVideoChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || !e.target.files[0]) return;
@@ -2914,34 +2950,113 @@ export default function NewListingPage() {
                   </div>
 
                   {imagePreviews.length > 0 && (
-                    <div className="grid grid-cols-3 md:grid-cols-5 gap-3 mt-4">
-                      {imagePreviews.map((preview, idx) => (
-                        <div 
-                          key={idx} 
-                          className="relative group aspect-square rounded-xl overflow-hidden border-2 border-slate-200"
-                          onContextMenu={(e) => e.preventDefault()}
-                        >
-                          <img 
-                            src={preview} 
-                            alt={`صورة ${idx + 1}`} 
-                            className="w-full h-full object-cover pointer-events-none select-none" 
-                            draggable={false}
-                          />
-                          {idx === 0 && (
-                            <div className="absolute top-2 right-2 bg-[#D4AF37] text-white text-xs px-2 py-1 rounded-full flex items-center gap-1">
-                              <Star className="w-3 h-3" />
-                              الغلاف
+                    <div className="mt-4">
+                      {/* Video Generation Image Selection - Only for Business tier */}
+                      {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && imagePreviews.length > 3 && (
+                        <div className="mb-4 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border-2 border-emerald-200">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <Film className="w-5 h-5 text-emerald-600" />
+                              <h4 className="font-semibold text-emerald-800">اختر الصور لتوليد الفيديو</h4>
                             </div>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => removeImage(idx)}
-                            className="absolute top-2 left-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={selectAllImages}
+                                className="text-xs px-3 py-1 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition"
+                              >
+                                تحديد الكل
+                              </button>
+                              <button
+                                type="button"
+                                onClick={deselectAllImages}
+                                className="text-xs px-3 py-1 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition"
+                              >
+                                إلغاء الكل
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-emerald-700 mb-3">
+                            <Zap className="w-4 h-4" />
+                            <span className="font-medium">
+                              تم اختيار {selectedImagesForVideo.size} من {imagePreviews.length} صورة
+                            </span>
+                          </div>
+                          <div className="p-3 bg-white/80 rounded-lg border border-emerald-200">
+                            <p className="text-xs text-emerald-800 flex items-start gap-2">
+                              <span className="text-emerald-600 font-bold">💡 نصيحة:</span>
+                              <span>
+                                كلما قل عدد الصور المختارة، كلما كانت عملية التوليد أسرع. ننصح باختيار 3-8 صور للحصول على أفضل نتيجة.
+                              </span>
+                            </p>
+                          </div>
                         </div>
-                      ))}
+                      )}
+                      
+                      <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
+                        {imagePreviews.map((preview, idx) => {
+                          const isSelected = selectedImagesForVideo.has(idx);
+                          const showVideoSelection = (selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && imagePreviews.length > 3;
+                          
+                          return (
+                            <div 
+                              key={idx} 
+                              className={`relative group aspect-square rounded-xl overflow-hidden border-2 transition-all ${
+                                showVideoSelection && isSelected 
+                                  ? 'border-emerald-500 ring-2 ring-emerald-300 ring-offset-2' 
+                                  : 'border-slate-200'
+                              }`}
+                              onContextMenu={(e) => e.preventDefault()}
+                            >
+                              <img 
+                                src={preview} 
+                                alt={`صورة ${idx + 1}`} 
+                                className="w-full h-full object-cover pointer-events-none select-none" 
+                                draggable={false}
+                              />
+                              {idx === 0 && (
+                                <div className="absolute top-2 right-2 bg-[#D4AF37] text-white text-xs px-2 py-1 rounded-full flex items-center gap-1 z-10">
+                                  <Star className="w-3 h-3" />
+                                  الغلاف
+                                </div>
+                              )}
+                              {/* Video selection checkbox - Only for Business tier with >3 images */}
+                              {showVideoSelection && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleImageSelection(idx);
+                                  }}
+                                  className={`absolute top-2 left-2 w-8 h-8 rounded-full flex items-center justify-center transition-all z-10 ${
+                                    isSelected
+                                      ? 'bg-emerald-500 text-white shadow-lg'
+                                      : 'bg-white/90 text-slate-600 hover:bg-emerald-100'
+                                  }`}
+                                  title={isSelected ? 'إلغاء الاختيار' : 'اختيار للفيديو'}
+                                >
+                                  {isSelected ? (
+                                    <Check className="w-5 h-5" />
+                                  ) : (
+                                    <Film className="w-4 h-4" />
+                                  )}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => removeImage(idx)}
+                                className="absolute bottom-2 left-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition z-10"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                              {/* Selected indicator overlay */}
+                              {isSelected && (
+                                <div className="absolute inset-0 bg-emerald-500/20 border-2 border-emerald-500 rounded-xl pointer-events-none" />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
 
