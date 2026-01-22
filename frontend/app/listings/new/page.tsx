@@ -197,6 +197,7 @@ export default function NewListingPage() {
   });
   const [images, setImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [coverImageIndex, setCoverImageIndex] = useState<number>(0); // Index of cover image
   const [selectedImagesForVideo, setSelectedImagesForVideo] = useState<Set<number>>(new Set()); // Selected images for video generation
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string>("");
@@ -895,7 +896,18 @@ export default function NewListingPage() {
       });
       return adjusted;
     });
-  }, [imagePreviews]);
+    // Adjust cover image index
+    if (coverImageIndex === index && images.length > 1) {
+      setCoverImageIndex(0);
+    } else if (coverImageIndex > index) {
+      setCoverImageIndex(coverImageIndex - 1);
+    }
+  }, [imagePreviews, coverImageIndex, images.length]);
+
+  // Set cover image by clicking on it
+  const setCoverImage = useCallback((index: number) => {
+    setCoverImageIndex(index);
+  }, []);
 
   // Toggle image selection for video generation
   const toggleImageSelection = useCallback((index: number) => {
@@ -1194,7 +1206,27 @@ export default function NewListingPage() {
         })
       );
 
-      images.forEach((file) => {
+      // Reorder images to put cover image first
+      const reorderedImages = [...images];
+      if (coverImageIndex > 0 && coverImageIndex < reorderedImages.length) {
+        const coverImage = reorderedImages[coverImageIndex];
+        reorderedImages.splice(coverImageIndex, 1);
+        reorderedImages.unshift(coverImage);
+        // Adjust selectedImageIndices after reordering
+        const adjustedIndices = new Set<number>();
+        selectedImagesForVideo.forEach((idx) => {
+          if (idx === coverImageIndex) {
+            adjustedIndices.add(0); // Cover image is now at index 0
+          } else if (idx < coverImageIndex) {
+            adjustedIndices.add(idx + 1); // Shift indices before cover
+          } else {
+            adjustedIndices.add(idx); // Keep indices after cover
+          }
+        });
+        setSelectedImagesForVideo(adjustedIndices);
+      }
+      
+      reorderedImages.forEach((file) => {
         formData.append("images", file);
       });
 
@@ -2957,29 +2989,31 @@ export default function NewListingPage() {
                   {imagePreviews.length > 0 && (
                     <div className="mt-4">
                       {/* Video Generation Image Selection - Only for Business tier */}
-                      {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && imagePreviews.length > 3 && (
+                      {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && imagePreviews.length > 0 && (
                         <div className="mb-4 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border-2 border-emerald-200">
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
                               <Film className="w-5 h-5 text-emerald-600" />
-                              <h4 className="font-semibold text-emerald-800">اختر الصور لتوليد الفيديو</h4>
+                              <h4 className="font-semibold text-emerald-800">إذا أردت توليد فيديو بالذكاء الاصطناعي، اختر الصور المطلوبة</h4>
                             </div>
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={selectAllImages}
-                                className="text-xs px-3 py-1 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition"
-                              >
-                                تحديد الكل
-                              </button>
-                              <button
-                                type="button"
-                                onClick={deselectAllImages}
-                                className="text-xs px-3 py-1 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition"
-                              >
-                                إلغاء الكل
-                              </button>
-                            </div>
+                            {imagePreviews.length > 3 && (
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={selectAllImages}
+                                  className="text-xs px-3 py-1 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition"
+                                >
+                                  تحديد الكل
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={deselectAllImages}
+                                  className="text-xs px-3 py-1 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition"
+                                >
+                                  إلغاء الكل
+                                </button>
+                              </div>
+                            )}
                           </div>
                           <div className="flex items-center gap-2 text-sm text-emerald-700 mb-3">
                             <Zap className="w-4 h-4" />
@@ -2989,9 +3023,9 @@ export default function NewListingPage() {
                           </div>
                           <div className="p-3 bg-white/80 rounded-lg border border-emerald-200">
                             <p className="text-xs text-emerald-800 flex items-start gap-2">
-                              <span className="text-emerald-600 font-bold">💡 نصيحة:</span>
+                              <span className="text-emerald-600 font-bold">💡 ملاحظة:</span>
                               <span>
-                                كلما قل عدد الصور المختارة، كلما كانت عملية التوليد أسرع. ننصح باختيار 3-8 صور للحصول على أفضل نتيجة.
+                                عدد صور أقل يعني سرعة في الإنجاز. ننصح باختيار 3-8 صور للحصول على أفضل نتيجة.
                               </span>
                             </p>
                           </div>
@@ -3001,7 +3035,7 @@ export default function NewListingPage() {
                       <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
                         {imagePreviews.map((preview, idx) => {
                           const isSelected = selectedImagesForVideo.has(idx);
-                          const showVideoSelection = (selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && imagePreviews.length > 3;
+                          const showVideoSelection = (selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && imagePreviews.length > 0;
                           
                           return (
                             <div 
@@ -3019,11 +3053,22 @@ export default function NewListingPage() {
                                 className="w-full h-full object-cover pointer-events-none select-none" 
                                 draggable={false}
                               />
-                              {idx === 0 && (
-                                <div className="absolute top-2 right-2 bg-[#D4AF37] text-white text-xs px-2 py-1 rounded-full flex items-center gap-1 z-10">
-                                  <Star className="w-3 h-3" />
+                              {/* Cover image indicator and click to set cover */}
+                              {coverImageIndex === idx ? (
+                                <div className="absolute top-2 right-2 bg-[#D4AF37] text-white text-xs px-2 py-1 rounded-full flex items-center gap-1 z-10 shadow-lg">
+                                  <Star className="w-3 h-3 fill-current" />
                                   الغلاف
                                 </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setCoverImage(idx)}
+                                  className="absolute top-2 right-2 bg-white/80 hover:bg-[#D4AF37] hover:text-white text-slate-600 text-xs px-2 py-1 rounded-full flex items-center gap-1 z-10 transition-all opacity-0 group-hover:opacity-100"
+                                  title="تعيين كصورة غلاف"
+                                >
+                                  <Star className="w-3 h-3" />
+                                  غلاف
+                                </button>
                               )}
                               {/* Video selection checkbox - Only for Business tier with >3 images */}
                               {showVideoSelection && (
@@ -3115,46 +3160,6 @@ export default function NewListingPage() {
                   </div>
                 )}
 
-                {/* AI Video Generation - Prominent placement for Business tier */}
-                {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && (
-                  <div className="mt-6 pt-6 border-t-2 border-dashed border-[#D4AF37]/30">
-                    <div className="bg-gradient-to-r from-rose-50 via-pink-50 to-fuchsia-50 rounded-2xl p-5 border-2 border-rose-200 shadow-lg">
-                      <div className="flex items-center gap-3 mb-4">
-                        <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg">
-                          <span className="text-2xl">📷</span>
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="font-bold text-emerald-800 text-lg">فيديو تلقائي من صورك الفعلية! ✨</h4>
-                          <p className="text-sm text-emerald-600">سيُنشأ فيديو احترافي من الصور التي رفعتها</p>
-                        </div>
-                      </div>
-                      
-                      {/* رسالة الفيديو التلقائي */}
-                      <div className="mb-4 p-4 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl text-white">
-                        <h5 className="font-bold text-yellow-300 mb-2 flex items-center gap-2">
-                          <Sparkles className="w-4 h-4" />
-                          🎬 فيديو تلقائي من صور عقارك!
-                        </h5>
-                        <ul className="text-sm space-y-1 opacity-90">
-                          <li>✅ يُنشأ تلقائياً بعد نشر الإعلان</li>
-                          <li>✅ يستخدم <strong>صورك الفعلية</strong> التي رفعتها</li>
-                          <li>✅ تأثير حركة سينمائية احترافية (Ken Burns)</li>
-                          <li>✅ نصوص تحفيزية فريدة من الذكاء الاصطناعي</li>
-                        </ul>
-                        <p className="mt-3 text-yellow-200 text-xs">
-                          💡 لا حاجة لإنشاء الفيديو يدوياً - سيظهر تلقائياً في صفحة إعلانك!
-                        </p>
-                      </div>
-                      
-                      {/* نصيحة مهمة */}
-                      <div className="p-3 bg-white/80 border border-emerald-300 rounded-lg">
-                        <p className="text-sm text-emerald-800 text-center">
-                          ✨ انشر إعلانك الآن وسيظهر الفيديو من صورك خلال دقيقة أو دقيقتين!
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 

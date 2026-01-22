@@ -1512,36 +1512,14 @@ router.post("/create", authMiddleware, upload.fields([
     console.error("Error processing pending referral:", refErr);
   }
 
-  if (!videoUrl && imageUrls.length > 0) {
-    await db.query(
-      `UPDATE properties SET video_status = 'processing' WHERE id = $1`,
-      [newListing.id]
-    );
-    
-    // Use selected images if provided, otherwise use all images
-    const imagesToUse = selectedImageIndices.length > 0 
-      ? selectedImageIndices.map((idx) => imageUrls[idx]).filter(Boolean)
-      : imageUrls;
-    
-    console.log(`[Create Listing] Video generation: using ${imagesToUse.length} images (${selectedImageIndices.length > 0 ? 'selected' : 'all'})`);
-    
-    // Only generate if we have images to use
-    if (imagesToUse.length > 0) {
-      generateListingSlideshow(newListing.id, imagesToUse, {
-        title, city, district, propertyType, purpose, price, description
-      }).catch(err => {
-        console.error("Background slideshow generation error:", err);
-      });
-    } else {
-      console.warn(`[Create Listing] No images available for video generation`);
-    }
-  }
+  // Video generation is now manual - user must click "Generate Video" button
+  // No automatic video generation on listing creation
 
   res.status(201).json({
     success: true,
     message: "تم إنشاء الإعلان بنجاح وسيتم مراجعته قريباً",
     listing: newListing,
-    videoStatus: !videoUrl && imageUrls.length > 0 ? 'processing' : null,
+    videoStatus: null, // Video generation is now manual, not automatic
     plan: { id: plan.id, name_ar: plan.name_ar, source: planSource }
   });
 }));
