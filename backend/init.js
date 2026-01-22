@@ -2673,7 +2673,13 @@ async function initializeDatabase() {
     `);
 
     await db.query(`CREATE INDEX IF NOT EXISTS idx_cities_country ON cities(country_id);`);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_cities_active ON cities(is_active);`);
+    // Create index on is_active only if column exists
+    try {
+      await db.query(`CREATE INDEX IF NOT EXISTS idx_cities_active ON cities(is_active);`);
+    } catch (idxErr) {
+      // Column might not exist yet, skip index creation
+      console.log("⚠️ Skipping is_active index (column may not exist):", idxErr.message);
+    }
 
     // Insert default GCC countries if not exist
     const countriesCheck = await db.query(`SELECT COUNT(*) as cnt FROM countries`);
