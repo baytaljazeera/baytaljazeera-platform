@@ -1202,6 +1202,8 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
   // 🔒 Security: Define allowed base directories for images
   const publicDir = path.resolve(__dirname, "../../public");
   const uploadsDir = path.resolve(__dirname, "../../public/uploads");
+  const os = require('os');
+  const tmpDir = os.tmpdir(); // Allow /tmp/ directory for temporary files
   
   // Verify images exist and get valid paths
   const validPaths = [];
@@ -1240,8 +1242,12 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
     // Handle different path formats
     let fullPath = imgPath;
     
-    // If it's already an absolute path (from listings.js), use it directly
+    // If it's already an absolute path (from listings.js or videoService.js), use it directly
     if (imgPath.startsWith('/home/') || imgPath.startsWith(publicDir)) {
+      fullPath = imgPath;
+    }
+    // Allow paths in /tmp/ directory (for videoService.js downloaded images)
+    else if (imgPath.startsWith('/tmp/') || imgPath.startsWith(tmpDir)) {
       fullPath = imgPath;
     }
     // If it's a URL path starting with /uploads, convert to filesystem path
@@ -1258,8 +1264,13 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
     }
     
     // 🔒 Security: Validate resolved path is within allowed directory
-    if (!isPathSafe(fullPath, publicDir)) {
+    // Allow paths in publicDir OR tmpDir (for temporary downloaded files)
+    const isInPublicDir = isPathSafe(fullPath, publicDir);
+    const isInTmpDir = fullPath.startsWith('/tmp/') || fullPath.startsWith(tmpDir);
+    
+    if (!isInPublicDir && !isInTmpDir) {
       console.log(`[Video] ❌ Path outside allowed directory: ${fullPath}`);
+      console.log(`[Video]    Allowed: ${publicDir} or ${tmpDir}`);
       continue;
     }
     
