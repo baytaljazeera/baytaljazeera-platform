@@ -36,8 +36,14 @@ async function initDatabase() {
         name_ar VARCHAR(100) NOT NULL,
         currency VARCHAR(10),
         flag VARCHAR(10),
+        flag_emoji VARCHAR(10),
         is_active BOOLEAN DEFAULT true
       );
+    `);
+    
+    // Add flag_emoji column if missing
+    await client.query(`
+      ALTER TABLE countries ADD COLUMN IF NOT EXISTS flag_emoji VARCHAR(10);
     `);
     console.log('✅ countries table');
 
