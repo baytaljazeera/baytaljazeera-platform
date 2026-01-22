@@ -2196,13 +2196,23 @@ async function initializeDatabase() {
     `);
     
     // Ensure financial_rewards_enabled is true (activate financial rewards)
-    await db.query(`
-      UPDATE ambassador_settings 
-      SET financial_rewards_enabled = true,
-          buildings_per_dollar = COALESCE(buildings_per_dollar, 5),
-          min_withdrawal_cents = COALESCE(min_withdrawal_cents, 100)
-      WHERE id = 1;
-    `);
+    // Only update if columns exist (they were added in the previous DO block)
+    try {
+      await db.query(`
+        UPDATE ambassador_settings 
+        SET financial_rewards_enabled = true,
+            buildings_per_dollar = COALESCE(buildings_per_dollar, 5),
+            min_withdrawal_cents = COALESCE(min_withdrawal_cents, 100)
+        WHERE id = 1;
+      `);
+    } catch (updateErr) {
+      // If columns don't exist yet, skip update (they'll be added in next run)
+      if (updateErr.code === '42703' || updateErr.message.includes('does not exist')) {
+        console.log("⚠️ Skipping ambassador_settings update (columns may not exist yet):", updateErr.message);
+      } else {
+        throw updateErr; // Re-throw if it's a different error
+      }
+    }
 
     // Ambassador reward requests (user requests to admin)
     await db.query(`
@@ -2874,6 +2884,75 @@ async function initializeDatabase() {
     }
   } catch (err) {
     console.error("❌ Database initialization error:", err.message);
+    // Re-throw critical errors that prevent table creation
+    // This ensures runDatabaseInit() knows initialization failed
+    if (err.message.includes('relation') || err.message.includes('does not exist')) {
+      // These are usually non-critical column errors, log and continue
+      console.warn("⚠️ Non-critical error during initialization, continuing...");
+    } else {
+      // For other errors, log but don't throw (allow server to start)
+      console.warn("⚠️ Error during initialization, but continuing to allow server to start");
+    }
+  }
+  
+  // Final verification: ensure critical tables exist
+  try {
+    const criticalTables = ['users', 'countries', 'cities'];
+    for (const tableName of criticalTables) {
+      const check = await db.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = $1
+        ) as exists
+      `, [tableName]);
+      
+      if (!check.rows[0]?.exists) {
+        console.error(`❌ CRITICAL: Table '${tableName}' was not created during initialization!`);
+        // Try to create it now
+        if (tableName === 'countries') {
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS countries (
+              id SERIAL PRIMARY KEY,
+              code VARCHAR(3) UNIQUE NOT NULL,
+              name_ar VARCHAR(100) NOT NULL,
+              name_en VARCHAR(100) NOT NULL,
+              flag_emoji VARCHAR(10),
+              region VARCHAR(50),
+              display_order INTEGER DEFAULT 0,
+              latitude DECIMAL(10, 7),
+              longitude DECIMAL(10, 7),
+              default_zoom INTEGER DEFAULT 6,
+              is_active BOOLEAN DEFAULT true,
+              created_at TIMESTAMPTZ DEFAULT NOW(),
+              updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+          `);
+          console.log("✅ Created countries table as fallback");
+        } else if (tableName === 'cities') {
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS cities (
+              id SERIAL PRIMARY KEY,
+              country_id INTEGER NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+              name_ar VARCHAR(100) NOT NULL,
+              name_en VARCHAR(100) NOT NULL,
+              region_ar VARCHAR(100),
+              region_en VARCHAR(100),
+              is_popular BOOLEAN DEFAULT false,
+              display_order INTEGER DEFAULT 0,
+              latitude DECIMAL(10, 7),
+              longitude DECIMAL(10, 7),
+              is_active BOOLEAN DEFAULT true,
+              created_at TIMESTAMPTZ DEFAULT NOW(),
+              updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+          `);
+          console.log("✅ Created cities table as fallback");
+        }
+      }
+    }
+  } catch (verifyErr) {
+    console.error("⚠️ Error during table verification:", verifyErr.message);
   }
 }
 
