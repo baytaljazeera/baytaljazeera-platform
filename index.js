@@ -185,20 +185,48 @@ async function runDatabaseInit() {
     await initializeDatabase();
     console.log("✅ Database tables initialized");
     
-    // Seed missing cities for Turkey, Egypt, Lebanon
+    // Check if countries and cities tables exist before seeding
+    let tablesExist = false;
     try {
-      const { seedMissingCities } = require("./backend/scripts/seed-missing-cities");
-      await seedMissingCities();
-    } catch (seedErr) {
-      console.log("⚠️ Cities seeding skipped:", seedErr.message);
+      const tableCheck = await db.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'countries'
+        ) as countries_exists,
+        EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'cities'
+        ) as cities_exists
+      `);
+      tablesExist = tableCheck.rows[0]?.countries_exists && tableCheck.rows[0]?.cities_exists;
+    } catch (checkErr) {
+      console.log("⚠️ Could not verify tables existence:", checkErr.message);
+    }
+    
+    // Seed missing cities for Turkey, Egypt, Lebanon
+    if (tablesExist) {
+      try {
+        const { seedMissingCities } = require("./backend/scripts/seed-missing-cities");
+        await seedMissingCities();
+      } catch (seedErr) {
+        console.log("⚠️ Cities seeding skipped:", seedErr.message);
+      }
+    } else {
+      console.log("⚠️ Cities seeding skipped: countries or cities tables do not exist");
     }
     
     // Seed GCC cities (SA, AE, KW, QA, BH, OM)
-    try {
-      const { seedGCCCities } = require("./backend/scripts/seed-gcc-cities");
-      await seedGCCCities();
-    } catch (seedErr) {
-      console.log("⚠️ GCC cities seeding skipped:", seedErr.message);
+    if (tablesExist) {
+      try {
+        const { seedGCCCities } = require("./backend/scripts/seed-gcc-cities");
+        await seedGCCCities();
+      } catch (seedErr) {
+        console.log("⚠️ GCC cities seeding skipped:", seedErr.message);
+      }
+    } else {
+      console.log("⚠️ GCC cities seeding skipped: countries or cities tables do not exist");
     }
     
     // Remove duplicate cities (one-time cleanup)

@@ -2170,6 +2170,25 @@ async function initializeDatabase() {
       WHERE NOT EXISTS (SELECT 1 FROM ambassador_settings WHERE id = 1);
     `);
     
+    // Add financial settings to ambassador_settings (must be before UPDATE query)
+    await db.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ambassador_settings' AND column_name = 'buildings_per_dollar') THEN
+          ALTER TABLE ambassador_settings ADD COLUMN buildings_per_dollar INTEGER DEFAULT 5;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ambassador_settings' AND column_name = 'min_withdrawal_cents') THEN
+          ALTER TABLE ambassador_settings ADD COLUMN min_withdrawal_cents INTEGER DEFAULT 100;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ambassador_settings' AND column_name = 'financial_rewards_enabled') THEN
+          ALTER TABLE ambassador_settings ADD COLUMN financial_rewards_enabled BOOLEAN DEFAULT true;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ambassador_settings' AND column_name = 'ambassador_enabled') THEN
+          ALTER TABLE ambassador_settings ADD COLUMN ambassador_enabled BOOLEAN DEFAULT true;
+        END IF;
+      END $$;
+    `);
+    
     // Ensure financial_rewards_enabled is true (activate financial rewards)
     await db.query(`
       UPDATE ambassador_settings 
@@ -2304,25 +2323,6 @@ async function initializeDatabase() {
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
-    `);
-
-    // Add financial settings to ambassador_settings
-    await db.query(`
-      DO $$ 
-      BEGIN 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ambassador_settings' AND column_name = 'buildings_per_dollar') THEN
-          ALTER TABLE ambassador_settings ADD COLUMN buildings_per_dollar INTEGER DEFAULT 5;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ambassador_settings' AND column_name = 'min_withdrawal_cents') THEN
-          ALTER TABLE ambassador_settings ADD COLUMN min_withdrawal_cents INTEGER DEFAULT 100;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ambassador_settings' AND column_name = 'financial_rewards_enabled') THEN
-          ALTER TABLE ambassador_settings ADD COLUMN financial_rewards_enabled BOOLEAN DEFAULT true;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ambassador_settings' AND column_name = 'ambassador_enabled') THEN
-          ALTER TABLE ambassador_settings ADD COLUMN ambassador_enabled BOOLEAN DEFAULT true;
-        END IF;
-      END $$;
     `);
 
     // Add building tracking columns to users
