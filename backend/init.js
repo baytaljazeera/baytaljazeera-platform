@@ -1243,6 +1243,16 @@ async function initializeDatabase() {
       ALTER TABLE elite_slot_reservations 
       ADD COLUMN IF NOT EXISTS reservation_ends_at TIMESTAMPTZ;
     `);
+    
+    // إضافة حقل admin_notes إذا لم يكن موجوداً
+    await db.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'elite_slot_reservations' AND column_name = 'admin_notes') THEN
+          ALTER TABLE elite_slot_reservations ADD COLUMN admin_notes TEXT;
+        END IF;
+      END $$;
+    `);
 
     // 4. جدول قائمة الانتظار
     await db.query(`
