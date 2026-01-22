@@ -1122,14 +1122,16 @@ function buildAssFile(promoText, totalDuration, outPath) {
   const t3 = 2.5;
   const endTime = totalDuration - 0.3;
   
-  // ألوان بسيطة وواضحة (BGR format for ASS)
-  const GOLD = "&H0037AFD4";       // ذهبي
-  const WHITE = "&H00FFFFFF";      // أبيض
-  const BLACK = "&H00000000";      // أسود
-  const DARK_BG = "&HC0000000";    // خلفية سوداء شفافة 75%
+  // ألوان احترافية محسّنة (BGR format for ASS)
+  const GOLD = "&H0037AFD4";       // ذهبي فاخر
+  const WHITE = "&H00FFFFFF";      // أبيض نقي
+  const BLACK = "&H00000000";      // أسود للحدود
+  const DARK_BG = "&HE0000000";    // خلفية سوداء شفافة 88% (أكثر وضوحاً)
+  const GOLD_BG = "&H8037AFD4";    // خلفية ذهبية شفافة 50% للسعر
   
-  // ASS بتصميم بسيط - استخدام Alignment بدلاً من pos لتجنب التداخل
+  // ASS بتصميم احترافي محسّن - خطوط أكبر، ظلال أقوى، خلفيات أوضح
   // Alignment: 8=top-center, 5=middle-center, 2=bottom-center
+  // Outline: 5-6 (حدود سميكة)، Shadow: 2-3 (ظلال قوية)
   const ass = `[Script Info]
 ScriptType: v4.00+
 PlayResX: 1920
@@ -1138,10 +1140,10 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Logo,Arial,56,${GOLD},${GOLD},${BLACK},${DARK_BG},1,0,0,0,100,100,2,0,3,3,0,8,100,100,40,1
-Style: Title,Arial,72,${WHITE},${WHITE},${BLACK},${DARK_BG},1,0,0,0,100,100,1,0,3,4,0,5,100,100,0,1
-Style: Features,Arial,48,${GOLD},${GOLD},${BLACK},${DARK_BG},0,0,0,0,100,100,1,0,3,3,0,5,100,100,0,1
-Style: Price,Arial,64,${WHITE},${WHITE},${GOLD},${DARK_BG},1,0,0,0,100,100,2,0,3,4,0,2,100,100,50,1
+Style: Logo,Arial,68,${GOLD},${GOLD},${BLACK},${DARK_BG},1,0,0,0,100,100,3,0,3,5,3,8,100,100,50,1
+Style: Title,Arial,88,${WHITE},${WHITE},${BLACK},${DARK_BG},1,0,0,0,100,100,2,0,3,6,3,5,100,100,0,1
+Style: Features,Arial,58,${GOLD},${GOLD},${BLACK},${DARK_BG},1,0,0,0,100,100,2,0,3,5,2,5,100,100,0,1
+Style: Price,Arial,78,${WHITE},${WHITE},${BLACK},${GOLD_BG},1,0,0,0,100,100,3,0,3,6,3,2,100,100,60,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1384,14 +1386,14 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
   // Combine filters
   args.push("-filter_complex", filters.join(";"));
   
-  // Output settings - Professional quality optimized for web
-  // CRF 20 = good balance between quality and file size (18 = very high, 23 = default, 28 = low)
-  // preset "fast" = faster encoding, "medium" = better compression, "slow" = best compression
+  // Output settings - Professional high quality for premium output
+  // CRF 18 = very high quality (lower = better quality, larger file)
+  // preset "medium" = better compression (slower but smaller files)
   args.push(
     "-map", `[${finalLabel}]`,
     "-c:v", "libx264",
-    "-preset", "fast", // Fast encoding for production (change to "medium" for better compression)
-    "-crf", "20", // Good quality (18=very high, 20=high, 23=default, 28=low)
+    "-preset", "medium", // Better compression for professional output
+    "-crf", "18", // Very high quality (18=very high, 20=high, 23=default, 28=low)
     "-profile:v", "high",
     "-level", "4.0",
     "-pix_fmt", "yuv420p",
