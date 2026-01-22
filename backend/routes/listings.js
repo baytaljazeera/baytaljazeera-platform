@@ -1314,26 +1314,17 @@ router.post("/create", authMiddleware, upload.fields([
     }
   }
 
-  // Parse selectedImageIndices if provided (for video generation)
-  let selectedImageIndices = [];
-  if (req.body.selectedImageIndices) {
-    try {
-      selectedImageIndices = typeof req.body.selectedImageIndices === 'string' 
-        ? JSON.parse(req.body.selectedImageIndices)
-        : req.body.selectedImageIndices;
-      console.log(`[Create Listing] Selected images for video:`, selectedImageIndices);
-    } catch (err) {
-      console.warn(`[Create Listing] Failed to parse selectedImageIndices:`, err.message);
-    }
-  }
-
   const imageUrls = [];
   const isConfigured = isCloudinaryConfigured();
   
   console.log(`[Create Listing] Starting image upload:`);
   console.log(`[Create Listing] - Files to upload: ${images.length}`);
   console.log(`[Create Listing] - Cloudinary configured: ${isConfigured}`);
-  console.log(`[Create Listing] - Selected images for video: ${selectedImageIndices.length > 0 ? selectedImageIndices.join(', ') : 'all images'}`);
+  if (selectedImageIndices.length > 0) {
+    console.log(`[Create Listing] - Selected images for video: ${selectedImageIndices.join(', ')} (${selectedImageIndices.length} images)`);
+  } else {
+    console.log(`[Create Listing] - Using all images for video generation`);
+  }
   
   if (isConfigured) {
     console.log('[Create Listing] ✅ Cloudinary is configured, uploading to Cloudinary...');
