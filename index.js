@@ -584,6 +584,25 @@ app.use((err, req, res, next) => {
     });
   }
   
+  // أخطاء Foreign Key Constraint (23503)
+  if (err.code === '23503') {
+    // Foreign key violation - usually means referenced record doesn't exist
+    const tableName = err.table || 'unknown';
+    const constraintName = err.constraint || 'unknown';
+    console.warn(`[Foreign Key] Constraint violation: ${constraintName} on table ${tableName}`);
+    
+    // For user_badge_state, return default counts instead of error
+    if (constraintName.includes('user_badge_state') || tableName === 'user_badge_state') {
+      return res.status(200).json({ listings: 0, invoices: 0, complaints: 0, messages: 0, refunds: 0 });
+    }
+    
+    return res.status(400).json({ 
+      error: 'مرجع غير صالح',
+      errorEn: 'Invalid reference',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+  
   // أخطاء PostgreSQL Pool
   if (err.message?.includes('Cannot use a pool after calling end') || 
       err.message?.includes('pool') || 
