@@ -1051,6 +1051,19 @@ router.post("/create", authMiddleware, upload.fields([
   
   const propertyType = listingData.propertyType || listingData.type;
   const bucketId = listingData.bucketId;
+  
+  // Parse selectedImageIndices from FormData (for video generation)
+  let selectedImageIndices = [];
+  if (req.body.selectedImageIndices) {
+    try {
+      selectedImageIndices = typeof req.body.selectedImageIndices === 'string' 
+        ? JSON.parse(req.body.selectedImageIndices)
+        : req.body.selectedImageIndices;
+      console.log(`[Create Listing] Selected images for video:`, selectedImageIndices);
+    } catch (err) {
+      console.warn(`[Create Listing] Failed to parse selectedImageIndices:`, err.message);
+    }
+  }
 
   const requiredFields = { 
     title, country, city, district, propertyType, purpose, usageType,

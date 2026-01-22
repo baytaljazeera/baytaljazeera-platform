@@ -1198,6 +1198,11 @@ export default function NewListingPage() {
         formData.append("images", file);
       });
 
+      // إرسال مؤشرات الصور المختارة لتوليد الفيديو (فقط إذا كانت هناك صور مختارة)
+      if (selectedImagesForVideo.size > 0 && (selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3) {
+        formData.append("selectedImageIndices", JSON.stringify(Array.from(selectedImagesForVideo).sort((a, b) => a - b)));
+      }
+
       if (videoFile) {
         formData.append("video", videoFile);
       }
