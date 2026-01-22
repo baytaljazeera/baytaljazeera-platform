@@ -150,6 +150,8 @@ export default function NewsPage() {
   const [countries, setCountries] = useState<Country[]>([]);
   const [cities, setCities] = useState<City[]>([]);
   const [selectedCountryForCities, setSelectedCountryForCities] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const fetchNews = async () => {
     setLoading(true);
@@ -288,15 +290,22 @@ export default function NewsPage() {
   };
 
   const handleSubmit = async () => {
-    if (!formData.title) return;
+    if (!formData.title) {
+      setError("العنوان مطلوب");
+      return;
+    }
     
     setSaving(true);
+    setError(null);
+    setSuccessMessage(null);
+    
     try {
       const url = editingId ? `/api/news/${editingId}` : "/api/news";
       const method = editingId ? "PATCH" : "POST";
       
       const payload = {
         ...formData,
+        active: formData.active !== undefined ? formData.active : true, // Ensure active is included
         background_color: formData.background_color || null,
         text_color: formData.text_color || null,
         icon: formData.icon || null,
@@ -311,17 +320,27 @@ export default function NewsPage() {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(payload),
       });
       
+      const data = await res.json();
+      
       if (res.ok) {
+        setSuccessMessage(editingId ? "تم تحديث الخبر بنجاح" : "تم إضافة الخبر بنجاح");
         fetchNews();
-        setFormData(defaultFormData);
-        setShowForm(false);
-        setEditingId(null);
+        setTimeout(() => {
+          setFormData(defaultFormData);
+          setShowForm(false);
+          setEditingId(null);
+          setSuccessMessage(null);
+        }, 1500);
+      } else {
+        setError(data.error || "حدث خطأ أثناء الحفظ");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving news:", error);
+      setError(error.message || "حدث خطأ في الاتصال");
     } finally {
       setSaving(false);
     }
@@ -333,6 +352,7 @@ export default function NewsPage() {
       title: item.title,
       content: item.content || "",
       type: item.type || "general",
+      active: item.active !== undefined ? item.active : true,
       priority: item.priority || 0,
       speed: item.speed || 25,
       background_color: item.background_color || "",
@@ -347,6 +367,8 @@ export default function NewsPage() {
       is_global: item.is_global ?? true,
       ai_generated: item.ai_generated || false,
     });
+    setError(null);
+    setSuccessMessage(null);
     setShowForm(true);
   };
 
@@ -811,6 +833,21 @@ export default function NewsPage() {
                 />
               </div>
 
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.active}
+                    onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
+                    className="w-5 h-5 rounded border-slate-300 text-[#D4AF37] focus:ring-[#D4AF37]"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-slate-700">نشط</span>
+                    <p className="text-xs text-slate-500">سيظهر هذا الخبر في شريط الأخبار</p>
+                  </div>
+                </label>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -1057,6 +1094,25 @@ export default function NewsPage() {
             </div>
           </div>
           
+          {/* Error and Success Messages */}
+          {error && (
+            <div className="mt-4 p-4 bg-red-50 border-2 border-red-200 rounded-xl">
+              <div className="flex items-center gap-2 text-red-700">
+                <AlertCircle className="w-5 h-5" />
+                <span className="font-semibold">{error}</span>
+              </div>
+            </div>
+          )}
+          
+          {successMessage && (
+            <div className="mt-4 p-4 bg-green-50 border-2 border-green-200 rounded-xl">
+              <div className="flex items-center gap-2 text-green-700">
+                <CheckCircle2 className="w-5 h-5" />
+                <span className="font-semibold">{successMessage}</span>
+              </div>
+            </div>
+          )}
+          
           <div className="flex gap-2 mt-6 pt-4 border-t border-slate-100">
             <button
               onClick={handleSubmit}
@@ -1075,6 +1131,8 @@ export default function NewsPage() {
                 setShowForm(false);
                 setEditingId(null);
                 setFormData(defaultFormData);
+                setError(null);
+                setSuccessMessage(null);
               }}
               className="px-6 py-2 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition"
             >

@@ -226,18 +226,27 @@ router.patch("/:id", authMiddleware, requireRoles('super_admin', 'admin', 'conte
   let paramIndex = 1;
 
   const stringFields = [
-    'title', 'content', 'type', 'priority', 'speed',
+    'title', 'content', 'type',
     'background_color', 'text_color', 'icon', 'cta_label', 'cta_url',
     'start_at', 'end_at'
   ];
   
+  const numberFields = ['priority', 'speed'];
   const boolFields = ['active', 'is_global', 'ai_generated'];
   const jsonFields = ['target_countries', 'target_cities'];
 
   for (const field of stringFields) {
     if (body[field] !== undefined) {
       updates.push(`${field} = $${paramIndex}`);
-      values.push(body[field]);
+      values.push(body[field] || null);
+      paramIndex++;
+    }
+  }
+  
+  for (const field of numberFields) {
+    if (body[field] !== undefined) {
+      updates.push(`${field} = $${paramIndex}`);
+      values.push(typeof body[field] === 'number' ? body[field] : parseInt(body[field]) || 0);
       paramIndex++;
     }
   }
@@ -245,7 +254,7 @@ router.patch("/:id", authMiddleware, requireRoles('super_admin', 'admin', 'conte
   for (const field of boolFields) {
     if (body[field] !== undefined) {
       updates.push(`${field} = $${paramIndex}`);
-      values.push(body[field]);
+      values.push(!!body[field]); // Ensure boolean
       paramIndex++;
     }
   }
