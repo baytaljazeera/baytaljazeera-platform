@@ -5,11 +5,12 @@ const { asyncHandler } = require('../middleware/asyncHandler');
 
 router.get("/countries", asyncHandler(async (req, res) => {
   const result = await db.query(`
-    SELECT id, code, name_ar, name_en, flag_emoji, region, display_order,
+    SELECT id, code, name_ar, name_en, flag_emoji, region, 
+           COALESCE(display_order, 0) as display_order,
            latitude, longitude, default_zoom
     FROM countries
     WHERE is_active = true
-    ORDER BY display_order ASC
+    ORDER BY COALESCE(display_order, 0) ASC, id ASC
   `);
   res.json({ countries: result.rows });
 }));
@@ -39,7 +40,7 @@ router.get("/cities", asyncHandler(async (req, res) => {
     query += ` AND c.is_popular = true`;
   }
   
-  query += ` ORDER BY co.display_order ASC, c.display_order ASC`;
+  query += ` ORDER BY COALESCE(co.display_order, 0) ASC, COALESCE(c.display_order, 0) ASC, c.id ASC`;
   
   const result = await db.query(query, params);
   res.json({ cities: result.rows });
@@ -70,7 +71,7 @@ router.get("/cities/search", asyncHandler(async (req, res) => {
   }
   
   params.push(parseInt(limit) || 10);
-  query += ` ORDER BY c.is_popular DESC, c.display_order ASC LIMIT $${params.length}`;
+  query += ` ORDER BY COALESCE(c.is_popular, false) DESC, COALESCE(c.display_order, 0) ASC, c.id ASC LIMIT $${params.length}`;
   
   const result = await db.query(query, params);
   res.json({ cities: result.rows });
@@ -93,7 +94,7 @@ router.get("/cities/:countryCode", asyncHandler(async (req, res) => {
     query += ` AND c.is_popular = true`;
   }
   
-  query += ` ORDER BY c.display_order ASC`;
+  query += ` ORDER BY COALESCE(c.display_order, 0) ASC, c.id ASC`;
   
   const result = await db.query(query, params);
   res.json({ cities: result.rows });
