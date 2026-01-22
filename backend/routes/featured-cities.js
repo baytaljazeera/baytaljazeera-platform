@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('../db');
+const db = require('../db');
 const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const multer = require('multer');
@@ -42,7 +42,7 @@ router.get('/', asyncHandler(async (req, res) => {
   
   query += ' ORDER BY sort_order ASC, name_ar ASC';
   
-  const result = await pool.query(query, params);
+  const result = await db.query(query, params);
   res.json({ cities: result.rows });
 }));
 
@@ -50,7 +50,7 @@ router.get('/active', asyncHandler(async (req, res) => {
   const CACHE_KEY = 'cities:featured';
   const CACHE_TTL = 60000; // 60 seconds
   
-  const result = await pool.cachedQuery(
+  const result = await db.cachedQuery(
     CACHE_KEY,
     'SELECT * FROM featured_cities WHERE is_active = true ORDER BY sort_order ASC, name_ar ASC',
     [],
@@ -66,7 +66,7 @@ router.put('/reorder', authMiddleware, adminMiddleware, asyncHandler(async (req,
     return res.status(400).json({ error: 'البيانات غير صحيحة' });
   }
   
-  const client = await pool.connect();
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
     
@@ -80,7 +80,7 @@ router.put('/reorder', authMiddleware, adminMiddleware, asyncHandler(async (req,
     await client.query('COMMIT');
     
     // Invalidate cache after successful update
-    pool.cache.invalidateFor('featured_cities');
+    db.cache.invalidateFor('featured_cities');
     
     res.json({ message: 'تم تحديث الترتيب بنجاح' });
   } catch (error) {
@@ -114,7 +114,7 @@ router.post('/', authMiddleware, adminMiddleware, upload.single('image'), asyncH
     image_url = `/uploads/cities/${req.file.filename}`;
   }
   
-  const result = await pool.mutatingQuery(
+  const result = await db.mutatingQuery(
     'featured_cities',
     `INSERT INTO featured_cities (name_ar, name_en, country_code, country_name_ar, image_url, is_capital, sort_order, is_active)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
@@ -138,7 +138,7 @@ router.put('/:id', authMiddleware, adminMiddleware, upload.single('image'), asyn
     image_url = `/uploads/cities/${req.file.filename}`;
   }
   
-  const result = await pool.mutatingQuery(
+  const result = await db.mutatingQuery(
     'featured_cities',
     `UPDATE featured_cities 
      SET name_ar = $1, name_en = $2, country_code = $3, country_name_ar = $4, image_url = $5, 
@@ -154,7 +154,7 @@ router.put('/:id', authMiddleware, adminMiddleware, upload.single('image'), asyn
 router.delete('/:id', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
   const { id } = req.params;
   
-  const result = await pool.mutatingQuery(
+  const result = await db.mutatingQuery(
     'featured_cities',
     'DELETE FROM featured_cities WHERE id = $1 RETURNING *',
     [id]
@@ -170,7 +170,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, asyncHandler(async (req, 
 router.patch('/:id/toggle', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
   const { id } = req.params;
   
-  const result = await pool.mutatingQuery(
+  const result = await db.mutatingQuery(
     'featured_cities',
     `UPDATE featured_cities SET is_active = NOT is_active, updated_at = NOW() WHERE id = $1 RETURNING *`,
     [id]
