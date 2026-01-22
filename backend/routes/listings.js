@@ -1520,7 +1520,7 @@ router.post("/create", authMiddleware, upload.fields([
     
     // Use selected images if provided, otherwise use all images
     const imagesToUse = selectedImageIndices.length > 0 
-      ? selectedImageIndices.map((idx: number) => imageUrls[idx]).filter(Boolean)
+      ? selectedImageIndices.map((idx) => imageUrls[idx]).filter(Boolean)
       : imageUrls;
     
     console.log(`[Create Listing] Video generation: using ${imagesToUse.length} images (${selectedImageIndices.length > 0 ? 'selected' : 'all'})`);
