@@ -39,12 +39,21 @@ interface Listing {
   support_level?: number;
 }
 
-const CITIES = [
-  "مكة المكرمة", "المدينة المنورة",
-  "الرياض", "جدة", "الدمام", "الخبر", "الظهران", "الأحساء", 
-  "القطيف", "الجبيل", "ينبع", "الطائف", "تبوك", "بريدة", 
-  "خميس مشيط", "أبها", "نجران", "جازان", "حائل", "عرعر"
-];
+// Types for countries and cities
+type Country = {
+  id: number;
+  code: string;
+  name_ar: string;
+  name_en: string;
+  flag_emoji: string;
+};
+
+type City = {
+  id: number;
+  name_ar: string;
+  name_en: string;
+  country_id: number;
+};
 
 const PROPERTY_TYPES = [
   { value: "apartment", label: "شقة" },
@@ -147,9 +156,15 @@ export default function EditListingPage() {
     return () => clearInterval(pollInterval);
   }, [listing?.id, listing?.video_status]);
 
+  // Countries and Cities from API
+  const [countries, setCountries] = useState<Country[]>([]);
+  const [cities, setCities] = useState<City[]>([]);
+  const [citiesLoading, setCitiesLoading] = useState(false);
+
   const [formData, setFormData] = useState({
     title: "",
     description: "",
+    country: "",
     city: "",
     district: "",
     type: "apartment",
@@ -164,6 +179,37 @@ export default function EditListingPage() {
     direction: "",
     parking_spaces: "0",
   });
+
+  // Fetch countries on mount
+  useEffect(() => {
+    fetch("/api/locations/countries")
+      .then(res => res.json())
+      .then(data => setCountries(data?.countries || []))
+      .catch(() => setCountries([]));
+  }, []);
+
+  // Fetch cities when country changes
+  useEffect(() => {
+    if (!formData.country) {
+      setCities([]);
+      return;
+    }
+    
+    const selectedCountry = countries.find(c => c.name_ar === formData.country);
+    if (!selectedCountry) return;
+    
+    setCitiesLoading(true);
+    fetch(`/api/locations/cities?country_id=${selectedCountry.id}`)
+      .then(res => res.json())
+      .then(data => {
+        setCities(data?.cities || []);
+        setCitiesLoading(false);
+      })
+      .catch(() => {
+        setCities([]);
+        setCitiesLoading(false);
+      });
+  }, [formData.country, countries]);
 
   useEffect(() => {
     async function fetchListing() {
@@ -184,10 +230,16 @@ export default function EditListingPage() {
         console.log('Listing data:', l);
         
         setListing(l);
+        
+        // Set form data with country and city
+        const initialCountry = l.country || "";
+        const initialCity = l.city || "";
+        
         setFormData({
           title: l.title || "",
           description: l.description || "",
-          city: l.city || "",
+          country: initialCountry,
+          city: initialCity,
           district: l.district || "",
           type: l.type || "apartment",
           purpose: l.purpose || "sale",
@@ -201,6 +253,24 @@ export default function EditListingPage() {
           direction: l.direction || "",
           parking_spaces: l.parking_spaces?.toString() || "0",
         });
+        
+        // Fetch cities for the initial country if available
+        if (initialCountry && countries.length > 0) {
+          const selectedCountry = countries.find(c => c.name_ar === initialCountry);
+          if (selectedCountry) {
+            setCitiesLoading(true);
+            fetch(`/api/locations/cities?country_id=${selectedCountry.id}`)
+              .then(res => res.json())
+              .then(data => {
+                setCities(data?.cities || []);
+                setCitiesLoading(false);
+              })
+              .catch(() => {
+                setCities([]);
+                setCitiesLoading(false);
+              });
+          }
+        }
       } catch (err: any) {
         setError(err.message || "حدث خطأ في تحميل الإعلان");
       } finally {
@@ -214,7 +284,7 @@ export default function EditListingPage() {
       fetchImageQuota();
       fetchDealStatus();
     }
-  }, [listingId]);
+  }, [listingId, countries]);
 
   async function fetchImageQuota() {
     try {
@@ -822,6 +892,31 @@ export default function EditListingPage() {
             <div>
               <label className="block text-sm font-semibold text-[#002845] mb-2">
                 <MapPin className="w-4 h-4 inline ml-1" />
+                الدولة *
+              </label>
+              <select
+                name="country"
+                value={formData.country}
+                onChange={(e) => {
+                  handleChange(e);
+                  // Reset city when country changes
+                  setFormData(prev => ({ ...prev, city: "" }));
+                }}
+                required
+                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#D4AF37] focus:border-transparent outline-none"
+              >
+                <option value="">اختر الدولة</option>
+                {countries.map(country => (
+                  <option key={country.id} value={country.name_ar}>
+                    {country.flag_emoji} {country.name_ar}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-[#002845] mb-2">
+                <MapPin className="w-4 h-4 inline ml-1" />
                 المدينة *
               </label>
               <select
@@ -829,11 +924,14 @@ export default function EditListingPage() {
                 value={formData.city}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#D4AF37] focus:border-transparent outline-none"
+                disabled={!formData.country || citiesLoading}
+                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#D4AF37] focus:border-transparent outline-none disabled:bg-slate-100 disabled:cursor-not-allowed"
               >
-                <option value="">اختر المدينة</option>
-                {CITIES.map(city => (
-                  <option key={city} value={city}>{city}</option>
+                <option value="">
+                  {citiesLoading ? "جاري التحميل..." : !formData.country ? "اختر الدولة أولاً" : "اختر المدينة"}
+                </option>
+                {cities.map(city => (
+                  <option key={city.id} value={city.name_ar}>{city.name_ar}</option>
                 ))}
               </select>
             </div>

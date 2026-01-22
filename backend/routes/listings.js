@@ -301,7 +301,7 @@ router.put("/:id", authMiddleware, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
   const {
-    title, description, city, district, type, purpose,
+    title, description, country, city, district, type, purpose,
     price, land_area, building_area, bedrooms, bathrooms, property_age,
     floor_number, direction, parking_spaces
   } = req.body;
@@ -327,14 +327,14 @@ router.put("/:id", authMiddleware, asyncHandler(async (req, res) => {
 
   await db.query(
     `UPDATE properties SET
-      title = $1, description = $2, city = $3, district = $4, type = $5, purpose = $6,
-      price = $7, land_area = $8, building_area = $9, bedrooms = $10, bathrooms = $11,
-      property_age = $12, floor_number = $13, direction = $14, parking_spaces = $15,
+      title = $1, description = $2, country = $3, city = $4, district = $5, type = $6, purpose = $7,
+      price = $8, land_area = $9, building_area = $10, bedrooms = $11, bathrooms = $12,
+      property_age = $13, floor_number = $14, direction = $15, parking_spaces = $16,
       updated_at = NOW()
       ${needsReview ? ", status = 'in_review'" : ""}
-    WHERE id = $16`,
+    WHERE id = $17`,
     [
-      title, description, city, district, type, purpose,
+      title, description, country || null, city, district, type, purpose,
       parseFloatOrNull(price), parseFloatOrNull(land_area), parseFloatOrNull(building_area),
       parseIntOrNull(bedrooms), parseIntOrNull(bathrooms), parseIntOrNull(property_age),
       parseIntOrNull(floor_number), direction || null, parseIntOrNull(parking_spaces), id
