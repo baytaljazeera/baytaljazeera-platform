@@ -2644,7 +2644,7 @@ async function initializeDatabase() {
       );
     `);
 
-    // Ensure region_ar and region_en columns exist (for existing tables)
+    // Ensure all required columns exist (for existing tables)
     await db.query(`
       DO $$ 
       BEGIN 
@@ -2656,6 +2656,18 @@ async function initializeDatabase() {
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'is_active') THEN
           ALTER TABLE cities ADD COLUMN is_active BOOLEAN DEFAULT true;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'is_popular') THEN
+          ALTER TABLE cities ADD COLUMN is_popular BOOLEAN DEFAULT false;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'display_order') THEN
+          ALTER TABLE cities ADD COLUMN display_order INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'latitude') THEN
+          ALTER TABLE cities ADD COLUMN latitude DECIMAL(10, 7);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'longitude') THEN
+          ALTER TABLE cities ADD COLUMN longitude DECIMAL(10, 7);
         END IF;
       END $$;
     `);
