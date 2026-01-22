@@ -913,7 +913,31 @@ router.post("/:id/regenerate-video", authMiddleware, asyncHandler(async (req, re
   }
   
   // Get image URLs - can be local paths or Cloudinary URLs
-  const imageUrls = mediaResult.rows.map(row => row.url);
+  const allImageUrls = mediaResult.rows.map(row => row.url);
+  
+  // Parse selectedImageIndices if provided (for video generation)
+  let selectedImageIndices = [];
+  if (req.body.selectedImageIndices) {
+    try {
+      selectedImageIndices = typeof req.body.selectedImageIndices === 'string' 
+        ? JSON.parse(req.body.selectedImageIndices)
+        : req.body.selectedImageIndices;
+      console.log(`[Regenerate] Selected images for video:`, selectedImageIndices);
+    } catch (err) {
+      console.warn(`[Regenerate] Failed to parse selectedImageIndices:`, err.message);
+    }
+  }
+  
+  // Use selected images if provided, otherwise use all images
+  const imageUrls = selectedImageIndices.length > 0 
+    ? selectedImageIndices.map((idx) => allImageUrls[idx]).filter(Boolean)
+    : allImageUrls;
+  
+  if (imageUrls.length === 0) {
+    return res.status(400).json({ error: "لا توجد صور صالحة للاستخدام" });
+  }
+  
+  console.log(`[Regenerate] Video generation: using ${imageUrls.length} images (${selectedImageIndices.length > 0 ? 'selected' : 'all'})`);
   
   await db.query(
     `UPDATE properties SET video_status = 'processing' WHERE id = $1`,

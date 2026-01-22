@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowRight, Save, Loader2, Home, MapPin, DollarSign, Ruler, BedDouble, Bath, Camera, Video, Building2, Crown, Sparkles, Rocket, CheckCircle2, AlertTriangle, X, Upload, Trash2, Plus, ImagePlus, Star } from "lucide-react";
+import { ArrowRight, Save, Loader2, Home, MapPin, DollarSign, Ruler, BedDouble, Bath, Camera, Video, Building2, Crown, Sparkles, Rocket, CheckCircle2, AlertTriangle, X, Upload, Trash2, Plus, ImagePlus, Star, Check, Film, Zap } from "lucide-react";
 import Link from "next/link";
 import { getImageUrl } from "@/lib/imageUrl";
 
@@ -110,6 +110,10 @@ export default function EditListingPage() {
   const [regeneratingVideo, setRegeneratingVideo] = useState(false);
   const [regenerateMessage, setRegenerateMessage] = useState("");
   const [pollingVideo, setPollingVideo] = useState(false);
+  const [showVideoImageSelection, setShowVideoImageSelection] = useState(false);
+  const [selectedImagesForVideo, setSelectedImagesForVideo] = useState<Set<number>>(new Set());
+  const [showVideoImageSelection, setShowVideoImageSelection] = useState(false);
+  const [selectedImagesForVideo, setSelectedImagesForVideo] = useState<Set<number>>(new Set());
 
   // Image management state
   const [imageQuota, setImageQuota] = useState<{maxPhotos: number; currentCount: number; remainingSlots: number; canAddMore: boolean} | null>(null);
@@ -693,16 +697,57 @@ export default function EditListingPage() {
     }
   }
 
+  // Toggle image selection for video generation
+  const toggleImageSelection = (index: number) => {
+    setSelectedImagesForVideo((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
+    });
+  };
+
+  // Select all images for video
+  const selectAllImages = () => {
+    if (listing?.images) {
+      setSelectedImagesForVideo(new Set(listing.images.map((_, i) => i)));
+    }
+  };
+
+  // Deselect all images
+  const deselectAllImages = () => {
+    setSelectedImagesForVideo(new Set());
+  };
+
   const handleRegenerateVideo = async () => {
     if (regeneratingVideo) return;
+    
+    // If selection UI is shown and no images selected, require selection
+    if (showVideoImageSelection && selectedImagesForVideo.size === 0) {
+      setRegenerateMessage("⚠️ يرجى اختيار صورة واحدة على الأقل");
+      return;
+    }
+    
     setRegeneratingVideo(true);
     setRegenerateMessage("");
     
     try {
       console.log('[Video] Starting video generation for listing:', listingId);
+      console.log('[Video] Selected images:', Array.from(selectedImagesForVideo));
+      
+      const body: any = {};
+      if (selectedImagesForVideo.size > 0) {
+        body.selectedImageIndices = Array.from(selectedImagesForVideo).sort((a, b) => a - b);
+      }
+      
       const res = await fetch(`/api/listings/${listingId}/regenerate-video`, {
         method: 'POST',
-        credentials: 'include'
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
       });
       
       const data = await res.json();
@@ -716,6 +761,8 @@ export default function EditListingPage() {
         if (listing) {
           setListing({ ...listing, video_status: 'processing' });
         }
+        setShowVideoImageSelection(false);
+        setSelectedImagesForVideo(new Set());
       }
     } catch (err: any) {
       console.error('[Video] Request failed:', err);
@@ -1351,42 +1398,206 @@ export default function EditListingPage() {
             </div>
           )}
 
-          {/* زر إعادة إنشاء الفيديو - متاح لباقة البزنس فقط */}
-          {isBusinessPlan && listing?.images && listing.images.length > 0 && listing?.video_status !== 'processing' && (
+          {/* قسم الفيديو - يظهر دائماً */}
+          {isBusinessPlan && listing?.images && listing.images.length > 0 && (
             <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-200 rounded-xl p-5">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center">
                   <Video className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-emerald-800">📷 إنشاء فيديو من صورك</h4>
-                  <p className="text-sm text-emerald-600">فيديو ترويجي احترافي باستخدام صورك الفعلية</p>
+                  <h4 className="font-bold text-emerald-800">📷 فيديو ترويجي بالذكاء الاصطناعي</h4>
+                  <p className="text-sm text-emerald-600">سيتم إنشاء فيديو احترافي من صورك الفعلية</p>
                 </div>
               </div>
-              <button
-                onClick={handleRegenerateVideo}
-                disabled={regeneratingVideo}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-all disabled:opacity-50 font-medium"
-              >
-                {regeneratingVideo ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    <span>جاري الإنشاء...</span>
-                  </>
-                ) : (
-                  <>
-                    <Video className="w-5 h-5" />
-                    <span>إنشاء / إعادة إنشاء الفيديو</span>
-                  </>
-                )}
-              </button>
-              {regenerateMessage && (
-                <p className={`text-sm mt-3 text-center ${
-                  regenerateMessage.includes('❌') ? 'text-red-600' : 
-                  regenerateMessage.includes('✅') ? 'text-emerald-600 font-medium' : 'text-amber-600'
-                }`}>
-                  {regenerateMessage}
-                </p>
+
+              {/* حالة معالجة الفيديو */}
+              {listing.video_status === 'processing' && (
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-300 rounded-xl p-6 text-center mb-4">
+                  <div className="w-16 h-16 mx-auto mb-4 relative">
+                    <div className="absolute inset-0 border-4 border-amber-500/20 rounded-full"></div>
+                    <div className="absolute inset-0 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+                    <Video className="absolute inset-2 w-12 h-12 text-amber-600" />
+                  </div>
+                  <h4 className="text-lg font-bold text-amber-800 mb-2">جاري إنشاء الفيديو...</h4>
+                  <p className="text-amber-600 text-sm">سيظهر الفيديو تلقائياً عند الانتهاء (يتم التحقق كل 4 ثواني)</p>
+                </div>
+              )}
+
+              {/* حالة الفيديو الجاهز */}
+              {listing.video_status === 'ready' && (
+                <div className="bg-gradient-to-r from-emerald-50 to-green-50 border-2 border-emerald-300 rounded-xl p-4 mb-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center">
+                        <CheckCircle2 className="w-6 h-6 text-white" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-emerald-800">🎬 الفيديو جاهز!</h4>
+                        <p className="text-sm text-emerald-600">تم إنشاء فيديو ترويجي من صورك</p>
+                      </div>
+                    </div>
+                    <Link 
+                      href={`/listing/${listingId}`}
+                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium"
+                    >
+                      مشاهدة الفيديو
+                    </Link>
+                  </div>
+                </div>
+              )}
+
+              {/* حالة عدم وجود فيديو (placeholder) */}
+              {(!listing.video_status || listing.video_status === null) && (
+                <div className="bg-gradient-to-br from-slate-50 to-slate-100 border-2 border-dashed border-slate-300 rounded-xl p-6 text-center mb-4 relative overflow-hidden">
+                  {listing.images && listing.images.length > 0 && (
+                    <div className="absolute inset-0 opacity-10">
+                      <img 
+                        src={getImageUrl(listing.images[0]?.url || (typeof listing.images[0] === 'string' ? listing.images[0] : ''))} 
+                        alt="Placeholder" 
+                        className="w-full h-full object-cover blur-sm"
+                      />
+                    </div>
+                  )}
+                  <div className="relative z-10">
+                    <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-[#D4AF37]/20 to-[#B8860B]/20 rounded-full flex items-center justify-center">
+                      <Video className="w-8 h-8 text-[#D4AF37]" />
+                    </div>
+                    <h4 className="text-lg font-bold text-[#002845] mb-2">فيديو ترويجي</h4>
+                    <p className="text-slate-600 text-sm mb-1">سيتم إنشاء فيديو ترويجي احترافي من صور العقار</p>
+                    <p className="text-slate-500 text-xs">سيظهر هنا عند اكتمال التوليد</p>
+                  </div>
+                </div>
+              )}
+
+              {/* خيار اختيار الصور لإعادة التوليد */}
+              {showVideoImageSelection && listing.images && listing.images.length > 0 && (
+                <div className="mb-4 p-4 bg-white rounded-xl border-2 border-emerald-300">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Film className="w-5 h-5 text-emerald-600" />
+                      <h5 className="font-semibold text-emerald-800">اختر الصور لتوليد الفيديو</h5>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={selectAllImages}
+                        className="text-xs px-3 py-1 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition"
+                      >
+                        تحديد الكل
+                      </button>
+                      <button
+                        type="button"
+                        onClick={deselectAllImages}
+                        className="text-xs px-3 py-1 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition"
+                      >
+                        إلغاء الكل
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-emerald-700 mb-3">
+                    <Zap className="w-4 h-4" />
+                    <span className="font-medium">
+                      تم اختيار {selectedImagesForVideo.size} من {listing.images.length} صورة
+                    </span>
+                  </div>
+                  <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200 mb-3">
+                    <p className="text-xs text-emerald-800 flex items-start gap-2">
+                      <span className="text-emerald-600 font-bold">💡 ملاحظة:</span>
+                      <span>
+                        عدد صور أقل يعني سرعة في الإنجاز. ننصح باختيار 3-8 صور للحصول على أفضل نتيجة.
+                      </span>
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
+                    {listing.images.map((img, idx) => {
+                      const isSelected = selectedImagesForVideo.has(idx);
+                      const rawUrl = typeof img === 'string' ? img : img.url;
+                      const imageUrl = getImageUrl(rawUrl);
+                      return (
+                        <div
+                          key={img.id || idx}
+                          className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
+                            isSelected
+                              ? 'border-emerald-500 ring-2 ring-emerald-300'
+                              : 'border-slate-200 hover:border-emerald-300'
+                          }`}
+                          onClick={() => toggleImageSelection(idx)}
+                        >
+                          <img
+                            src={imageUrl}
+                            alt={`صورة ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          {isSelected && (
+                            <div className="absolute inset-0 bg-emerald-500/30 flex items-center justify-center">
+                              <Check className="w-6 h-6 text-white bg-emerald-500 rounded-full p-1" />
+                            </div>
+                          )}
+                          {!isSelected && (
+                            <div className="absolute top-1 left-1 w-6 h-6 bg-white/80 rounded-full flex items-center justify-center opacity-0 hover:opacity-100 transition">
+                              <Film className="w-4 h-4 text-slate-600" />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* زر إعادة إنشاء الفيديو */}
+              {listing.video_status !== 'processing' && (
+                <>
+                  {!showVideoImageSelection ? (
+                    <button
+                      onClick={() => setShowVideoImageSelection(true)}
+                      disabled={regeneratingVideo}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-all disabled:opacity-50 font-medium"
+                    >
+                      <Video className="w-5 h-5" />
+                      <span>إنشاء / إعادة إنشاء الفيديو</span>
+                    </button>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setShowVideoImageSelection(false);
+                          setSelectedImagesForVideo(new Set());
+                        }}
+                        className="flex-1 px-4 py-3 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition font-medium"
+                      >
+                        إلغاء
+                      </button>
+                      <button
+                        onClick={handleRegenerateVideo}
+                        disabled={regeneratingVideo || selectedImagesForVideo.size === 0}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-all disabled:opacity-50 font-medium"
+                      >
+                        {regeneratingVideo ? (
+                          <>
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            <span>جاري الإنشاء...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Video className="w-5 h-5" />
+                            <span>توليد من الصور المختارة ({selectedImagesForVideo.size})</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                  {regenerateMessage && (
+                    <p className={`text-sm mt-3 text-center ${
+                      regenerateMessage.includes('❌') ? 'text-red-600' : 
+                      regenerateMessage.includes('✅') ? 'text-emerald-600 font-medium' : 
+                      regenerateMessage.includes('⚠️') ? 'text-amber-600' : 'text-amber-600'
+                    }`}>
+                      {regenerateMessage}
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}

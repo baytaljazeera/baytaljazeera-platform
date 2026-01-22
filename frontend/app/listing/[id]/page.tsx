@@ -11,7 +11,7 @@ import {
   Phone, MessageCircle, Heart, Flag,
   ChevronRight, ChevronLeft, Building2, Car,
   Compass, Layers, Clock, ArrowRight, ArrowUpRight, Eye, AlertTriangle,
-  Send, X, Mail, Loader2, Crown, PlayCircle, Video, Star, Sparkles
+  Send, X, Mail, Loader2, Crown, PlayCircle, Video, Star, Sparkles, FileText
 } from "lucide-react";
 import ShareButton from "@/components/shared/ShareButton";
 import AdvertiserReputation from "@/components/ratings/AdvertiserReputation";
@@ -898,7 +898,19 @@ export default function ListingDetailPage() {
             ) : null}
 
             <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm">
-              <h1 className="text-xl sm:text-2xl font-bold text-[#002845] mb-2">{listing.title}</h1>
+              <div className="flex items-start justify-between gap-4 mb-2">
+                <h1 className="text-xl sm:text-2xl font-bold text-[#002845] flex-1">{listing.title}</h1>
+                {isOwner && (
+                  <Link
+                    href={`/edit-listing/${listing.id}`}
+                    className="flex items-center gap-2 bg-[#D4AF37] text-[#002845] px-4 py-2 rounded-xl text-sm font-bold hover:bg-[#e5c868] transition-all shadow-lg hover:shadow-xl shrink-0"
+                    title="تعديل الإعلان"
+                  >
+                    <FileText className="w-4 h-4" />
+                    تعديل
+                  </Link>
+                )}
+              </div>
               
               <div className="flex items-center gap-2 text-slate-600 mb-4">
                 <MapPin className="w-5 h-5 text-[#D4AF37]" />
