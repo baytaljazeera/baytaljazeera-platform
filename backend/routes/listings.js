@@ -926,6 +926,7 @@ router.post("/:id/regenerate-video", authMiddleware, asyncHandler(async (req, re
     status: "processing"
   });
   
+  // Generate video asynchronously (don't block response)
   generateListingSlideshow(id, imageUrls, {
     propertyType: listing.type,
     purpose: listing.purpose,
@@ -939,7 +940,9 @@ router.post("/:id/regenerate-video", authMiddleware, asyncHandler(async (req, re
     landArea: listing.land_area,
     buildingArea: listing.building_area
   }).catch(err => {
-    console.error(`[Regenerate] Failed for listing ${id}:`, err);
+    console.error(`[Regenerate] ❌ Failed for listing ${id}:`, err.message);
+    console.error(`[Regenerate] Stack:`, err.stack);
+    // Status already set to 'failed' in generateListingSlideshow
   });
 }));
 

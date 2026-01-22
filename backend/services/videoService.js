@@ -173,13 +173,15 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     let promoText;
     try {
       if (generateDynamicPromoText) {
+        console.log(`[Video] Attempting to generate AI promo text...`);
         promoText = await generateDynamicPromoText(listingData);
-        console.log(`[Video] Generated AI promo text`);
+        console.log(`[Video] ✅ Generated AI promo text:`, JSON.stringify(promoText, null, 2));
       } else {
+        console.warn("[Video] ⚠️ generateDynamicPromoText not available, using fallback");
         throw new Error('AI not available');
       }
     } catch (promoErr) {
-      console.warn("[Video] AI promo text failed, using static:", promoErr.message);
+      console.warn("[Video] ⚠️ AI promo text failed, using static:", promoErr.message);
       if (generatePromotionalText) {
         promoText = generatePromotionalText(
           listingData.propertyType, 
@@ -188,8 +190,10 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
           listingData.district, 
           listingData.price
         );
+        console.log(`[Video] Using static promo text:`, promoText);
       } else {
         promoText = `${listingData.propertyType || 'عقار'} ${listingData.purpose || 'للبيع'} في ${listingData.city || 'المدينة'}`;
+        console.log(`[Video] Using basic promo text:`, promoText);
       }
     }
     
