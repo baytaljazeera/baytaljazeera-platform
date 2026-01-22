@@ -2702,6 +2702,12 @@ async function initializeDatabase() {
       await db.query(`
         DO $$ 
         BEGIN 
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'countries' AND column_name = 'flag_emoji') THEN
+            ALTER TABLE countries ADD COLUMN flag_emoji VARCHAR(10);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'countries' AND column_name = 'region') THEN
+            ALTER TABLE countries ADD COLUMN region VARCHAR(50);
+          END IF;
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'countries' AND column_name = 'display_order') THEN
             ALTER TABLE countries ADD COLUMN display_order INTEGER DEFAULT 0;
           END IF;

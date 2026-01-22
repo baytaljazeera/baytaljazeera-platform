@@ -5,11 +5,13 @@ const { asyncHandler } = require('../middleware/asyncHandler');
 
 router.get("/countries", asyncHandler(async (req, res) => {
   const result = await db.query(`
-    SELECT id, code, name_ar, name_en, flag_emoji, region, 
+    SELECT id, code, name_ar, name_en, 
+           COALESCE(flag_emoji, '') as flag_emoji, 
+           COALESCE(region, '') as region, 
            COALESCE(display_order, 0) as display_order,
            latitude, longitude, default_zoom
     FROM countries
-    WHERE is_active = true
+    WHERE COALESCE(is_active, true) = true
     ORDER BY COALESCE(display_order, 0) ASC, id ASC
   `);
   res.json({ countries: result.rows });
