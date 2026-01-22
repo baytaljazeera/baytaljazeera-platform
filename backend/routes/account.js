@@ -369,13 +369,26 @@ router.get("/pending-counts", authMiddleware, asyncHandler(async (req, res) => {
   );
   
   if (badgeState.rows.length === 0) {
-    await db.query(
-      `INSERT INTO user_badge_state (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`,
-      [userId]
-    );
-    badgeState = await db.query(
-      `SELECT * FROM user_badge_state WHERE user_id = $1`, [userId]
-    );
+    try {
+      // Verify user exists before inserting badge state
+      const userCheck = await db.query(`SELECT id FROM users WHERE id = $1`, [userId]);
+      if (userCheck.rows.length === 0) {
+        console.warn(`[Account] User ${userId} does not exist, skipping badge state creation`);
+        return res.json({ listings: 0, invoices: 0, complaints: 0, messages: 0, refunds: 0 });
+      }
+      
+      await db.query(
+        `INSERT INTO user_badge_state (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`,
+        [userId]
+      );
+      badgeState = await db.query(
+        `SELECT * FROM user_badge_state WHERE user_id = $1`, [userId]
+      );
+    } catch (badgeErr) {
+      console.error(`[Account] Error creating badge state for user ${userId}:`, badgeErr.message);
+      // Return default counts if badge state creation fails
+      return res.json({ listings: 0, invoices: 0, complaints: 0, messages: 0, refunds: 0 });
+    }
   }
   
   const state = badgeState.rows[0] || {

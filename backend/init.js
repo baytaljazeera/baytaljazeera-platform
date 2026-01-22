@@ -1836,7 +1836,13 @@ async function initializeDatabase() {
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_country_plan_prices_plan ON country_plan_prices(plan_id);`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_country_plan_prices_country ON country_plan_prices(country_code);`);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_country_plan_prices_active ON country_plan_prices(is_active) WHERE is_active = true;`);
+    // Create index on is_active only if column exists
+    try {
+      await db.query(`CREATE INDEX IF NOT EXISTS idx_country_plan_prices_active ON country_plan_prices(is_active) WHERE is_active = true;`);
+    } catch (idxErr) {
+      // Column might not exist yet, skip index creation
+      console.log("⚠️ Skipping is_active index (column may not exist):", idxErr.message);
+    }
     
     // Insert default country prices (converted from SAR base prices)
     // Base prices in SAR: Starter=0, Premium=50, VIP=150, Enterprise=450
@@ -2636,6 +2642,22 @@ async function initializeDatabase() {
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+    `);
+
+    // Ensure region_ar and region_en columns exist (for existing tables)
+    await db.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'region_ar') THEN
+          ALTER TABLE cities ADD COLUMN region_ar VARCHAR(100);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'region_en') THEN
+          ALTER TABLE cities ADD COLUMN region_en VARCHAR(100);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cities' AND column_name = 'is_active') THEN
+          ALTER TABLE cities ADD COLUMN is_active BOOLEAN DEFAULT true;
+        END IF;
+      END $$;
     `);
 
     await db.query(`CREATE INDEX IF NOT EXISTS idx_cities_country ON cities(country_id);`);
