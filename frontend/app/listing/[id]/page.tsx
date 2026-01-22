@@ -660,13 +660,23 @@ export default function ListingDetailPage() {
           </div>
           
           {isOwner && (
-            <Link
-              href="/my-listings"
-              className="flex items-center gap-2 bg-[#D4AF37] text-[#002845] px-4 py-2 rounded-full text-sm font-bold hover:bg-[#e5c868] transition-all"
-            >
-              <ArrowRight className="w-4 h-4" />
-              إعلاناتي
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/edit-listing/${listing.id}`}
+                className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-full text-sm font-bold hover:bg-emerald-700 transition-all shadow-lg"
+                title="تعديل الإعلان"
+              >
+                <FileText className="w-4 h-4" />
+                تعديل
+              </Link>
+              <Link
+                href="/my-listings"
+                className="flex items-center gap-2 bg-[#D4AF37] text-[#002845] px-4 py-2 rounded-full text-sm font-bold hover:bg-[#e5c868] transition-all"
+              >
+                <ArrowRight className="w-4 h-4" />
+                إعلاناتي
+              </Link>
+            </div>
           )}
         </div>
       </div>
@@ -763,14 +773,13 @@ export default function ListingDetailPage() {
             </div>
 
             {/* قسم الفيديو - يظهر دائماً */}
-            {listing.images && listing.images.length > 0 && (
-              <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-10 h-10 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full flex items-center justify-center shadow-lg">
-                    <PlayCircle className="w-5 h-5 text-white" />
-                  </div>
-                  <h3 className="text-lg font-bold text-[#002845]">استكشف العقار</h3>
+            <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border-2 border-[#D4AF37]/20">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-10 h-10 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full flex items-center justify-center shadow-lg">
+                  <PlayCircle className="w-5 h-5 text-white" />
                 </div>
+                <h3 className="text-lg font-bold text-[#002845]">🎬 فيديو ترويجي بالذكاء الاصطناعي</h3>
+              </div>
                 
                 {/* الفيديو الجاهز */}
                 {listing.videos && listing.videos.length > 0 && listing.video_status !== 'processing' && (
@@ -816,9 +825,9 @@ export default function ListingDetailPage() {
                 
                 {/* حالة عدم وجود فيديو (placeholder) */}
                 {!listing.videos && (!listing.video_status || listing.video_status === null) && (
-                  <div className="bg-gradient-to-br from-slate-50 to-slate-100 border-2 border-dashed border-slate-300 rounded-xl p-6 text-center relative overflow-hidden">
+                  <div className="bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-2 border-dashed border-[#D4AF37]/50 rounded-xl p-8 text-center relative overflow-hidden">
                     {/* Placeholder with first image as background */}
-                    {images && images.length > 0 && (
+                    {images && images.length > 0 ? (
                       <div className="absolute inset-0 opacity-10">
                         <img 
                           src={getImageUrl(images[0]?.url)} 
@@ -826,21 +835,35 @@ export default function ListingDetailPage() {
                           className="w-full h-full object-cover blur-sm"
                         />
                       </div>
+                    ) : (
+                      <div className="absolute inset-0 bg-gradient-to-br from-[#D4AF37]/5 to-[#B8860B]/5"></div>
                     )}
                     <div className="relative z-10">
-                      <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-[#D4AF37]/20 to-[#B8860B]/20 rounded-full flex items-center justify-center">
-                        <Video className="w-8 h-8 text-[#D4AF37]" />
+                      <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full flex items-center justify-center shadow-xl animate-pulse">
+                        <Video className="w-10 h-10 text-white" />
                       </div>
-                      <h4 className="text-lg font-bold text-[#002845] mb-2">فيديو ترويجي</h4>
-                      <p className="text-slate-600 text-sm mb-1">سيتم إنشاء فيديو ترويجي احترافي من صور العقار</p>
+                      <h4 className="text-xl font-bold text-[#002845] mb-2">🎬 فيديو ترويجي بالذكاء الاصطناعي</h4>
+                      <p className="text-slate-700 text-sm mb-2 font-medium">سيتم إنشاء فيديو احترافي من صور العقار</p>
                       <p className="text-slate-500 text-xs">سيظهر هنا عند اكتمال التوليد</p>
+                      {isOwner && (currentUser?.supportLevel || 0) >= 3 && (
+                        <div className="mt-4 pt-4 border-t border-[#D4AF37]/30">
+                          <p className="text-xs text-slate-600 mb-2">💡 يمكنك توليد الفيديو من صفحة التعديل</p>
+                          <Link
+                            href={`/edit-listing/${listing.id}`}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-[#D4AF37] text-[#002845] rounded-lg text-sm font-bold hover:bg-[#e5c868] transition-all"
+                          >
+                            <Video className="w-4 h-4" />
+                            انتقل للتعديل وتوليد الفيديو
+                          </Link>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
                 
                 {/* زر إعادة إنشاء الفيديو للمالك */}
                 {isOwner && (currentUser?.supportLevel || 0) >= 3 && (
-                  <div className="mt-4">
+                  <div className="mt-6 pt-4 border-t border-slate-200">
                     {listing.video_status === 'processing' ? (
                       <div className="p-6 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-xl animate-pulse">
                         <div className="flex items-center justify-center gap-3 mb-3">
