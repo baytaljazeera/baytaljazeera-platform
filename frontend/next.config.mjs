@@ -23,7 +23,7 @@ const nextConfig = {
   },
   async rewrites() {
     if (process.env.NODE_ENV === 'production') {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://baytaljazeera-platform-production.up.railway.app';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://baytaljazeera-backend.onrender.com';
       return [
         {
           source: "/api/:path*",
