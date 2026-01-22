@@ -112,8 +112,6 @@ export default function EditListingPage() {
   const [pollingVideo, setPollingVideo] = useState(false);
   const [showVideoImageSelection, setShowVideoImageSelection] = useState(false);
   const [selectedImagesForVideo, setSelectedImagesForVideo] = useState<Set<number>>(new Set());
-  const [showVideoImageSelection, setShowVideoImageSelection] = useState(false);
-  const [selectedImagesForVideo, setSelectedImagesForVideo] = useState<Set<number>>(new Set());
 
   // Image management state
   const [imageQuota, setImageQuota] = useState<{maxPhotos: number; currentCount: number; remainingSlots: number; canAddMore: boolean} | null>(null);
