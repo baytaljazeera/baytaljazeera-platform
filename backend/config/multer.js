@@ -170,7 +170,7 @@ const upload = multer({
   storage,
   fileFilter,
   limits: { 
-    fileSize: 10 * 1024 * 1024, // 10MB max per file (reduced from 50MB for security)
+    fileSize: 20 * 1024 * 1024, // 20MB max per file (increased from 10MB for better video support)
     files: 20, // Max 20 files per request (allows for 15 images + 1 video + buffer)
     fieldSize: 1024 * 1024 // 1MB max field size
   }
