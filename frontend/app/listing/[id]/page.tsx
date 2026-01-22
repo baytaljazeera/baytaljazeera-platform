@@ -762,8 +762,8 @@ export default function ListingDetailPage() {
               )}
             </div>
 
-            {/* قسم الفيديو */}
-            {(listing.videos && listing.videos.length > 0) || listing.video_status === 'processing' ? (
+            {/* قسم الفيديو - يظهر دائماً */}
+            {listing.images && listing.images.length > 0 && (
               <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm">
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-10 h-10 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full flex items-center justify-center shadow-lg">
@@ -771,6 +771,23 @@ export default function ListingDetailPage() {
                   </div>
                   <h3 className="text-lg font-bold text-[#002845]">استكشف العقار</h3>
                 </div>
+                
+                {/* الفيديو الجاهز */}
+                {listing.videos && listing.videos.length > 0 && listing.video_status !== 'processing' && (
+                  <div className="relative rounded-xl overflow-hidden bg-slate-900">
+                    <video 
+                      controls 
+                      className="w-full max-h-[400px] object-contain"
+                      poster={images[0]?.url}
+                      preload="metadata"
+                    >
+                      <source src={listing.videos[0].url} type="video/mp4" />
+                      <source src={listing.videos[0].url} type="video/webm" />
+                      <source src={listing.videos[0].url} type="video/ogg" />
+                      متصفحك لا يدعم عرض الفيديو
+                    </video>
+                  </div>
+                )}
                 
                 {/* حالة معالجة الفيديو */}
                 {listing.video_status === 'processing' && (!listing.videos || listing.videos.length === 0) && (
@@ -797,19 +814,27 @@ export default function ListingDetailPage() {
                   </div>
                 )}
                 
-                {listing.videos && listing.videos.length > 0 && (
-                  <div className="relative rounded-xl overflow-hidden bg-slate-900">
-                    <video 
-                      controls 
-                      className="w-full max-h-[400px] object-contain"
-                      poster={images[0]?.url}
-                      preload="metadata"
-                    >
-                      <source src={listing.videos[0].url} type="video/mp4" />
-                      <source src={listing.videos[0].url} type="video/webm" />
-                      <source src={listing.videos[0].url} type="video/ogg" />
-                      متصفحك لا يدعم عرض الفيديو
-                    </video>
+                {/* حالة عدم وجود فيديو (placeholder) */}
+                {!listing.videos && (!listing.video_status || listing.video_status === null) && (
+                  <div className="bg-gradient-to-br from-slate-50 to-slate-100 border-2 border-dashed border-slate-300 rounded-xl p-6 text-center relative overflow-hidden">
+                    {/* Placeholder with first image as background */}
+                    {images && images.length > 0 && (
+                      <div className="absolute inset-0 opacity-10">
+                        <img 
+                          src={getImageUrl(images[0]?.url)} 
+                          alt="Placeholder" 
+                          className="w-full h-full object-cover blur-sm"
+                        />
+                      </div>
+                    )}
+                    <div className="relative z-10">
+                      <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-[#D4AF37]/20 to-[#B8860B]/20 rounded-full flex items-center justify-center">
+                        <Video className="w-8 h-8 text-[#D4AF37]" />
+                      </div>
+                      <h4 className="text-lg font-bold text-[#002845] mb-2">فيديو ترويجي</h4>
+                      <p className="text-slate-600 text-sm mb-1">سيتم إنشاء فيديو ترويجي احترافي من صور العقار</p>
+                      <p className="text-slate-500 text-xs">سيظهر هنا عند اكتمال التوليد</p>
+                    </div>
                   </div>
                 )}
                 
