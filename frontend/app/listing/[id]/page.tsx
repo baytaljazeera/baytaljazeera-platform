@@ -787,7 +787,7 @@ export default function ListingDetailPage() {
                     <video 
                       controls 
                       className="w-full max-h-[400px] object-contain"
-                      poster={images[0]?.url}
+                      poster={images && images.length > 0 ? images[0]?.url : undefined}
                       preload="metadata"
                     >
                       <source src={listing.videos[0].url} type="video/mp4" />
