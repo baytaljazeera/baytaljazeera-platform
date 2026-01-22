@@ -3001,14 +3001,14 @@ export default function NewListingPage() {
                                 <button
                                   type="button"
                                   onClick={selectAllImages}
-                                  className="text-xs px-3 py-1 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition"
+                                  className="text-xs px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium shadow-sm"
                                 >
                                   تحديد الكل
                                 </button>
                                 <button
                                   type="button"
                                   onClick={deselectAllImages}
-                                  className="text-xs px-3 py-1 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition"
+                                  className="text-xs px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium shadow-sm"
                                 >
                                   إلغاء الكل
                                 </button>
