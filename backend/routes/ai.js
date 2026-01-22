@@ -1294,33 +1294,27 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
     console.warn("[Video] Failed to create ASS file:", e.message);
   }
   
-  // Build FFmpeg complex filter with zoompan + xfade + subtitles
-  const fps = 30; // Smoother playback
+  // Build FFmpeg complex filter - Professional slideshow with crossfade
+  const fps = 30;
   const W = 1920;
   const H = 1080;
   
-  // 🚁 تأثيرات درون احترافية - كاميرا جوية من الأعلى
-  const droneEffects = [
-    // 🚁 Drone descend - zoom OUT from very close (نزول من الأعلى)
-    { zoom: "if(lte(zoom,1.0),1.5,max(1.0,zoom-0.0018))", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
-    // 🚁 Drone ascend - zoom IN from far (صعود للأعلى)
-    { zoom: "min(zoom+0.0015,1.4)", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
-    // 🚁 Drone flyover left - pan left to right with altitude drop
-    { zoom: "if(lte(zoom,1.0),1.35,max(1.0,zoom-0.0012))", x: "on/(25*" + String(slideDuration) + ")*(iw-iw/zoom)", y: "ih/2-(ih/zoom/2)" },
-    // 🚁 Drone flyover right - pan right to left with altitude drop
-    { zoom: "if(lte(zoom,1.0),1.35,max(1.0,zoom-0.0012))", x: "(iw-iw/zoom)-(on/(25*" + String(slideDuration) + ")*(iw-iw/zoom))", y: "ih/2-(ih/zoom/2)" },
-    // 🚁 Drone reveal from top - start zoomed top, reveal full
-    { zoom: "if(lte(zoom,1.0),1.45,max(1.0,zoom-0.0016))", x: "iw/2-(iw/zoom/2)", y: "0" },
-    // 🚁 Drone tilt down - pan top to bottom with zoom
-    { zoom: "min(zoom+0.0008,1.25)", x: "iw/2-(iw/zoom/2)", y: "on/(25*" + String(slideDuration) + ")*(ih-ih/zoom)" },
-    // 🚁 Drone orbit left - diagonal pan with zoom out
-    { zoom: "if(lte(zoom,1.0),1.4,max(1.0,zoom-0.0014))", x: "on/(25*" + String(slideDuration) + ")*(iw-iw/zoom)", y: "on/(25*" + String(slideDuration) + ")*(ih-ih/zoom)" },
-    // 🚁 Drone orbit right - reverse diagonal with zoom out
-    { zoom: "if(lte(zoom,1.0),1.4,max(1.0,zoom-0.0014))", x: "(iw-iw/zoom)-(on/(25*" + String(slideDuration) + ")*(iw-iw/zoom))", y: "on/(25*" + String(slideDuration) + ")*(ih-ih/zoom)" },
+  // Realistic camera movements (ground-level, no aerial shots)
+  const cameraMovements = [
+    // Gentle zoom in (subtle)
+    { zoom: "min(zoom+0.0005,1.1)", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
+    // Gentle zoom out (subtle)
+    { zoom: "if(lte(zoom,1.0),1.1,max(1.0,zoom-0.0005))", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
+    // Slow pan left to right
+    { zoom: "1.05", x: "on/(25*" + String(slideDuration) + ")*(iw-iw/zoom)", y: "ih/2-(ih/zoom/2)" },
+    // Slow pan right to left
+    { zoom: "1.05", x: "(iw-iw/zoom)-(on/(25*" + String(slideDuration) + ")*(iw-iw/zoom))", y: "ih/2-(ih/zoom/2)" },
+    // Static (no movement)
+    { zoom: "1.0", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
   ];
   
-  // Professional transition types
-  const transitionTypes = ["fade", "dissolve", "wipeleft", "wiperight", "slideup", "slidedown", "circleopen", "circlecrop"];
+  // Professional transition types (crossfade variations)
+  const transitionTypes = ["fade", "fadeblack", "fadewhite", "distance", "fadefast"];
   
   // Build input arguments
   let args = ["-y"];
@@ -1331,17 +1325,18 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
   // Build filter complex
   const filters = [];
   
-  // Step 1: zoompan for each image (Ken Burns effect with variety)
+  // Step 1: Scale and apply subtle Ken Burns effect (ground-level only)
   for (let i = 0; i < validPaths.length; i++) {
     const frames = Math.round(slideDuration * fps);
-    const effect = droneEffects[i % droneEffects.length];
+    const movement = cameraMovements[i % cameraMovements.length];
     
+    // Scale to 1920x1080 with padding, then apply subtle zoom/pan
     filters.push(
-      `[${i}:v]scale=8000:-1,zoompan=z='${effect.zoom}':x='${effect.x}':y='${effect.y}':d=${frames}:s=${W}x${H}:fps=${fps},format=yuv420p[v${i}]`
+      `[${i}:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,scale=8000:-1,zoompan=z='${movement.zoom}':x='${movement.x}':y='${movement.y}':d=${frames}:s=${W}x${H}:fps=${fps},format=yuv420p[v${i}]`
     );
   }
   
-  // Step 2: xfade transitions between clips with variety
+  // Step 2: Crossfade transitions between clips
   let lastLabel = "v0";
   let currentOffset = slideDuration - transition;
   for (let i = 1; i < validPaths.length; i++) {
@@ -1378,17 +1373,19 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
   // Combine filters
   args.push("-filter_complex", filters.join(";"));
   
-  // Output settings - Higher quality for professional look
+  // Output settings - Professional quality optimized for web
+  // CRF 20 = good balance between quality and file size (18 = very high, 23 = default, 28 = low)
+  // preset "fast" = faster encoding, "medium" = better compression, "slow" = best compression
   args.push(
     "-map", `[${finalLabel}]`,
     "-c:v", "libx264",
-    "-preset", "medium", // Better quality compression
-    "-crf", "18", // Higher quality (lower CRF = better)
+    "-preset", "fast", // Fast encoding for production (change to "medium" for better compression)
+    "-crf", "20", // Good quality (18=very high, 20=high, 23=default, 28=low)
     "-profile:v", "high",
     "-level", "4.0",
     "-pix_fmt", "yuv420p",
     "-r", String(fps),
-    "-movflags", "+faststart", // Enable web streaming
+    "-movflags", "+faststart", // Enable web streaming (progressive download)
     "-t", String(Math.ceil(totalDuration)),
     outputPath
   );
