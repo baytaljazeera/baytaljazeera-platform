@@ -3503,7 +3503,11 @@ export default function NewListingPage() {
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="flex items-center gap-2 px-8 py-3 bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-white rounded-xl font-semibold hover:opacity-90 transition disabled:opacity-50"
+                    className={`flex items-center gap-2 px-8 py-3 text-white rounded-xl font-semibold transition disabled:opacity-50 ${
+                      submitting 
+                        ? 'bg-gradient-to-l from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800' 
+                        : 'bg-gradient-to-l from-[#D4AF37] to-[#B8860B] hover:opacity-90'
+                    }`}
                   >
                     {submitting ? (
                       <>
