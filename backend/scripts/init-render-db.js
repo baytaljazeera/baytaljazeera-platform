@@ -11,22 +11,24 @@ async function initDatabase() {
   try {
     console.log('🚀 Creating database tables...');
     
+    // Step 1: Create base tables without foreign keys
     await client.query(`
-      -- Users table
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         email VARCHAR(255) UNIQUE NOT NULL,
         password VARCHAR(255) NOT NULL,
         name VARCHAR(255) NOT NULL,
-        phone VARCHAR(50) UNIQUE,
+        phone VARCHAR(50),
         role VARCHAR(50) DEFAULT 'customer',
         status VARCHAR(50) DEFAULT 'active',
         avatar_url TEXT,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
+    `);
+    console.log('✅ users table');
 
-      -- Countries table
+    await client.query(`
       CREATE TABLE IF NOT EXISTS countries (
         id SERIAL PRIMARY KEY,
         code VARCHAR(10) UNIQUE NOT NULL,
@@ -36,11 +38,13 @@ async function initDatabase() {
         flag VARCHAR(10),
         is_active BOOLEAN DEFAULT true
       );
+    `);
+    console.log('✅ countries table');
 
-      -- Cities table
+    await client.query(`
       CREATE TABLE IF NOT EXISTS cities (
         id SERIAL PRIMARY KEY,
-        country_id INTEGER REFERENCES countries(id),
+        country_id INTEGER,
         name_en VARCHAR(100) NOT NULL,
         name_ar VARCHAR(100) NOT NULL,
         latitude DECIMAL(10, 7),
@@ -48,8 +52,10 @@ async function initDatabase() {
         is_featured BOOLEAN DEFAULT false,
         sort_order INTEGER DEFAULT 0
       );
+    `);
+    console.log('✅ cities table');
 
-      -- Subscription plans table
+    await client.query(`
       CREATE TABLE IF NOT EXISTS subscription_plans (
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -65,11 +71,13 @@ async function initDatabase() {
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
+    `);
+    console.log('✅ subscription_plans table');
 
-      -- Properties table
+    await client.query(`
       CREATE TABLE IF NOT EXISTS properties (
         id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        user_id INTEGER,
         title VARCHAR(255) NOT NULL,
         description TEXT,
         type VARCHAR(100) NOT NULL,
@@ -93,42 +101,49 @@ async function initDatabase() {
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
+    `);
+    console.log('✅ properties table');
 
-      -- User subscriptions table
+    await client.query(`
       CREATE TABLE IF NOT EXISTS user_subscriptions (
         id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        plan_id INTEGER REFERENCES subscription_plans(id),
+        user_id INTEGER,
+        plan_id INTEGER,
         status VARCHAR(50) DEFAULT 'active',
         start_date TIMESTAMP DEFAULT NOW(),
         end_date TIMESTAMP,
         created_at TIMESTAMP DEFAULT NOW()
       );
+    `);
+    console.log('✅ user_subscriptions table');
 
-      -- Messages table
+    await client.query(`
       CREATE TABLE IF NOT EXISTS messages (
         id SERIAL PRIMARY KEY,
-        sender_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        receiver_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        sender_id INTEGER,
+        receiver_id INTEGER,
         listing_id INTEGER,
         content TEXT NOT NULL,
         is_read BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT NOW()
       );
+    `);
+    console.log('✅ messages table');
 
-      -- Favorites table
+    await client.query(`
       CREATE TABLE IF NOT EXISTS favorites (
         id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        listing_id INTEGER REFERENCES properties(id) ON DELETE CASCADE,
-        created_at TIMESTAMP DEFAULT NOW(),
-        UNIQUE(user_id, listing_id)
+        user_id INTEGER,
+        listing_id INTEGER,
+        created_at TIMESTAMP DEFAULT NOW()
       );
+    `);
+    console.log('✅ favorites table');
 
-      -- Notifications table
+    await client.query(`
       CREATE TABLE IF NOT EXISTS notifications (
         id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        user_id INTEGER,
         type VARCHAR(100) NOT NULL,
         title VARCHAR(255) NOT NULL,
         message TEXT,
@@ -136,8 +151,10 @@ async function initDatabase() {
         is_read BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT NOW()
       );
+    `);
+    console.log('✅ notifications table');
 
-      -- Listing reports table
+    await client.query(`
       CREATE TABLE IF NOT EXISTS listing_reports (
         id SERIAL PRIMARY KEY,
         listing_id INTEGER,
@@ -149,11 +166,13 @@ async function initDatabase() {
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
+    `);
+    console.log('✅ listing_reports table');
 
-      -- Account complaints table
+    await client.query(`
       CREATE TABLE IF NOT EXISTS account_complaints (
         id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        user_id INTEGER,
         user_name VARCHAR(255),
         user_email VARCHAR(255),
         user_phone VARCHAR(50),
@@ -165,8 +184,10 @@ async function initDatabase() {
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
+    `);
+    console.log('✅ account_complaints table');
 
-      -- News table
+    await client.query(`
       CREATE TABLE IF NOT EXISTS news (
         id SERIAL PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
@@ -176,8 +197,10 @@ async function initDatabase() {
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
+    `);
+    console.log('✅ news table');
 
-      -- Featured cities table
+    await client.query(`
       CREATE TABLE IF NOT EXISTS featured_cities (
         id SERIAL PRIMARY KEY,
         city_name VARCHAR(255) NOT NULL,
@@ -188,6 +211,7 @@ async function initDatabase() {
         created_at TIMESTAMP DEFAULT NOW()
       );
     `);
+    console.log('✅ featured_cities table');
 
     console.log('✅ Core tables created!');
 
