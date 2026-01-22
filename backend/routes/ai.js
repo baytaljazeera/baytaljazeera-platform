@@ -1662,15 +1662,17 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
       });
     }
 
-    // Build video prompt with promotional messaging
-    let videoPrompt = `Cinematic luxury real estate promotional video in Saudi Arabia.
-${propertyType === "فيلا" || propertyType === "قصر" ? "Elegant luxury villa exterior with beautiful architecture, golden sunlight, palm trees, marble details" : ""}
-${propertyType === "شقة" ? "Modern apartment building, sleek glass facade, urban city skyline, contemporary design" : ""}
-${propertyType === "مجمع تجاري" || propertyType === "مبنى تجاري" ? "Grand commercial complex, modern business district, professional atmosphere" : ""}
-${propertyType === "فندق" ? "Luxurious hotel exterior with grand entrance, fountains, premium hospitality" : ""}
-${propertyType.includes("أرض") ? "Beautiful empty land plot, scenic landscape, development potential, clear sky" : ""}
-Smooth cinematic camera movement, golden hour lighting, Saudi Arabian architectural style, premium real estate advertisement quality, 4K cinematic, professional color grading.
-NO people, NO text overlays - clean visuals only.`;
+    // Build video prompt with promotional messaging - Realistic and grounded
+    let videoPrompt = `Professional real estate property showcase video in ${city || 'Saudi Arabia'}.
+${propertyType === "فيلا" || propertyType === "قصر" ? "Ground-level view of luxury villa exterior, realistic architecture, natural daylight, authentic property details, front facade, entrance area" : ""}
+${propertyType === "شقة" ? "Real apartment building exterior, actual building facade, realistic urban setting, authentic property appearance" : ""}
+${propertyType === "مجمع تجاري" || propertyType === "مبنى تجاري" ? "Actual commercial building exterior, realistic business district setting, authentic property appearance" : ""}
+${propertyType === "فندق" ? "Real hotel building exterior, authentic entrance, realistic property appearance" : ""}
+${propertyType.includes("أرض") ? "Actual land plot, realistic landscape, authentic property boundaries, natural setting" : ""}
+Realistic ground-level camera movement, natural lighting, authentic property showcase, professional real estate video quality.
+NO aerial shots, NO drone footage, NO flying cameras, NO unrealistic movements.
+NO people, NO text overlays, NO fantasy elements - only realistic property showcase.
+Keep camera at eye level or slightly elevated, smooth slow pan or gentle zoom on the actual property.`;
 
     console.log("[AI] Starting video generation for user:", userId);
     console.log("[AI] Video prompt:", videoPrompt);
@@ -1690,11 +1692,14 @@ NO people, NO text overlays - clean visuals only.`;
 
         console.log("[AI] Using image-to-video with image:", selectedImageUrl);
 
-        // Enhanced prompt for image-based video
-        videoPrompt = `Transform this real estate property image into a cinematic promotional video.
-Smooth camera movement revealing the property, gentle zoom and pan effects, golden hour lighting enhancement, professional real estate advertisement quality.
-Keep the original property appearance, add subtle environmental motion (clouds, light rays, gentle shadows).
-NO text, NO people - pure visual showcase of this specific property.`;
+        // Enhanced prompt for image-based video - Realistic and grounded
+        videoPrompt = `Transform this real estate property image into a realistic promotional video.
+Ground-level camera movement, gentle slow pan or subtle zoom on the actual property shown in the image.
+Natural lighting enhancement, keep the original property appearance exactly as shown.
+Add only subtle realistic environmental motion (gentle cloud movement, natural light changes, soft shadows).
+NO aerial shots, NO drone footage, NO flying cameras, NO unrealistic camera movements.
+NO text overlays, NO people - pure realistic visual showcase of this specific property from the image.
+Camera stays at eye level or slightly elevated, smooth and natural movement only.`;
 
         operation = await genAI.models.generateVideos({
           model: "veo-2.0-generate-001",
