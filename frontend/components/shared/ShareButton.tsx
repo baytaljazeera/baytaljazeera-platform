@@ -70,9 +70,11 @@ export default function ShareButton({
         </svg>
       ),
       color: "bg-[#25D366] hover:bg-[#1ebe5d]",
+      priority: true, // Mark as priority option
       onClick: () => {
+        const shareText = `${title}\n${description ? description + '\n' : ''}${shareUrl}`;
         window.open(
-          `https://wa.me/?text=${encodeURIComponent(`${title}\n${shareUrl}`)}`,
+          `https://wa.me/?text=${encodeURIComponent(shareText)}`,
           "_blank"
         );
         setIsOpen(false);
@@ -210,19 +212,39 @@ export default function ShareButton({
                 </button>
               </div>
               
-              <div className="grid grid-cols-5 gap-3">
-                {shareOptions.map((option) => (
+              <div className="space-y-3">
+                {/* واتساب - أولوية عالية */}
+                {shareOptions.filter(opt => opt.priority).map((option) => (
                   <button
                     key={option.name}
                     onClick={option.onClick}
-                    className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-slate-50 transition-colors"
+                    className="w-full flex items-center gap-3 p-4 rounded-xl hover:bg-slate-50 transition-colors border-2 border-[#25D366]/20 bg-[#25D366]/5"
                   >
-                    <span className={`w-12 h-12 rounded-full flex items-center justify-center text-white ${option.color}`}>
+                    <span className={`w-12 h-12 rounded-full flex items-center justify-center text-white ${option.color} shadow-lg`}>
                       {option.icon}
                     </span>
-                    <span className="text-xs text-slate-600 text-center leading-tight">{option.name}</span>
+                    <div className="flex-1 text-right">
+                      <span className="text-base font-bold text-[#002845] block">{option.name}</span>
+                      <span className="text-xs text-slate-500">الخيار الأكثر استخداماً</span>
+                    </div>
                   </button>
                 ))}
+                
+                {/* باقي الخيارات */}
+                <div className="grid grid-cols-4 gap-3 pt-2 border-t border-slate-200">
+                  {shareOptions.filter(opt => !opt.priority).map((option) => (
+                    <button
+                      key={option.name}
+                      onClick={option.onClick}
+                      className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-slate-50 transition-colors"
+                    >
+                      <span className={`w-12 h-12 rounded-full flex items-center justify-center text-white ${option.color}`}>
+                        {option.icon}
+                      </span>
+                      <span className="text-xs text-slate-600 text-center leading-tight">{option.name}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             
@@ -256,8 +278,26 @@ export default function ShareButton({
               </div>
             </div>
             
-            <div className="p-2">
-              {shareOptions.map((option) => (
+            <div className="p-2 space-y-1">
+              {/* واتساب - أولوية عالية */}
+              {shareOptions.filter(opt => opt.priority).map((option) => (
+                <button
+                  key={option.name}
+                  onClick={option.onClick}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 transition-colors border-2 border-[#25D366]/30 bg-[#25D366]/5 font-semibold"
+                >
+                  <span className={`w-10 h-10 rounded-full flex items-center justify-center text-white ${option.color} shadow-md`}>
+                    {option.icon}
+                  </span>
+                  <div className="flex-1 text-right">
+                    <span className="text-base text-[#002845] block">{option.name}</span>
+                    <span className="text-xs text-slate-500">الخيار الأكثر استخداماً</span>
+                  </div>
+                </button>
+              ))}
+              
+              {/* باقي الخيارات */}
+              {shareOptions.filter(opt => !opt.priority).map((option) => (
                 <button
                   key={option.name}
                   onClick={option.onClick}
