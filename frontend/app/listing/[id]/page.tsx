@@ -1295,7 +1295,23 @@ export default function ListingDetailPage() {
             {listing.formatted_address && (
               <div className="bg-white rounded-2xl p-6 shadow-sm">
                 <h3 className="text-lg font-bold text-[#002845] mb-3">العنوان</h3>
-                <p className="text-slate-600 text-sm">{listing.formatted_address}</p>
+                <a
+                  href={listing.latitude && listing.longitude 
+                    ? `https://www.google.com/maps/dir/?api=1&destination=${listing.latitude},${listing.longitude}`
+                    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(listing.formatted_address)}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 p-3 -m-3 rounded-xl hover:bg-[#002845]/5 transition-colors group cursor-pointer"
+                >
+                  <div className="flex-1">
+                    <p className="text-slate-600 text-sm group-hover:text-[#002845]">{listing.formatted_address}</p>
+                  </div>
+                  <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-r from-[#D4AF37] to-[#B8962E] rounded-full flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                    <MapPin className="w-5 h-5 text-white" />
+                  </div>
+                </a>
+                <p className="text-xs text-[#D4AF37] mt-2 text-center">اضغط للملاحة عبر خرائط جوجل 🗺️</p>
               </div>
             )}
 
