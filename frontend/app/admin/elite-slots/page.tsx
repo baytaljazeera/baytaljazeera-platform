@@ -99,6 +99,15 @@ export default function AdminEliteSlotsPage() {
     reservationId?: string;
   } | null>(null);
   const [cancelReason, setCancelReason] = useState('');
+  
+  // Extend Days Modal State
+  const [extendModal, setExtendModal] = useState<{
+    show: boolean;
+    reservationId: string;
+    propertyTitle: string;
+    currentEndDate: string;
+  } | null>(null);
+  const [extendDaysInput, setExtendDaysInput] = useState<number>(7);
 
   useEffect(() => {
     if (isHydrated && (!isAuthenticated || !user?.role || user.role === 'user')) {
@@ -332,9 +341,32 @@ export default function AdminEliteSlotsPage() {
     setCancelling(null);
   };
 
+  // فتح مودال التمديد
+  const showExtendModal = (reservationId: string, propertyTitle: string, endDate: string) => {
+    setExtendDaysInput(7); // القيمة الافتراضية 7 أيام
+    setExtendModal({
+      show: true,
+      reservationId,
+      propertyTitle,
+      currentEndDate: endDate
+    });
+  };
+
   // تمديد حجز مؤكد
-  const handleExtendReservation = async (reservationId: string, days: number) => {
+  const handleExtendReservation = async () => {
+    if (!extendModal) return;
+    
+    const { reservationId } = extendModal;
+    const days = extendDaysInput;
+    
+    if (days < 1 || days > 365) {
+      toast.error('يجب أن يكون عدد الأيام بين 1 و 365');
+      return;
+    }
+    
     setExtending(reservationId);
+    setExtendModal(null);
+    
     try {
       const res = await fetch('/api/elite-slots/admin/extend-reservation', {
         method: 'POST',
@@ -344,8 +376,8 @@ export default function AdminEliteSlotsPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        toast.success(`تم تمديد الحجز بـ ${days} يوم`, {
-          description: 'سيتم إشعار صاحب العقار بالتمديد',
+        toast.success(`تم تمديد الحجز بـ ${days} يوم ✅`, {
+          description: 'تم إرسال إشعار واحد للعميل بالتمديد',
           duration: 4000,
         });
         fetchData();
@@ -838,11 +870,15 @@ export default function AdminEliteSlotsPage() {
                               {isConfirmed && reservation && (
                                 <div className="flex gap-2 justify-center mt-2">
                                   <button
-                                    onClick={() => handleExtendReservation(String(reservation.id), 1)}
+                                    onClick={() => showExtendModal(
+                                      String(reservation.id), 
+                                      reservation.property_title || 'العقار',
+                                      reservation.reservation_ends_at || reservation.period_ends_at || period?.ends_at || ''
+                                    )}
                                     disabled={extending === String(reservation.id)}
                                     className="flex-1 px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg font-bold transition disabled:opacity-50"
                                   >
-                                    {extending === String(reservation.id) ? '...' : '+1 يوم'}
+                                    {extending === String(reservation.id) ? '...' : '📅 تمديد'}
                                   </button>
                                   <button
                                     onClick={() => showCancelModal(String(reservation.id))}
@@ -943,12 +979,16 @@ export default function AdminEliteSlotsPage() {
                             <td className="px-4 py-4">
                               <div className="flex gap-2">
                                 <button
-                                  onClick={() => handleExtendReservation(String(res.id), 1)}
+                                  onClick={() => showExtendModal(
+                                    String(res.id),
+                                    res.property_title || 'العقار',
+                                    res.reservation_ends_at || res.period_ends_at || period?.ends_at || ''
+                                  )}
                                   disabled={extending === String(res.id)}
                                   className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded-lg font-bold transition disabled:opacity-50"
-                                  title="تمديد يوم"
+                                  title="تمديد الحجز"
                                 >
-                                  {extending === String(res.id) ? '...' : '+1 يوم'}
+                                  {extending === String(res.id) ? '...' : '📅 تمديد'}
                                 </button>
                                 <button
                                   onClick={() => showCancelModal(String(res.id))}
@@ -1313,6 +1353,129 @@ export default function AdminEliteSlotsPage() {
                 className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-6 rounded-xl font-bold transition-all"
               >
                 رجوع
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* مودال التمديد - اختيار عدد الأيام */}
+      {extendModal?.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setExtendModal(null)}
+          />
+          
+          {/* Modal */}
+          <div className="relative bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden transform animate-[scaleIn_0.2s_ease-out]">
+            {/* Header */}
+            <div className="p-6 text-center bg-gradient-to-br from-blue-500 to-indigo-600">
+              <div className="w-16 h-16 mx-auto bg-white/20 rounded-full flex items-center justify-center mb-4">
+                <span className="text-4xl">📅</span>
+              </div>
+              <h3 className="text-xl font-bold text-white">تمديد حجز النخبة</h3>
+              <p className="text-white/80 text-sm mt-1">{extendModal.propertyTitle}</p>
+            </div>
+            
+            {/* Body */}
+            <div className="p-6" dir="rtl">
+              <div className="bg-blue-50 rounded-xl p-4 mb-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">تاريخ الانتهاء الحالي:</span>
+                  <span className="font-bold text-blue-700">
+                    {extendModal.currentEndDate ? new Date(extendModal.currentEndDate).toLocaleDateString('ar-SA', { 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    }) : '-'}
+                  </span>
+                </div>
+              </div>
+              
+              <label className="block text-gray-700 text-sm font-bold mb-3">
+                كم يوم تريد إضافتها؟
+              </label>
+              
+              {/* أزرار سريعة */}
+              <div className="grid grid-cols-4 gap-2 mb-4">
+                {[1, 7, 14, 30].map(d => (
+                  <button
+                    key={d}
+                    onClick={() => setExtendDaysInput(d)}
+                    className={`py-2 px-3 rounded-xl font-bold text-sm transition-all ${
+                      extendDaysInput === d 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {d === 1 ? 'يوم' : d === 7 ? 'أسبوع' : d === 14 ? 'أسبوعين' : 'شهر'}
+                  </button>
+                ))}
+              </div>
+              
+              {/* حقل إدخال مخصص */}
+              <div className="flex items-center gap-3 bg-gray-50 rounded-xl p-3">
+                <button 
+                  onClick={() => setExtendDaysInput(Math.max(1, extendDaysInput - 1))}
+                  className="w-10 h-10 bg-gray-200 hover:bg-gray-300 rounded-full font-bold text-xl transition"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={extendDaysInput}
+                  onChange={(e) => setExtendDaysInput(Math.min(365, Math.max(1, parseInt(e.target.value) || 1)))}
+                  className="flex-1 text-center text-2xl font-bold text-blue-700 bg-transparent border-none focus:outline-none"
+                />
+                <button 
+                  onClick={() => setExtendDaysInput(Math.min(365, extendDaysInput + 1))}
+                  className="w-10 h-10 bg-gray-200 hover:bg-gray-300 rounded-full font-bold text-xl transition"
+                >
+                  +
+                </button>
+              </div>
+              <p className="text-center text-gray-500 text-sm mt-2">
+                {extendDaysInput === 1 ? 'يوم واحد' : `${extendDaysInput} يوم`}
+              </p>
+              
+              {/* التاريخ الجديد */}
+              <div className="bg-green-50 rounded-xl p-4 mt-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">تاريخ الانتهاء الجديد:</span>
+                  <span className="font-bold text-green-700">
+                    {extendModal.currentEndDate ? new Date(
+                      new Date(extendModal.currentEndDate).getTime() + (extendDaysInput * 24 * 60 * 60 * 1000)
+                    ).toLocaleDateString('ar-SA', { 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    }) : '-'}
+                  </span>
+                </div>
+              </div>
+              
+              <p className="text-center text-gray-400 text-xs mt-4">
+                سيتم إرسال إشعار واحد للعميل بالتمديد
+              </p>
+            </div>
+            
+            {/* Footer */}
+            <div className="flex gap-3 p-6 pt-0">
+              <button
+                onClick={handleExtendReservation}
+                className="flex-1 bg-gradient-to-l from-blue-500 to-indigo-600 hover:opacity-90 text-white py-3 px-6 rounded-xl font-bold transition-all"
+              >
+                تأكيد التمديد
+              </button>
+              <button
+                onClick={() => setExtendModal(null)}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-6 rounded-xl font-bold transition-all"
+              >
+                إلغاء
               </button>
             </div>
           </div>
