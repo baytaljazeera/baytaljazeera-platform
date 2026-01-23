@@ -844,7 +844,13 @@ export default function AdminEliteSlotsPage() {
                                   <div className="flex items-center justify-between mt-1">
                                     <span className="text-white/80 text-[10px]">ينتهي:</span>
                                     <span className="text-white font-bold text-[10px]">
-                                      {period ? new Date(period.ends_at).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' }) : '-'}
+                                      {reservation?.reservation_ends_at 
+                                        ? new Date(reservation.reservation_ends_at).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' })
+                                        : reservation?.period_ends_at 
+                                          ? new Date(reservation.period_ends_at).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' })
+                                          : period 
+                                            ? new Date(period.ends_at).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' }) 
+                                            : '-'}
                                     </span>
                                   </div>
                                   <div className={`mt-1 text-center py-1 rounded text-[10px] font-bold ${
