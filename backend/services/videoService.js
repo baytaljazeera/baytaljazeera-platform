@@ -82,8 +82,17 @@ async function prepareImagePaths(imageUrls, listingId) {
   
   console.log(`[Video] Processing ${imageUrls.length} images for listing ${listingId}`);
   
+  if (imageUrls.length === 0) {
+    throw new Error('No images provided for video generation');
+  }
+  
   for (let i = 0; i < imageUrls.length; i++) {
     const url = imageUrls[i];
+    
+    if (!url || url.trim() === '') {
+      console.warn(`[Video] Skipping empty image URL at index ${i}`);
+      continue;
+    }
     
     if (url.startsWith('/uploads/')) {
       const localPath = path.join(__dirname, '../../public', url);
@@ -135,16 +144,54 @@ function cleanupTempFiles(listingId) {
 }
 
 async function generateListingSlideshow(listingId, imageUrls, listingData) {
+  const startTime = Date.now();
+  const MAX_PROCESSING_TIME = 10 * 60 * 1000; // 10 minutes timeout
+  
   console.log(`[Video] ========================================`);
   console.log(`[Video] Starting video generation for listing ${listingId}`);
   console.log(`[Video] Image URLs count: ${imageUrls.length}`);
   console.log(`[Video] FFmpeg available: ${ffmpegAvailable}`);
   console.log(`[Video] Cloudinary configured: ${isCloudinaryConfigured()}`);
   
+  // Check if video has been processing for too long (stuck)
+  try {
+    const stuckCheck = await db.query(
+      `SELECT video_status, updated_at FROM properties WHERE id = $1`,
+      [listingId]
+    );
+    if (stuckCheck.rows.length > 0) {
+      const status = stuckCheck.rows[0].video_status;
+      const updatedAt = stuckCheck.rows[0].updated_at;
+      if (status === 'processing' && updatedAt) {
+        const timeSinceUpdate = Date.now() - new Date(updatedAt).getTime();
+        const minutesStuck = Math.round(timeSinceUpdate / 1000 / 60);
+        if (timeSinceUpdate > MAX_PROCESSING_TIME) {
+          console.warn(`[Video] ⚠️ Video has been processing for ${minutesStuck} minutes, resetting to failed`);
+          await db.query(
+            `UPDATE properties SET video_status = 'failed' WHERE id = $1`,
+            [listingId]
+          );
+          throw new Error(`Video generation timeout - process took too long (${minutesStuck} minutes)`);
+        } else if (minutesStuck > 5) {
+          console.warn(`[Video] ⚠️ Video has been processing for ${minutesStuck} minutes, this is taking longer than expected`);
+        }
+      }
+    }
+  } catch (checkErr) {
+    if (checkErr.message.includes('timeout')) {
+      throw checkErr;
+    }
+    console.warn(`[Video] Could not check stuck status:`, checkErr.message);
+  }
+  
   try {
     if (!ffmpegAvailable) {
       ffmpegAvailable = checkFFmpegAvailable();
       if (!ffmpegAvailable) {
+        await db.query(
+          `UPDATE properties SET video_status = 'failed' WHERE id = $1`,
+          [listingId]
+        );
         throw new Error('FFmpeg is not available on this server. Please install FFmpeg.');
       }
     }

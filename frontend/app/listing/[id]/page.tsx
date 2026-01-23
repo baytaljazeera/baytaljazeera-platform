@@ -865,7 +865,7 @@ export default function ListingDetailPage() {
                 {isOwner && (currentUser?.supportLevel || 0) >= 3 && (
                   <div className="mt-6 pt-4 border-t border-slate-200">
                     {listing.video_status === 'processing' ? (
-                      <div className="p-6 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-xl animate-pulse">
+                      <div className="p-6 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-xl">
                         <div className="flex items-center justify-center gap-3 mb-3">
                           <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
                           <span className="text-xl font-bold text-amber-700">جاري إنشاء الفيديو...</span>
@@ -873,11 +873,33 @@ export default function ListingDetailPage() {
                         <div className="w-full bg-amber-200 rounded-full h-2 mb-3">
                           <div className="bg-amber-500 h-2 rounded-full animate-[pulse_1s_ease-in-out_infinite]" style={{width: '60%'}}></div>
                         </div>
-                        <p className="text-sm text-amber-600 text-center">
+                        <p className="text-sm text-amber-600 text-center mb-4">
                           🎬 يتم الآن إنشاء فيديو احترافي من صورك... هذا يستغرق حوالي 30-60 ثانية
                         </p>
-                        <p className="text-xs text-amber-500 text-center mt-2">
-                          ⏳ حدّث الصفحة بعد قليل لمشاهدة الفيديو الجديد
+                        <div className="bg-amber-100 border border-amber-300 rounded-lg p-3 mb-3">
+                          <p className="text-xs text-amber-700 text-center mb-2">
+                            ⚠️ إذا استغرق الفيديو أكثر من 5 دقائق، قد تكون هناك مشكلة
+                          </p>
+                          <button
+                            onClick={handleRegenerateVideo}
+                            disabled={regeneratingVideo}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all disabled:opacity-50 font-medium text-sm"
+                          >
+                            {regeneratingVideo ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>جاري الإرسال...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Video className="w-4 h-4" />
+                                <span>إعادة المحاولة</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <p className="text-xs text-amber-500 text-center">
+                          💡 حدّث الصفحة بعد قليل لمشاهدة الفيديو الجديد
                         </p>
                       </div>
                     ) : (

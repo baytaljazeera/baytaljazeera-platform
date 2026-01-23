@@ -864,6 +864,43 @@ router.delete("/:id", authMiddleware, asyncHandler(async (req, res) => {
   res.json({ success: true, message: "تم حذف الإعلان بنجاح" });
 }));
 
+// Reset stuck videos endpoint (admin only)
+router.post("/:id/reset-video-status", authMiddleware, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+  
+  // Check if user is admin or owner
+  const listingResult = await db.query(
+    `SELECT user_id FROM properties WHERE id = $1`,
+    [id]
+  );
+  
+  if (listingResult.rows.length === 0) {
+    return res.status(404).json({ error: "الإعلان غير موجود" });
+  }
+  
+  const listing = listingResult.rows[0];
+  const userResult = await db.query(
+    `SELECT role FROM users WHERE id = $1`,
+    [userId]
+  );
+  const isAdmin = userResult.rows[0]?.role?.includes('admin') || false;
+  
+  if (listing.user_id !== userId && !isAdmin) {
+    return res.status(403).json({ error: "لا تملك صلاحية تعديل هذا الإعلان" });
+  }
+  
+  await db.query(
+    `UPDATE properties SET video_status = NULL, video_url = NULL WHERE id = $1`,
+    [id]
+  );
+  
+  res.json({ 
+    success: true, 
+    message: "تم إعادة تعيين حالة الفيديو بنجاح"
+  });
+}));
+
 router.post("/:id/regenerate-video", authMiddleware, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
