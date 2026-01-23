@@ -303,7 +303,9 @@ export default function AIChatbot() {
           height: "520px", 
           maxHeight: "calc(100vh - 100px)",
           left: `${position.x}px`,
-          top: `${Math.max(0, Math.min(position.y, window.innerHeight - 540))}px`,
+          top: typeof window !== "undefined" 
+            ? `${Math.max(0, Math.min(position.y, window.innerHeight - 540))}px`
+            : `${position.y}px`,
         }}
       >
         <div className="bg-gradient-to-l from-[#002845] to-[#003d66] text-white p-4 flex items-center justify-between">
