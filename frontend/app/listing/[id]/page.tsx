@@ -1270,12 +1270,23 @@ export default function ListingDetailPage() {
             )}
 
             {isOwner && (
-              <div className="bg-white rounded-2xl p-6 shadow-sm">
+              <div className="bg-white rounded-2xl p-6 shadow-sm space-y-3 border-2 border-emerald-200">
+                <div className="text-center mb-4">
+                  <h3 className="text-lg font-bold text-[#002845] mb-1">إدارة الإعلان</h3>
+                  <p className="text-xs text-slate-500">أنت مالك هذا الإعلان</p>
+                </div>
+                <Link
+                  href={`/edit-listing/${listing.id}`}
+                  className="flex items-center justify-center gap-2 w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-bold hover:from-emerald-700 hover:to-teal-700 transition-all shadow-lg hover:shadow-xl text-base"
+                >
+                  <FileText className="w-5 h-5" />
+                  تعديل الإعلان
+                </Link>
                 <Link
                   href="/my-listings"
-                  className="flex items-center justify-center gap-2 w-full py-3 bg-slate-100 text-[#002845] rounded-xl font-bold hover:bg-slate-200"
+                  className="flex items-center justify-center gap-2 w-full py-3 bg-slate-100 text-[#002845] rounded-xl font-bold hover:bg-slate-200 transition-all"
                 >
-                  <ArrowRight className="w-5 h-5" />
+                  <ArrowRight className="w-4 h-4" />
                   العودة لإعلاناتي
                 </Link>
               </div>
