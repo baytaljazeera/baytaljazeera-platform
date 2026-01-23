@@ -701,6 +701,18 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'news' AND column_name = 'end_at') THEN
           ALTER TABLE news ADD COLUMN end_at TIMESTAMPTZ;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'news' AND column_name = 'is_global') THEN
+          ALTER TABLE news ADD COLUMN is_global BOOLEAN DEFAULT true;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'news' AND column_name = 'target_countries') THEN
+          ALTER TABLE news ADD COLUMN target_countries JSONB;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'news' AND column_name = 'target_cities') THEN
+          ALTER TABLE news ADD COLUMN target_cities JSONB;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'news' AND column_name = 'ai_generated') THEN
+          ALTER TABLE news ADD COLUMN ai_generated BOOLEAN DEFAULT false;
+        END IF;
       END $$;
     `);
 
