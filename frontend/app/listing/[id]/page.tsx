@@ -924,14 +924,23 @@ export default function ListingDetailPage() {
               <div className="flex items-start justify-between gap-4 mb-2">
                 <h1 className="text-xl sm:text-2xl font-bold text-[#002845] flex-1">{listing.title}</h1>
                 {isOwner && (
-                  <Link
-                    href={`/edit-listing/${listing.id}`}
-                    className="flex items-center gap-2 bg-[#D4AF37] text-[#002845] px-4 py-2 rounded-xl text-sm font-bold hover:bg-[#e5c868] transition-all shadow-lg hover:shadow-xl shrink-0"
-                    title="تعديل الإعلان"
-                  >
-                    <FileText className="w-4 h-4" />
-                    تعديل
-                  </Link>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Link
+                      href={`/edit-listing/${listing.id}`}
+                      className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:from-emerald-700 hover:to-teal-700 transition-all shadow-lg hover:shadow-xl"
+                      title="تعديل الإعلان"
+                    >
+                      <FileText className="w-4 h-4" />
+                      تعديل الإعلان
+                    </Link>
+                    <Link
+                      href="/my-listings"
+                      className="flex items-center gap-2 bg-slate-100 text-slate-700 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-200 transition-all"
+                      title="العودة لإعلاناتي"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                    </Link>
+                  </div>
                 )}
               </div>
               
