@@ -65,6 +65,25 @@ export default function AIChatbot() {
   const [aiLevelInfo, setAiLevelInfo] = useState<AILevelInfo | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { user, isAuthenticated } = useAuthStore();
+  
+  // Draggable button state
+  const [position, setPosition] = useState<{ x: number; y: number }>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("chatbot-position");
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          // Default position
+          return { x: window.innerWidth - 80, y: window.innerHeight - 80 };
+        }
+      }
+    }
+    return { x: 0, y: 0 };
+  });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -73,6 +92,65 @@ export default function AIChatbot() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Initialize position on mount
+  useEffect(() => {
+    if (typeof window !== "undefined" && position.x === 0 && position.y === 0) {
+      // Set default position based on screen size
+      const defaultX = window.innerWidth > 768 ? 24 : window.innerWidth - 80;
+      const defaultY = window.innerHeight - 80;
+      setPosition({ x: defaultX, y: defaultY });
+    }
+  }, []);
+
+  // Save position to localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined" && position.x !== 0 && position.y !== 0) {
+      localStorage.setItem("chatbot-position", JSON.stringify(position));
+    }
+  }, [position]);
+
+  // Handle drag events
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newX = e.clientX - dragStart.x;
+      const newY = e.clientY - dragStart.y;
+      
+      // Constrain to viewport
+      const maxX = window.innerWidth - 56; // button width
+      const maxY = window.innerHeight - 56; // button height
+      
+      setPosition({
+        x: Math.max(0, Math.min(newX, maxX)),
+        y: Math.max(0, Math.min(newY, maxY)),
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging, dragStart]);
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setDragStart({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      });
+      setIsDragging(true);
+    }
+  };
 
   useEffect(() => {
     async function fetchAILevel() {
@@ -189,12 +267,25 @@ export default function AIChatbot() {
   if (!isOpen) {
     return (
       <button
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 md:left-6 md:right-auto z-50 w-14 h-14 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-transform"
+        ref={buttonRef}
+        onMouseDown={handleMouseDown}
+        onClick={(e) => {
+          // Only open if not dragging
+          if (!isDragging) {
+            setIsOpen(true);
+          }
+        }}
+        style={{
+          position: "fixed",
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          cursor: isDragging ? "grabbing" : "grab",
+        }}
+        className="z-50 w-14 h-14 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-transform active:cursor-grabbing touch-none"
         aria-label="فتح المحادثة"
       >
-        <MessageCircle className="w-6 h-6 text-[#002845]" />
-        <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse" />
+        <MessageCircle className="w-6 h-6 text-[#002845] pointer-events-none" />
+        <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse pointer-events-none" />
       </button>
     );
   }
@@ -206,7 +297,15 @@ export default function AIChatbot() {
         onClick={() => setIsOpen(false)}
         aria-hidden="true"
       />
-      <div className="fixed bottom-6 right-4 md:left-6 md:right-auto z-50 w-[360px] max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 duration-300" style={{ height: "520px", maxHeight: "calc(100vh - 100px)" }}>
+      <div 
+        className="fixed z-50 w-[360px] max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 duration-300" 
+        style={{ 
+          height: "520px", 
+          maxHeight: "calc(100vh - 100px)",
+          left: `${position.x}px`,
+          top: `${Math.max(0, Math.min(position.y, window.innerHeight - 540))}px`,
+        }}
+      >
         <div className="bg-gradient-to-l from-[#002845] to-[#003d66] text-white p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37] to-[#B8860B] flex items-center justify-center">
