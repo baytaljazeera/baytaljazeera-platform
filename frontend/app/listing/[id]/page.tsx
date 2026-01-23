@@ -1203,12 +1203,15 @@ export default function ListingDetailPage() {
               )}
 
               {isOwner && (
-                <Link
-                  href={`/edit-listing/${listing.id}`}
-                  className="flex items-center justify-center gap-2 w-full mt-4 py-3 bg-[#D4AF37] text-[#002845] rounded-xl font-bold hover:bg-[#e5c868]"
-                >
-                  تعديل الإعلان
-                </Link>
+                <div className="mt-4 p-4 bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-200 rounded-xl">
+                  <Link
+                    href={`/edit-listing/${listing.id}`}
+                    className="flex items-center justify-center gap-2 w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-bold hover:from-emerald-700 hover:to-teal-700 transition-all shadow-lg"
+                  >
+                    <FileText className="w-5 h-5" />
+                    تعديل الإعلان
+                  </Link>
+                </div>
               )}
               
               {isOwner && listing.status === 'approved' && (
