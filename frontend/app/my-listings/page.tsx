@@ -76,6 +76,7 @@ export default function MyListingsPage() {
   const [updatingDealStatus, setUpdatingDealStatus] = useState<string | null>(null);
   const [updatingVisibility, setUpdatingVisibility] = useState<string | null>(null);
   const [hideConfirmModal, setHideConfirmModal] = useState<{ open: boolean; listing: Listing | null }>({ open: false, listing: null });
+  const [showConfirmModal, setShowConfirmModal] = useState<{ open: boolean; listing: Listing | null }>({ open: false, listing: null });
 
   useEffect(() => {
     fetchListings();
@@ -214,11 +215,27 @@ export default function MyListingsPage() {
     setHideConfirmModal({ open: false, listing: null });
   }
 
+  function openShowConfirmModal(listing: Listing) {
+    setShowConfirmModal({ open: true, listing });
+  }
+
+  function closeShowConfirmModal() {
+    setShowConfirmModal({ open: false, listing: null });
+  }
+
   async function confirmHide() {
     const listing = hideConfirmModal.listing;
     if (!listing) return;
     
     closeHideConfirmModal();
+    await performVisibilityChange(listing.id, listing.status);
+  }
+
+  async function confirmShow() {
+    const listing = showConfirmModal.listing;
+    if (!listing) return;
+    
+    closeShowConfirmModal();
     await performVisibilityChange(listing.id, listing.status);
   }
 
@@ -527,7 +544,7 @@ export default function MyListingsPage() {
                               if (listing.status === 'approved') {
                                 openHideConfirmModal(listing);
                               } else {
-                                handleVisibilityChange(listing.id, listing.status);
+                                openShowConfirmModal(listing);
                               }
                             }}
                             disabled={updatingVisibility === listing.id}
@@ -751,6 +768,77 @@ export default function MyListingsPage() {
           </div>
         )}
       </div>
+
+      {/* Show Confirmation Modal (Green) */}
+      <AnimatePresence>
+        {showConfirmModal.open && showConfirmModal.listing && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={closeShowConfirmModal}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              transition={{ type: "spring", duration: 0.4 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header - Success Colors */}
+              <div className="bg-gradient-to-l from-emerald-500 via-green-500 to-emerald-500 p-6 text-center">
+                <div className="w-16 h-16 bg-white/20 rounded-full mx-auto flex items-center justify-center mb-4">
+                  <Eye className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="text-xl font-bold text-white">تأكيد إظهار الإعلان</h3>
+              </div>
+              
+              {/* Content */}
+              <div className="p-6">
+                <div className="bg-gradient-to-br from-emerald-50 to-green-50 border-2 border-emerald-200 rounded-xl p-4 mb-4">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle className="w-6 h-6 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-right flex-1">
+                      <p className="font-bold text-emerald-700 mb-2">هل تريد إظهار هذا الإعلان؟</p>
+                      <p className="text-sm text-emerald-600 leading-relaxed">
+                        سيظهر الإعلان في نتائج البحث والصفحة الرئيسية. يمكن للمستخدمين رؤيته والاتصال بك.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-slate-50 rounded-xl p-4 mb-4">
+                  <p className="font-bold text-[#003366] text-lg mb-1">
+                    {showConfirmModal.listing.title}
+                  </p>
+                  <p className="text-gray-500 text-sm">
+                    {showConfirmModal.listing.district}، {showConfirmModal.listing.city}
+                  </p>
+                </div>
+              </div>
+              
+              {/* Actions */}
+              <div className="flex gap-3 p-6 pt-0">
+                <button
+                  onClick={closeShowConfirmModal}
+                  className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition"
+                >
+                  إلغاء
+                </button>
+                <button
+                  onClick={confirmShow}
+                  className="flex-1 px-4 py-3 bg-gradient-to-l from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-lg"
+                >
+                  <Eye className="w-4 h-4" />
+                  إظهار الإعلان
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Hide Confirmation Modal */}
       <AnimatePresence>
