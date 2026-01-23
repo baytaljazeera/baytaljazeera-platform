@@ -401,6 +401,11 @@ export default function NewsPage() {
 
   const activeNews = news.filter(n => n.active);
   const aiGeneratedCount = news.filter(n => n.ai_generated).length;
+  
+  // Filter news based on selected filter
+  const filteredNews = filterType === "all" 
+    ? news 
+    : news.filter(n => n.type === filterType);
 
   return (
     <div className="space-y-6">
