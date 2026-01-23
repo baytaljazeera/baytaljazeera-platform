@@ -108,6 +108,14 @@ export default function AdminEliteSlotsPage() {
     currentEndDate: string;
   } | null>(null);
   const [extendDaysInput, setExtendDaysInput] = useState<number>(7);
+  
+  // Reject Modal State
+  const [rejectModal, setRejectModal] = useState<{
+    show: boolean;
+    reservationId: number;
+    propertyTitle: string;
+  } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   useEffect(() => {
     if (isHydrated && (!isAuthenticated || !user?.role || user.role === 'user')) {
@@ -246,17 +254,27 @@ export default function AdminEliteSlotsPage() {
     setApproving(null);
   };
 
-  const handleReject = async (reservationId: number) => {
-    const reason = prompt('سبب الرفض (اختياري):');
-    if (reason === null) return;
+  const showRejectModal = (reservationId: number, propertyTitle: string) => {
+    setRejectReason('');
+    setRejectModal({
+      show: true,
+      reservationId,
+      propertyTitle
+    });
+  };
+
+  const confirmReject = async () => {
+    if (!rejectModal) return;
     
-    setRejecting(reservationId);
+    setRejecting(rejectModal.reservationId);
+    setRejectModal(null);
+    
     try {
       const res = await fetch('/api/elite-slots/admin/reject-reservation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ reservationId, reason })
+        body: JSON.stringify({ reservationId: rejectModal.reservationId, reason: rejectReason })
       });
       const data = await res.json();
       if (res.ok) {
@@ -722,7 +740,7 @@ export default function AdminEliteSlotsPage() {
                               )}
                             </button>
                             <button
-                              onClick={() => handleReject(res.id)}
+                              onClick={() => showRejectModal(res.id, res.property_title || 'العقار')}
                               disabled={rejecting === res.id}
                               className="flex-1 bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-xl font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                             >
@@ -857,7 +875,7 @@ export default function AdminEliteSlotsPage() {
                                     {approving === reservation.id ? '...' : '✓ موافقة'}
                                   </button>
                                   <button
-                                    onClick={() => handleReject(reservation.id)}
+                                    onClick={() => showRejectModal(reservation.id, reservation.property_title || 'العقار')}
                                     disabled={rejecting === reservation.id}
                                     className="flex-1 px-2 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs rounded-lg font-bold transition disabled:opacity-50"
                                   >
@@ -1473,6 +1491,87 @@ export default function AdminEliteSlotsPage() {
               </button>
               <button
                 onClick={() => setExtendModal(null)}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-6 rounded-xl font-bold transition-all"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* مودال الرفض الجميل */}
+      {rejectModal?.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setRejectModal(null)}
+          />
+          
+          {/* Modal */}
+          <div className="relative bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden transform animate-[scaleIn_0.2s_ease-out]">
+            {/* Header */}
+            <div className="p-6 text-center bg-gradient-to-br from-red-500 to-rose-600">
+              <div className="w-16 h-16 mx-auto bg-white/20 rounded-full flex items-center justify-center mb-4">
+                <span className="text-4xl">🚫</span>
+              </div>
+              <h3 className="text-xl font-bold text-white">رفض طلب الحجز</h3>
+              <p className="text-white/80 text-sm mt-1">{rejectModal.propertyTitle}</p>
+            </div>
+            
+            {/* Body */}
+            <div className="p-6" dir="rtl">
+              <div className="bg-red-50 rounded-xl p-4 mb-4">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">⚠️</span>
+                  <p className="text-red-800 text-sm">
+                    سيتم رفض هذا الطلب وإخطار صاحب العقار بالقرار
+                  </p>
+                </div>
+              </div>
+              
+              <label className="block text-gray-700 text-sm font-bold mb-3">
+                سبب الرفض <span className="text-gray-400 font-normal">(اختياري)</span>
+              </label>
+              
+              {/* أزرار أسباب سريعة */}
+              <div className="flex flex-wrap gap-2 mb-4">
+                {['العقار غير مطابق', 'صور غير واضحة', 'سعر غير مناسب', 'معلومات ناقصة'].map(reason => (
+                  <button
+                    key={reason}
+                    onClick={() => setRejectReason(reason)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      rejectReason === reason 
+                        ? 'bg-red-600 text-white' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {reason}
+                  </button>
+                ))}
+              </div>
+              
+              {/* حقل إدخال السبب */}
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="أو اكتب سبب الرفض هنا..."
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
+                rows={3}
+              />
+            </div>
+            
+            {/* Footer */}
+            <div className="flex gap-3 p-6 pt-0">
+              <button
+                onClick={confirmReject}
+                className="flex-1 bg-gradient-to-l from-red-500 to-rose-600 hover:opacity-90 text-white py-3 px-6 rounded-xl font-bold transition-all"
+              >
+                تأكيد الرفض
+              </button>
+              <button
+                onClick={() => setRejectModal(null)}
                 className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-6 rounded-xl font-bold transition-all"
               >
                 إلغاء
