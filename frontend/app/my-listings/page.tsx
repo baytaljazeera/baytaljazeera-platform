@@ -75,6 +75,7 @@ export default function MyListingsPage() {
   const [openDealDropdown, setOpenDealDropdown] = useState<string | null>(null);
   const [updatingDealStatus, setUpdatingDealStatus] = useState<string | null>(null);
   const [updatingVisibility, setUpdatingVisibility] = useState<string | null>(null);
+  const [hideConfirmModal, setHideConfirmModal] = useState<{ open: boolean; listing: Listing | null }>({ open: false, listing: null });
 
   useEffect(() => {
     fetchListings();
@@ -205,13 +206,25 @@ export default function MyListingsPage() {
     }
   }
 
-  async function handleVisibilityChange(id: string, currentStatus: string) {
+  function openHideConfirmModal(listing: Listing) {
+    setHideConfirmModal({ open: true, listing });
+  }
+
+  function closeHideConfirmModal() {
+    setHideConfirmModal({ open: false, listing: null });
+  }
+
+  async function confirmHide() {
+    const listing = hideConfirmModal.listing;
+    if (!listing) return;
+    
+    closeHideConfirmModal();
+    await performVisibilityChange(listing.id, listing.status);
+  }
+
+  async function performVisibilityChange(id: string, currentStatus: string) {
     const newStatus = currentStatus === 'hidden' ? 'approved' : 'hidden';
     const actionText = newStatus === 'hidden' ? 'إخفاء' : 'إظهار';
-    
-    if (newStatus === 'hidden' && !confirm('هل تريد إخفاء هذا الإعلان؟ سيتم تحرير موقع النخبة إذا كان محجوزاً.')) {
-      return;
-    }
     
     setUpdatingVisibility(id);
     
@@ -511,7 +524,11 @@ export default function MyListingsPage() {
                             onClick={(e) => {
                               e.stopPropagation();
                               e.preventDefault();
-                              handleVisibilityChange(listing.id, listing.status);
+                              if (listing.status === 'approved') {
+                                openHideConfirmModal(listing);
+                              } else {
+                                handleVisibilityChange(listing.id, listing.status);
+                              }
                             }}
                             disabled={updatingVisibility === listing.id}
                             className={`flex items-center justify-center w-8 h-8 rounded-full backdrop-blur-sm transition-all shadow-lg ${
@@ -734,6 +751,77 @@ export default function MyListingsPage() {
           </div>
         )}
       </div>
+
+      {/* Hide Confirmation Modal */}
+      <AnimatePresence>
+        {hideConfirmModal.open && hideConfirmModal.listing && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={closeHideConfirmModal}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              transition={{ type: "spring", duration: 0.4 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header - Warning Colors */}
+              <div className="bg-gradient-to-l from-amber-500 via-yellow-500 to-amber-500 p-6 text-center">
+                <div className="w-16 h-16 bg-white/20 rounded-full mx-auto flex items-center justify-center mb-4">
+                  <AlertCircle className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="text-xl font-bold text-white">تأكيد إخفاء الإعلان</h3>
+              </div>
+              
+              {/* Content */}
+              <div className="p-6">
+                <div className="bg-gradient-to-br from-red-50 to-amber-50 border-2 border-red-200 rounded-xl p-4 mb-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-right flex-1">
+                      <p className="font-bold text-red-700 mb-2">هل تريد إخفاء هذا الإعلان؟</p>
+                      <p className="text-sm text-red-600 leading-relaxed">
+                        سيتم تحرير موقع النخبة إذا كان محجوزاً. لن يظهر الإعلان في نتائج البحث أو الصفحة الرئيسية.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-slate-50 rounded-xl p-4 mb-4">
+                  <p className="font-bold text-[#003366] text-lg mb-1">
+                    {hideConfirmModal.listing.title}
+                  </p>
+                  <p className="text-gray-500 text-sm">
+                    {hideConfirmModal.listing.district}، {hideConfirmModal.listing.city}
+                  </p>
+                </div>
+              </div>
+              
+              {/* Actions */}
+              <div className="flex gap-3 p-6 pt-0">
+                <button
+                  onClick={closeHideConfirmModal}
+                  className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition"
+                >
+                  إلغاء
+                </button>
+                <button
+                  onClick={confirmHide}
+                  className="flex-1 px-4 py-3 bg-gradient-to-l from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-lg"
+                >
+                  <EyeOff className="w-4 h-4" />
+                  إخفاء الإعلان
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Delete Confirmation Modal */}
       <AnimatePresence>
