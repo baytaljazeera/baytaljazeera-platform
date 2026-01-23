@@ -433,7 +433,13 @@ export default function MyListingsPage() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-[#D4AF37]">{stats.featured}</p>
-                  <p className="text-sm text-slate-500">في النخبة</p>
+                  <p 
+                    className="text-sm text-slate-500 select-none"
+                    onContextMenu={(e) => e.preventDefault()}
+                    style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+                  >
+                    في النخبة
+                  </p>
                 </div>
               </div>
             </motion.div>
@@ -570,7 +576,11 @@ export default function MyListingsPage() {
                         <div className="absolute top-3 left-3">
                           {listing.elite_reservation ? (
                             <div className="flex flex-col gap-1">
-                              <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-gradient-to-r from-[#D4AF37] to-[#f4c365] text-[#003366]">
+                              <span 
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-gradient-to-r from-[#D4AF37] to-[#f4c365] text-[#003366] select-none"
+                                onContextMenu={(e) => e.preventDefault()}
+                                style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+                              >
                                 <Crown className="w-3.5 h-3.5" />
                                 نخبة
                               </span>
@@ -592,7 +602,11 @@ export default function MyListingsPage() {
                               )}
                             </div>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-gradient-to-r from-[#D4AF37] to-[#f4c365] text-[#003366]">
+                            <span 
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-gradient-to-r from-[#D4AF37] to-[#f4c365] text-[#003366] select-none"
+                              onContextMenu={(e) => e.preventDefault()}
+                              style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+                            >
                               <Crown className="w-3.5 h-3.5" />
                               نخبة
                             </span>
@@ -719,7 +733,12 @@ export default function MyListingsPage() {
                           className="flex items-center justify-center gap-2 w-full mb-3 px-4 py-2.5 bg-gradient-to-r from-[#D4AF37] to-[#f4c365] text-[#003366] rounded-xl text-sm font-bold hover:shadow-lg transition"
                         >
                           <Clock className="w-4 h-4" />
-                          تمديد النخبة - 30 ريال/يوم
+                          <span 
+                            onContextMenu={(e) => e.preventDefault()}
+                            style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+                          >
+                            تمديد النخبة - 30 ريال/يوم
+                          </span>
                         </Link>
                       )}
                       
@@ -874,7 +893,12 @@ export default function MyListingsPage() {
                     <div className="text-right flex-1">
                       <p className="font-bold text-red-700 mb-2">هل تريد إخفاء هذا الإعلان؟</p>
                       <p className="text-sm text-red-600 leading-relaxed">
-                        سيتم تحرير موقع النخبة إذا كان محجوزاً. لن يظهر الإعلان في نتائج البحث أو الصفحة الرئيسية.
+                        <span 
+                          onContextMenu={(e) => e.preventDefault()}
+                          style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+                        >
+                          سيتم تحرير موقع النخبة إذا كان محجوزاً. لن يظهر الإعلان في نتائج البحث أو الصفحة الرئيسية.
+                        </span>
                       </p>
                     </div>
                   </div>

@@ -352,7 +352,11 @@ function FeaturedPropertiesSection() {
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#001A33]/90 via-[#001A33]/30 to-transparent" />
                     
-                    <span className="absolute top-3 right-3 bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#001A33] text-xs px-3 py-1 rounded-full font-bold flex items-center gap-1">
+                    <span 
+                      className="absolute top-3 right-3 bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#001A33] text-xs px-3 py-1 rounded-full font-bold flex items-center gap-1 select-none"
+                      onContextMenu={(e) => e.preventDefault()}
+                      style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+                    >
                       <Star className="w-3 h-3" />
                       نخبة
                     </span>
