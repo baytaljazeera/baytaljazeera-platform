@@ -662,10 +662,15 @@ export default function NewListingPage() {
     }
   }
 
-  // 🎬 توليد فيديو سينمائي بالذكاء الاصطناعي (Veo) 
+  // 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي (FFmpeg - مجاني) 
   async function handleGenerateVideo() {
     if (!form.propertyType) {
       setVideoError("يرجى اختيار نوع العقار أولاً");
+      return;
+    }
+
+    if (images.length === 0) {
+      setVideoError("يرجى رفع صور العقار أولاً لتوليد الفيديو");
       return;
     }
 
@@ -675,7 +680,31 @@ export default function NewListingPage() {
     setVideoPromoText(null);
 
     try {
-      // Step 1: Start video generation (returns immediately with operationId)
+      // Step 1: Upload images temporarily for video generation
+      const formData = new FormData();
+      images.forEach((img, idx) => {
+        formData.append('images', img);
+      });
+
+      const uploadRes = await fetch("/api/listings/temp-images", {
+        method: "POST",
+        credentials: "include",
+        body: formData
+      });
+
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json().catch(() => ({}));
+        throw new Error(err.error || "فشل في رفع الصور");
+      }
+
+      const uploadData = await uploadRes.json();
+      const uploadedPaths = uploadData.paths || [];
+
+      if (uploadedPaths.length === 0) {
+        throw new Error("لم يتم رفع أي صور");
+      }
+
+      // Step 2: Generate video using FFmpeg
       const res = await fetch("/api/ai/user/generate-video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -695,63 +724,27 @@ export default function NewListingPage() {
           hasPool: form.hasPool,
           hasElevator: form.hasElevator,
           hasGarden: form.hasGarden,
-          customPromoText: customPromoText.trim() || undefined
+          customPromoText: customPromoText.trim() || undefined,
+          imagePaths: uploadedPaths,
+          template: "luxury"
         })
       });
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "فشل في بدء توليد الفيديو");
+        throw new Error(errorData.error || "فشل في توليد الفيديو");
       }
 
-      const startData = await res.json();
-      
-      if (!startData.operationId) {
-        throw new Error("لم يتم الحصول على معرف العملية");
-      }
+      const data = await res.json();
 
-      // Store promotional text
-      if (startData.promoText) {
-        setVideoPromoText(startData.promoText);
-      }
-
-      // Step 2: Poll for completion
-      const operationId = startData.operationId;
-      const maxPolls = 36; // 36 * 5 seconds = 3 minutes max
-      let pollCount = 0;
-
-      while (pollCount < maxPolls) {
-        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
-        pollCount++;
-
-        const statusRes = await fetch(`/api/ai/user/video-status/${operationId}`, {
-          credentials: "include"
-        });
-
-        if (!statusRes.ok) {
-          throw new Error("فشل في التحقق من حالة الفيديو");
+      if (data.success && data.videoUrl) {
+        setVideoResult(data.videoUrl);
+        if (data.promoText) {
+          setVideoPromoText(data.promoText);
         }
-
-        const statusData = await statusRes.json();
-
-        if (statusData.status === "completed" && statusData.videoUrl) {
-          setVideoResult(statusData.videoUrl);
-          if (statusData.promoText) {
-            setVideoPromoText(statusData.promoText);
-          }
-          setVideoLoading(false);
-          return;
-        }
-
-        if (statusData.status === "error" || statusData.status === "timeout") {
-          throw new Error(statusData.error || "فشل في توليد الفيديو");
-        }
-
-        // Still processing, continue polling
+      } else {
+        throw new Error(data.error || "فشل في توليد الفيديو");
       }
-
-      // Timeout after max polls
-      throw new Error("استغرق توليد الفيديو وقتاً طويلاً. يرجى المحاولة لاحقاً.");
 
     } catch (err: any) {
       setVideoError(err.message || "حدث خطأ أثناء توليد الفيديو");

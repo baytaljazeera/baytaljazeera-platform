@@ -22,6 +22,52 @@ const PROPERTY_IMAGES = {
   "6h509ffd-7igf-8a76-f3j9-4i5ig3kk2h12": "/images/property5.jpg",
 };
 
+// 📷 رفع صور مؤقتة لتوليد الفيديو
+router.post("/temp-images", authMiddleware, upload.array('images', 20), asyncHandler(async (req, res) => {
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ error: "يرجى رفع صور" });
+  }
+
+  const paths = [];
+  
+  for (const file of req.files) {
+    // Validate file type
+    const validMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!validMimeTypes.includes(file.mimetype)) {
+      continue;
+    }
+    
+    // If Cloudinary is configured, upload there
+    if (isCloudinaryConfigured()) {
+      try {
+        const cloudinaryUrl = await uploadImage(file.path);
+        paths.push(cloudinaryUrl);
+        // Clean up local file after Cloudinary upload
+        try { fs.unlinkSync(file.path); } catch (e) {}
+      } catch (err) {
+        console.error("[TempImages] Cloudinary upload failed:", err.message);
+        // Fallback to local path
+        paths.push(`/uploads/listings/${file.filename}`);
+      }
+    } else {
+      // Use local path
+      paths.push(`/uploads/listings/${file.filename}`);
+    }
+  }
+
+  if (paths.length === 0) {
+    return res.status(400).json({ error: "لم يتم رفع أي صور صالحة" });
+  }
+
+  console.log(`[TempImages] Uploaded ${paths.length} images for video generation`);
+  
+  res.json({ 
+    success: true,
+    paths,
+    count: paths.length
+  });
+}));
+
 router.get("/elite", asyncHandler(async (req, res) => {
   const { userLat, userLng, limit = 9 } = req.query;
   

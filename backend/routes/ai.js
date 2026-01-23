@@ -1622,211 +1622,140 @@ router.post("/user/generate-advanced-video", authMiddleware, asyncHandler(async 
   }
 }));
 
-// 🎬 بدء توليد فيديو دعائي سينمائي - حصرياً لرجال الأعمال (Veo 2.0)
-// يرجع فوراً مع operationId ثم يتم الـ polling من الفرونت
+// 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي - باستخدام FFmpeg (مجاني)
 router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { propertyType, purpose, city, district, price, landArea, buildingArea, bedrooms, bathrooms, title, hasPool, hasElevator, hasGarden, selectedImageUrl, customPromoText, description } = req.body;
+  const { propertyType, purpose, city, district, price, landArea, buildingArea, bedrooms, bathrooms, title, hasPool, hasElevator, hasGarden, selectedImageUrl, customPromoText, description, imagePaths, template = "luxury" } = req.body;
 
-  // Check if Gemini API is configured
-  if (!genAI) {
-    return res.status(503).json({ 
-      error: "خدمة توليد الفيديو غير متاحة حالياً. يرجى التواصل مع الإدارة.",
-      errorEn: "Video generation service is not available"
+  // Check user's support level - متاح للباقات المميزة فقط
+  const planResult = await db.query(
+    `SELECT COALESCE(MAX(support_level), 0) as support_level
+     FROM (
+       SELECT p.support_level
+       FROM user_plans up
+       JOIN plans p ON up.plan_id = p.id
+       WHERE up.user_id = $1 AND up.status = 'active' AND (up.expires_at IS NULL OR up.expires_at > NOW())
+       UNION ALL
+       SELECT p.support_level
+       FROM quota_buckets qb
+       JOIN plans p ON qb.plan_id = p.id
+       WHERE qb.user_id = $1 AND qb.active = true 
+         AND (qb.expires_at IS NULL OR qb.expires_at > NOW())
+         AND (qb.total_slots - qb.used_slots) > 0
+     ) AS combined`,
+    [userId]
+  );
+  
+  const supportLevel = parseInt(planResult.rows[0]?.support_level) || 0;
+  
+  if (supportLevel < 2) {
+    return res.status(403).json({ 
+      error: "ميزة توليد الفيديو الترويجي متاحة لمشتركي الباقات المميزة (النخبة وأعلى)",
+      upgradeRequired: true 
     });
   }
 
-    // Check user's support level
-    const planResult = await db.query(
-      `SELECT COALESCE(MAX(support_level), 0) as support_level
-       FROM (
-         SELECT p.support_level
-         FROM user_plans up
-         JOIN plans p ON up.plan_id = p.id
-         WHERE up.user_id = $1 AND up.status = 'active' AND (up.expires_at IS NULL OR up.expires_at > NOW())
-         UNION ALL
-         SELECT p.support_level
-         FROM quota_buckets qb
-         JOIN plans p ON qb.plan_id = p.id
-         WHERE qb.user_id = $1 AND qb.active = true 
-           AND (qb.expires_at IS NULL OR qb.expires_at > NOW())
-           AND (qb.total_slots - qb.used_slots) > 0
-       ) AS combined`,
-      [userId]
-    );
-    
-    const supportLevel = parseInt(planResult.rows[0]?.support_level) || 0;
-    
-    if (supportLevel < 3) {
-      return res.status(403).json({ 
-        error: "ميزة توليد الفيديو الدعائي متاحة فقط لمشتركي باقة رجال الأعمال",
-        upgradeRequired: true 
-      });
-    }
+  if (!propertyType || !city) {
+    return res.status(400).json({ error: "يرجى تحديد نوع العقار والمدينة" });
+  }
 
-    if (!propertyType || !city) {
-      return res.status(400).json({ error: "يرجى تحديد نوع العقار والمدينة" });
-    }
+  // Check if FFmpeg is available
+  const { execSync } = require('child_process');
+  let ffmpegAvailable = false;
+  try {
+    execSync('ffmpeg -version', { stdio: 'ignore' });
+    ffmpegAvailable = true;
+  } catch (err) {
+    console.error("[Video] FFmpeg is not available");
+  }
+
+  if (!ffmpegAvailable) {
+    return res.status(503).json({ 
+      error: "خدمة توليد الفيديو غير متاحة حالياً. يرجى التواصل مع الدعم الفني.",
+      errorEn: "FFmpeg is not available on this server"
+    });
+  }
 
   try {
-    // Generate promotional text - use custom text if provided, otherwise AI generates unique text
+    const { VIDEO_TEMPLATES, generateEnhancedPromoText, createAdvancedSlideshow } = require("../services/advancedVideoService");
+
+    // Validate template
+    const validTemplates = Object.keys(VIDEO_TEMPLATES);
+    const selectedTemplate = validTemplates.includes(template) ? template : "luxury";
+
+    // Generate promotional text
     let promoText;
     if (customPromoText && customPromoText.trim()) {
-      // User provided custom promotional text
       promoText = {
-        headline: customPromoText.trim(),
-        subheadline: `${propertyType} في ${city}`,
-        callToAction: purpose === "بيع" ? "تملّك الآن! 💰" : "استأجر اليوم! 🏠",
-        tagline: "بيت الجزيرة ✨",
-        priceTag: price ? `${Number(price).toLocaleString('ar-SA')} ريال` : null
+        topLine: customPromoText.trim(),
+        midLine: `${propertyType} في ${city}`,
+        bottomLine: purpose === "بيع" ? "تملّك الآن" : "استأجر اليوم"
       };
-      console.log("[AI] Using custom promo text from user:", customPromoText);
+      console.log("[Video] Using custom promo text:", customPromoText);
     } else {
-      // Generate dynamic promotional text using AI (unique for each listing)
-      promoText = await generateDynamicPromoText({
+      // Generate dynamic promotional text using AI
+      const listingData = {
         propertyType, purpose, city, district, price, landArea, buildingArea, 
         bedrooms, bathrooms, title, description, hasPool, hasElevator, hasGarden
-      });
+      };
+      promoText = await generateEnhancedPromoText(listingData, selectedTemplate);
     }
 
-    // Build video prompt with promotional messaging - Realistic and grounded
-    let videoPrompt = `Professional real estate property showcase video in ${city || 'Saudi Arabia'}.
-${propertyType === "فيلا" || propertyType === "قصر" ? "Ground-level view of luxury villa exterior, realistic architecture, natural daylight, authentic property details, front facade, entrance area" : ""}
-${propertyType === "شقة" ? "Real apartment building exterior, actual building facade, realistic urban setting, authentic property appearance" : ""}
-${propertyType === "مجمع تجاري" || propertyType === "مبنى تجاري" ? "Actual commercial building exterior, realistic business district setting, authentic property appearance" : ""}
-${propertyType === "فندق" ? "Real hotel building exterior, authentic entrance, realistic property appearance" : ""}
-${propertyType.includes("أرض") ? "Actual land plot, realistic landscape, authentic property boundaries, natural setting" : ""}
-Realistic ground-level camera movement, natural lighting, authentic property showcase, professional real estate video quality.
-NO aerial shots, NO drone footage, NO flying cameras, NO unrealistic movements.
-NO people, NO text overlays, NO fantasy elements - only realistic property showcase.
-Keep camera at eye level or slightly elevated, smooth slow pan or gentle zoom on the actual property.`;
+    console.log("[Video] Starting FFmpeg video generation for user:", userId);
+    console.log("[Video] Template:", selectedTemplate);
+    console.log("[Video] Promotional text:", JSON.stringify(promoText, null, 2));
 
-    console.log("[AI] Starting video generation for user:", userId);
-    console.log("[AI] Video prompt:", videoPrompt);
-    console.log("[AI] Promotional text:", JSON.stringify(promoText, null, 2));
-
-    let operation;
-    let useImageToVideo = false;
-
-    // If user selected an image, try image-to-video generation
-    // Only works with server file paths (not blob: URLs from frontend previews)
-    if (selectedImageUrl && !selectedImageUrl.startsWith('blob:') && selectedImageUrl.startsWith('/')) {
-      try {
-        const imagePath = path.join(__dirname, "../../public", selectedImageUrl);
-        const imageBuffer = await fs.readFile(imagePath);
-        const imageBase64 = imageBuffer.toString('base64');
-        const mimeType = selectedImageUrl.endsWith('.png') ? 'image/png' : 'image/jpeg';
-
-        console.log("[AI] Using image-to-video with image:", selectedImageUrl);
-
-        // Enhanced prompt for image-based video - Realistic and grounded
-        videoPrompt = `Transform this real estate property image into a realistic promotional video.
-Ground-level camera movement, gentle slow pan or subtle zoom on the actual property shown in the image.
-Natural lighting enhancement, keep the original property appearance exactly as shown.
-Add only subtle realistic environmental motion (gentle cloud movement, natural light changes, soft shadows).
-NO aerial shots, NO drone footage, NO flying cameras, NO unrealistic camera movements.
-NO text overlays, NO people - pure realistic visual showcase of this specific property from the image.
-Camera stays at eye level or slightly elevated, smooth and natural movement only.`;
-
-        operation = await genAI.models.generateVideos({
-          model: "veo-2.0-generate-001",
-          prompt: videoPrompt,
-          image: {
-            imageBytes: imageBase64,
-            mimeType: mimeType
-          },
-          config: {
-            aspectRatio: "16:9",
-            numberOfVideos: 1,
-            durationSeconds: 8,
-          }
-        });
-        useImageToVideo = true;
-      } catch (imgErr) {
-        console.log("[AI] Image-to-video failed, falling back to text-only:", imgErr.message);
-        // Fall back to text-only generation
-        operation = await genAI.models.generateVideos({
-          model: "veo-2.0-generate-001",
-          prompt: videoPrompt,
-          config: {
-            aspectRatio: "16:9",
-            numberOfVideos: 1,
-            durationSeconds: 8,
-          }
-        });
-      }
-    } else {
-      // Text-only video generation (also used when blob: URL is passed)
-      if (selectedImageUrl && selectedImageUrl.startsWith('blob:')) {
-        console.log("[AI] Blob URL detected, using text-only generation. Image-to-video requires uploaded images.");
-      }
-      operation = await genAI.models.generateVideos({
-        model: "veo-2.0-generate-001",
-        prompt: videoPrompt,
-        config: {
-          aspectRatio: "16:9",
-          numberOfVideos: 1,
-          durationSeconds: 8,
+    // Prepare image paths - use provided imagePaths or selectedImageUrl
+    let imagePathsToUse = [];
+    if (imagePaths && imagePaths.length > 0) {
+      imagePathsToUse = imagePaths;
+    } else if (selectedImageUrl && !selectedImageUrl.startsWith('blob:')) {
+      // Handle single image URL
+      if (selectedImageUrl.startsWith('/uploads/')) {
+        const localPath = path.join(__dirname, "../../public", selectedImageUrl);
+        if (await fs.access(localPath).then(() => true).catch(() => false)) {
+          imagePathsToUse = [localPath];
         }
+      } else if (selectedImageUrl.startsWith('http')) {
+        imagePathsToUse = [selectedImageUrl];
+      }
+    }
+
+    if (imagePathsToUse.length === 0) {
+      return res.status(400).json({ 
+        error: "يرجى رفع صور العقار أولاً لتوليد الفيديو",
+        errorEn: "Please upload property images first"
       });
     }
 
-    const operationId = `video_${userId}_${Date.now()}`;
-    console.log("[AI] Video generation started, operationId:", operationId, "operation:", operation.name);
+    // Create video output directory
+    const videoDir = path.join(__dirname, "../../public/uploads/videos");
+    await fs.mkdir(videoDir, { recursive: true });
+    
+    const videoFilename = `promo_${userId}_${selectedTemplate}_${Date.now()}.mp4`;
+    const videoPath = path.join(videoDir, videoFilename);
+    const videoUrl = `/uploads/videos/${videoFilename}`;
 
-    // Store operation in memory for polling
-    videoOperations.set(operationId, {
-      operation,
-      userId,
-      status: "processing",
-      startedAt: Date.now(),
-      videoUrl: null,
-      error: null,
-      promoText,
-      useImageToVideo
+    // Generate video using FFmpeg
+    await createAdvancedSlideshow(imagePathsToUse, videoPath, promoText, {
+      duration: 20,
+      template: selectedTemplate,
+      includeAudio: true
     });
 
-    // Start background polling (don't await)
-    pollVideoOperation(operationId).catch(err => {
-      console.error("[AI] Background poll error:", err);
-    });
+    console.log("[Video] ✅ Video generated successfully:", videoUrl);
 
-    // Return immediately with operationId and promotional text
-    res.json({ 
+    res.json({
       success: true,
-      operationId,
-      status: "processing",
+      videoUrl,
       promoText,
-      useImageToVideo,
-      message: useImageToVideo 
-        ? "جاري تحويل صورتك إلى فيديو سينمائي... قد يستغرق من 1-3 دقائق" 
-        : "جاري توليد الفيديو... قد يستغرق من 1-3 دقائق"
+      template: selectedTemplate,
+      templateName: VIDEO_TEMPLATES[selectedTemplate]?.name || selectedTemplate,
+      message: `تم إنشاء الفيديو الترويجي بنجاح بقالب ${VIDEO_TEMPLATES[selectedTemplate]?.name || "مميز"}`
     });
 
   } catch (error) {
-    console.error("[AI] Video generation error:", error);
-    
-    if (error.status === 429) {
-      return res.status(429).json({ 
-        error: "تم تجاوز الحد المسموح لطلبات الفيديو. حاول بعد دقيقة.",
-        errorEn: "Video generation rate limit exceeded"
-      });
-    }
-    
-    if (error.status === 403 || error.message?.includes("permission")) {
-      return res.status(403).json({ 
-        error: "ليس لديك صلاحية لاستخدام خدمة توليد الفيديو. تأكد من تفعيل Veo في حساب Google.",
-        errorEn: "Video generation permission denied"
-      });
-    }
-
-    if (error.message?.includes("billing") || error.message?.includes("FAILED_PRECONDITION")) {
-      return res.status(400).json({ 
-        error: "خدمة توليد الفيديو تتطلب حساب Google Cloud مفعل عليه الفوترة. تواصل مع الدعم الفني.",
-        errorEn: "GCP billing required for video generation"
-      });
-    }
-
+    console.error("[Video] FFmpeg video generation error:", error);
     return res.status(500).json({ 
       error: "حدث خطأ في توليد الفيديو. يرجى المحاولة مرة أخرى.",
       errorEn: error.message || "Video generation error"
