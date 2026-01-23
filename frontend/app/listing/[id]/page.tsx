@@ -11,7 +11,7 @@ import {
   Phone, MessageCircle, Heart, Flag,
   ChevronRight, ChevronLeft, Building2, Car,
   Compass, Layers, Clock, ArrowRight, ArrowUpRight, Eye, AlertTriangle,
-  Send, X, Mail, Loader2, Crown, PlayCircle, Video, Star, Sparkles, FileText
+  Send, X, Mail, Loader2, Crown, PlayCircle, Video, Star, Sparkles, FileText, Pencil
 } from "lucide-react";
 import ShareButton from "@/components/shared/ShareButton";
 import AdvertiserReputation from "@/components/ratings/AdvertiserReputation";
@@ -1197,6 +1197,16 @@ export default function ListingDetailPage() {
                   className="flex-1"
                 />
               </div>
+
+              {isOwner && (
+                <Link
+                  href={`/edit-listing/${listing.id}`}
+                  className="flex items-center justify-center gap-2 w-full mt-3 py-3 bg-gradient-to-r from-[#D4AF37] to-[#B8962E] text-[#002845] rounded-xl hover:from-[#e5c868] hover:to-[#D4AF37] font-bold transition-all shadow-md shadow-amber-500/20"
+                >
+                  <Pencil className="w-5 h-5" />
+                  تعديل الإعلان
+                </Link>
+              )}
 
               {!isOwner && (
                 <>
