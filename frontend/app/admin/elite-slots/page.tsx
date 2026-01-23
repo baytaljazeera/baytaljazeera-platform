@@ -814,9 +814,29 @@ export default function AdminEliteSlotsPage() {
                                 </div>
                               )}
                               
-                              {/* أزرار التحكم */}
+                              {/* أزرار التحكم للحجوزات المعلقة */}
+                              {isPending && reservation && (
+                                <div className="flex gap-2 justify-center mt-2">
+                                  <button
+                                    onClick={() => showApproveConfirm(reservation.id)}
+                                    disabled={approving === reservation.id}
+                                    className="flex-1 px-2 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg font-bold transition disabled:opacity-50"
+                                  >
+                                    {approving === reservation.id ? '...' : '✓ موافقة'}
+                                  </button>
+                                  <button
+                                    onClick={() => handleReject(reservation.id)}
+                                    disabled={rejecting === reservation.id}
+                                    className="flex-1 px-2 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs rounded-lg font-bold transition disabled:opacity-50"
+                                  >
+                                    {rejecting === reservation.id ? '...' : '✗ رفض'}
+                                  </button>
+                                </div>
+                              )}
+                              
+                              {/* أزرار التحكم للحجوزات المؤكدة */}
                               {isConfirmed && reservation && (
-                                <div className="flex gap-2 justify-center">
+                                <div className="flex gap-2 justify-center mt-2">
                                   <button
                                     onClick={() => handleExtendReservation(String(reservation.id), 1)}
                                     disabled={extending === String(reservation.id)}
