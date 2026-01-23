@@ -3118,6 +3118,127 @@ export default function NewListingPage() {
                   )}
                 </div>
 
+                {/* توليد فيديو بالذكاء الاصطناعي - متاح للباقات المتقدمة */}
+                {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 2 && imagePreviews.length > 0 && (
+                  <div className="mb-6 p-5 bg-gradient-to-br from-purple-50 via-indigo-50 to-blue-50 rounded-2xl border-2 border-purple-200">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-12 h-12 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                        <BrainCircuit className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                          توليد فيديو ترويجي بالذكاء الاصطناعي
+                          <span className="px-2 py-0.5 bg-purple-600 text-white text-xs rounded-full font-bold">AI</span>
+                        </h3>
+                        <p className="text-sm text-slate-600 mt-1">
+                          أنشئ فيديو سينمائي احترافي من وصف العقار باستخدام الذكاء الاصطناعي
+                        </p>
+                      </div>
+                    </div>
+
+                    {videoLoading ? (
+                      <div className="p-6 bg-white/80 rounded-xl border-2 border-purple-300 text-center">
+                        <div className="flex items-center justify-center gap-3 mb-3">
+                          <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
+                          <span className="font-semibold text-purple-700">جاري توليد الفيديو...</span>
+                        </div>
+                        <div className="w-full bg-purple-200 rounded-full h-2 mb-2">
+                          <div className="bg-purple-600 h-2 rounded-full animate-pulse" style={{width: '60%'}}></div>
+                        </div>
+                        <p className="text-xs text-purple-600">
+                          قد يستغرق هذا 1-3 دقائق حسب الطلب
+                        </p>
+                      </div>
+                    ) : videoResult ? (
+                      <div className="space-y-3">
+                        <div className="relative rounded-xl overflow-hidden border-2 border-purple-300 bg-white">
+                          <video 
+                            src={videoResult} 
+                            controls 
+                            className="w-full max-h-[300px]"
+                            poster={imagePreviews[0]}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVideoResult(null);
+                              setVideoPromoText(null);
+                            }}
+                            className="absolute top-3 left-3 bg-red-500 text-white p-2 rounded-full hover:bg-red-600 transition shadow-lg"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        {videoPromoText && (
+                          <div className="p-3 bg-white/80 rounded-lg border border-purple-200">
+                            <p className="text-xs font-semibold text-purple-700 mb-1">النص الترويجي المُنشأ:</p>
+                            <p className="text-sm text-slate-700">{videoPromoText.headline || videoPromoText.topLine}</p>
+                            {videoPromoText.subheadline && (
+                              <p className="text-xs text-slate-600 mt-1">{videoPromoText.subheadline}</p>
+                            )}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 text-sm text-emerald-600">
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>سيتم إرفاق هذا الفيديو مع الإعلان عند النشر</span>
+                        </div>
+                      </div>
+                    ) : videoError ? (
+                      <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertTriangle className="w-5 h-5 text-red-600" />
+                          <span className="font-semibold text-red-700">خطأ في توليد الفيديو</span>
+                        </div>
+                        <p className="text-sm text-red-600 mb-3">{videoError}</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVideoError(null);
+                            handleGenerateVideo();
+                          }}
+                          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm font-medium"
+                        >
+                          إعادة المحاولة
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="p-4 bg-white/80 rounded-xl border border-purple-200">
+                          <div className="flex items-start gap-3">
+                            <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center shrink-0">
+                              <Zap className="w-4 h-4 text-purple-600" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-semibold text-slate-800 mb-1">مميزات الفيديو بالذكاء الاصطناعي:</p>
+                              <ul className="text-xs text-slate-600 space-y-1 list-disc list-inside">
+                                <li>فيديو سينمائي احترافي بتقنية Veo 2.0</li>
+                                <li>مدة 8 ثوانٍ بتنسيق 16:9</li>
+                                <li>نص ترويجي ذكي مُنشأ تلقائياً</li>
+                                <li>مُحسّن للعقارات السكنية والتجارية</li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleGenerateVideo}
+                          disabled={!form.propertyType || videoLoading}
+                          className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg"
+                        >
+                          <BrainCircuit className="w-5 h-5" />
+                          <span>توليد فيديو بالذكاء الاصطناعي</span>
+                          <Sparkles className="w-4 h-4" />
+                        </button>
+                        {!form.propertyType && (
+                          <p className="text-xs text-amber-600 text-center">
+                            ⚠️ يرجى اختيار نوع العقار أولاً من الخطوة السابقة
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {(selectedBucket?.benefits.maxVideos || 0) > 0 && (
                   <div>
                     <div className="flex items-center justify-between mb-3">
