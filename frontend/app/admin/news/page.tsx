@@ -152,6 +152,7 @@ export default function NewsPage() {
   const [selectedCountryForCities, setSelectedCountryForCities] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [filterType, setFilterType] = useState<string>("all"); // Filter: all, promo, general, announcement, alert
 
   const fetchNews = async () => {
     setLoading(true);
@@ -1144,9 +1145,41 @@ export default function NewsPage() {
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-100 bg-gradient-to-l from-[#002845]/5 to-transparent">
-          <p className="text-sm text-slate-600">
-            الأخبار النشطة ستظهر في شريط الأخبار أعلى الصفحة الرئيسية • مرتبة حسب الأولوية
-          </p>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <p className="text-sm text-slate-600">
+              الأخبار النشطة ستظهر في شريط الأخبار أعلى الصفحة الرئيسية • مرتبة حسب الأولوية
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-slate-500">فلترة:</span>
+              <button
+                onClick={() => setFilterType("all")}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
+                  filterType === "all"
+                    ? "bg-[#002845] text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                الكل ({news.length})
+              </button>
+              {newsTypes.map((type) => {
+                const count = news.filter(n => n.type === type.value).length;
+                return (
+                  <button
+                    key={type.value}
+                    onClick={() => setFilterType(type.value)}
+                    className={`px-3 py-1 rounded-lg text-xs font-medium transition flex items-center gap-1 ${
+                      filterType === type.value
+                        ? "bg-[#002845] text-white"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    <type.icon className="w-3 h-3" />
+                    {type.label} ({count})
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
         
         {loading ? (
@@ -1154,20 +1187,32 @@ export default function NewsPage() {
             <div className="w-8 h-8 border-2 border-[#D4AF37] border-t-transparent rounded-full animate-spin mx-auto"></div>
             <p className="text-slate-500 mt-3 text-sm">جاري التحميل...</p>
           </div>
-        ) : news.length === 0 ? (
+        ) : filteredNews.length === 0 ? (
           <div className="p-12 text-center">
             <Newspaper className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <p className="text-slate-500">لا توجد أخبار</p>
-            <button
-              onClick={() => setShowForm(true)}
-              className="mt-4 text-[#D4AF37] hover:underline text-sm font-medium"
-            >
-              إضافة خبر جديد
-            </button>
+            <p className="text-slate-500">
+              {filterType === "all" ? "لا توجد أخبار" : `لا توجد أخبار من نوع "${newsTypes.find(t => t.value === filterType)?.label || filterType}"`}
+            </p>
+            {filterType !== "all" && (
+              <button
+                onClick={() => setFilterType("all")}
+                className="mt-4 text-[#D4AF37] hover:underline text-sm font-medium"
+              >
+                عرض جميع الأخبار
+              </button>
+            )}
+            {filterType === "all" && (
+              <button
+                onClick={() => setShowForm(true)}
+                className="mt-4 text-[#D4AF37] hover:underline text-sm font-medium"
+              >
+                إضافة خبر جديد
+              </button>
+            )}
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {news.map((item, index) => {
+            {filteredNews.map((item, index) => {
               const typeInfo = getTypeInfo(item.type);
               const Icon = typeInfo.icon;
               
