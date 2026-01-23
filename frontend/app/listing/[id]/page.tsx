@@ -773,174 +773,169 @@ export default function ListingDetailPage() {
             </div>
 
             {/* قسم الفيديو - يظهر دائماً */}
-            <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border-2 border-[#D4AF37]/20">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-10 h-10 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full flex items-center justify-center shadow-lg">
-                  <PlayCircle className="w-5 h-5 text-white" />
+            {listing && (
+              <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border-2 border-[#D4AF37]/20">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-10 h-10 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full flex items-center justify-center shadow-lg">
+                    <PlayCircle className="w-5 h-5 text-white" />
+                  </div>
+                  <h3 className="text-lg font-bold text-[#002845]">🎬 فيديو ترويجي بالذكاء الاصطناعي</h3>
                 </div>
-                <h3 className="text-lg font-bold text-[#002845]">🎬 فيديو ترويجي بالذكاء الاصطناعي</h3>
-              </div>
-                
-                {/* الفيديو الجاهز */}
-                {listing.videos && listing.videos.length > 0 && listing.video_status !== 'processing' && (
-                  <div className="relative rounded-xl overflow-hidden bg-slate-900">
-                    <video 
-                      controls 
-                      className="w-full max-h-[400px] object-contain"
-                      poster={images && images.length > 0 ? images[0]?.url : undefined}
-                      preload="metadata"
-                    >
-                      <source src={listing.videos[0].url} type="video/mp4" />
-                      <source src={listing.videos[0].url} type="video/webm" />
-                      <source src={listing.videos[0].url} type="video/ogg" />
-                      متصفحك لا يدعم عرض الفيديو
-                    </video>
-                  </div>
-                )}
-                
-                {/* حالة معالجة الفيديو */}
-                {listing.video_status === 'processing' && (!listing.videos || listing.videos.length === 0) && (
-                  <div className="bg-gradient-to-br from-[#002845]/5 to-[#D4AF37]/5 border-2 border-dashed border-[#D4AF37]/30 rounded-xl p-6 text-center">
-                    <div className="w-16 h-16 mx-auto mb-4 relative">
-                      <div className="absolute inset-0 border-4 border-[#D4AF37]/20 rounded-full"></div>
-                      <div className="absolute inset-0 border-4 border-[#D4AF37] border-t-transparent rounded-full animate-spin"></div>
-                      <PlayCircle className="absolute inset-2 w-12 h-12 text-[#D4AF37]" />
+                  
+                  {/* الفيديو الجاهز */}
+                  {listing.videos && Array.isArray(listing.videos) && listing.videos.length > 0 && listing.video_status !== 'processing' && listing.videos[0]?.url ? (
+                    <div className="relative rounded-xl overflow-hidden bg-slate-900">
+                      <video 
+                        controls 
+                        className="w-full max-h-[400px] object-contain"
+                        poster={images && Array.isArray(images) && images.length > 0 && images[0]?.url ? getImageUrl(images[0].url) : undefined}
+                        preload="metadata"
+                      >
+                        <source src={listing.videos[0].url} type="video/mp4" />
+                        <source src={listing.videos[0].url} type="video/webm" />
+                        <source src={listing.videos[0].url} type="video/ogg" />
+                        متصفحك لا يدعم عرض الفيديو
+                      </video>
                     </div>
-                    <h4 className="text-lg font-bold text-[#002845] mb-2">جاري إنشاء الفيديو...</h4>
-                    <p className="text-slate-600 text-sm">يتم إنشاء فيديو ترويجي من صور العقار الفعلية</p>
-                    <p className="text-[#D4AF37] text-xs mt-2">قد يستغرق هذا دقيقة أو دقيقتين</p>
-                  </div>
-                )}
-                
-                {/* حالة فشل الفيديو */}
-                {listing.video_status === 'failed' && (!listing.videos || listing.videos.length === 0) && (
-                  <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
-                    <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
-                      <PlayCircle className="w-8 h-8 text-red-500" />
+                  ) : listing.video_status === 'processing' ? (
+                    /* حالة معالجة الفيديو */
+                    <div className="bg-gradient-to-br from-[#002845]/5 to-[#D4AF37]/5 border-2 border-dashed border-[#D4AF37]/30 rounded-xl p-6 text-center">
+                      <div className="w-16 h-16 mx-auto mb-4 relative">
+                        <div className="absolute inset-0 border-4 border-[#D4AF37]/20 rounded-full"></div>
+                        <div className="absolute inset-0 border-4 border-[#D4AF37] border-t-transparent rounded-full animate-spin"></div>
+                        <PlayCircle className="absolute inset-2 w-12 h-12 text-[#D4AF37]" />
+                      </div>
+                      <h4 className="text-lg font-bold text-[#002845] mb-2">جاري إنشاء الفيديو...</h4>
+                      <p className="text-slate-600 text-sm">يتم إنشاء فيديو ترويجي من صور العقار الفعلية</p>
+                      <p className="text-[#D4AF37] text-xs mt-2">قد يستغرق هذا دقيقة أو دقيقتين</p>
                     </div>
-                    <h4 className="text-lg font-bold text-red-700 mb-2">تعذر إنشاء الفيديو</h4>
-                    <p className="text-red-600 text-sm">حدث خطأ أثناء معالجة الفيديو، يرجى المحاولة لاحقاً</p>
-                  </div>
-                )}
-                
-                {/* حالة عدم وجود فيديو (placeholder) */}
-                {!listing.videos && (!listing.video_status || listing.video_status === null) && (
-                  <div className="bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-2 border-dashed border-[#D4AF37]/50 rounded-xl p-8 text-center relative overflow-hidden">
-                    {/* Placeholder with first image as background */}
-                    {images && images.length > 0 ? (
-                      <div className="absolute inset-0 opacity-10">
-                        <img 
-                          src={getImageUrl(images[0]?.url)} 
-                          alt="Placeholder" 
-                          className="w-full h-full object-cover blur-sm"
-                        />
+                  ) : listing.video_status === 'failed' ? (
+                    /* حالة فشل الفيديو */
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+                      <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+                        <PlayCircle className="w-8 h-8 text-red-500" />
                       </div>
-                    ) : (
-                      <div className="absolute inset-0 bg-gradient-to-br from-[#D4AF37]/5 to-[#B8860B]/5"></div>
-                    )}
-                    <div className="relative z-10">
-                      <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full flex items-center justify-center shadow-xl animate-pulse">
-                        <Video className="w-10 h-10 text-white" />
-                      </div>
-                      <h4 className="text-xl font-bold text-[#002845] mb-2">🎬 فيديو ترويجي بالذكاء الاصطناعي</h4>
-                      <p className="text-slate-700 text-sm mb-2 font-medium">سيتم إنشاء فيديو احترافي من صور العقار</p>
-                      <p className="text-slate-500 text-xs">سيظهر هنا عند اكتمال التوليد</p>
-                      {isOwner && (currentUser?.supportLevel || 0) >= 3 && (
-                        <div className="mt-4 pt-4 border-t border-[#D4AF37]/30">
-                          <p className="text-xs text-slate-600 mb-2">💡 يمكنك توليد الفيديو من صفحة التعديل</p>
-                          <Link
-                            href={`/edit-listing/${listing.id}`}
-                            className="inline-flex items-center gap-2 px-4 py-2 bg-[#D4AF37] text-[#002845] rounded-lg text-sm font-bold hover:bg-[#e5c868] transition-all"
-                          >
-                            <Video className="w-4 h-4" />
-                            انتقل للتعديل وتوليد الفيديو
-                          </Link>
+                      <h4 className="text-lg font-bold text-red-700 mb-2">تعذر إنشاء الفيديو</h4>
+                      <p className="text-red-600 text-sm">حدث خطأ أثناء معالجة الفيديو، يرجى المحاولة لاحقاً</p>
+                    </div>
+                  ) : (
+                    /* حالة عدم وجود فيديو (placeholder) */
+                    <div className="bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-2 border-dashed border-[#D4AF37]/50 rounded-xl p-8 text-center relative overflow-hidden">
+                      {/* Placeholder with first image as background */}
+                      {images && Array.isArray(images) && images.length > 0 && images[0]?.url ? (
+                        <div className="absolute inset-0 opacity-10">
+                          <img 
+                            src={getImageUrl(images[0].url)} 
+                            alt="Placeholder" 
+                            className="w-full h-full object-cover blur-sm"
+                          />
                         </div>
+                      ) : (
+                        <div className="absolute inset-0 bg-gradient-to-br from-[#D4AF37]/5 to-[#B8860B]/5"></div>
                       )}
+                      <div className="relative z-10">
+                        <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full flex items-center justify-center shadow-xl animate-pulse">
+                          <Video className="w-10 h-10 text-white" />
+                        </div>
+                        <h4 className="text-xl font-bold text-[#002845] mb-2">🎬 فيديو ترويجي بالذكاء الاصطناعي</h4>
+                        <p className="text-slate-700 text-sm mb-2 font-medium">سيتم إنشاء فيديو احترافي من صور العقار</p>
+                        <p className="text-slate-500 text-xs">سيظهر هنا عند اكتمال التوليد</p>
+                        {isOwner && currentUser && (currentUser.supportLevel || 0) >= 3 && (
+                          <div className="mt-4 pt-4 border-t border-[#D4AF37]/30">
+                            <p className="text-xs text-slate-600 mb-2">💡 يمكنك توليد الفيديو من صفحة التعديل</p>
+                            <Link
+                              href={`/edit-listing/${listing.id}`}
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-[#D4AF37] text-[#002845] rounded-lg text-sm font-bold hover:bg-[#e5c868] transition-all"
+                            >
+                              <Video className="w-4 h-4" />
+                              انتقل للتعديل وتوليد الفيديو
+                            </Link>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
-                
-                {/* زر إعادة إنشاء الفيديو للمالك */}
-                {isOwner && (currentUser?.supportLevel || 0) >= 3 && (
-                  <div className="mt-6 pt-4 border-t border-slate-200">
-                    {listing.video_status === 'processing' ? (
-                      <div className="p-6 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-xl">
-                        <div className="flex items-center justify-center gap-3 mb-3">
-                          <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
-                          <span className="text-xl font-bold text-amber-700">جاري إنشاء الفيديو...</span>
+                  )}
+                  
+                  {/* زر إعادة إنشاء الفيديو للمالك */}
+                  {isOwner && currentUser && (currentUser.supportLevel || 0) >= 3 && (
+                    <div className="mt-6 pt-4 border-t border-slate-200">
+                      {listing.video_status === 'processing' ? (
+                        <div className="p-6 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-xl">
+                          <div className="flex items-center justify-center gap-3 mb-3">
+                            <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+                            <span className="text-xl font-bold text-amber-700">جاري إنشاء الفيديو...</span>
+                          </div>
+                          <div className="w-full bg-amber-200 rounded-full h-2 mb-3">
+                            <div className="bg-amber-500 h-2 rounded-full animate-[pulse_1s_ease-in-out_infinite]" style={{width: '60%'}}></div>
+                          </div>
+                          <p className="text-sm text-amber-600 text-center mb-4">
+                            🎬 يتم الآن إنشاء فيديو احترافي من صورك... هذا يستغرق حوالي 30-60 ثانية
+                          </p>
+                          <div className="bg-amber-100 border border-amber-300 rounded-lg p-3 mb-3">
+                            <p className="text-xs text-amber-700 text-center mb-2">
+                              ⚠️ إذا استغرق الفيديو أكثر من 5 دقائق، قد تكون هناك مشكلة
+                            </p>
+                            <button
+                              onClick={handleRegenerateVideo}
+                              disabled={regeneratingVideo}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all disabled:opacity-50 font-medium text-sm"
+                            >
+                              {regeneratingVideo ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  <span>جاري الإرسال...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Video className="w-4 h-4" />
+                                  <span>إعادة المحاولة</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                          <p className="text-xs text-amber-500 text-center">
+                            💡 حدّث الصفحة بعد قليل لمشاهدة الفيديو الجديد
+                          </p>
                         </div>
-                        <div className="w-full bg-amber-200 rounded-full h-2 mb-3">
-                          <div className="bg-amber-500 h-2 rounded-full animate-[pulse_1s_ease-in-out_infinite]" style={{width: '60%'}}></div>
-                        </div>
-                        <p className="text-sm text-amber-600 text-center mb-4">
-                          🎬 يتم الآن إنشاء فيديو احترافي من صورك... هذا يستغرق حوالي 30-60 ثانية
-                        </p>
-                        <div className="bg-amber-100 border border-amber-300 rounded-lg p-3 mb-3">
-                          <p className="text-xs text-amber-700 text-center mb-2">
-                            ⚠️ إذا استغرق الفيديو أكثر من 5 دقائق، قد تكون هناك مشكلة
+                      ) : (
+                        <div className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl">
+                          <p className="text-sm text-emerald-700 mb-3">
+                            📷 هل تريد إعادة إنشاء الفيديو من صورك الفعلية؟
                           </p>
                           <button
                             onClick={handleRegenerateVideo}
                             disabled={regeneratingVideo}
-                            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all disabled:opacity-50 font-medium text-sm"
+                            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-all disabled:opacity-50 font-medium"
                           >
                             {regeneratingVideo ? (
                               <>
-                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                                 <span>جاري الإرسال...</span>
                               </>
                             ) : (
                               <>
-                                <Video className="w-4 h-4" />
-                                <span>إعادة المحاولة</span>
+                                <PlayCircle className="w-5 h-5" />
+                                <span>إعادة إنشاء الفيديو من صوري</span>
                               </>
                             )}
                           </button>
-                        </div>
-                        <p className="text-xs text-amber-500 text-center">
-                          💡 حدّث الصفحة بعد قليل لمشاهدة الفيديو الجديد
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl">
-                        <p className="text-sm text-emerald-700 mb-3">
-                          📷 هل تريد إعادة إنشاء الفيديو من صورك الفعلية؟
-                        </p>
-                        <button
-                          onClick={handleRegenerateVideo}
-                          disabled={regeneratingVideo}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-all disabled:opacity-50 font-medium"
-                        >
-                          {regeneratingVideo ? (
-                            <>
-                              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              <span>جاري الإرسال...</span>
-                            </>
-                          ) : (
-                            <>
-                              <PlayCircle className="w-5 h-5" />
-                              <span>إعادة إنشاء الفيديو من صوري</span>
-                            </>
+                          {regenerateMessage && (
+                            <p className={`text-sm mt-2 ${
+                              regenerateMessage.includes('خطأ') || regenerateMessage.includes('❌') 
+                                ? 'text-red-600' 
+                                : regenerateMessage.includes('✅') 
+                                  ? 'text-emerald-600 font-medium' 
+                                  : 'text-amber-600'
+                            }`}>
+                              {regenerateMessage}
+                            </p>
                           )}
-                        </button>
-                        {regenerateMessage && (
-                          <p className={`text-sm mt-2 ${
-                            regenerateMessage.includes('خطأ') || regenerateMessage.includes('❌') 
-                              ? 'text-red-600' 
-                              : regenerateMessage.includes('✅') 
-                                ? 'text-emerald-600 font-medium' 
-                                : 'text-amber-600'
-                          }`}>
-                            {regenerateMessage}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : null}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+            )}
 
             <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm">
               <div className="flex items-start justify-between gap-4 mb-2">
