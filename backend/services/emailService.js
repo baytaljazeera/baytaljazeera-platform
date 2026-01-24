@@ -196,8 +196,10 @@ function getPasswordResetEmailTemplate(resetLink, userName) {
  * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
  */
 async function sendEmailVerificationEmail(email, verificationToken, userName) {
+  console.log(`📧 [EmailService] Preparing email verification email for: ${email}`);
   const frontendUrl = process.env.FRONTEND_URL || 'https://baytaljazeera.com';
   const verificationLink = `${frontendUrl}/verify-email?token=${verificationToken}`;
+  console.log(`📧 [EmailService] Verification link: ${verificationLink}`);
   
   const htmlBody = `
 <!DOCTYPE html>
@@ -264,7 +266,14 @@ async function sendEmailVerificationEmail(email, verificationToken, userName) {
   `;
   
   const subject = 'تأكيد بريدك الإلكتروني - بيت الجزيرة';
-  return await sendEmail(email, subject, htmlBody);
+  console.log(`📧 [EmailService] Sending email verification to: ${email}`);
+  const result = await sendEmail(email, subject, htmlBody);
+  if (result.success) {
+    console.log(`✅ [EmailService] Email verification sent successfully to ${email}`);
+  } else {
+    console.error(`❌ [EmailService] Failed to send email verification to ${email}:`, result.error);
+  }
+  return result;
 }
 
 async function sendPasswordResetEmail(email, resetToken, userName) {
