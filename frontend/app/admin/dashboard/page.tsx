@@ -283,113 +283,113 @@ export default function AdminDashboard() {
   }));
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
         <div>
-          <h1 className="text-2xl font-black text-[#002845] flex items-center gap-2">
-            <LayoutDashboard className="w-7 h-7 text-[#D4AF37]" />
+          <h1 className="text-xl md:text-2xl font-black text-[#002845] flex items-center gap-2">
+            <LayoutDashboard className="w-6 h-6 md:w-7 md:h-7 text-[#D4AF37]" />
             لوحة التحكم
           </h1>
-          <p className="text-sm text-slate-500 mt-1">نظرة عامة شاملة على أداء المنصة</p>
+          <p className="text-sm md:text-sm text-slate-500 mt-1">نظرة عامة شاملة على أداء المنصة</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3 flex-wrap">
           <button 
             onClick={fetchDashboardData}
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#002845] to-[#01456d] text-white rounded-xl hover:shadow-lg transition disabled:opacity-50"
+            className="flex items-center gap-2 px-4 md:px-4 py-3 md:py-2.5 bg-gradient-to-r from-[#002845] to-[#01456d] text-white rounded-xl hover:shadow-lg active:scale-95 transition disabled:opacity-50 text-sm md:text-sm font-medium touch-manipulation"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {loading ? <Loader2 className="w-5 h-5 md:w-4 md:h-4 animate-spin" /> : <RefreshCw className="w-5 h-5 md:w-4 md:h-4" />}
             تحديث البيانات
           </button>
-          <div className="text-right bg-white px-4 py-2 rounded-xl border border-slate-200">
-            <p className="text-xs text-slate-500">آخر تحديث</p>
-            <p className="text-sm font-bold text-[#002845]">{lastUpdate}</p>
+          <div className="text-right bg-white px-3 md:px-4 py-2.5 md:py-2 rounded-xl border border-slate-200">
+            <p className="text-xs md:text-xs text-slate-500">آخر تحديث</p>
+            <p className="text-sm md:text-sm font-bold text-[#002845]">{lastUpdate}</p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {statsConfig.map((stat, i) => {
           const Icon = stat.icon;
           return (
-            <div key={i} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 hover:shadow-lg hover:border-[#D4AF37]/30 transition-all duration-300">
-              <div className="flex items-start justify-between mb-3">
-                <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${stat.color} flex items-center justify-center shadow-lg`}>
-                  <Icon className="w-7 h-7 text-white" />
+            <div key={i} className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-slate-100 hover:shadow-lg hover:border-[#D4AF37]/30 transition-all duration-300">
+              <div className="flex items-start justify-between mb-3 md:mb-3">
+                <div className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-gradient-to-br ${stat.color} flex items-center justify-center shadow-lg shrink-0`}>
+                  <Icon className="w-6 h-6 md:w-7 md:h-7 text-white" />
                 </div>
-                <div className={`px-2 py-1 rounded-lg text-xs font-medium ${stat.bgColor} text-slate-600`}>
-                  <TrendingUp className="w-3 h-3 inline ml-1" />
+                <div className={`px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg text-xs md:text-xs font-medium ${stat.bgColor} text-slate-600 shrink-0`}>
+                  <TrendingUp className="w-3.5 h-3.5 md:w-3 md:h-3 inline ml-1" />
                   مباشر
                 </div>
               </div>
-              <p className="text-3xl font-black text-[#002845]">
-                {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : stat.value.toLocaleString("en-US")}
+              <p className="text-2xl md:text-3xl font-black text-[#002845]">
+                {loading ? <Loader2 className="w-5 h-5 md:w-6 md:h-6 animate-spin" /> : stat.value.toLocaleString("en-US")}
               </p>
-              <p className="text-sm text-slate-500 mt-1">{stat.label}</p>
+              <p className="text-sm md:text-sm text-slate-500 mt-1.5 md:mt-1">{stat.label}</p>
             </div>
           );
         })}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-gradient-to-br from-[#002845] to-[#01456d] rounded-2xl p-6 text-white shadow-xl">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="font-bold text-lg flex items-center gap-2">
-              <Crown className="w-5 h-5 text-[#D4AF37]" />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+        <div className="bg-gradient-to-br from-[#002845] to-[#01456d] rounded-2xl p-4 md:p-6 text-white shadow-xl">
+          <div className="flex items-center justify-between mb-4 md:mb-6">
+            <h2 className="font-bold text-base md:text-lg flex items-center gap-2">
+              <Crown className="w-5 h-5 md:w-5 md:h-5 text-[#D4AF37]" />
               إحصائيات النخبة
             </h2>
-            <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/20 flex items-center justify-center">
-              <Star className="w-5 h-5 text-[#D4AF37]" />
+            <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-[#D4AF37]/20 flex items-center justify-center shrink-0">
+              <Star className="w-4 h-4 md:w-5 md:h-5 text-[#D4AF37]" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-white/10 rounded-xl p-4 backdrop-blur">
-              <p className="text-3xl font-black text-[#D4AF37]">{advancedStats?.elite?.active_slots || 0}</p>
-              <p className="text-xs text-white/70 mt-1">حجوزات نشطة</p>
+          <div className="grid grid-cols-2 gap-3 md:gap-4">
+            <div className="bg-white/10 rounded-xl p-3 md:p-4 backdrop-blur">
+              <p className="text-2xl md:text-3xl font-black text-[#D4AF37]">{advancedStats?.elite?.active_slots || 0}</p>
+              <p className="text-xs md:text-xs text-white/70 mt-1.5 md:mt-1">حجوزات نشطة</p>
             </div>
-            <div className="bg-white/10 rounded-xl p-4 backdrop-blur">
-              <p className="text-3xl font-black text-amber-400">{advancedStats?.elite?.pending_approval || 0}</p>
-              <p className="text-xs text-white/70 mt-1">بانتظار الموافقة</p>
+            <div className="bg-white/10 rounded-xl p-3 md:p-4 backdrop-blur">
+              <p className="text-2xl md:text-3xl font-black text-amber-400">{advancedStats?.elite?.pending_approval || 0}</p>
+              <p className="text-xs md:text-xs text-white/70 mt-1.5 md:mt-1">بانتظار الموافقة</p>
             </div>
-            <div className="bg-white/10 rounded-xl p-4 backdrop-blur">
-              <p className="text-3xl font-black text-emerald-400">{advancedStats?.elite?.unique_properties || 0}</p>
-              <p className="text-xs text-white/70 mt-1">إعلانات مميزة</p>
+            <div className="bg-white/10 rounded-xl p-3 md:p-4 backdrop-blur">
+              <p className="text-2xl md:text-3xl font-black text-emerald-400">{advancedStats?.elite?.unique_properties || 0}</p>
+              <p className="text-xs md:text-xs text-white/70 mt-1.5 md:mt-1">إعلانات مميزة</p>
             </div>
-            <div className="bg-white/10 rounded-xl p-4 backdrop-blur">
-              <p className="text-3xl font-black text-blue-400">{advancedStats?.elite?.pending_payment || 0}</p>
-              <p className="text-xs text-white/70 mt-1">بانتظار الدفع</p>
+            <div className="bg-white/10 rounded-xl p-3 md:p-4 backdrop-blur">
+              <p className="text-2xl md:text-3xl font-black text-blue-400">{advancedStats?.elite?.pending_payment || 0}</p>
+              <p className="text-xs md:text-xs text-white/70 mt-1.5 md:mt-1">بانتظار الدفع</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+        <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-[#002845] flex items-center gap-2">
-              <Wallet className="w-5 h-5 text-[#D4AF37]" />
+            <h2 className="font-bold text-base md:text-lg text-[#002845] flex items-center gap-2">
+              <Wallet className="w-5 h-5 md:w-5 md:h-5 text-[#D4AF37]" />
               الإيرادات
             </h2>
-            <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">ريال سعودي</span>
+            <span className="text-xs md:text-xs text-slate-500 bg-slate-100 px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg shrink-0">ريال سعودي</span>
           </div>
-          <div className="space-y-4">
-            <div className="text-center p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl">
-              <p className="text-xs text-emerald-600 mb-1">إجمالي الإيرادات</p>
-              <p className="text-2xl font-black text-emerald-700">
-                {formatCurrency(Number(advancedStats?.revenue?.total_revenue) || 0)} <span className="text-sm font-normal">ر.س</span>
+          <div className="space-y-3 md:space-y-4">
+            <div className="text-center p-4 md:p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl">
+              <p className="text-sm md:text-xs text-emerald-600 mb-1.5 md:mb-1">إجمالي الإيرادات</p>
+              <p className="text-xl md:text-2xl font-black text-emerald-700">
+                {formatCurrency(Number(advancedStats?.revenue?.total_revenue) || 0)} <span className="text-sm md:text-sm font-normal">ر.س</span>
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 bg-blue-50 rounded-xl text-center">
-                <p className="text-lg font-bold text-blue-700">{formatCurrency(Number(advancedStats?.revenue?.this_month) || 0)}</p>
-                <p className="text-[10px] text-blue-600">هذا الشهر</p>
+            <div className="grid grid-cols-2 gap-2.5 md:gap-3">
+              <div className="p-3 md:p-3 bg-blue-50 rounded-xl text-center">
+                <p className="text-base md:text-lg font-bold text-blue-700">{formatCurrency(Number(advancedStats?.revenue?.this_month) || 0)}</p>
+                <p className="text-xs md:text-[10px] text-blue-600 mt-1">هذا الشهر</p>
               </div>
-              <div className="p-3 bg-purple-50 rounded-xl text-center">
-                <p className="text-lg font-bold text-purple-700">{formatCurrency(Number(advancedStats?.revenue?.this_week) || 0)}</p>
-                <p className="text-[10px] text-purple-600">هذا الأسبوع</p>
+              <div className="p-3 md:p-3 bg-purple-50 rounded-xl text-center">
+                <p className="text-base md:text-lg font-bold text-purple-700">{formatCurrency(Number(advancedStats?.revenue?.this_week) || 0)}</p>
+                <p className="text-xs md:text-[10px] text-purple-600 mt-1">هذا الأسبوع</p>
               </div>
             </div>
-            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-              <span className="text-sm text-slate-600">عدد المعاملات</span>
-              <span className="text-lg font-bold text-[#002845]">{advancedStats?.revenue?.total_transactions || 0}</span>
+            <div className="flex items-center justify-between p-3 md:p-3 bg-slate-50 rounded-xl">
+              <span className="text-sm md:text-sm text-slate-600">عدد المعاملات</span>
+              <span className="text-base md:text-lg font-bold text-[#002845]">{advancedStats?.revenue?.total_transactions || 0}</span>
             </div>
           </div>
         </div>

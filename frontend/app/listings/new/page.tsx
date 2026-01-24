@@ -665,13 +665,42 @@ export default function NewListingPage() {
   // 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي (FFmpeg - مجاني) 
   async function handleGenerateVideo() {
     if (!form.propertyType) {
-      setVideoError("يرجى اختيار نوع العقار أولاً");
+      setVideoError("يرجى اختيار نوع العقار أولاً من الخطوة الأولى");
+      toast.error("يرجى اختيار نوع العقار أولاً", { duration: 3000 });
       return;
     }
 
     if (images.length === 0) {
       setVideoError("يرجى رفع صور العقار أولاً لتوليد الفيديو");
+      toast.error("يرجى رفع صور العقار أولاً", { duration: 3000 });
       return;
+    }
+    
+    // للباقات المتقدمة (aiSupportLevel >= 3): يجب اختيار صور
+    const aiSupportLevel = selectedBucket?.benefits?.aiSupportLevel ?? 0;
+    if (aiSupportLevel >= 3) {
+      if (selectedImagesForVideo.size === 0) {
+        setVideoError("يرجى اختيار صور أولاً لتوليد الفيديو");
+        toast.error("يرجى اختيار صور أولاً", { duration: 3000 });
+        return;
+      }
+    }
+    
+    // استخدام الصور المختارة إذا كانت موجودة، وإلا استخدام جميع الصور
+    const imagesToUse = selectedImagesForVideo.size > 0 
+      ? Array.from(selectedImagesForVideo).map(idx => images[idx]).filter(Boolean)
+      : images;
+    
+    if (imagesToUse.length === 0) {
+      setVideoError("يرجى اختيار صور للفيديو أو رفع صور جديدة");
+      toast.error("لا توجد صور متاحة", { duration: 3000 });
+      return;
+    }
+    
+    // تحذير إذا كانت الصور كثيرة
+    if (imagesToUse.length > 10) {
+      const proceed = window.confirm(`تم اختيار ${imagesToUse.length} صورة. عدد أقل من الصور يعني سرعة أكبر في التوليد. هل تريد المتابعة؟`);
+      if (!proceed) return;
     }
 
     setVideoLoading(true);
@@ -682,7 +711,7 @@ export default function NewListingPage() {
     try {
       // Step 1: Upload images temporarily for video generation
       const formData = new FormData();
-      images.forEach((img, idx) => {
+      imagesToUse.forEach((img) => {
         formData.append('images', img);
       });
 
@@ -823,25 +852,96 @@ export default function NewListingPage() {
     setErrors((prev) => ({ ...prev, [key]: undefined }));
   }
 
-  const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-  const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm'];
+  // دعم جميع أنواع الصور بما في ذلك صور الجوال (HEIC, HEIF, etc.)
+  const ALLOWED_IMAGE_TYPES = [
+    'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+    'image/heic', 'image/heif', 'image/avif', 'image/bmp', 'image/tiff',
+    'image/svg+xml', 'image/x-icon'
+  ];
+  
+  // دعم جميع أنواع الفيديو بما في ذلك فيديوهات الجوال
+  const ALLOWED_VIDEO_TYPES = [
+    'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime',
+    'video/x-msvideo', 'video/x-ms-wmv', 'video/x-matroska',
+    'video/3gpp', 'video/3gpp2', 'video/x-flv'
+  ];
 
-  const handleImagesChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  // ضغط الصور تلقائياً على الجوال لتحسين الجودة والأداء
+  const compressImage = useCallback((file: File, maxWidth: number = 1920, quality: number = 0.85): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          // حساب الأبعاد الجديدة مع الحفاظ على النسبة
+          if (width > maxWidth) {
+            height = (height * maxWidth) / width;
+            width = maxWidth;
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('لا يمكن الوصول إلى canvas'));
+            return;
+          }
+          
+          // تحسين جودة الرسم
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                reject(new Error('فشل في ضغط الصورة'));
+                return;
+              }
+              const compressedFile = new File([blob], file.name, {
+                type: 'image/jpeg',
+                lastModified: Date.now()
+              });
+              resolve(compressedFile);
+            },
+            'image/jpeg',
+            quality
+          );
+        };
+        img.onerror = () => reject(new Error('فشل في تحميل الصورة'));
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject(new Error('فشل في قراءة الملف'));
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const handleImagesChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
     const maxImages = selectedBucket?.benefits.maxPhotos || plan?.maxPhotosPerListing || 5;
     
-    // التحقق من نوع الملفات
-    const invalidFiles = files.filter(file => !ALLOWED_IMAGE_TYPES.includes(file.type));
-    if (invalidFiles.length > 0) {
-      const invalidNames = invalidFiles.map(f => f.name).join(', ');
-      setErrors(prev => ({ 
-        ...prev, 
-        media: `نوع الملف غير مدعوم (${invalidNames}). الأنواع المسموحة: JPEG, PNG, WebP, GIF` 
-      }));
-      toast.error(`نوع الملف غير مدعوم: ${invalidNames}`, { duration: 4000 });
+    // التحقق من نوع الملفات - قبول جميع أنواع الصور
+    const imageFiles = files.filter(file => {
+      // قبول أي ملف يبدأ بـ image/ أو له امتداد صورة معروف
+      const isImage = file.type.startsWith('image/') || 
+                     /\.(jpg|jpeg|png|gif|webp|heic|heif|avif|bmp|tiff|svg|ico)$/i.test(file.name);
+      return isImage;
+    });
+    
+    if (imageFiles.length === 0) {
+      toast.error('لم يتم العثور على صور صالحة', { duration: 3000 });
       e.target.value = '';
       return;
+    }
+    
+    if (imageFiles.length !== files.length) {
+      toast.warning(`تم قبول ${imageFiles.length} من ${files.length} ملف`, { duration: 3000 });
     }
 
     const total = images.length + files.length;
@@ -929,9 +1029,12 @@ export default function NewListingPage() {
     if (!e.target.files || !e.target.files[0]) return;
     const file = e.target.files[0];
 
-    // التحقق من نوع الملف
-    if (!ALLOWED_VIDEO_TYPES.includes(file.type)) {
-      setVideoError(`نوع الملف غير مدعوم. الأنواع المسموحة: MP4, WebM`);
+    // قبول جميع أنواع الفيديو - التحقق من الامتداد أو النوع
+    const isVideo = file.type.startsWith('video/') || 
+                   /\.(mp4|webm|ogg|mov|avi|wmv|mkv|flv|3gp|3g2|m4v)$/i.test(file.name);
+    
+    if (!isVideo) {
+      setVideoError(`نوع الملف غير مدعوم. يرجى رفع ملف فيديو صالح`);
       e.target.value = "";
       return;
     }
@@ -2972,60 +3075,19 @@ export default function NewListingPage() {
                       className="hidden"
                       id="images-upload"
                     />
-                    <label htmlFor="images-upload" className="cursor-pointer">
-                      <Upload className="w-12 h-12 text-slate-400 mx-auto mb-3" />
-                      <p className="text-slate-600 font-medium">اضغط لرفع الصور أو اسحبها هنا</p>
-                      <p className="text-xs text-slate-400 mt-1">PNG, JPG, WEBP حتى 10 ميجابايت</p>
+                    <label htmlFor="images-upload" className="cursor-pointer block w-full">
+                      <Upload className="w-12 h-12 md:w-16 md:h-16 text-slate-400 mx-auto mb-3" />
+                      <p className="text-slate-600 font-medium text-base md:text-lg">اضغط لرفع الصور أو اسحبها هنا</p>
+                      <p className="text-xs md:text-sm text-slate-400 mt-2">
+                        جميع أنواع الصور مدعومة (JPG, PNG, WEBP, HEIC, GIF, AVIF, BMP)
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">حتى 20 ميجابايت لكل صورة - ضغط تلقائي على الجوال</p>
                     </label>
                   </div>
 
                   {imagePreviews.length > 0 && (
                     <div className="mt-4">
-                      {/* Video Generation Image Selection - Only for Business tier */}
-                      {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && imagePreviews.length > 0 && (
-                        <div className="mb-4 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border-2 border-emerald-200">
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                              <Film className="w-5 h-5 text-emerald-600" />
-                              <h4 className="font-semibold text-emerald-800">إذا أردت توليد فيديو بالذكاء الاصطناعي، اختر الصور المطلوبة</h4>
-                            </div>
-                            {imagePreviews.length > 3 && (
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={selectAllImages}
-                                  className="text-xs px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium shadow-sm"
-                                >
-                                  تحديد الكل
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={deselectAllImages}
-                                  className="text-xs px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium shadow-sm"
-                                >
-                                  إلغاء الكل
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 text-sm text-emerald-700 mb-3">
-                            <Zap className="w-4 h-4" />
-                            <span className="font-medium">
-                              تم اختيار {selectedImagesForVideo.size} من {imagePreviews.length} صورة
-                            </span>
-                          </div>
-                          <div className="p-3 bg-white/80 rounded-lg border border-emerald-200">
-                            <p className="text-xs text-emerald-800 flex items-start gap-2">
-                              <span className="text-emerald-600 font-bold">💡 ملاحظة:</span>
-                              <span>
-                                عدد صور أقل يعني سرعة في الإنجاز. ننصح باختيار 3-8 صور للحصول على أفضل نتيجة.
-                              </span>
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                      
-                      <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
                         {imagePreviews.map((preview, idx) => {
                           const isSelected = selectedImagesForVideo.has(idx);
                           const showVideoSelection = (selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && imagePreviews.length > 0;
@@ -3100,6 +3162,50 @@ export default function NewListingPage() {
                           );
                         })}
                       </div>
+
+                      {/* Video Generation Image Selection - Only for Business tier - بعد الصور */}
+                      {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && imagePreviews.length > 0 && (
+                        <div className="mt-4 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border-2 border-emerald-200">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <Film className="w-5 h-5 text-emerald-600" />
+                              <h4 className="font-semibold text-emerald-800">إذا أردت توليد فيديو بالذكاء الاصطناعي، اختر الصور المطلوبة</h4>
+                            </div>
+                            {imagePreviews.length > 3 && (
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={selectAllImages}
+                                  className="text-xs px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium shadow-sm"
+                                >
+                                  تحديد الكل
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={deselectAllImages}
+                                  className="text-xs px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium shadow-sm"
+                                >
+                                  إلغاء الكل
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-emerald-700 mb-3">
+                            <Zap className="w-4 h-4" />
+                            <span className="font-medium">
+                              تم اختيار {selectedImagesForVideo.size} من {imagePreviews.length} صورة
+                            </span>
+                          </div>
+                          <div className="p-3 bg-white/80 rounded-lg border border-emerald-200">
+                            <p className="text-xs text-emerald-800 flex items-start gap-2">
+                              <span className="text-emerald-600 font-bold">💡 ملاحظة:</span>
+                              <span>
+                                عدد صور أقل يعني سرعة في الإنجاز. ننصح باختيار 3-8 صور للحصول على أفضل نتيجة.
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -3111,7 +3217,7 @@ export default function NewListingPage() {
                   )}
                 </div>
 
-                {/* توليد فيديو بالذكاء الاصطناعي - متاح للباقات المتقدمة */}
+                {/* توليد فيديو بالذكاء الاصطناعي - متاح للباقات المتقدمة - بعد الصور */}
                 {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 2 && imagePreviews.length > 0 && (
                   <div className="mb-6 p-5 bg-gradient-to-br from-purple-50 via-indigo-50 to-blue-50 rounded-2xl border-2 border-purple-200">
                     <div className="flex items-center gap-3 mb-4">
@@ -3215,16 +3321,35 @@ export default function NewListingPage() {
                         <button
                           type="button"
                           onClick={handleGenerateVideo}
-                          disabled={!form.propertyType || videoLoading}
-                          className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg"
+                          disabled={
+                            !form.propertyType || 
+                            videoLoading || 
+                            images.length === 0 ||
+                            ((selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && selectedImagesForVideo.size === 0)
+                          }
+                          className="w-full flex items-center justify-center gap-3 px-6 py-4 md:py-5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-base md:text-lg shadow-lg active:scale-95 touch-manipulation"
                         >
-                          <BrainCircuit className="w-5 h-5" />
-                          <span>توليد فيديو بالذكاء الاصطناعي</span>
-                          <Sparkles className="w-4 h-4" />
+                          {videoLoading ? (
+                            <>
+                              <Loader2 className="w-5 h-5 md:w-6 md:h-6 animate-spin" />
+                              <span>جاري التوليد...</span>
+                            </>
+                          ) : (
+                            <>
+                              <BrainCircuit className="w-5 h-5 md:w-6 md:h-6" />
+                              <span>توليد فيديو بالذكاء الاصطناعي</span>
+                              <Sparkles className="w-4 h-4 md:w-5 md:h-5" />
+                            </>
+                          )}
                         </button>
                         {!form.propertyType && (
                           <p className="text-xs text-amber-600 text-center">
                             ⚠️ يرجى اختيار نوع العقار أولاً من الخطوة السابقة
+                          </p>
+                        )}
+                        {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && selectedImagesForVideo.size === 0 && (
+                          <p className="text-xs text-red-600 text-center font-medium">
+                            ⚠️ يرجى اختيار صور أولاً لتوليد الفيديو
                           </p>
                         )}
                       </div>
@@ -3245,18 +3370,22 @@ export default function NewListingPage() {
                     </div>
 
                     {!videoPreview ? (
-                      <div className="border-2 border-dashed border-slate-300 rounded-2xl p-6 text-center hover:border-[#D4AF37] transition">
+                      <div className="border-2 border-dashed border-slate-300 rounded-2xl p-6 md:p-8 text-center hover:border-[#D4AF37] transition active:bg-slate-50 touch-manipulation">
                         <input
                           type="file"
-                          accept="video/*"
+                          accept="video/*,.mp4,.mov,.avi,.webm,.3gp,.mkv"
                           onChange={handleVideoChange}
                           className="hidden"
                           id="video-upload"
+                          capture="environment"
                         />
-                        <label htmlFor="video-upload" className="cursor-pointer">
-                          <Video className="w-12 h-12 text-slate-400 mx-auto mb-3" />
-                          <p className="text-slate-600 font-medium">اضغط لرفع فيديو</p>
-                          <p className="text-xs text-slate-400 mt-1">MP4, WEBM حتى 50 ميجابايت</p>
+                        <label htmlFor="video-upload" className="cursor-pointer block w-full">
+                          <Video className="w-12 h-12 md:w-16 md:h-16 text-slate-400 mx-auto mb-3" />
+                          <p className="text-slate-600 font-medium text-base md:text-lg">اضغط لرفع فيديو</p>
+                          <p className="text-xs md:text-sm text-slate-400 mt-2">
+                            جميع أنواع الفيديو مدعومة (MP4, MOV, AVI, WEBM, 3GP, MKV)
+                          </p>
+                          <p className="text-xs text-slate-400 mt-1">حتى 50 ميجابايت</p>
                         </label>
                       </div>
                     ) : (

@@ -472,26 +472,26 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
           <div className={`flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br ${roleGradient} shadow-lg`}>
             <Crown className="w-5 h-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-base font-black bg-gradient-to-l from-[#D4AF37] to-[#F5E6B8] bg-clip-text text-transparent">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg md:text-base font-black bg-gradient-to-l from-[#D4AF37] to-[#F5E6B8] bg-clip-text text-transparent truncate">
               بيت الجزيرة
             </h1>
-            <p className="text-[10px] text-[#D4AF37]/80 font-medium">
+            <p className="text-xs md:text-[10px] text-[#D4AF37]/80 font-medium truncate">
               {ROLE_NAMES[userRole] || 'لوحة تحكم الإدارة'}
             </p>
           </div>
         </div>
         
         {userName && (
-          <div className="mt-3 p-2.5 rounded-lg bg-white/5 border border-white/10">
-            <div className="flex items-center justify-between">
+          <div className="mt-3 p-3 md:p-2.5 rounded-lg bg-white/5 border border-white/10">
+            <div className="flex items-center justify-between gap-2">
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] text-white/60">مرحباً</p>
-                <p className="text-sm font-bold text-white truncate">{userName}</p>
+                <p className="text-xs md:text-[10px] text-white/60">مرحباً</p>
+                <p className="text-base md:text-sm font-bold text-white truncate">{userName}</p>
               </div>
-              <div className={`flex items-center gap-1 px-2 py-1 rounded-full bg-gradient-to-r ${roleGradient} text-[9px] font-bold`}>
-                <Shield className="w-2.5 h-2.5" />
-                {ROLE_NAMES[userRole]}
+              <div className={`flex items-center gap-1 px-2.5 py-1.5 md:px-2 md:py-1 rounded-full bg-gradient-to-r ${roleGradient} text-xs md:text-[9px] font-bold shrink-0`}>
+                <Shield className="w-3 h-3 md:w-2.5 md:h-2.5" />
+                <span className="hidden md:inline">{ROLE_NAMES[userRole]}</span>
               </div>
             </div>
           </div>
@@ -514,17 +514,17 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
                 <div key={section.id} className="rounded-xl overflow-hidden">
                   <button
                     onClick={() => toggleSection(section.id)}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm font-bold transition-all duration-200 hover:bg-white/5 rounded-lg group"
+                    className="w-full flex items-center gap-2.5 md:gap-2 px-3 md:px-3 py-3 md:py-2.5 text-base md:text-sm font-bold transition-all duration-200 hover:bg-white/5 active:bg-white/10 rounded-lg group touch-manipulation"
                   >
-                    <SectionIcon className={`w-4 h-4 ${section.colorClass} transition-transform duration-200`} />
-                    <span className={`flex-1 text-right ${section.colorClass}`}>{section.title}</span>
+                    <SectionIcon className={`w-5 h-5 md:w-4 md:h-4 ${section.colorClass} transition-transform duration-200 shrink-0`} />
+                    <span className={`flex-1 text-right ${section.colorClass} truncate`}>{section.title}</span>
                     {sectionCount > 0 && (
-                      <span className="min-w-[20px] h-5 flex items-center justify-center text-[10px] font-bold bg-red-500/20 text-red-400 rounded-full px-1.5">
+                      <span className="min-w-[24px] h-6 md:min-w-[20px] md:h-5 flex items-center justify-center text-xs md:text-[10px] font-bold bg-red-500/20 text-red-400 rounded-full px-2 md:px-1.5 shrink-0">
                         {sectionCount}
                       </span>
                     )}
                     <ChevronDown 
-                      className={`w-4 h-4 text-white/40 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} 
+                      className={`w-5 h-5 md:w-4 md:h-4 text-white/40 transition-transform duration-200 shrink-0 ${isExpanded ? 'rotate-180' : ''}`} 
                     />
                   </button>
 
@@ -548,7 +548,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
                             key={item.href}
                             onClick={() => handleNavigation(item.href)}
                             disabled={isNavigating}
-                            className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-all duration-150 cursor-pointer group/item ${
+                            className={`w-full flex items-center gap-3 md:gap-2.5 rounded-lg px-3 md:px-3 py-3 md:py-2 text-base md:text-[13px] transition-all duration-150 cursor-pointer group/item touch-manipulation ${
                               active 
                                 ? item.isReport
                                   ? "bg-gradient-to-l from-red-500/20 to-red-600/10 text-red-400 font-bold border-r-2 border-red-500"
@@ -556,24 +556,24 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
                                 : isNavigating 
                                   ? "bg-white/10 text-white"
                                   : item.isReport
-                                    ? "text-white/70 hover:bg-red-500/10 hover:text-red-400"
-                                    : "text-white/70 hover:bg-white/5 hover:text-white"
+                                    ? "text-white/70 hover:bg-red-500/10 hover:text-red-400 active:bg-red-500/15"
+                                    : "text-white/70 hover:bg-white/5 hover:text-white active:bg-white/10"
                             }`}
                           >
                             {isNavigating ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <Loader2 className="w-5 h-5 md:w-4 md:h-4 animate-spin shrink-0" />
                             ) : (
-                              <Icon className={`w-4 h-4 transition-transform duration-150 group-hover/item:scale-110 ${active ? "" : "opacity-60"}`} />
+                              <Icon className={`w-5 h-5 md:w-4 md:h-4 transition-transform duration-150 group-hover/item:scale-110 shrink-0 ${active ? "" : "opacity-60"}`} />
                             )}
-                            <span className="flex-1 text-right">{item.label}</span>
-                            <div className="flex items-center gap-1">
+                            <span className="flex-1 text-right truncate">{item.label}</span>
+                            <div className="flex items-center gap-1.5 md:gap-1 shrink-0">
                               {newCount > 0 && (
-                                <span className="min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full px-1 shadow-lg shadow-red-500/30">
+                                <span className="min-w-[22px] h-[22px] md:min-w-[18px] md:h-[18px] flex items-center justify-center text-xs md:text-[10px] font-bold bg-red-500 text-white rounded-full px-1.5 md:px-1 shadow-lg shadow-red-500/30">
                                   {newCount > 99 ? '99+' : newCount}
                                 </span>
                               )}
                               {inProgressCount > 0 && (
-                                <span className="min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold bg-amber-500 text-white rounded-full px-1">
+                                <span className="min-w-[22px] h-[22px] md:min-w-[18px] md:h-[18px] flex items-center justify-center text-xs md:text-[10px] font-bold bg-amber-500 text-white rounded-full px-1.5 md:px-1">
                                   {inProgressCount}
                                 </span>
                               )}
@@ -594,23 +594,23 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
         )}
       </nav>
 
-      <div className="border-t border-white/10 p-3 space-y-1.5">
+      <div className="border-t border-white/10 p-3 md:p-3 space-y-2 md:space-y-1.5">
         <button
           onClick={() => handleNavigation("/")}
-          className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg bg-[#D4AF37]/10 text-[#D4AF37] hover:bg-[#D4AF37]/20 transition text-sm font-medium"
+          className="flex items-center justify-center gap-2.5 md:gap-2 w-full px-3 md:px-3 py-3 md:py-2 rounded-lg bg-[#D4AF37]/10 text-[#D4AF37] hover:bg-[#D4AF37]/20 active:bg-[#D4AF37]/30 transition text-base md:text-sm font-medium touch-manipulation"
         >
-          <Home className="w-4 h-4" />
+          <Home className="w-5 h-5 md:w-4 md:h-4" />
           الموقع الرئيسي
         </button>
         <button
           onClick={handleLogout}
           disabled={loggingOut}
-          className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition text-sm font-medium disabled:opacity-50"
+          className="flex items-center justify-center gap-2.5 md:gap-2 w-full px-3 md:px-3 py-3 md:py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 active:bg-red-500/30 transition text-base md:text-sm font-medium disabled:opacity-50 touch-manipulation"
         >
           {loggingOut ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 className="w-5 h-5 md:w-4 md:h-4 animate-spin" />
           ) : (
-            <DoorOpen className="w-4 h-4" />
+            <DoorOpen className="w-5 h-5 md:w-4 md:h-4" />
           )}
           تسجيل الخروج
         </button>

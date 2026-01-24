@@ -39,7 +39,7 @@ export default function AdminShell({ children }: AdminShellProps) {
           
           <div className="flex min-h-screen flex-1 flex-col">
             <AdminTopbar onMenuClick={() => setMobileMenuOpen(true)} />
-            <main className="flex-1 px-4 pb-8 pt-4 md:px-8">
+            <main className="flex-1 px-3 pb-6 pt-3 md:px-6 md:pb-8 md:pt-4 overflow-x-hidden">
               {children}
             </main>
           </div>

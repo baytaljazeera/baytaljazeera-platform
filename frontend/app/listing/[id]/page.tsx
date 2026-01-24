@@ -938,24 +938,26 @@ export default function ListingDetailPage() {
             )}
 
             <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm">
-              <div className="flex items-start justify-between gap-4 mb-2">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-2">
                 <h1 className="text-xl sm:text-2xl font-bold text-[#002845] flex-1">{listing.title}</h1>
                 {isOwner && (
                   <div className="flex items-center gap-2 shrink-0">
                     <Link
                       href={`/edit-listing/${listing.id}`}
-                      className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:from-emerald-700 hover:to-teal-700 transition-all shadow-lg hover:shadow-xl"
+                      className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-4 py-2.5 sm:px-5 sm:py-2.5 rounded-xl text-sm font-bold hover:from-emerald-700 hover:to-teal-700 active:scale-95 transition-all shadow-lg hover:shadow-xl touch-manipulation"
                       title="تعديل الإعلان"
                     >
-                      <FileText className="w-4 h-4" />
-                      تعديل الإعلان
+                      <Pencil className="w-4 h-4 sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">تعديل الإعلان</span>
+                      <span className="sm:hidden">تعديل</span>
                     </Link>
                     <Link
                       href="/my-listings"
-                      className="flex items-center gap-2 bg-slate-100 text-slate-700 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-200 transition-all"
+                      className="flex items-center gap-2 bg-slate-100 text-slate-700 px-3 py-2.5 sm:px-4 sm:py-2.5 rounded-xl text-sm font-medium hover:bg-slate-200 active:scale-95 transition-all touch-manipulation"
                       title="العودة لإعلاناتي"
                     >
                       <ArrowRight className="w-4 h-4" />
+                      <span className="hidden sm:inline">إعلاناتي</span>
                     </Link>
                   </div>
                 )}
@@ -1340,6 +1342,27 @@ export default function ListingDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* زر التعديل في أسفل الصفحة - للمالك فقط */}
+      {isOwner && (
+        <div className="max-w-7xl mx-auto px-4 pb-4">
+          <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-200 rounded-2xl p-4 sm:p-6 shadow-lg">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="text-center sm:text-right">
+                <h3 className="text-lg font-bold text-[#002845] mb-1">إدارة الإعلان</h3>
+                <p className="text-sm text-slate-600">يمكنك تعديل تفاصيل الإعلان في أي وقت</p>
+              </div>
+              <Link
+                href={`/edit-listing/${listing.id}`}
+                className="flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-6 py-3.5 rounded-xl font-bold hover:from-emerald-700 hover:to-teal-700 active:scale-95 transition-all shadow-lg hover:shadow-xl text-base touch-manipulation w-full sm:w-auto"
+              >
+                <Pencil className="w-5 h-5" />
+                تعديل الإعلان
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* شريط التواصل السريع للجوال */}
       {!isPendingOrHidden && (

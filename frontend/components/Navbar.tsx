@@ -640,7 +640,7 @@ function NavbarContent() {
       />
 
       <header 
-        className="shadow-sm border-b border-slate-100 sticky top-0 z-[200]" 
+        className="shadow-sm border-b border-slate-100 sticky top-0 z-[200] bg-white/95 backdrop-blur-sm" 
         dir="rtl"
         style={{
           backgroundImage: "url('/patterns/card-pattern.png')",
@@ -649,11 +649,11 @@ function NavbarContent() {
         }}
       >
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between h-14 sm:h-16 lg:h-20">
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
             <button
               type="button"
               onClick={() => setAdminModalOpen(true)}
-              className="relative hover:opacity-90 transition group"
+              className="relative hover:opacity-90 transition group shrink-0"
               aria-label={`شعار ${siteSettings.siteName} - اضغط لفتح بوابة الإدارة`}
             >
               <Image
@@ -669,9 +669,40 @@ function NavbarContent() {
             </button>
             <Link
               href="/"
-              className="text-lg sm:text-xl lg:text-2xl font-extrabold text-[#003366] tracking-tight hover:text-[#D4AF37] transition"
+              className="text-lg sm:text-xl lg:text-2xl font-extrabold text-[#003366] tracking-tight hover:text-[#D4AF37] transition truncate"
             >
               {siteSettings.siteName}
+            </Link>
+          </div>
+
+          {/* Mobile: Fixed buttons in header */}
+          <div className="md:hidden flex items-center gap-2 ml-2 shrink-0">
+            {/* Map/List Toggle Button */}
+            {isSearchPage ? (
+              <Link
+                href={`/search?view=${nextView}`}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md hover:shadow-lg transition-all active:scale-95"
+              >
+                <SearchIcon className="w-4 h-4" />
+                <span className="text-xs font-semibold hidden sm:inline">{searchLabel}</span>
+              </Link>
+            ) : (
+              <Link
+                href="/search?view=map"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md hover:shadow-lg transition-all active:scale-95"
+              >
+                <Map className="w-4 h-4" />
+                <span className="text-xs font-semibold hidden sm:inline">الخريطة</span>
+              </Link>
+            )}
+            
+            {/* Add Listing Button */}
+            <Link
+              href="/listings/new"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md hover:shadow-lg transition-all active:scale-95 font-semibold"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span className="text-xs hidden sm:inline">إضافة</span>
             </Link>
           </div>
 
@@ -719,8 +750,9 @@ function NavbarContent() {
           {renderAuthSection()}
         </nav>
 
+        {/* Mobile Menu Button */}
         <button
-          className="md:hidden p-2 rounded-lg hover:bg-slate-100 transition"
+          className="md:hidden p-2 rounded-lg hover:bg-slate-100 transition shrink-0"
           onClick={() => setShowMobileMenu(!showMobileMenu)}
         >
           {showMobileMenu ? (
@@ -741,32 +773,7 @@ function NavbarContent() {
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
             <nav className="px-4 py-4 space-y-2">
-              <div className="flex items-center bg-[#E8F5F0] rounded-xl p-1 mb-2 border border-[#5FBDAA]/30">
-                <Link
-                  href="/search?view=list"
-                  onClick={() => setShowMobileMenu(false)}
-                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg transition-all duration-300 ${
-                    isSearchPage && currentView === 'list'
-                      ? 'bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md' 
-                      : 'text-[#003366]'
-                  }`}
-                >
-                  <List className="w-5 h-5" />
-                  <span className="font-medium">القائمة</span>
-                </Link>
-                <Link
-                  href="/search?view=map"
-                  onClick={() => setShowMobileMenu(false)}
-                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg transition-all duration-300 ${
-                    isSearchPage && currentView === 'map'
-                      ? 'bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md' 
-                      : 'text-[#003366]'
-                  }`}
-                >
-                  <Map className="w-5 h-5" />
-                  <span className="font-medium">الخريطة</span>
-                </Link>
-              </div>
+              {/* Map/List toggle removed from mobile menu - now in header */}
 
               {staticNavItems.map(({ href, label, icon: Icon }) => (
                 <Link
