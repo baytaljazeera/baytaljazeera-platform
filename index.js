@@ -334,6 +334,48 @@ process.on("unhandledRejection", (err) =>
   }
 })();
 
+// 🔐 OAuth Fallback Routes (when Replit Auth is not available)
+// These routes handle OAuth requests when running outside Replit environment
+app.get('/api/login', (req, res) => {
+  // Check if Replit Auth is available
+  if (process.env.REPL_ID) {
+    // If Replit Auth is available, it should handle this route
+    // This should not be reached if Replit Auth is properly configured
+    return res.status(404).json({ 
+      error: 'OAuth login not configured',
+      errorEn: 'OAuth login endpoint not found'
+    });
+  }
+  
+  // Return a user-friendly error message
+  res.status(503).json({ 
+    error: 'تسجيل الدخول عبر Google و Apple غير متاح حالياً. يرجى استخدام البريد الإلكتروني وكلمة المرور.',
+    errorEn: 'OAuth login (Google, Apple) is currently unavailable. Please use email and password to register/login.',
+    available: false
+  });
+});
+
+app.get('/api/logout', (req, res) => {
+  // Simple logout - clear any cookies and redirect
+  res.clearCookie('token');
+  res.clearCookie('connect.sid');
+  res.json({ 
+    message: 'تم تسجيل الخروج بنجاح',
+    messageEn: 'Logged out successfully'
+  });
+});
+
+// 🔐 Check OAuth availability
+app.get('/api/auth/oauth-status', (req, res) => {
+  const isAvailable = !!process.env.REPL_ID;
+  res.json({ 
+    available: isAvailable,
+    message: isAvailable 
+      ? 'OAuth login is available' 
+      : 'OAuth login is not available (Replit Auth requires Replit environment)'
+  });
+});
+
 // 🟢 مسار اختبار بسيط
 app.get("/", (req, res) => {
   res.json({ message: "Aqar Al Jazeera API", status: "ok", version: "2.0.0" });

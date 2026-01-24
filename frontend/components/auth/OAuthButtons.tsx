@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/lib/stores/authStore';
 
 interface OAuthButtonsProps {
@@ -10,11 +10,37 @@ interface OAuthButtonsProps {
 export default function OAuthButtons({ className = '' }: OAuthButtonsProps) {
   const { loginWithOAuth } = useAuthStore();
   const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
+  const [oauthAvailable, setOauthAvailable] = useState<boolean | null>(null);
+
+  // Check OAuth availability on mount
+  useEffect(() => {
+    const checkOAuthStatus = async () => {
+      try {
+        const response = await fetch('/api/auth/oauth-status', { credentials: 'include' });
+        const data = await response.json();
+        setOauthAvailable(data.available || false);
+      } catch (error) {
+        console.error('Error checking OAuth status:', error);
+        setOauthAvailable(false);
+      }
+    };
+    checkOAuthStatus();
+  }, []);
 
   const handleOAuthClick = (provider: string) => {
     setLoadingProvider(provider);
     loginWithOAuth();
   };
+
+  // Don't render if OAuth is not available
+  if (oauthAvailable === false) {
+    return null;
+  }
+
+  // Show loading state while checking
+  if (oauthAvailable === null) {
+    return null;
+  }
 
   return (
     <div className={`space-y-3 ${className}`}>
