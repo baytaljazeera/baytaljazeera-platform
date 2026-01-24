@@ -84,6 +84,69 @@ function authMiddleware(req, res, next) {
   }
 }
 
+// Enhanced auth middleware that also checks email verification
+async function authMiddlewareWithEmailCheck(req, res, next) {
+  // First, do standard auth
+  const token = req.cookies?.token || req.headers.authorization?.replace("Bearer ", "");
+  
+  if (!token) {
+    return res.status(401).json({ error: "غير مصرح", errorEn: "Unauthorized" });
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET, JWT_VERIFY_OPTIONS);
+    
+    if (!payload.userId || !payload.role) {
+      return res.status(401).json({ error: "رمز غير صالح", errorEn: "Invalid token claims" });
+    }
+    
+    req.user = { 
+      id: payload.userId, 
+      role: payload.role,
+      role_level: ROLES[payload.role]?.level || 0
+    };
+
+    // Check email verification (skip for admin roles)
+    if (!ADMIN_ROLES.includes(payload.role)) {
+      try {
+        const db = require('../db');
+        const userResult = await db.query(
+          'SELECT email_verified_at, email_verified, email FROM users WHERE id = $1',
+          [payload.userId]
+        );
+
+        if (userResult.rows.length > 0) {
+          const user = userResult.rows[0];
+          const isVerified = user.email_verified_at || user.email_verified;
+
+          if (!isVerified) {
+            return res.status(403).json({ 
+              error: "يجب تأكيد بريدك الإلكتروني أولاً",
+              errorEn: "Email verification required",
+              requiresVerification: true,
+              email: user.email
+            });
+          }
+        }
+      } catch (dbErr) {
+        console.error('[Auth] Email verification check error:', dbErr);
+        // Don't block if DB check fails, but log it
+      }
+    }
+
+    next();
+  } catch (err) {
+    const errorType = err.name || 'UnknownError';
+    console.warn(`[Auth] Token verification failed: ${errorType}`);
+    
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: "انتهت صلاحية الجلسة، سجل دخول من جديد", errorEn: "Session expired" });
+    }
+    
+    return res.status(401).json({ error: "جلسة غير صالحة، سجل دخول من جديد", errorEn: "Invalid session" });
+  }
+}
+
 function optionalAuth(req, res, next) {
   const token = req.cookies?.token || req.headers.authorization?.replace("Bearer ", "");
   
@@ -302,14 +365,56 @@ async function combinedAuthMiddleware(req, res, next) {
   return res.status(401).json({ error: "غير مصرح", errorEn: "Unauthorized" });
 }
 
+// Middleware to require email verification
+async function requireEmailVerification(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: "غير مصرح", errorEn: "Unauthorized" });
+  }
+
+  try {
+    const db = require('../db');
+    const userResult = await db.query(
+      'SELECT email_verified_at, email_verified FROM users WHERE id = $1',
+      [req.user.id]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "المستخدم غير موجود", errorEn: "User not found" });
+    }
+
+    const user = userResult.rows[0];
+    // Check both email_verified_at (timestamp) and email_verified (boolean)
+    const isVerified = user.email_verified_at || user.email_verified;
+
+    if (!isVerified) {
+      return res.status(403).json({ 
+        error: "يجب تأكيد بريدك الإلكتروني أولاً",
+        errorEn: "Email verification required",
+        requiresVerification: true,
+        email: userResult.rows[0].email || null
+      });
+    }
+
+    next();
+  } catch (err) {
+    console.error('[Auth] Email verification check error:', err);
+    return res.status(500).json({ 
+      error: "خطأ في التحقق من تأكيد الإيميل", 
+      errorEn: "Error checking email verification" 
+    });
+  }
+}
+
 module.exports = { 
-  authMiddleware, 
+  authMiddleware,
+  authMiddlewareWithEmailCheck, 
   combinedAuthMiddleware,
   optionalAuth, 
   adminOnly, 
   adminMiddleware,
   requireRoles,
   requirePermission,
+  requireEmailVerification,
   ROLES,
   ROLE_PERMISSIONS,
   ADMIN_ROLES,

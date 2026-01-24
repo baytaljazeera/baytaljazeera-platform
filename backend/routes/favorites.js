@@ -1,12 +1,12 @@
 // backend/routes/favorites.js - Favorites Routes
 const express = require("express");
 const db = require("../db");
-const { authMiddleware } = require("../middleware/auth");
+const { authMiddlewareWithEmailCheckWithEmailCheck } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
 
 const router = express.Router();
 
-router.post("/toggle", authMiddleware, asyncHandler(async (req, res) => {
+router.post("/toggle", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { listingId } = req.body;
 
@@ -31,7 +31,7 @@ router.post("/toggle", authMiddleware, asyncHandler(async (req, res) => {
   res.json({ favorited: true, message: "تمت الإضافة للمفضلة" });
 }));
 
-router.get("/", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const result = await db.query(
     `SELECT p.*, f.created_at as favorited_at
@@ -44,7 +44,7 @@ router.get("/", authMiddleware, asyncHandler(async (req, res) => {
   res.json({ favorites: result.rows });
 }));
 
-router.get("/ids", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/ids", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const result = await db.query(
     `SELECT listing_id FROM favorites WHERE user_id = $1`,
@@ -53,7 +53,7 @@ router.get("/ids", authMiddleware, asyncHandler(async (req, res) => {
   res.json({ ids: result.rows.map(r => r.listing_id) });
 }));
 
-router.delete("/:listingId", authMiddleware, asyncHandler(async (req, res) => {
+router.delete("/:listingId", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { listingId } = req.params;
   

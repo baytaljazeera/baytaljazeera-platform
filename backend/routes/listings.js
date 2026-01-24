@@ -3,7 +3,7 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 const db = require('../db');
-const { authMiddleware, requireRoles } = require('../middleware/auth');
+const { authMiddlewareWithEmailCheckWithEmailCheck, requireRoles } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { upload, cleanupUploadedFiles, validateFileMagicBytes } = require('../config/multer');
 const { 
@@ -23,7 +23,7 @@ const PROPERTY_IMAGES = {
 };
 
 // 📷 رفع صور مؤقتة لتوليد الفيديو
-router.post("/temp-images", authMiddleware, upload.array('images', 20), asyncHandler(async (req, res) => {
+router.post("/temp-images", authMiddlewareWithEmailCheckWithEmailCheck, upload.array('images', 20), asyncHandler(async (req, res) => {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ error: "يرجى رفع صور" });
   }
@@ -121,7 +121,7 @@ router.get("/elite", asyncHandler(async (req, res) => {
   res.json(listings.slice(0, limitNum));
 }));
 
-router.post("/:id/toggle-featured", authMiddleware, asyncHandler(async (req, res) => {
+router.post("/:id/toggle-featured", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -343,7 +343,7 @@ router.get("/:id", asyncHandler(async (req, res) => {
   });
 }));
 
-router.put("/:id", authMiddleware, asyncHandler(async (req, res) => {
+router.put("/:id", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
   const {
@@ -396,7 +396,7 @@ router.put("/:id", authMiddleware, asyncHandler(async (req, res) => {
   });
 }));
 
-router.get("/:id/image-quota", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/:id/image-quota", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
 
@@ -435,7 +435,7 @@ router.get("/:id/image-quota", authMiddleware, asyncHandler(async (req, res) => 
   });
 }));
 
-router.post("/:id/add-images", authMiddleware, upload.fields([
+router.post("/:id/add-images", authMiddlewareWithEmailCheck, upload.fields([
   { name: 'images', maxCount: 20 }
 ]), asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -583,7 +583,7 @@ router.post("/:id/add-images", authMiddleware, upload.fields([
   });
 }));
 
-router.delete("/:id/images/:imageIndex", authMiddleware, asyncHandler(async (req, res) => {
+router.delete("/:id/images/:imageIndex", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const { id, imageIndex } = req.params;
   const userId = req.user.id;
   const index = parseInt(imageIndex);
@@ -658,7 +658,7 @@ router.delete("/:id/images/:imageIndex", authMiddleware, asyncHandler(async (req
   });
 }));
 
-router.patch("/:id/images/cover", authMiddleware, asyncHandler(async (req, res) => {
+router.patch("/:id/images/cover", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { imageIndex } = req.body;
   const userId = req.user.id;
@@ -732,7 +732,7 @@ router.patch("/:id/images/cover", authMiddleware, asyncHandler(async (req, res) 
   });
 }));
 
-router.patch("/:id/status", authMiddleware, asyncHandler(async (req, res) => {
+router.patch("/:id/status", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
   const userId = req.user.id;
@@ -782,7 +782,7 @@ router.patch("/:id/status", authMiddleware, asyncHandler(async (req, res) => {
 }));
 
 // تحديث حالة الصفقة (نشط، قيد التفاوض، تمت الصفقة، مؤرشف)
-router.patch("/:id/deal-status", authMiddleware, asyncHandler(async (req, res) => {
+router.patch("/:id/deal-status", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { dealStatus } = req.body;
   const userId = req.user.id;
@@ -857,7 +857,7 @@ router.patch("/:id/deal-status", authMiddleware, asyncHandler(async (req, res) =
 }));
 
 // الحصول على حالة الصفقة الحالية
-router.get("/:id/deal-status", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/:id/deal-status", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
 
@@ -879,7 +879,7 @@ router.get("/:id/deal-status", authMiddleware, asyncHandler(async (req, res) => 
   });
 }));
 
-router.delete("/:id", authMiddleware, asyncHandler(async (req, res) => {
+router.delete("/:id", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
   
@@ -911,7 +911,7 @@ router.delete("/:id", authMiddleware, asyncHandler(async (req, res) => {
 }));
 
 // Reset stuck videos endpoint (admin only)
-router.post("/:id/reset-video-status", authMiddleware, asyncHandler(async (req, res) => {
+router.post("/:id/reset-video-status", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
   
@@ -947,7 +947,7 @@ router.post("/:id/reset-video-status", authMiddleware, asyncHandler(async (req, 
   });
 }));
 
-router.post("/:id/regenerate-video", authMiddleware, asyncHandler(async (req, res) => {
+router.post("/:id/regenerate-video", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
   
@@ -1142,7 +1142,7 @@ router.post("/", asyncHandler(async (req, res) => {
   });
 }));
 
-router.post("/create", authMiddleware, upload.fields([
+router.post("/create", authMiddlewareWithEmailCheck, upload.fields([
   { name: 'images', maxCount: 20 },
   { name: 'video', maxCount: 1 }
 ]), asyncHandler(async (req, res) => {
