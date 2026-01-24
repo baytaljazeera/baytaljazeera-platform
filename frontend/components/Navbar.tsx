@@ -45,6 +45,7 @@ function NavbarContent() {
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [ambassadorEnabled, setAmbassadorEnabled] = useState(true);
   const notificationRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
   
   // شارات قائمة المستخدم
   const [userBadges, setUserBadges] = useState({
@@ -153,7 +154,7 @@ function NavbarContent() {
     fetchNotifications();
   }, [showNotificationDropdown, isAuthenticated]);
 
-  // Close dropdown when clicking outside
+  // Close notification dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
@@ -165,6 +166,19 @@ function NavbarContent() {
     }
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showNotificationDropdown]);
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    }
+    if (showUserMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showUserMenu]);
 
   const markNotificationAsRead = async (id: number) => {
     try {
@@ -402,7 +416,7 @@ function NavbarContent() {
             </AnimatePresence>
           </div>
           
-          <div className="relative">
+          <div className="relative" ref={userMenuRef}>
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#003366] to-[#01375e] text-white hover:from-[#01375e] hover:to-[#003366] transition-all shadow-md"
@@ -797,15 +811,6 @@ function NavbarContent() {
         )}
       </AnimatePresence>
 
-      {(showUserMenu || showNotificationDropdown) && (
-        <div 
-          className="fixed inset-0 z-40" 
-          onClick={() => {
-            setShowUserMenu(false);
-            setShowNotificationDropdown(false);
-          }}
-        />
-      )}
       </header>
     </>
   );
