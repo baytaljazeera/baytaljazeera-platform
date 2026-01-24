@@ -1627,6 +1627,10 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
   const userId = req.user.id;
   const { propertyType, purpose, city, district, price, landArea, buildingArea, bedrooms, bathrooms, title, hasPool, hasElevator, hasGarden, selectedImageUrl, customPromoText, description, imagePaths, template = "luxury" } = req.body;
 
+  // Initialize variables outside try block for error handling
+  let imagePathsToUse = [];
+  let selectedTemplate = "luxury";
+
   // Check user's support level - متاح للباقات المميزة فقط
     const planResult = await db.query(
       `SELECT COALESCE(MAX(support_level), 0) as support_level
@@ -1681,7 +1685,7 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
 
     // Validate template
     const validTemplates = Object.keys(VIDEO_TEMPLATES);
-    const selectedTemplate = validTemplates.includes(template) ? template : "luxury";
+    selectedTemplate = validTemplates.includes(template) ? template : "luxury";
 
     // Generate promotional text
     let promoText;
@@ -1706,7 +1710,7 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
     console.log("[Video] Promotional text:", JSON.stringify(promoText, null, 2));
 
     // Prepare image paths - use provided imagePaths or selectedImageUrl
-    let imagePathsToUse = [];
+    imagePathsToUse = [];
     if (imagePaths && imagePaths.length > 0) {
       // imagePaths can be Cloudinary URLs or local paths
       imagePathsToUse = imagePaths;
@@ -1733,6 +1737,14 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
     console.log("[Video] Image paths to use:", imagePathsToUse.map(p => 
       typeof p === 'string' && p.length > 50 ? p.substring(0, 50) + '...' : p
     ));
+    console.log("[Video] Image paths types:", imagePathsToUse.map(p => {
+      if (typeof p === 'string') {
+        if (p.startsWith('http')) return 'cloudinary/remote';
+        if (p.startsWith('/uploads/')) return 'local';
+        return 'unknown';
+      }
+      return 'invalid';
+    }));
 
     // Create video output directory
     const videoDir = path.join(__dirname, "../../public/uploads/videos");
@@ -1763,12 +1775,19 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
   } catch (error) {
     console.error("[Video] FFmpeg video generation error:", error);
     console.error("[Video] Error stack:", error.stack);
+    console.error("[Video] Request body:", {
+      hasImagePaths: !!imagePaths,
+      imagePathsLength: imagePaths?.length || 0,
+      hasSelectedImageUrl: !!selectedImageUrl,
+      propertyType,
+      city
+    });
     console.error("[Video] Error details:", {
       message: error.message,
       name: error.name,
       userId,
       imagePathsCount: imagePathsToUse?.length || 0,
-      template: selectedTemplate
+      template: selectedTemplate || "unknown"
     });
     return res.status(500).json({ 
       error: "حدث خطأ في توليد الفيديو. يرجى المحاولة مرة أخرى.",
