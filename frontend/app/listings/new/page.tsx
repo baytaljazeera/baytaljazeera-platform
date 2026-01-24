@@ -2960,41 +2960,70 @@ export default function NewListingPage() {
                 </div>
 
                 {form.latitude && form.longitude && (
-                  <div className="mt-4 p-4 bg-slate-50 rounded-xl border-2 border-slate-200">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-5 h-5 text-[#D4AF37]" />
-                        <span className="font-semibold text-[#002845]">الموقع المحدد</span>
+                  <div className={`mt-4 p-5 rounded-xl border-2 transition-all ${
+                    locationConfirmed 
+                      ? 'bg-gradient-to-l from-green-50 to-emerald-50 border-green-300 shadow-lg' 
+                      : 'bg-gradient-to-l from-amber-50 to-yellow-50 border-amber-300'
+                  }`}>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                          locationConfirmed ? 'bg-green-500' : 'bg-[#D4AF37]'
+                        }`}>
+                          <MapPin className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                          <span className="font-bold text-lg text-[#002845] block">الموقع المحدد</span>
+                          {locationConfirmed ? (
+                            <span className="text-xs text-green-700 mt-1 block">✓ تم التأكيد بنجاح</span>
+                          ) : (
+                            <span className="text-xs text-amber-700 mt-1 block">⚠ يرجى التأكيد</span>
+                          )}
+                        </div>
                       </div>
                       {locationConfirmed ? (
-                        <span className="flex items-center gap-1 text-sm text-green-600 bg-green-50 px-3 py-1 rounded-full">
-                          <CheckCircle2 className="w-4 h-4" />
-                          تم التأكيد
-                        </span>
+                        <div className="flex items-center gap-2 bg-green-100 px-4 py-2 rounded-full border-2 border-green-300">
+                          <CheckCircle2 className="w-5 h-5 text-green-600 animate-pulse" />
+                          <span className="text-sm font-bold text-green-700">تم التأكيد</span>
+                        </div>
                       ) : (
-                        <span className="text-xs text-amber-600 bg-amber-50 px-3 py-1 rounded-full">
-                          بانتظار التأكيد
-                        </span>
+                        <div className="flex items-center gap-2 bg-amber-100 px-4 py-2 rounded-full border-2 border-amber-300 animate-pulse">
+                          <AlertTriangle className="w-5 h-5 text-amber-600" />
+                          <span className="text-sm font-bold text-amber-700">بانتظار التأكيد</span>
+                        </div>
                       )}
                     </div>
-                    <p className="text-sm text-slate-600 mb-3">
-                      الإحداثيات: {form.latitude.toFixed(6)}, {form.longitude.toFixed(6)}
-                    </p>
-                    {form.formattedAddress && (
-                      <p className="text-sm text-slate-600 mb-3">
-                        العنوان: {form.formattedAddress}
-                      </p>
-                    )}
+                    
+                    <div className="bg-white/80 rounded-lg p-4 mb-4 border border-slate-200">
+                      {form.formattedAddress && (
+                        <div className="mb-3">
+                          <p className="text-xs font-semibold text-slate-500 mb-1">العنوان:</p>
+                          <p className="text-sm text-slate-800 leading-relaxed">
+                            {form.formattedAddress}
+                          </p>
+                        </div>
+                      )}
+                      <div className="flex flex-wrap gap-4 text-xs">
+                        <div>
+                          <span className="font-semibold text-slate-500">العرض:</span>
+                          <span className="text-slate-700 mr-2 font-mono">{form.latitude.toFixed(6)}</span>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-slate-500">الطول:</span>
+                          <span className="text-slate-700 mr-2 font-mono">{form.longitude.toFixed(6)}</span>
+                        </div>
+                      </div>
+                    </div>
                     
                     {!locationConfirmed && (
-                      <div className="flex gap-3 mt-4">
+                      <div className="flex flex-col sm:flex-row gap-3">
                         <button
                           type="button"
                           onClick={() => setLocationConfirmed(true)}
-                          className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-l from-[#0B6B4C] to-[#0d8a5e] text-white font-semibold rounded-xl hover:opacity-90 transition"
+                          className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-l from-[#0B6B4C] to-[#0d8a5e] text-white font-bold rounded-xl hover:opacity-90 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-xl"
                         >
-                          <CheckCircle2 className="w-5 h-5" />
-                          أكد الموقع
+                          <CheckCircle2 className="w-6 h-6" />
+                          <span className="text-base">أكد الموقع</span>
                         </button>
                         <button
                           type="button"
@@ -3002,11 +3031,20 @@ export default function NewListingPage() {
                             setForm(prev => ({ ...prev, latitude: 0, longitude: 0, formattedAddress: "" }));
                             setLocationConfirmed(false);
                           }}
-                          className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border-2 border-slate-300 text-slate-700 font-semibold rounded-xl hover:bg-slate-100 transition"
+                          className="flex-1 flex items-center justify-center gap-2 px-6 py-4 border-2 border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-100 transition-all hover:scale-[1.02] active:scale-[0.98]"
                         >
                           <RefreshCw className="w-5 h-5" />
-                          إعادة المحاولة
+                          <span className="text-base">إعادة المحاولة</span>
                         </button>
+                      </div>
+                    )}
+                    
+                    {locationConfirmed && (
+                      <div className="mt-4 p-3 bg-green-100 rounded-lg border border-green-300">
+                        <p className="text-sm text-green-800 text-center font-medium flex items-center justify-center gap-2">
+                          <CheckCircle2 className="w-5 h-5" />
+                          <span>تم تأكيد الموقع بنجاح! يمكنك المتابعة إلى الخطوة التالية</span>
+                        </p>
                       </div>
                     )}
                   </div>

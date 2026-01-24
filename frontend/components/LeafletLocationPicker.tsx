@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { MapPin, Search, Loader2, Target } from "lucide-react";
+import { MapPin, Search, Loader2, Target, MousePointerClick, Hand } from "lucide-react";
 
 interface Location {
   lat: number;
@@ -90,6 +90,9 @@ export default function LeafletLocationPicker({
   const [isLocating, setIsLocating] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showResults, setShowResults] = useState(false);
+  const [isConfirmed, setIsConfirmed] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(true);
+  const [clickCount, setClickCount] = useState(0);
 
   useEffect(() => {
     onLocationSelectRef.current = onLocationSelect;
@@ -106,10 +109,14 @@ export default function LeafletLocationPicker({
     return { lat: 24.7136, lng: 46.6753 };
   }, [initialLocation?.lat, initialLocation?.lng, selectedCity, selectedCountry]);
 
-  const updateLocation = useCallback((lat: number, lng: number, address?: string, city?: string, district?: string) => {
+  const updateLocation = useCallback((lat: number, lng: number, address?: string, city?: string, district?: string, confirmed: boolean = false) => {
     const location: Location = { lat, lng, address, city, district };
     setCurrentLocation(location);
+    setIsConfirmed(confirmed);
     onLocationSelectRef.current(location);
+    if (confirmed) {
+      setShowTooltip(false);
+    }
   }, []);
 
   const debouncedReverseGeocode = useMemo(() => 
@@ -126,13 +133,13 @@ export default function LeafletLocationPicker({
           const city = address.city || address.town || address.village || address.state || "";
           const district = address.suburb || address.neighbourhood || address.quarter || "";
           const fullAddress = data.display_name || "";
-          updateFn(lat, lng, fullAddress, city, district);
+          updateFn(lat, lng, fullAddress, city, district, false);
         } else {
-          updateFn(lat, lng);
+          updateFn(lat, lng, undefined, undefined, undefined, false);
         }
       } catch (error) {
         console.error("Geocoding error:", error);
-        updateFn(lat, lng);
+        updateFn(lat, lng, undefined, undefined, undefined, false);
       }
     }, 500),
     []
@@ -172,22 +179,38 @@ export default function LeafletLocationPicker({
         leafletRef.current = L;
         isInitializedRef.current = true;
 
-        const customIcon = L.divIcon({
-          className: 'custom-marker',
-          html: `<div style="
-            width: 32px; 
-            height: 32px; 
-            background: #D4AF37; 
-            border: 3px solid #002845; 
-            border-radius: 50%; 
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          "><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#002845" stroke-width="2.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>`,
-          iconSize: [32, 32],
-          iconAnchor: [16, 32],
-        });
+        // Function to create marker icon with animation
+        const createMarkerIcon = (confirmed: boolean = false) => {
+          const bgColor = confirmed ? '#10b981' : '#D4AF37';
+          const pulseAnimation = confirmed ? '' : `
+            @keyframes pulse {
+              0%, 100% { transform: scale(1); opacity: 1; }
+              50% { transform: scale(1.15); opacity: 0.9; }
+            }
+            animation: pulse 2s ease-in-out infinite;
+          `;
+          
+          return L.divIcon({
+            className: 'custom-marker',
+            html: `<div style="
+              width: 40px; 
+              height: 40px; 
+              background: ${bgColor}; 
+              border: 4px solid #002845; 
+              border-radius: 50%; 
+              box-shadow: 0 4px 12px rgba(0,0,0,0.4), 0 0 0 ${confirmed ? '8px' : '12px'} ${bgColor}40;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              transition: all 0.3s ease;
+              ${pulseAnimation}
+            "><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#002845" stroke-width="2.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>`,
+            iconSize: [40, 40],
+            iconAnchor: [20, 40],
+          });
+        };
+
+        const customIcon = createMarkerIcon(false);
 
         const map = L.map(mapRef.current, {
           center: [defaultCenter.lat, defaultCenter.lng],
@@ -207,14 +230,74 @@ export default function LeafletLocationPicker({
           draggable: true,
         }).addTo(map);
 
+        // Ripple effect on click
+        const createRipple = (e: any) => {
+          const ripple = L.circle(e.latlng, {
+            radius: 20,
+            fillColor: '#D4AF37',
+            fillOpacity: 0.3,
+            color: '#D4AF37',
+            weight: 2,
+          }).addTo(map);
+          
+          setTimeout(() => {
+            map.removeLayer(ripple);
+          }, 600);
+        };
+
+        // Single click - move marker
+        let clickTimeout: NodeJS.Timeout;
+        map.on("click", (e: any) => {
+          createRipple(e);
+          marker.setLatLng(e.latlng);
+          
+          // Reset to unconfirmed state
+          const unconfirmedIcon = createMarkerIcon(false);
+          marker.setIcon(unconfirmedIcon);
+          setIsConfirmed(false);
+          setShowTooltip(true);
+          setClickCount(prev => prev + 1);
+          
+          // Reset click count after delay
+          clearTimeout(clickTimeout);
+          clickTimeout = setTimeout(() => setClickCount(0), 500);
+          
+          updateLocation(e.latlng.lat, e.latlng.lng, undefined, undefined, undefined, false);
+          reverseGeocode(e.latlng.lat, e.latlng.lng);
+        });
+
+        // Double click - confirm location
+        map.on("dblclick", (e: any) => {
+          e.originalEvent.preventDefault();
+          createRipple(e);
+          marker.setLatLng(e.latlng);
+          
+          // Update marker icon to confirmed state immediately
+          const confirmedIcon = createMarkerIcon(true);
+          marker.setIcon(confirmedIcon);
+          
+          // Update location with confirmed status
+          updateLocation(e.latlng.lat, e.latlng.lng, undefined, undefined, undefined, true);
+          reverseGeocode(e.latlng.lat, e.latlng.lng);
+        });
+
+        // Drag end - update location
         marker.on("dragend", () => {
           const pos = marker.getLatLng();
+          
+          // Reset to unconfirmed state
+          const unconfirmedIcon = createMarkerIcon(false);
+          marker.setIcon(unconfirmedIcon);
+          setIsConfirmed(false);
+          setShowTooltip(true);
+          
+          updateLocation(pos.lat, pos.lng, undefined, undefined, undefined, false);
           reverseGeocode(pos.lat, pos.lng);
         });
 
-        map.on("click", (e: any) => {
-          marker.setLatLng(e.latlng);
-          reverseGeocode(e.latlng.lat, e.latlng.lng);
+        // Touch events for mobile
+        map.on("touchstart", () => {
+          setShowTooltip(false);
         });
 
         mapInstanceRef.current = map;
@@ -226,7 +309,13 @@ export default function LeafletLocationPicker({
 
         if (initialLocation) {
           reverseGeocode(initialLocation.lat, initialLocation.lng);
+          setIsConfirmed(true);
+          const confirmedIcon = createMarkerIcon(true);
+          marker.setIcon(confirmedIcon);
         }
+
+        // Store createMarkerIcon function for later use
+        (map as any).createMarkerIcon = createMarkerIcon;
 
         if (isMounted) {
           setIsLoading(false);
@@ -281,11 +370,13 @@ export default function LeafletLocationPicker({
     const lat = parseFloat(result.lat);
     const lng = parseFloat(result.lon);
     
-    if (mapInstanceRef.current && markerRef.current) {
-      mapInstanceRef.current.setView([lat, lng], 16, { animate: true });
-      markerRef.current.setLatLng([lat, lng]);
-      updateLocation(lat, lng, result.display_name);
-    }
+        if (mapInstanceRef.current && markerRef.current) {
+          mapInstanceRef.current.setView([lat, lng], 16, { animate: true });
+          markerRef.current.setLatLng([lat, lng]);
+          const unconfirmedIcon = (mapInstanceRef.current as any).createMarkerIcon(false);
+          markerRef.current.setIcon(unconfirmedIcon);
+          updateLocation(lat, lng, result.display_name, undefined, undefined, false);
+        }
     
     setShowResults(false);
     setSearchQuery(result.display_name.split(",")[0]);
@@ -307,6 +398,9 @@ export default function LeafletLocationPicker({
         if (mapInstanceRef.current && markerRef.current) {
           mapInstanceRef.current.setView([lat, lng], 17, { animate: true });
           markerRef.current.setLatLng([lat, lng]);
+          const unconfirmedIcon = (mapInstanceRef.current as any).createMarkerIcon(false);
+          markerRef.current.setIcon(unconfirmedIcon);
+          updateLocation(lat, lng, undefined, undefined, undefined, false);
           reverseGeocode(lat, lng);
         }
 
@@ -374,17 +468,48 @@ export default function LeafletLocationPicker({
             </div>
           </div>
         )}
+        
+        {/* Tooltip overlay */}
+        {!isLoading && showTooltip && !isConfirmed && currentLocation && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-gradient-to-r from-[#002845] to-[#003356] text-white px-4 py-3 rounded-xl shadow-2xl border-2 border-[#D4AF37] animate-pulse">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <MousePointerClick className="w-5 h-5 text-[#D4AF37]" />
+              <span>انقر مرتين لتأكيد الموقع</span>
+            </div>
+            <div className="mt-2 flex items-center gap-3 text-xs opacity-90">
+              <div className="flex items-center gap-1">
+                <Hand className="w-4 h-4" />
+                <span>أو اسحب المؤشر</span>
+              </div>
+            </div>
+          </div>
+        )}
+        
         <div ref={mapRef} className="w-full h-[50vh] sm:h-[400px] min-h-[300px]" />
       </div>
 
       {currentLocation && (
-        <div className="mt-3 p-3 sm:p-4 bg-gradient-to-l from-[#002845]/5 to-[#D4AF37]/10 rounded-xl border border-[#D4AF37]/30">
+        <div className={`mt-3 p-3 sm:p-4 rounded-xl border-2 transition-all ${
+          isConfirmed 
+            ? 'bg-gradient-to-l from-green-50 to-emerald-50 border-green-300' 
+            : 'bg-gradient-to-l from-[#002845]/5 to-[#D4AF37]/10 border-[#D4AF37]/30'
+        }`}>
           <div className="flex items-start gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-[#D4AF37] flex items-center justify-center shrink-0">
+            <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shrink-0 transition-all ${
+              isConfirmed ? 'bg-green-500' : 'bg-[#D4AF37]'
+            }`}>
               <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-[#002845] mb-1">الموقع المحدد</p>
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-sm font-semibold text-[#002845]">الموقع المحدد</p>
+                {isConfirmed && (
+                  <span className="flex items-center gap-1 text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">
+                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                    مؤكد
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-600 leading-relaxed break-words line-clamp-2">
                 {currentLocation.address || "جاري تحديد العنوان..."}
               </p>
@@ -397,17 +522,35 @@ export default function LeafletLocationPicker({
         </div>
       )}
 
-      <div className="mt-3 p-3 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-lg">
-        <p className="text-sm text-amber-800 text-center font-medium mb-1">
-          📍 تأكد جيداً من تحديد الموقع بدقة
-        </p>
-        <p className="text-xs text-amber-700 text-center">
-          الموقع الدقيق يظهر على الخريطة للباحثين ويزيد فرصك في البيع أو الإيجار بشكل كبير
+      <div className="mt-3 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl">
+        <div className="flex items-start gap-3 mb-2">
+          <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center shrink-0">
+            <MousePointerClick className="w-4 h-4 text-white" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-blue-900 mb-2">
+              كيفية تحديد الموقع:
+            </p>
+            <div className="space-y-2 text-xs text-blue-800">
+              <div className="flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-blue-200 flex items-center justify-center font-bold">1</span>
+                <span>انقر <strong>مرتين</strong> على الخريطة لتحديد الموقع مباشرة</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-blue-200 flex items-center justify-center font-bold">2</span>
+                <span>أو <strong>اسحب</strong> المؤشر الأصفر إلى الموقع المطلوب</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-blue-200 flex items-center justify-center font-bold">3</span>
+                <span>أو استخدم <strong>البحث</strong> أو زر <strong>موقعي الحالي</strong></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p className="text-xs text-blue-700 text-center mt-3 pt-3 border-t border-blue-200">
+          📍 الموقع الدقيق يظهر على الخريطة للباحثين ويزيد فرصك في البيع أو الإيجار بشكل كبير
         </p>
       </div>
-      <p className="mt-2 text-xs text-slate-500 text-center">
-        اضغط على الخريطة أو اسحب المؤشر لتحديد الموقع
-      </p>
     </div>
   );
 }
