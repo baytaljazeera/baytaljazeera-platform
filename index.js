@@ -31,6 +31,9 @@ const { cache, isRedisConnected } = require("./backend/config/redis");
 const { initializeWorkers, closeAllQueues } = require("./backend/queues");
 const { setupAuth, registerAuthRoutes } = require("./backend/replit_auth");
 
+// 📧 Initialize Email Service (Gmail API) - Load early to show initialization messages
+require("./backend/services/emailService");
+
 // 🔒 Startup Environment Validation
 const REQUIRED_ENV_VARS = ['SESSION_SECRET', 'DATABASE_URL'];
 const missingEnvVars = REQUIRED_ENV_VARS.filter(key => !process.env[key]);
