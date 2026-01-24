@@ -745,7 +745,16 @@ router.post("/resend-verification", strictAuthLimiter, optionalAuth, asyncHandle
       );
     } else {
       // If not authenticated, use email from body
+      if (!email || !email.trim()) {
+        console.log('📧 [Resend Verification] No email provided and user not authenticated');
+        return res.status(400).json({ 
+          error: "يرجى إدخال بريدك الإلكتروني", 
+          errorEn: "Email is required" 
+        });
+      }
+      
       const sanitizedEmail = sanitizeInput(email.toLowerCase().trim());
+      console.log('📧 [Resend Verification] Looking up user by email:', sanitizedEmail);
       result = await db.query(
         `SELECT id, email, name, email_verified_at, email_verification_token, email_verification_expires
          FROM users 
