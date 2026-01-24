@@ -1,33 +1,52 @@
 const { google } = require('googleapis');
 
 // Initialize Gmail API
+console.log('📧 [EmailService] Starting Gmail API initialization...');
+
 const GMAIL_CLIENT_ID = process.env.GMAIL_CLIENT_ID;
 const GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET;
 const GMAIL_REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN;
 const GMAIL_USER_EMAIL = process.env.GMAIL_USER_EMAIL || 'info@baytaljazeera.com';
 const GMAIL_FROM_NAME = process.env.GMAIL_FROM_NAME || 'بيت الجزيرة';
 
+// Debug: Check which variables are set
+console.log('📋 [EmailService] Environment variables check:');
+console.log(`   - GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID ? '✅ Set' : '❌ Missing'}`);
+console.log(`   - GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET ? '✅ Set' : '❌ Missing'}`);
+console.log(`   - GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN ? '✅ Set' : '❌ Missing'}`);
+console.log(`   - GMAIL_USER_EMAIL: ${GMAIL_USER_EMAIL}`);
+console.log(`   - GMAIL_FROM_NAME: ${GMAIL_FROM_NAME}`);
+
 let gmail = null;
 
 if (GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN) {
   try {
+    console.log('🔧 [EmailService] Creating OAuth2 client...');
     const oauth2Client = new google.auth.OAuth2(
       GMAIL_CLIENT_ID,
       GMAIL_CLIENT_SECRET,
       'urn:ietf:wg:oauth:2.0:oob' // Redirect URI for installed apps
     );
 
+    console.log('🔧 [EmailService] Setting credentials...');
     oauth2Client.setCredentials({
       refresh_token: GMAIL_REFRESH_TOKEN
     });
 
+    console.log('🔧 [EmailService] Initializing Gmail API...');
     gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-    console.log('✅ Gmail API initialized successfully');
+    console.log('✅ [EmailService] Gmail API initialized successfully!');
   } catch (error) {
-    console.error('❌ Failed to initialize Gmail API:', error.message);
+    console.error('❌ [EmailService] Failed to initialize Gmail API:', error.message);
+    console.error('❌ [EmailService] Error details:', error);
   }
 } else {
-  console.warn('⚠️ Gmail credentials not set. Email sending will be disabled.');
+  console.warn('⚠️ [EmailService] Gmail credentials not set. Email sending will be disabled.');
+  console.warn('⚠️ [EmailService] Missing variables:', {
+    CLIENT_ID: !GMAIL_CLIENT_ID,
+    CLIENT_SECRET: !GMAIL_CLIENT_SECRET,
+    REFRESH_TOKEN: !GMAIL_REFRESH_TOKEN
+  });
 }
 
 /**
