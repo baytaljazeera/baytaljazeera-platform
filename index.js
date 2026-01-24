@@ -365,16 +365,7 @@ app.get('/api/logout', (req, res) => {
   });
 });
 
-// 🔐 Check OAuth availability
-app.get('/api/auth/oauth-status', (req, res) => {
-  const isAvailable = !!process.env.REPL_ID;
-  res.json({ 
-    available: isAvailable,
-    message: isAvailable 
-      ? 'OAuth login is available' 
-      : 'OAuth login is not available (Replit Auth requires Replit environment)'
-  });
-});
+// 🔐 Check OAuth availability (now handled by oauth.js routes)
 
 // 🟢 مسار اختبار بسيط
 app.get("/", (req, res) => {
@@ -569,6 +560,10 @@ app.get("/api/user/ai-level", async (req, res) => {
 
 // 🟢 Auth & Account Routes
 app.use("/api/auth", authRoutes);
+
+// 🟢 OAuth Routes (Google, Apple)
+const oauthRoutes = require("./backend/routes/oauth");
+app.use("/api/auth", oauthRoutes);
 app.use("/api/favorites", favoritesRoutes);
 app.use("/api/notifications", notificationsRoutes);
 app.use("/api/account", accountRoutes);

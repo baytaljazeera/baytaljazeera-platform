@@ -67,9 +67,18 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'stripe_subscription_id') THEN
           ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'google_id') THEN
+          ALTER TABLE users ADD COLUMN google_id TEXT UNIQUE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'email_verified') THEN
+          ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT false;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'profile_image') THEN
+          ALTER TABLE users ADD COLUMN profile_image TEXT;
+        END IF;
       END $$;
     `);
-    console.log("✅ Account lockout and Stripe columns added");
+    console.log("✅ Account lockout, Stripe, and OAuth columns added");
 
     // Create admin sidebar settings table early to avoid being blocked by later errors
     await db.query(`

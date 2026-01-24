@@ -16,12 +16,14 @@ export default function OAuthButtons({ className = '' }: OAuthButtonsProps) {
   useEffect(() => {
     const checkOAuthStatus = async () => {
       try {
-        const response = await fetch('/api/auth/oauth-status', { credentials: 'include' });
+        const response = await fetch('/api/auth/status', { credentials: 'include' });
         const data = await response.json();
-        setOauthAvailable(data.available || false);
+        // OAuth is available if Google or Apple is configured
+        setOauthAvailable(data.available || data.google || false);
       } catch (error) {
         console.error('Error checking OAuth status:', error);
-        setOauthAvailable(false);
+        // Default to showing buttons - let the backend handle errors
+        setOauthAvailable(true);
       }
     };
     checkOAuthStatus();
@@ -29,7 +31,14 @@ export default function OAuthButtons({ className = '' }: OAuthButtonsProps) {
 
   const handleOAuthClick = (provider: string) => {
     setLoadingProvider(provider);
-    loginWithOAuth();
+    // Redirect to OAuth provider
+    if (provider === 'google') {
+      window.location.href = '/api/auth/google';
+    } else if (provider === 'apple') {
+      window.location.href = '/api/auth/apple';
+    } else {
+      loginWithOAuth(); // Fallback for other providers
+    }
   };
 
   // Don't render if OAuth is not available
