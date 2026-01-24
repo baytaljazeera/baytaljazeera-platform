@@ -363,15 +363,30 @@ async function createAdvancedSlideshow(imagePaths, outputPath, promoText, option
     if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
       try {
         const ext = path.extname(new URL(imgPath).pathname) || '.jpg';
-        const tempFile = path.join(tempDir, `remote_${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
+        const tempFile = path.join(tmpDir, `remote_${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
         console.log(`[AdvancedVideo] 📥 Downloading remote image: ${imgPath.substring(0, 80)}...`);
         await downloadImage(imgPath, tempFile);
-        validPaths.push(tempFile);
-        downloadedFiles.push(tempFile);
-        console.log(`[AdvancedVideo] ✅ Downloaded to: ${tempFile}`);
+        
+        // Verify file was downloaded
+        try {
+          await fs.access(tempFile);
+          const stats = await fs.stat(tempFile);
+          if (stats.size === 0) {
+            console.log(`[AdvancedVideo] ❌ Downloaded file is empty: ${tempFile}`);
+            await fs.unlink(tempFile).catch(() => {});
+            continue;
+          }
+          validPaths.push(tempFile);
+          downloadedFiles.push(tempFile);
+          console.log(`[AdvancedVideo] ✅ Downloaded to: ${tempFile} (${stats.size} bytes)`);
+        } catch (verifyErr) {
+          console.log(`[AdvancedVideo] ❌ Downloaded file verification failed: ${verifyErr.message}`);
+          await fs.unlink(tempFile).catch(() => {});
+          continue;
+        }
         continue;
       } catch (dlErr) {
-        console.log(`[AdvancedVideo] ❌ Failed to download: ${dlErr.message}`);
+        console.error(`[AdvancedVideo] ❌ Failed to download: ${dlErr.message}`, dlErr);
         continue;
       }
     }
@@ -410,8 +425,15 @@ async function createAdvancedSlideshow(imagePaths, outputPath, promoText, option
   }
 
   if (validPaths.length === 0) {
-    throw new Error("لم يتم العثور على صور صالحة");
+    console.error("[AdvancedVideo] ❌ No valid images found after processing:", {
+      totalInput: imagePaths.length,
+      processed: validPaths.length,
+      imagePaths: imagePaths.map(p => typeof p === 'string' ? p.substring(0, 100) : typeof p)
+    });
+    throw new Error("لم يتم العثور على صور صالحة. يرجى التأكد من رفع الصور بشكل صحيح.");
   }
+
+  console.log(`[AdvancedVideo] ✅ Found ${validPaths.length} valid images out of ${imagePaths.length} input paths`);
 
   const assPath = path.join(tempDir, `captions_${Date.now()}.ass`);
   const fontsDir = path.join(__dirname, "../public/fonts");
