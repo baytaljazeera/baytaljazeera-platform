@@ -3,7 +3,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const db = require("../db");
-const { JWT_SECRET, JWT_CONFIG, JWT_VERIFY_OPTIONS } = require("../middleware/auth");
+const { JWT_SECRET, JWT_CONFIG, JWT_VERIFY_OPTIONS, optionalAuth } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { validatePassword, PASSWORD_POLICY, sanitizeInput, strictAuthLimiter } = require("../config/security");
 const { sendPasswordResetEmail, sendWelcomeEmail, sendEmailVerificationEmail } = require("../services/emailService");
@@ -710,14 +710,23 @@ router.get("/verify-email", asyncHandler(async (req, res) => {
 
 // Resend verification email
 // Allow resending without authentication - user just needs to provide their email
-router.post("/resend-verification", strictAuthLimiter, asyncHandler(async (req, res) => {
+// Use optionalAuth to set req.user if token exists, but don't require it
+router.post("/resend-verification", strictAuthLimiter, optionalAuth, asyncHandler(async (req, res) => {
+  console.log('📧 [Resend Verification] Request received');
+  console.log('📧 [Resend Verification] Body:', JSON.stringify(req.body));
+  console.log('📧 [Resend Verification] User:', req.user ? 'Authenticated' : 'Not authenticated');
+  
   const { email } = req.body;
   
   // Try to get userId from auth first (if user is logged in)
+  // Note: req.user might be set by optionalAuth middleware if token exists
   let userId = req.user?.id || req.user?.userId;
+  
+  console.log('📧 [Resend Verification] userId:', userId, 'email:', email);
   
   // If no userId from auth, require email in body
   if (!userId && !email) {
+    console.log('📧 [Resend Verification] Missing both userId and email');
     return res.status(400).json({ 
       error: "يرجى إدخال بريدك الإلكتروني", 
       errorEn: "Email is required" 
