@@ -1,0 +1,8 @@
+.replit
+frontend/
+components/
+shared/
+public/emails/
+Screenshot*.png
+*.md
+.gitignore

@@ -1,0 +1,846 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Panel Animation */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+    visibility: hidden;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    visibility: visible;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.panel-animated {
+  animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.overlay-animated {
+  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Clear Filters Button Animation */
+@keyframes clearPulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  50% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+}
+
+@keyframes filtersDisappear {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+.clear-button-clicked {
+  animation: clearPulse 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.filters-clearing {
+  animation: filtersDisappear 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Clean Map Popup Styles */
+.clean-popup .leaflet-popup-content-wrapper {
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 12px !important;
+  overflow: visible !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2) !important;
+  border: none !important;
+  background: white !important;
+}
+
+.clean-popup .leaflet-popup-content {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 280px !important;
+  min-width: 280px !important;
+  overflow: visible !important;
+}
+
+/* نبض تنبيهي لفلتر حالة الصفقة */
+@keyframes statusPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(212, 175, 55, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(212, 175, 55, 0);
+  }
+}
+
+.deal-status-alert {
+  animation: statusPulse 2s ease-in-out infinite;
+  border: 2px solid #D4AF37 !important;
+}
+
+.clean-popup .leaflet-popup-tip-container {
+  margin-top: -1px !important;
+}
+
+.clean-popup .leaflet-popup-tip {
+  background: white !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.clean-popup .leaflet-popup-close-button {
+  display: none !important;
+}
+
+.clean-popup .leaflet-popup-close-button:hover {
+  background: rgba(0,0,0,0.6) !important;
+  color: white !important;
+}
+
+/* أزرار التنقل في popup الخريطة - ضمان الظهور */
+.popup-nav-btn {
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  z-index: 99999 !important;
+}
+
+.leaflet-popup-content,
+.leaflet-popup-content-wrapper {
+  overflow: visible !important;
+}
+
+.leaflet-container {
+  font-family: inherit !important;
+}
+
+/* Hide unwanted Leaflet controls */
+.leaflet-control-locate,
+.leaflet-control-compass,
+.leaflet-control-north,
+.leaflet-control-attribution,
+.leaflet-control-zoom,
+.leaflet-control-rotate,
+.leaflet-control-bearing,
+.leaflet-bottom.leaflet-right,
+.leaflet-bottom .leaflet-control,
+.leaflet-right .leaflet-control,
+button[title*="North"],
+button[title*="north"],
+button[title*="Reset"],
+button[title*="bearing"],
+a[title*="North"],
+a[title*="north"],
+.leaflet-control-minimap,
+.leaflet-control-compass-button,
+.leaflet-touch .leaflet-control-layers,
+.leaflet-touch .leaflet-bar,
+.leaflet-bar a[aria-label*="North"],
+.leaflet-bar button[aria-label*="North"],
+.leaflet-control-container .leaflet-bottom,
+.leaflet-control-container .leaflet-right {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Force hide compass/north indicator controls ONLY */
+.leaflet-control-rotate-toggle,
+.leaflet-control-bearing-toggle {
+  display: none !important;
+}
+
+/* Hide Next.js dev overlay elements */
+[data-nextjs-toast] {
+  display: none !important;
+}
+
+/* إخفاء أزرار Leaflet controls فقط - ليس أزرار popup */
+.leaflet-control-zoom button,
+.leaflet-control-layers button,
+.leaflet-control button,
+.leaflet-bar a,
+.leaflet-bar button {
+  display: none !important;
+}
+
+/* ========================================
+   أزرار POPUP - ظهور بأولوية قصوى
+   ======================================== */
+button.popup-nav-btn,
+button.popup-favorite-btn,
+button.popup-dot-btn,
+.popup-nav-btn,
+.popup-favorite-btn,
+.popup-dot-btn {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  z-index: 99999 !important;
+}
+
+.popup-dots-container {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  z-index: 99999 !important;
+}
+
+/* تأكيد ظهور أزرار popup داخل leaflet */
+.leaflet-popup button.popup-nav-btn,
+.leaflet-popup button.popup-favorite-btn,
+.leaflet-popup button.popup-dot-btn,
+.leaflet-popup-content button.popup-nav-btn,
+.leaflet-popup-content button.popup-favorite-btn,
+.leaflet-popup-content button.popup-dot-btn,
+.leaflet-popup-content-wrapper button.popup-nav-btn,
+.leaflet-popup-content-wrapper button.popup-favorite-btn,
+.leaflet-popup-content-wrapper button.popup-dot-btn {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  z-index: 99999 !important;
+}
+
+
+.leaflet-popup-content p {
+  margin: 0 !important;
+}
+
+/* Price Marker Styles */
+.custom-price-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.custom-price-marker .price-badge {
+  transition: all 0.2s ease;
+}
+
+.custom-price-marker:hover .price-badge {
+  transform: scale(1.05);
+}
+
+/* User Location Marker */
+.user-location-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Custom Marker Animation */
+@keyframes markerPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+.price-badge-selected {
+  animation: markerPulse 1.5s ease-in-out infinite;
+}
+
+/* Premium Design System Animations */
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideRight {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(212, 175, 55, 0.3); }
+  50% { box-shadow: 0 0 40px rgba(212, 175, 55, 0.5); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes goldShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.skeleton-shimmer {
+  animation: shimmer 2s infinite linear;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s ease-out;
+}
+
+.animate-slide-right {
+  animation: slideRight 0.4s ease-out;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s ease-out;
+}
+
+.animate-glow {
+  animation: glow 2s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.gold-shimmer-text {
+  background: linear-gradient(90deg, #D4AF37 0%, #E8C882 25%, #D4AF37 50%, #E8C882 75%, #D4AF37 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: goldShimmer 3s linear infinite;
+}
+
+/* Enhanced Button Styles */
+.btn-premium {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(to right, #D4AF37, #E8C882);
+  color: #001A33;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  transition: all 0.3s ease-out;
+}
+
+.btn-premium:hover {
+  box-shadow: 0 10px 15px -3px rgba(212, 175, 55, 0.3);
+  transform: scale(1.02);
+}
+
+.btn-premium:active {
+  transform: scale(0.98);
+}
+
+.btn-premium::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  transition: left 0.5s ease;
+}
+
+.btn-premium:hover::before {
+  left: 100%;
+}
+
+.btn-navy {
+  background: linear-gradient(to right, #001A33, #003366);
+  color: white;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  transition: all 0.3s ease-out;
+}
+
+.btn-navy:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 51, 102, 0.3);
+  transform: scale(1.02);
+}
+
+.btn-navy:active {
+  transform: scale(0.98);
+}
+
+/* Enhanced Card Styles */
+.card-premium {
+  background: white;
+  border-radius: 0.75rem;
+  border: 1px solid #f1f5f9;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease-out;
+}
+
+.card-premium:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  transform: translateY(-4px);
+}
+
+.card-gold-border {
+  background: white;
+  border-radius: 0.75rem;
+  border: 2px solid rgba(212, 175, 55, 0.2);
+  transition: all 0.3s ease-out;
+}
+
+.card-gold-border:hover {
+  border-color: rgba(212, 175, 55, 0.5);
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.4);
+}
+
+/* Input Focus Styles */
+.input-premium {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+  background: white;
+  transition: all 0.2s ease-out;
+}
+
+.input-premium:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.3);
+  border-color: #D4AF37;
+}
+
+.input-premium::placeholder {
+  color: #94a3b8;
+}
+
+/* Glass Effect */
+.glass {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.glass-dark {
+  background: rgba(0, 26, 51, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Status Colors */
+.status-success {
+  background: #d1fae5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.status-warning {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.status-error {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.status-info {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.status-neutral {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+/* Gradient Text */
+.gradient-text-gold {
+  background: linear-gradient(to right, #D4AF37, #E8C882);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gradient-text-navy {
+  background: linear-gradient(to right, #001A33, #003366);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Decorative Elements */
+.gold-line {
+  height: 4px;
+  background: linear-gradient(to right, transparent, #D4AF37, transparent);
+  border-radius: 9999px;
+}
+
+.decorative-corner::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 60px;
+  height: 60px;
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.1) 0%, transparent 50%);
+  border-radius: 0 0 0 100%;
+}
+
+/* Scrollbar Styling */
+.scrollbar-premium::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-premium::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+.scrollbar-premium::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #D4AF37, #B8962F);
+  border-radius: 3px;
+}
+
+.scrollbar-premium::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #E8C882, #D4AF37);
+}
+
+/* Table Enhancements */
+.table-premium th {
+  background: linear-gradient(to right, #f8fafc, #f1f5f9);
+  color: #334155;
+  font-weight: 600;
+  border-bottom: 2px solid rgba(212, 175, 55, 0.2);
+}
+
+.table-premium tr {
+  transition: background-color 0.15s ease;
+}
+
+.table-premium tbody tr:hover {
+  background: rgba(212, 175, 55, 0.05);
+}
+
+/* Modal Backdrop */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 26, 51, 0.6);
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modal-content {
+  animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Tooltip Styles */
+.tooltip-premium {
+  position: absolute;
+  z-index: 50;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: white;
+  background: #001A33;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+}
+
+.tooltip-trigger:hover .tooltip-premium {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Focus States for Accessibility */
+.focus-ring:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.5);
+}
+
+/* RTL Specific Enhancements */
+[dir="rtl"] .decorative-corner::before {
+  right: auto;
+  left: 0;
+  border-radius: 0 0 100% 0;
+}
+
+/* Mobile Select Dropdowns - Keep within viewport */
+@media (max-width: 640px) {
+  select {
+    max-width: 100% !important;
+    width: 100% !important;
+    font-size: 16px !important; /* Prevents iOS zoom */
+  }
+  
+  /* Custom select arrow for mobile */
+  select:not([multiple]) {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+    background-position: left 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+    padding-left: 2.5rem;
+  }
+  
+  /* Ensure form containers don't overflow */
+  .grid {
+    overflow: visible;
+  }
+  
+  /* Fix dropdown positioning in RTL */
+  [dir="rtl"] select:not([multiple]) {
+    background-position: right 0.5rem center;
+    padding-right: 2.5rem;
+    padding-left: 1rem;
+  }
+}
+
+/* Enhanced Mobile Experience */
+@media (max-width: 640px) {
+  /* Prevent text selection on buttons */
+  button, a {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  
+  /* Better touch targets */
+  .touch-manipulation {
+    touch-action: manipulation;
+  }
+  
+  /* Smooth scrolling */
+  .overflow-y-auto, .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+  
+  /* Safe area for notched devices */
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 16px);
+  }
+  
+  /* Prevent horizontal scroll */
+  body {
+    overflow-x: hidden;
+  }
+  
+  /* Better input styling */
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"],
+  input[type="tel"] {
+    font-size: 16px !important; /* Prevents iOS zoom */
+    -webkit-appearance: none;
+    border-radius: 12px;
+  }
+  
+  /* Larger touch areas for checkboxes and radios */
+  input[type="checkbox"],
+  input[type="radio"] {
+    min-width: 20px;
+    min-height: 20px;
+  }
+}
+
+/* Map Mobile Enhancements */
+@media (max-width: 640px) {
+  .leaflet-container {
+    touch-action: pan-x pan-y;
+  }
+  
+  /* Larger zoom controls on mobile */
+  .leaflet-control-zoom a {
+    width: 36px !important;
+    height: 36px !important;
+    line-height: 36px !important;
+    font-size: 18px !important;
+  }
+  
+  /* Better popup sizing on mobile */
+  .leaflet-popup-content-wrapper {
+    max-width: calc(100vw - 40px) !important;
+  }
+  
+  .leaflet-popup-content {
+    max-width: calc(100vw - 60px) !important;
+    margin: 8px 10px !important;
+  }
+}
+
+/* Slide up animation for mobile sheets */
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Smooth page transitions */
+.page-transition {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* Hide scrollbar but keep functionality */
+.scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
