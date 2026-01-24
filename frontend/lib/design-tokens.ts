@@ -71,16 +71,27 @@ export const typography = {
     body: 'Tajawal, sans-serif',
   },
   fontSize: {
-    xs: '0.75rem',
-    sm: '0.875rem',
-    base: '1rem',
-    lg: '1.125rem',
-    xl: '1.25rem',
-    '2xl': '1.5rem',
-    '3xl': '1.875rem',
-    '4xl': '2.25rem',
-    '5xl': '3rem',
-    '6xl': '3.75rem',
+    xs: '0.75rem',      // 12px
+    sm: '0.875rem',     // 14px
+    base: '1rem',       // 16px
+    lg: '1.125rem',     // 18px
+    xl: '1.25rem',      // 20px
+    '2xl': '1.5rem',    // 24px
+    '3xl': '1.875rem',  // 30px
+    '4xl': '2.25rem',   // 36px
+    '5xl': '3rem',      // 48px
+    '6xl': '3.75rem',   // 60px
+  },
+  // Mobile-optimized font sizes (minimum 14px for readability)
+  mobile: {
+    xs: '0.75rem',      // 12px - Labels only
+    sm: '0.875rem',     // 14px - Minimum body text
+    base: '1rem',       // 16px - Standard body text
+    lg: '1.125rem',     // 18px - Subheadings
+    xl: '1.25rem',      // 20px - Small headings
+    '2xl': '1.5rem',    // 24px - Medium headings
+    '3xl': '1.75rem',   // 28px - Large headings
+    '4xl': '2rem',      // 32px - Hero text
   },
   fontWeight: {
     normal: 400,
@@ -92,7 +103,7 @@ export const typography = {
   lineHeight: {
     tight: 1.25,
     snug: 1.375,
-    normal: 1.5,
+    normal: 1.5,        // Minimum for mobile
     relaxed: 1.625,
     loose: 2,
   },
@@ -123,6 +134,24 @@ export const spacing = {
   24: '6rem',
   28: '7rem',
   32: '8rem',
+} as const;
+
+// Mobile-optimized spacing (larger gaps for touch)
+export const mobileSpacing = {
+  xs: '0.25rem',   // 4px
+  sm: '0.5rem',    // 8px
+  md: '0.75rem',   // 12px
+  lg: '1rem',      // 16px - Standard mobile gap
+  xl: '1.5rem',    // 24px - Section spacing
+  '2xl': '2rem',   // 32px - Large section spacing
+  '3xl': '3rem',   // 48px - Page spacing
+} as const;
+
+// Touch target sizes (WCAG minimum: 44x44px)
+export const touchTargets = {
+  minimum: '2.75rem',    // 44px - WCAG minimum
+  comfortable: '3rem',   // 48px - Recommended
+  large: '3.5rem',       // 56px - Important actions
 } as const;
 
 export const borderRadius = {
@@ -192,4 +221,13 @@ export const zIndex = {
   popover: 1060,
   tooltip: 1070,
   toast: 1080,
+} as const;
+
+// Breakpoints for responsive design
+export const breakpoints = {
+  mobile: '375px',
+  mobileLarge: '428px',
+  tablet: '768px',
+  desktop: '1024px',
+  desktopLarge: '1280px',
 } as const;

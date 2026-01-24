@@ -6,7 +6,7 @@ const db = require("../db");
 const { JWT_SECRET, JWT_CONFIG, JWT_VERIFY_OPTIONS } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { validatePassword, PASSWORD_POLICY, sanitizeInput, strictAuthLimiter } = require("../config/security");
-const { sendPasswordResetEmail } = require("../services/emailService");
+const { sendPasswordResetEmail, sendWelcomeEmail, sendEmailVerificationEmail } = require("../services/emailService");
 
 const router = express.Router();
 
@@ -97,12 +97,16 @@ router.post("/register", asyncHandler(async (req, res) => {
     }
   }
 
+  // Generate email verification token
+  const emailVerificationToken = crypto.randomBytes(32).toString('hex');
+  const emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
   try {
     const result = await db.query(
-      `INSERT INTO users (email, password_hash, name, phone, referral_code, referred_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO users (email, password_hash, name, phone, referral_code, referred_by, email_verification_token, email_verification_expires)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, email, name, phone, role, created_at, referral_code`,
-      [sanitizedEmail, hashed, sanitizedName, sanitizedPhone, newReferralCode, referrerId]
+      [sanitizedEmail, hashed, sanitizedName, sanitizedPhone, newReferralCode, referrerId, emailVerificationToken, emailVerificationExpires]
     );
 
     const user = result.rows[0];
@@ -243,6 +247,18 @@ router.post("/register", asyncHandler(async (req, res) => {
         audience: JWT_CONFIG.audience
       }
     );
+
+    // Send email verification email (non-blocking)
+    try {
+      await sendEmailVerificationEmail(user.email, emailVerificationToken, user.name);
+      console.log(`📧 Email verification sent to ${user.email}`);
+    } catch (emailErr) {
+      console.error('❌ Failed to send email verification:', emailErr);
+      // Don't fail registration if email fails
+    }
+
+    // Send welcome email (non-blocking) - after verification
+    // We'll send welcome email after email is verified
 
     res
       .cookie("token", token, getCookieOptions())
@@ -612,6 +628,159 @@ router.post("/reset-password", strictAuthLimiter, asyncHandler(async (req, res) 
     ok: true, 
     message: "تم إعادة تعيين كلمة المرور بنجاح! يمكنك الآن تسجيل الدخول." 
   });
+}));
+
+// ========== EMAIL VERIFICATION ==========
+
+router.get("/verify-email", asyncHandler(async (req, res) => {
+  const { token } = req.query;
+  
+  if (!token) {
+    return res.status(400).json({ 
+      error: "رمز التأكيد مطلوب", 
+      errorEn: "Verification token required" 
+    });
+  }
+
+  try {
+    const result = await db.query(
+      `SELECT id, email, email_verified_at, email_verification_expires 
+       FROM users 
+       WHERE email_verification_token = $1`,
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ 
+        error: "رمز التأكيد غير صالح", 
+        errorEn: "Invalid verification token" 
+      });
+    }
+
+    const user = result.rows[0];
+
+    // Check if already verified
+    if (user.email_verified_at) {
+      return res.status(400).json({ 
+        error: "البريد الإلكتروني مؤكد بالفعل", 
+        errorEn: "Email already verified" 
+      });
+    }
+
+    // Check if token expired
+    if (new Date(user.email_verification_expires) < new Date()) {
+      return res.status(400).json({ 
+        error: "انتهت صلاحية رمز التأكيد", 
+        errorEn: "Verification token expired" 
+      });
+    }
+
+    // Verify email
+    await db.query(
+      `UPDATE users 
+       SET email_verified_at = NOW(), 
+           email_verification_token = NULL, 
+           email_verification_expires = NULL,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [user.id]
+    );
+
+    // Send welcome email after verification
+    try {
+      await sendWelcomeEmail(user.email, user.name || 'عزيزنا العميل');
+      console.log(`📧 Welcome email sent to ${user.email} after verification`);
+    } catch (emailErr) {
+      console.error('❌ Failed to send welcome email:', emailErr);
+    }
+
+    res.json({ 
+      ok: true,
+      message: "تم تأكيد بريدك الإلكتروني بنجاح",
+      messageEn: "Email verified successfully"
+    });
+  } catch (err) {
+    console.error("Email verification error:", err);
+    res.status(500).json({ 
+      error: "حدث خطأ أثناء تأكيد البريد الإلكتروني", 
+      errorEn: "Error verifying email" 
+    });
+  }
+}));
+
+// Resend verification email
+router.post("/resend-verification", strictAuthLimiter, asyncHandler(async (req, res) => {
+  const userId = req.user?.userId;
+  
+  if (!userId) {
+    return res.status(401).json({ 
+      error: "غير مصرح", 
+      errorEn: "Unauthorized" 
+    });
+  }
+
+  try {
+    const result = await db.query(
+      `SELECT id, email, name, email_verified_at, email_verification_token, email_verification_expires
+       FROM users 
+       WHERE id = $1`,
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ 
+        error: "المستخدم غير موجود", 
+        errorEn: "User not found" 
+      });
+    }
+
+    const user = result.rows[0];
+
+    // Check if already verified
+    if (user.email_verified_at) {
+      return res.status(400).json({ 
+        error: "البريد الإلكتروني مؤكد بالفعل", 
+        errorEn: "Email already verified" 
+      });
+    }
+
+    // Generate new verification token
+    const emailVerificationToken = crypto.randomBytes(32).toString('hex');
+    const emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    await db.query(
+      `UPDATE users 
+       SET email_verification_token = $1, 
+           email_verification_expires = $2,
+           updated_at = NOW()
+       WHERE id = $3`,
+      [emailVerificationToken, emailVerificationExpires, user.id]
+    );
+
+    // Send verification email
+    try {
+      await sendEmailVerificationEmail(user.email, emailVerificationToken, user.name);
+      console.log(`📧 Verification email resent to ${user.email}`);
+    } catch (emailErr) {
+      console.error('❌ Failed to resend verification email:', emailErr);
+      return res.status(500).json({ 
+        error: "فشل إرسال إيميل التأكيد", 
+        errorEn: "Failed to send verification email" 
+      });
+    }
+
+    res.json({ 
+      ok: true,
+      message: "تم إرسال إيميل التأكيد بنجاح",
+      messageEn: "Verification email sent successfully"
+    });
+  } catch (err) {
+    console.error("Resend verification error:", err);
+    res.status(500).json({ 
+      error: "حدث خطأ أثناء إرسال إيميل التأكيد", 
+      errorEn: "Error sending verification email" 
+    });
+  }
 }));
 
 module.exports = router;

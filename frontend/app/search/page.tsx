@@ -46,6 +46,7 @@ import { useSearchMapStore } from "@/lib/stores/searchMapStore";
 import { useCurrencyStore } from "@/lib/stores/currencyStore";
 import type { PropertyMarker } from "@/components/search/SyncedMapPane";
 import { getImageUrl } from "@/lib/imageUrl";
+import MobileBottomSheet from "@/components/MobileBottomSheet";
 
 // نوع الإعلان القادم من /api/listings
 type Listing = {
@@ -824,6 +825,12 @@ function SearchPage() {
     [filteredListings, activeListingId]
   );
 
+  // 🗺 قائمة الإعلانات للخريطة مع isFavorite
+  const mapListings = useMemo(
+    () => filteredListings.map(l => ({ ...l, isFavorite: favoritesSet.has(l.id) })),
+    [filteredListings, favoritesSet]
+  );
+
   async function toggleFavorite(id: string) {
     const apiBase = getApiBase();
     try {
@@ -1065,12 +1072,10 @@ function SearchPage() {
     content = (
       <div className="relative h-[calc(100vh-180px)] sm:h-[600px] md:h-[700px] lg:h-[800px] rounded-2xl sm:rounded-3xl overflow-hidden border border-slate-200 sm:border-[#f6d879]/60 shadow-lg sm:shadow-[0_10px_30px_-10px_rgba(0,0,0,0.35)] bg-white">
         <MapClient 
-          listings={filteredListings.map(l => ({ ...l, isFavorite: favoritesSet.has(l.id) }))} 
+          listings={mapListings} 
           selectedCity={filters.city}
-          selectedListingId={activeListingId}
-          onSelectListing={(id) => setActiveListingId(id)}
-          onToggleFavorite={(id) => toggleFavorite(id)}
-          showFavoriteButton={true}
+          activeListingId={activeListingId}
+          onMarkerClick={(id) => setActiveListingId(id)}
         />
 
         {isLoading && (
@@ -1242,9 +1247,10 @@ function SearchPage() {
                 <button
                   type="button"
                   onClick={() => setShowMobileFilters(true)}
-                  className="relative flex items-center justify-center gap-1.5 px-4 py-2 rounded-full bg-[#D4AF37] text-[#002845] text-xs font-bold"
+                  className="relative min-h-[44px] min-w-[44px] flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-[#D4AF37] text-[#002845] text-mobile-sm font-bold touch-manipulation active:scale-95"
+                  aria-label="فتح الفلاتر"
                 >
-                  <SlidersHorizontal className="w-4 h-4" />
+                  <SlidersHorizontal className="w-5 h-5" />
                   <span>فلترة</span>
                   {(() => {
                     const count = [
@@ -1263,7 +1269,7 @@ function SearchPage() {
                       filters.hasParking,
                     ].filter(Boolean).length;
                     return count > 0 ? (
-                      <span className="absolute -top-1 -left-1 inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold bg-red-500 text-white rounded-full">{count}</span>
+                      <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[22px] h-[22px] text-mobile-xs font-bold bg-red-500 text-white rounded-full px-1.5">{count > 99 ? '99+' : count}</span>
                     ) : null;
                   })()}
                 </button>
@@ -1596,39 +1602,20 @@ function SearchPage() {
           <div>{content}</div>
 
           {/* 📱 Mobile Filter Sheet */}
-          {showMobileFilters && (
-            <div className="fixed inset-0 z-[200] sm:hidden">
-              {/* Overlay */}
-              <div 
-                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-                onClick={() => setShowMobileFilters(false)}
-              />
-              {/* Sheet */}
-              <div className="absolute bottom-0 left-0 right-0 bg-[#002845] rounded-t-3xl max-h-[90vh] overflow-y-auto animate-slide-up safe-area-inset-bottom">
-                {/* Handle */}
-                <div className="sticky top-0 bg-[#002845] pt-3 pb-2 px-4 border-b border-[#D4AF37]/20 z-10">
-                  <div className="w-12 h-1.5 bg-white/40 rounded-full mx-auto mb-3 touch-manipulation" />
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <SlidersHorizontal className="w-5 h-5 text-[#D4AF37]" />
-                      <h3 className="text-white font-bold text-lg">تصفية النتائج</h3>
-                    </div>
-                    <button 
-                      onClick={() => setShowMobileFilters(false)}
-                      className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center active:scale-95 transition touch-manipulation"
-                      aria-label="إغلاق الفلاتر"
-                    >
-                      <X className="w-5 h-5 text-white" />
-                    </button>
-                  </div>
-                </div>
+          <MobileBottomSheet
+            isOpen={showMobileFilters}
+            onClose={() => setShowMobileFilters(false)}
+            title="تصفية النتائج"
+            maxHeight="85vh"
+          >
+            <div className="space-y-6">
                 
                 {/* Filters Content */}
-                <div className="p-4 space-y-5">
+                <div className="space-y-6">
                   {/* الدولة */}
                   <div>
-                    <h4 className="text-white/80 text-xs font-semibold mb-2">🌍 الدولة</h4>
-                    <div className="flex flex-wrap gap-1.5">
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">🌍 الدولة</h4>
+                    <div className="flex flex-wrap gap-2">
                       {[
                         { code: "", name: "الكل", emoji: "🌐" },
                         { code: "السعودية", name: "السعودية", emoji: "🇸🇦" },
@@ -1648,10 +1635,10 @@ function SearchPage() {
                             country: country.code || undefined, 
                             city: undefined 
                           }))}
-                          className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${
                             (filters.country || "") === country.code 
                               ? "bg-[#D4AF37] text-[#002845]" 
-                              : "bg-white/10 text-white"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                           }`}
                         >
                           {country.emoji} {country.name}
@@ -1662,19 +1649,19 @@ function SearchPage() {
 
                   {/* المدينة - ديناميكية حسب الدولة */}
                   <div>
-                    <h4 className="text-white/80 text-xs font-semibold mb-2">📍 المدينة {filters.country && <span className="text-[#D4AF37]">({filters.country})</span>}</h4>
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">📍 المدينة {filters.country && <span className="text-[#D4AF37]">({filters.country})</span>}</h4>
                     {mobileCitiesLoading ? (
-                      <div className="flex justify-center py-3">
-                        <div className="w-5 h-5 border-2 border-[#D4AF37] border-t-transparent rounded-full animate-spin"></div>
+                      <div className="flex justify-center py-4">
+                        <div className="w-6 h-6 border-2 border-[#D4AF37] border-t-transparent rounded-full animate-spin"></div>
                       </div>
                     ) : (
-                      <div className="flex flex-wrap gap-1.5 max-h-[150px] overflow-y-auto">
+                      <div className="flex flex-wrap gap-2 max-h-[200px] overflow-y-auto">
                         <button
                           onClick={() => setFilters(prev => ({ ...prev, city: undefined }))}
-                          className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${
                             !filters.city 
                               ? "bg-[#D4AF37] text-[#002845]" 
-                              : "bg-white/10 text-white"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                           }`}
                         >
                           🏠 كل المدن
@@ -1683,17 +1670,17 @@ function SearchPage() {
                           <button
                             key={city.id}
                             onClick={() => setFilters(prev => ({ ...prev, city: city.name_ar }))}
-                            className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                            className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${
                               filters.city === city.name_ar 
                                 ? "bg-[#D4AF37] text-[#002845]" 
-                                : "bg-white/10 text-white"
+                                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                             }`}
                           >
                             {city.flag_emoji} {city.name_ar}
                           </button>
                         ))}
                         {mobileCities.length === 0 && !mobileCitiesLoading && (
-                          <p className="text-white/50 text-xs w-full text-center py-2">اختر دولة لعرض المدن</p>
+                          <p className="text-slate-500 text-mobile-sm w-full text-center py-4">اختر دولة لعرض المدن</p>
                         )}
                       </div>
                     )}
@@ -1701,20 +1688,20 @@ function SearchPage() {
 
                   {/* البحث بالحي */}
                   <div>
-                    <h4 className="text-white/80 text-xs font-semibold mb-2">🔍 البحث بالحي</h4>
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">🔍 البحث بالحي</h4>
                     <input
                       type="text"
                       placeholder="ابحث بالحي أو الموقع..."
                       value={searchInput}
                       onChange={(e) => setSearchInput(e.target.value)}
-                      className="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-3 text-white text-sm placeholder:text-white/50"
+                      className="w-full min-h-[48px] bg-white border-2 border-slate-300 rounded-xl px-4 py-3 text-mobile-base text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#D4AF37] focus:border-[#D4AF37] transition touch-manipulation"
                     />
                   </div>
 
                   {/* نوع الاستخدام */}
                   <div>
-                    <h4 className="text-white/80 text-xs font-semibold mb-2">🏢 طبيعة الاستخدام</h4>
-                    <div className="flex gap-2">
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">🏢 طبيعة الاستخدام</h4>
+                    <div className="flex gap-3">
                       {([
                         { value: "residential" as const, label: "🏠 سكني" },
                         { value: "commercial" as const, label: "🏢 تجاري" },
@@ -1722,10 +1709,10 @@ function SearchPage() {
                         <button
                           key={tab.value}
                           onClick={() => { setUsageTab(tab.value); setFilters((prev) => ({ ...prev, propertyTypes: undefined })); }}
-                          className={`flex-1 py-2.5 rounded-xl text-xs font-semibold transition ${
+                          className={`flex-1 min-h-[48px] py-3 rounded-xl text-mobile-base font-semibold transition touch-manipulation active:scale-95 ${
                             usageTab === tab.value 
                               ? "bg-[#D4AF37] text-[#002845]" 
-                              : "bg-white/10 text-white"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                           }`}
                         >
                           {tab.label}
@@ -1736,8 +1723,8 @@ function SearchPage() {
 
                   {/* نوع العرض */}
                   <div>
-                    <h4 className="text-white/80 text-xs font-semibold mb-2">📋 نوع العرض</h4>
-                    <div className="flex gap-2">
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">📋 نوع العرض</h4>
+                    <div className="flex gap-3">
                       {([
                         { value: "sell" as const, label: "📋 بيع" },
                         { value: "rent" as const, label: "🔑 إيجار" },
@@ -1745,10 +1732,10 @@ function SearchPage() {
                         <button
                           key={tab.value}
                           onClick={() => setPurposeTab(tab.value as PurposeTab)}
-                          className={`flex-1 py-2.5 rounded-xl text-xs font-semibold transition ${
+                          className={`flex-1 min-h-[48px] py-3 rounded-xl text-mobile-base font-semibold transition touch-manipulation active:scale-95 ${
                             purposeTab === tab.value 
                               ? "bg-[#D4AF37] text-[#002845]" 
-                              : "bg-white/10 text-white"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                           }`}
                         >
                           {tab.label}
@@ -1759,8 +1746,8 @@ function SearchPage() {
 
                   {/* نوع العقار */}
                   <div>
-                    <h4 className="text-white/80 text-xs font-semibold mb-2">🏠 نوع العقار</h4>
-                    <div className="flex flex-wrap gap-1.5">
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">🏠 نوع العقار</h4>
+                    <div className="flex flex-wrap gap-2">
                       {(usageTab === "residential" ? RESIDENTIAL_TYPES : COMMERCIAL_TYPES).map(type => (
                         <button
                           key={type}
@@ -1776,10 +1763,10 @@ function SearchPage() {
                               };
                             });
                           }}
-                          className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition ${
+                          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${
                             filters.propertyTypes?.includes(type)
                               ? "bg-[#D4AF37] text-[#002845]"
-                              : "bg-white/10 text-white"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                           }`}
                         >
                           {type}
@@ -1790,53 +1777,53 @@ function SearchPage() {
 
                   {/* السعر */}
                   <div>
-                    <h4 className="text-white/80 text-xs font-semibold mb-2">💰 السعر</h4>
-                    <div className="flex gap-2">
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">💰 السعر</h4>
+                    <div className="flex gap-3">
                       <input
                         type="number"
                         placeholder="من"
                         value={filters.minPrice ?? ""}
                         onChange={(e) => setFilters(prev => ({ ...prev, minPrice: e.target.value ? Number(e.target.value) : undefined }))}
-                        className="flex-1 bg-white/10 border border-white/20 rounded-xl px-3 py-2.5 text-white text-xs placeholder:text-white/50"
+                        className="flex-1 min-h-[48px] bg-white border-2 border-slate-300 rounded-xl px-4 py-3 text-mobile-base text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#D4AF37] focus:border-[#D4AF37] transition touch-manipulation"
                       />
                       <input
                         type="number"
                         placeholder="إلى"
                         value={filters.maxPrice ?? ""}
                         onChange={(e) => setFilters(prev => ({ ...prev, maxPrice: e.target.value ? Number(e.target.value) : undefined }))}
-                        className="flex-1 bg-white/10 border border-white/20 rounded-xl px-3 py-2.5 text-white text-xs placeholder:text-white/50"
+                        className="flex-1 min-h-[48px] bg-white border-2 border-slate-300 rounded-xl px-4 py-3 text-mobile-base text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#D4AF37] focus:border-[#D4AF37] transition touch-manipulation"
                       />
                     </div>
                   </div>
 
                   {/* المساحة */}
                   <div>
-                    <h4 className="text-white/80 text-xs font-semibold mb-2">📐 المساحة (م²)</h4>
-                    <div className="flex gap-2">
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">📐 المساحة (م²)</h4>
+                    <div className="flex gap-3">
                       <input
                         type="number"
                         placeholder="من"
                         value={filters.minLandArea ?? ""}
                         onChange={(e) => setFilters(prev => ({ ...prev, minLandArea: e.target.value ? Number(e.target.value) : undefined }))}
-                        className="flex-1 bg-white/10 border border-white/20 rounded-xl px-3 py-2.5 text-white text-xs placeholder:text-white/50"
+                        className="flex-1 min-h-[48px] bg-white border-2 border-slate-300 rounded-xl px-4 py-3 text-mobile-base text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#D4AF37] focus:border-[#D4AF37] transition touch-manipulation"
                       />
                       <input
                         type="number"
                         placeholder="إلى"
                         value={filters.maxLandArea ?? ""}
                         onChange={(e) => setFilters(prev => ({ ...prev, maxLandArea: e.target.value ? Number(e.target.value) : undefined }))}
-                        className="flex-1 bg-white/10 border border-white/20 rounded-xl px-3 py-2.5 text-white text-xs placeholder:text-white/50"
+                        className="flex-1 min-h-[48px] bg-white border-2 border-slate-300 rounded-xl px-4 py-3 text-mobile-base text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#D4AF37] focus:border-[#D4AF37] transition touch-manipulation"
                       />
                     </div>
                   </div>
 
                   {/* الغرف */}
                   <div>
-                    <h4 className="text-white/80 text-xs font-semibold mb-2">🛏️ عدد الغرف</h4>
-                    <div className="flex gap-1.5">
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">🛏️ عدد الغرف</h4>
+                    <div className="flex flex-wrap gap-2">
                       <button
                         onClick={() => setFilters(prev => ({ ...prev, bedrooms: undefined }))}
-                        className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${!filters.bedrooms ? "bg-[#D4AF37] text-[#002845]" : "bg-white/10 text-white"}`}
+                        className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${!filters.bedrooms ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
                       >
                         الكل
                       </button>
@@ -1844,7 +1831,7 @@ function SearchPage() {
                         <button
                           key={n}
                           onClick={() => setFilters(prev => ({ ...prev, bedrooms: n }))}
-                          className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${filters.bedrooms === n ? "bg-[#D4AF37] text-[#002845]" : "bg-white/10 text-white"}`}
+                          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${filters.bedrooms === n ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
                         >
                           {n}+
                         </button>
@@ -1854,11 +1841,11 @@ function SearchPage() {
 
                   {/* الحمامات */}
                   <div>
-                    <h4 className="text-white/80 text-xs font-semibold mb-2">🚿 عدد الحمامات</h4>
-                    <div className="flex gap-1.5">
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">🚿 عدد الحمامات</h4>
+                    <div className="flex flex-wrap gap-2">
                       <button
                         onClick={() => setFilters(prev => ({ ...prev, bathrooms: undefined }))}
-                        className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${!filters.bathrooms ? "bg-[#D4AF37] text-[#002845]" : "bg-white/10 text-white"}`}
+                        className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${!filters.bathrooms ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
                       >
                         الكل
                       </button>
@@ -1866,7 +1853,7 @@ function SearchPage() {
                         <button
                           key={n}
                           onClick={() => setFilters(prev => ({ ...prev, bathrooms: n }))}
-                          className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${filters.bathrooms === n ? "bg-[#D4AF37] text-[#002845]" : "bg-white/10 text-white"}`}
+                          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${filters.bathrooms === n ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
                         >
                           {n}+
                         </button>
@@ -1876,39 +1863,58 @@ function SearchPage() {
 
                   {/* المرافق */}
                   <div>
-                    <h4 className="text-white/80 text-xs font-semibold mb-2">⚙️ المرافق</h4>
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">⚙️ المرافق</h4>
                     <div className="flex flex-wrap gap-2">
-                      <button onClick={() => setFilters(prev => ({ ...prev, hasPool: !prev.hasPool }))} className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${filters.hasPool ? "bg-[#D4AF37] text-[#002845]" : "bg-white/10 text-white"}`}>🏊 مسبح</button>
-                      <button onClick={() => setFilters(prev => ({ ...prev, hasGarden: !prev.hasGarden }))} className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${filters.hasGarden ? "bg-[#D4AF37] text-[#002845]" : "bg-white/10 text-white"}`}>🌳 حديقة</button>
-                      <button onClick={() => setFilters(prev => ({ ...prev, hasElevator: !prev.hasElevator }))} className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${filters.hasElevator ? "bg-[#D4AF37] text-[#002845]" : "bg-white/10 text-white"}`}>🛗 مصعد</button>
-                      <button onClick={() => setFilters(prev => ({ ...prev, hasParking: !prev.hasParking }))} className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${filters.hasParking ? "bg-[#D4AF37] text-[#002845]" : "bg-white/10 text-white"}`}>🚗 مواقف</button>
+                      <button 
+                        onClick={() => setFilters(prev => ({ ...prev, hasPool: !prev.hasPool }))} 
+                        className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${filters.hasPool ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                      >
+                        🏊 مسبح
+                      </button>
+                      <button 
+                        onClick={() => setFilters(prev => ({ ...prev, hasGarden: !prev.hasGarden }))} 
+                        className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${filters.hasGarden ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                      >
+                        🌳 حديقة
+                      </button>
+                      <button 
+                        onClick={() => setFilters(prev => ({ ...prev, hasElevator: !prev.hasElevator }))} 
+                        className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${filters.hasElevator ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                      >
+                        🛗 مصعد
+                      </button>
+                      <button 
+                        onClick={() => setFilters(prev => ({ ...prev, hasParking: !prev.hasParking }))} 
+                        className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${filters.hasParking ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                      >
+                        🚗 مواقف
+                      </button>
                     </div>
                   </div>
                 </div>
 
                 {/* Action Buttons */}
-                <div className="sticky bottom-0 bg-[#002845] p-4 pb-6 border-t border-[#D4AF37]/20 flex gap-3 safe-area-inset-bottom">
+                <div className="sticky bottom-0 bg-white p-4 pb-6 border-t border-slate-200 flex gap-3 safe-area-inset-bottom -mx-6 -mb-4">
                   <button
                     onClick={() => {
-                      setFilters({});
+                      setFilters({ dealStatus: "active" });
                       setUsageTab("residential");
                       setPurposeTab("sell");
                       setSearchInput("");
                     }}
-                    className="flex-1 py-3.5 rounded-xl border border-white/30 text-white text-sm font-semibold active:scale-[0.98] transition touch-manipulation"
+                    className="flex-1 min-h-[48px] py-3 rounded-xl border-2 border-slate-300 text-slate-700 text-mobile-base font-semibold active:scale-95 transition touch-manipulation"
                   >
                     مسح الكل
                   </button>
                   <button
                     onClick={() => setShowMobileFilters(false)}
-                    className="flex-1 py-3.5 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] text-sm font-bold shadow-lg active:scale-[0.98] transition touch-manipulation"
+                    className="flex-1 min-h-[48px] py-3 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] text-mobile-base font-bold shadow-lg active:scale-95 transition touch-manipulation"
                   >
                     عرض النتائج ({filteredListings.length})
                   </button>
                 </div>
-              </div>
             </div>
-          )}
+          </MobileBottomSheet>
 
           {/* قسم نخبة العقارات - تصميم مطابق للصفحة الرئيسية */}
           <div className={`mt-8 mb-6 ${activePanel !== "none" ? "pointer-events-none" : ""}`}>

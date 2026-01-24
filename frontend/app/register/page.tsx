@@ -23,6 +23,7 @@ function RegisterForm() {
     name: "",
     email: "",
     phone: "",
+    phoneCountry: "+966", // Default to Saudi Arabia
     password: "",
     confirmPassword: "",
     ambassadorCode: "",
@@ -157,10 +158,15 @@ function RegisterForm() {
     }
 
     try {
+      // Combine country code with phone number
+      const fullPhone = formData.phone.trim() 
+        ? `${formData.phoneCountry}${formData.phone.trim().replace(/^\+?\d+/, '')}` 
+        : undefined;
+
       const result = await authRegister({
         name: formData.name.trim(),
         email: formData.email.trim(),
-        phone: formData.phone.trim() || undefined,
+        phone: fullPhone,
         password: formData.password,
         referralCode: formData.ambassadorCode.trim() || undefined,
       });
@@ -171,12 +177,13 @@ function RegisterForm() {
         return;
       }
 
-      setSuccess("تم إنشاء حسابك بنجاح! جاري التحويل...");
+      setSuccess("تم إنشاء حسابك بنجاح! يرجى التحقق من بريدك الإلكتروني لتأكيد حسابك.");
       setLoading(false);
       
+      // Redirect to verification page or show message
       setTimeout(() => {
-        window.location.href = "/";
-      }, 1500);
+        window.location.href = "/verify-email?email=" + encodeURIComponent(formData.email.trim());
+      }, 2000);
     } catch (err) {
       console.error("Registration error:", err);
       setError("حدث خطأ في الاتصال، حاول مرة أخرى");
@@ -275,22 +282,51 @@ function RegisterForm() {
             <label className="block text-sm font-semibold text-[#002845] mb-2">
               رقم الجوال <span className="text-slate-400 font-normal">(اختياري)</span>
             </label>
-            <div className="relative">
-              <input
-                type="tel"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                disabled={loading}
-                dir="ltr"
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 pl-11 text-sm text-left focus:outline-none focus:ring-2 focus:ring-[#f6d879] focus:border-transparent disabled:bg-slate-100 disabled:cursor-not-allowed transition-all"
-                placeholder="05xxxxxxxx"
-                autoComplete="tel"
-              />
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                </svg>
+            <div className="flex gap-2">
+              {/* Country Code Selector */}
+              <div className="relative flex-shrink-0">
+                <select
+                  name="phoneCountry"
+                  value={formData.phoneCountry}
+                  onChange={handleChange}
+                  disabled={loading}
+                  className="min-h-[48px] rounded-xl border border-slate-200 px-3 py-3 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-[#f6d879] focus:border-transparent disabled:bg-slate-100 disabled:cursor-not-allowed transition-all appearance-none bg-white cursor-pointer"
+                >
+                  <option value="+966">🇸🇦 +966</option>
+                  <option value="+971">🇦🇪 +971</option>
+                  <option value="+965">🇰🇼 +965</option>
+                  <option value="+974">🇶🇦 +974</option>
+                  <option value="+973">🇧🇭 +973</option>
+                  <option value="+968">🇴🇲 +968</option>
+                  <option value="+20">🇪🇬 +20</option>
+                  <option value="+961">🇱🇧 +961</option>
+                  <option value="+90">🇹🇷 +90</option>
+                </select>
+                <div className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
+              
+              {/* Phone Number Input */}
+              <div className="relative flex-1">
+                <input
+                  type="tel"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  disabled={loading}
+                  dir="ltr"
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 pl-11 text-sm text-left focus:outline-none focus:ring-2 focus:ring-[#f6d879] focus:border-transparent disabled:bg-slate-100 disabled:cursor-not-allowed transition-all"
+                  placeholder={formData.phoneCountry === "+966" ? "05xxxxxxxx" : "رقم الجوال"}
+                  autoComplete="tel"
+                />
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  </svg>
+                </div>
               </div>
             </div>
           </div>

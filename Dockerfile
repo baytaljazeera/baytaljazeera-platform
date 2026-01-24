@@ -11,7 +11,12 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --omit=dev
+# Try npm ci first (faster and more reliable), fallback to npm install if it fails
+RUN if [ -f package-lock.json ]; then \
+      npm ci --omit=dev || npm install --production; \
+    else \
+      npm install --production; \
+    fi
 
 # Copy application files
 COPY backend/ ./backend/

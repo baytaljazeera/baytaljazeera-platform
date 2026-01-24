@@ -14,6 +14,7 @@ import {
 import { useAuthStore } from "@/lib/stores/authStore";
 import { useSiteSettingsStore } from "@/lib/stores/siteSettingsStore";
 import LogoAdminModal from "./LogoAdminModal";
+import MobileBottomSheet from "./MobileBottomSheet";
 
 type Notification = {
   id: number;
@@ -310,11 +311,12 @@ function NavbarContent() {
           <div className="relative" ref={notificationRef}>
             <button
               onClick={() => setShowNotificationDropdown(!showNotificationDropdown)}
-              className="relative p-2.5 rounded-xl bg-white/80 hover:bg-white transition-all shadow-sm hover:shadow-md border border-slate-100"
+              className="relative min-h-[44px] min-w-[44px] flex items-center justify-center p-2.5 rounded-xl bg-white/80 hover:bg-white transition-all shadow-sm hover:shadow-md border border-slate-100 touch-manipulation active:scale-95"
+              aria-label={`الإشعارات${unreadNotifications > 0 ? ` (${unreadNotifications} غير مقروء)` : ''}`}
             >
-              <Bell className="w-5 h-5 text-[#003366]" />
+              <Bell className="w-6 h-6 text-[#003366]" />
               {unreadNotifications > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center animate-pulse">
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-mobile-xs font-bold min-w-[22px] h-[22px] rounded-full flex items-center justify-center animate-pulse px-1.5">
                   {unreadNotifications > 99 ? '99+' : unreadNotifications}
                 </span>
               )}
@@ -327,7 +329,7 @@ function NavbarContent() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -10, scale: 0.95 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute left-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-[50000]"
+                  className="absolute left-0 mt-2 w-[320px] max-w-[calc(100vw-32px)] bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-[50000]"
                 >
                   {/* Header */}
                   <div className="px-4 py-3 bg-gradient-to-l from-[#003366] to-[#01375e] text-white flex items-center justify-between">
@@ -391,10 +393,11 @@ function NavbarContent() {
                               e.stopPropagation();
                               markNotificationAsRead(notification.id);
                             }}
-                            className="p-1.5 rounded-full hover:bg-green-100 text-slate-400 hover:text-green-600 transition shrink-0"
+                            className="min-h-[44px] min-w-[44px] flex items-center justify-center p-1.5 rounded-full hover:bg-green-100 text-slate-400 hover:text-green-600 transition shrink-0 touch-manipulation active:scale-95"
                             title="تحديد كمقروء"
+                            aria-label="تحديد كمقروء"
                           >
-                            <Check className="w-4 h-4" />
+                            <Check className="w-5 h-5" />
                           </button>
                         </div>
                       ))
@@ -465,38 +468,38 @@ function NavbarContent() {
                         <Icon className="w-4 h-4 text-[#D4AF37]" />
                         <span>{label}</span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        {/* شارة مقبول - أخضر */}
-                        {badgeApproved !== undefined && badgeApproved > 0 && (
-                          <span className="bg-green-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                            {badgeApproved > 99 ? '99+' : badgeApproved}
-                          </span>
-                        )}
-                        {/* شارة قيد الانتظار - أصفر */}
-                        {badgePending !== undefined && badgePending > 0 && (
-                          <span className="bg-yellow-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                            {badgePending > 99 ? '99+' : badgePending}
-                          </span>
-                        )}
-                        {/* شارة غير مقبول - أحمر */}
-                        {badgeRejected !== undefined && badgeRejected > 0 && (
-                          <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                            {badgeRejected > 99 ? '99+' : badgeRejected}
-                          </span>
-                        )}
-                        {/* شارة جديد - أحمر */}
-                        {badgeNew !== undefined && badgeNew > 0 && (
-                          <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center animate-pulse">
-                            {badgeNew > 99 ? '99+' : badgeNew}
-                          </span>
-                        )}
-                        {/* شارة عادية (للرسائل والإشعارات) */}
-                        {badge !== undefined && badge > 0 && (
-                          <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                            {badge > 99 ? '99+' : badge}
-                          </span>
-                        )}
-                      </div>
+                  <div className="flex items-center gap-1.5">
+                    {/* شارة مقبول - أخضر */}
+                    {badgeApproved !== undefined && badgeApproved > 0 && (
+                      <span className="bg-green-500 text-white text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center">
+                        {badgeApproved > 99 ? '99+' : badgeApproved}
+                      </span>
+                    )}
+                    {/* شارة قيد الانتظار - أصفر */}
+                    {badgePending !== undefined && badgePending > 0 && (
+                      <span className="bg-yellow-500 text-black text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center">
+                        {badgePending > 99 ? '99+' : badgePending}
+                      </span>
+                    )}
+                    {/* شارة غير مقبول - أحمر */}
+                    {badgeRejected !== undefined && badgeRejected > 0 && (
+                      <span className="bg-red-500 text-white text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center">
+                        {badgeRejected > 99 ? '99+' : badgeRejected}
+                      </span>
+                    )}
+                    {/* شارة جديد - أحمر */}
+                    {badgeNew !== undefined && badgeNew > 0 && (
+                      <span className="bg-red-500 text-white text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center animate-pulse">
+                        {badgeNew > 99 ? '99+' : badgeNew}
+                      </span>
+                    )}
+                    {/* شارة عادية (للرسائل والإشعارات) */}
+                    {badge !== undefined && badge > 0 && (
+                      <span className="bg-red-500 text-white text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center">
+                        {badge > 99 ? '99+' : badge}
+                      </span>
+                    )}
+                  </div>
                     </Link>
                   );
                 })}
@@ -777,39 +780,32 @@ function NavbarContent() {
         </button>
       </div>
 
-      <AnimatePresence>
-        {showMobileMenu && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="md:hidden bg-white border-t border-slate-100 max-h-[calc(100vh-60px)] overflow-y-auto"
-            style={{ WebkitOverflowScrolling: 'touch' }}
-          >
-            <nav className="px-4 py-4 space-y-2">
-              {/* Map/List toggle removed from mobile menu - now in header */}
+      <MobileBottomSheet
+        isOpen={showMobileMenu}
+        onClose={() => setShowMobileMenu(false)}
+        title="القائمة الرئيسية"
+        maxHeight="70vh"
+      >
+        <nav className="space-y-2">
+          {staticNavItems.map(({ href, label, icon: Icon }) => (
+            <Link
+              key={href}
+              href={href}
+              onClick={() => setShowMobileMenu(false)}
+              className={`flex items-center gap-3 min-h-[48px] px-4 py-3 rounded-xl transition-all duration-300 bg-[#E8F5F0] border border-[#5FBDAA]/30 touch-manipulation ${
+                pathname === href 
+                  ? 'bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-sm' 
+                  : 'hover:bg-[#D4F1E8] active:scale-95'
+              }`}
+            >
+              <Icon className={`w-6 h-6 transition-colors ${pathname === href ? 'text-white' : 'text-[#4DB6A0]'}`} />
+              <span className={`text-mobile-base font-semibold ${pathname === href ? 'text-white' : 'text-[#003366]'}`}>{label}</span>
+            </Link>
+          ))}
 
-              {staticNavItems.map(({ href, label, icon: Icon }) => (
-                <Link
-                  key={href}
-                  href={href}
-                  onClick={() => setShowMobileMenu(false)}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 bg-[#E8F5F0] border border-[#5FBDAA]/30 ${
-                    pathname === href 
-                      ? 'bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-sm' 
-                      : 'hover:bg-[#D4F1E8]'
-                  }`}
-                >
-                  <Icon className={`w-5 h-5 transition-colors ${pathname === href ? 'text-white' : 'text-[#4DB6A0]'}`} />
-                  <span className={`font-medium ${pathname === href ? 'text-white' : 'text-[#003366]'}`}>{label}</span>
-                </Link>
-              ))}
-
-              {renderMobileAuthSection()}
-            </nav>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          {renderMobileAuthSection()}
+        </nav>
+      </MobileBottomSheet>
 
       </header>
     </>

@@ -286,19 +286,19 @@ export default function AdminDashboard() {
     <div className="space-y-4 md:space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
         <div>
-          <h1 className="text-xl md:text-2xl font-black text-[#002845] flex items-center gap-2">
+          <h1 className="text-mobile-2xl md:text-2xl font-black text-[#002845] flex items-center gap-2">
             <LayoutDashboard className="w-6 h-6 md:w-7 md:h-7 text-[#D4AF37]" />
             لوحة التحكم
           </h1>
-          <p className="text-sm md:text-sm text-slate-500 mt-1">نظرة عامة شاملة على أداء المنصة</p>
+          <p className="text-mobile-sm md:text-sm text-slate-500 mt-1">نظرة عامة شاملة على أداء المنصة</p>
         </div>
         <div className="flex items-center gap-2 md:gap-3 flex-wrap">
           <button 
             onClick={fetchDashboardData}
             disabled={loading}
-            className="flex items-center gap-2 px-4 md:px-4 py-3 md:py-2.5 bg-gradient-to-r from-[#002845] to-[#01456d] text-white rounded-xl hover:shadow-lg active:scale-95 transition disabled:opacity-50 text-sm md:text-sm font-medium touch-manipulation"
+            className="flex items-center gap-2 min-h-[48px] px-4 md:px-4 py-3 md:py-2.5 bg-gradient-to-r from-[#002845] to-[#01456d] text-white rounded-xl hover:shadow-lg active:scale-95 transition disabled:opacity-50 text-mobile-sm md:text-sm font-medium touch-manipulation"
           >
-            {loading ? <Loader2 className="w-5 h-5 md:w-4 md:h-4 animate-spin" /> : <RefreshCw className="w-5 h-5 md:w-4 md:h-4" />}
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
             تحديث البيانات
           </button>
           <div className="text-right bg-white px-3 md:px-4 py-2.5 md:py-2 rounded-xl border border-slate-200">
@@ -322,10 +322,10 @@ export default function AdminDashboard() {
                   مباشر
                 </div>
               </div>
-              <p className="text-2xl md:text-3xl font-black text-[#002845]">
+              <p className="text-mobile-2xl md:text-3xl font-black text-[#002845]">
                 {loading ? <Loader2 className="w-5 h-5 md:w-6 md:h-6 animate-spin" /> : stat.value.toLocaleString("en-US")}
               </p>
-              <p className="text-sm md:text-sm text-slate-500 mt-1.5 md:mt-1">{stat.label}</p>
+              <p className="text-mobile-sm md:text-sm text-slate-500 mt-1.5 md:mt-1">{stat.label}</p>
             </div>
           );
         })}

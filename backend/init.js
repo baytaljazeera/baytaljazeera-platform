@@ -37,6 +37,12 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'phone_verified_at') THEN
           ALTER TABLE users ADD COLUMN phone_verified_at TIMESTAMPTZ;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'email_verification_token') THEN
+          ALTER TABLE users ADD COLUMN email_verification_token TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'email_verification_expires') THEN
+          ALTER TABLE users ADD COLUMN email_verification_expires TIMESTAMPTZ;
+        END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'updated_at') THEN
           ALTER TABLE users ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
         END IF;

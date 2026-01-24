@@ -514,7 +514,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
                 <div key={section.id} className="rounded-xl overflow-hidden">
                   <button
                     onClick={() => toggleSection(section.id)}
-                    className="w-full flex items-center gap-2.5 md:gap-2 px-3 md:px-3 py-3 md:py-2.5 text-base md:text-sm font-bold transition-all duration-200 hover:bg-white/5 active:bg-white/10 rounded-lg group touch-manipulation"
+                    className="w-full min-h-[48px] flex items-center gap-2.5 md:gap-2 px-3 md:px-3 py-3 md:py-2.5 text-mobile-base md:text-sm font-bold transition-all duration-200 hover:bg-white/5 active:bg-white/10 active:scale-95 rounded-lg group touch-manipulation"
                   >
                     <SectionIcon className={`w-5 h-5 md:w-4 md:h-4 ${section.colorClass} transition-transform duration-200 shrink-0`} />
                     <span className={`flex-1 text-right ${section.colorClass} truncate`}>{section.title}</span>
@@ -548,7 +548,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
                             key={item.href}
                             onClick={() => handleNavigation(item.href)}
                             disabled={isNavigating}
-                            className={`w-full flex items-center gap-3 md:gap-2.5 rounded-lg px-3 md:px-3 py-3 md:py-2 text-base md:text-[13px] transition-all duration-150 cursor-pointer group/item touch-manipulation ${
+                            className={`w-full min-h-[48px] flex items-center gap-3 md:gap-2.5 rounded-lg px-3 md:px-3 py-3 md:py-2.5 text-mobile-base md:text-[13px] transition-all duration-150 cursor-pointer group/item touch-manipulation active:scale-95 ${
                               active 
                                 ? item.isReport
                                   ? "bg-gradient-to-l from-red-500/20 to-red-600/10 text-red-400 font-bold border-r-2 border-red-500"
@@ -597,7 +597,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
       <div className="border-t border-white/10 p-3 md:p-3 space-y-2 md:space-y-1.5">
         <button
           onClick={() => handleNavigation("/")}
-          className="flex items-center justify-center gap-2.5 md:gap-2 w-full px-3 md:px-3 py-3 md:py-2 rounded-lg bg-[#D4AF37]/10 text-[#D4AF37] hover:bg-[#D4AF37]/20 active:bg-[#D4AF37]/30 transition text-base md:text-sm font-medium touch-manipulation"
+          className="flex items-center justify-center gap-2.5 md:gap-2 w-full min-h-[48px] px-3 md:px-3 py-3 md:py-2 rounded-lg bg-[#D4AF37]/10 text-[#D4AF37] hover:bg-[#D4AF37]/20 active:bg-[#D4AF37]/30 active:scale-95 transition text-mobile-base md:text-sm font-medium touch-manipulation"
         >
           <Home className="w-5 h-5 md:w-4 md:h-4" />
           الموقع الرئيسي
@@ -605,7 +605,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
         <button
           onClick={handleLogout}
           disabled={loggingOut}
-          className="flex items-center justify-center gap-2.5 md:gap-2 w-full px-3 md:px-3 py-3 md:py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 active:bg-red-500/30 transition text-base md:text-sm font-medium disabled:opacity-50 touch-manipulation"
+          className="flex items-center justify-center gap-2.5 md:gap-2 w-full min-h-[48px] px-3 md:px-3 py-3 md:py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 active:bg-red-500/30 active:scale-95 transition text-mobile-base md:text-sm font-medium disabled:opacity-50 touch-manipulation"
         >
           {loggingOut ? (
             <Loader2 className="w-5 h-5 md:w-4 md:h-4 animate-spin" />
