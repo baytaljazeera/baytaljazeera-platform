@@ -12,6 +12,7 @@ export interface User {
   listingLimit?: number;
   subscriptionStatus?: string;
   subscriptionEndDate?: string;
+  emailVerified?: boolean;
 }
 
 interface AuthState {

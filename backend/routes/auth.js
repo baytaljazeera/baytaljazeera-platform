@@ -709,23 +709,41 @@ router.get("/verify-email", asyncHandler(async (req, res) => {
 }));
 
 // Resend verification email
+// Allow resending without authentication - user just needs to provide their email
 router.post("/resend-verification", strictAuthLimiter, asyncHandler(async (req, res) => {
-  const userId = req.user?.userId;
+  const { email } = req.body;
   
-  if (!userId) {
-    return res.status(401).json({ 
-      error: "غير مصرح", 
-      errorEn: "Unauthorized" 
+  // Try to get userId from auth first (if user is logged in)
+  let userId = req.user?.id || req.user?.userId;
+  
+  // If no userId from auth, require email in body
+  if (!userId && !email) {
+    return res.status(400).json({ 
+      error: "يرجى إدخال بريدك الإلكتروني", 
+      errorEn: "Email is required" 
     });
   }
 
   try {
-    const result = await db.query(
-      `SELECT id, email, name, email_verified_at, email_verification_token, email_verification_expires
-       FROM users 
-       WHERE id = $1`,
-      [userId]
-    );
+    let result;
+    if (userId) {
+      // If user is authenticated, use userId
+      result = await db.query(
+        `SELECT id, email, name, email_verified_at, email_verification_token, email_verification_expires
+         FROM users 
+         WHERE id = $1`,
+        [userId]
+      );
+    } else {
+      // If not authenticated, use email from body
+      const sanitizedEmail = sanitizeInput(email.toLowerCase().trim());
+      result = await db.query(
+        `SELECT id, email, name, email_verified_at, email_verification_token, email_verification_expires
+         FROM users 
+         WHERE email = $1`,
+        [sanitizedEmail]
+      );
+    }
 
     if (result.rows.length === 0) {
       return res.status(404).json({ 
