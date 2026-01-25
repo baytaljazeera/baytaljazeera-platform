@@ -18,11 +18,12 @@ console.log(`   - GMAIL_USER_EMAIL: ${GMAIL_USER_EMAIL}`);
 console.log(`   - GMAIL_FROM_NAME: ${GMAIL_FROM_NAME}`);
 
 let gmail = null;
+let oauth2Client = null;
 
 if (GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN) {
   try {
     console.log('🔧 [EmailService] Creating OAuth2 client...');
-    const oauth2Client = new google.auth.OAuth2(
+    oauth2Client = new google.auth.OAuth2(
       GMAIL_CLIENT_ID,
       GMAIL_CLIENT_SECRET,
       'urn:ietf:wg:oauth:2.0:oob' // Redirect URI for installed apps
@@ -62,7 +63,7 @@ async function sendEmail(to, subject, htmlBody, textBody = null) {
   console.log(`📧 [EmailService] Gmail API status: ${gmail ? '✅ Initialized' : '❌ Not initialized'}`);
   
   // If Gmail is not configured, log and return error
-  if (!gmail) {
+  if (!gmail || !oauth2Client) {
     console.error('❌ [EmailService] Gmail API not configured. Cannot send email.');
     console.error('❌ [EmailService] Check environment variables: GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN');
     return { 
@@ -72,6 +73,23 @@ async function sendEmail(to, subject, htmlBody, textBody = null) {
   }
 
   try {
+    // Refresh access token before sending email
+    console.log('🔄 [EmailService] Refreshing access token...');
+    try {
+      const { credentials } = await oauth2Client.refreshAccessToken();
+      oauth2Client.setCredentials(credentials);
+      console.log('✅ [EmailService] Access token refreshed successfully');
+    } catch (refreshError) {
+      console.error('❌ [EmailService] Failed to refresh access token:', refreshError.message);
+      if (refreshError.message.includes('invalid_grant') || refreshError.message.includes('Token has been expired')) {
+        return {
+          success: false,
+          error: 'Gmail refresh token expired or revoked. Please update GMAIL_REFRESH_TOKEN in environment variables.'
+        };
+      }
+      // Continue anyway, might still work
+      console.warn('⚠️ [EmailService] Continuing despite refresh error...');
+    }
     console.log(`📧 [EmailService] Creating email message for ${to}...`);
     // Create email message
     const messageParts = [

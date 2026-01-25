@@ -803,10 +803,18 @@ router.post("/resend-verification", strictAuthLimiter, optionalAuth, asyncHandle
 
     // Send verification email
     try {
-      await sendEmailVerificationEmail(user.email, emailVerificationToken, user.name);
-      console.log(`📧 Verification email resent to ${user.email}`);
+      const emailResult = await sendEmailVerificationEmail(user.email, emailVerificationToken, user.name);
+      if (emailResult.success) {
+        console.log(`✅ [Auth] Verification email resent successfully to ${user.email}, messageId: ${emailResult.messageId}`);
+      } else {
+        console.error(`❌ [Auth] Failed to resend verification email to ${user.email}:`, emailResult.error);
+        return res.status(500).json({ 
+          error: `فشل إرسال إيميل التأكيد: ${emailResult.error}`, 
+          errorEn: `Failed to send verification email: ${emailResult.error}` 
+        });
+      }
     } catch (emailErr) {
-      console.error('❌ Failed to resend verification email:', emailErr);
+      console.error('❌ [Auth] Exception while resending verification email:', emailErr);
       return res.status(500).json({ 
         error: "فشل إرسال إيميل التأكيد", 
         errorEn: "Failed to send verification email" 
