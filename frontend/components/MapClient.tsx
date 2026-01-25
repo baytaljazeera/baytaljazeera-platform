@@ -574,10 +574,13 @@ function ListingPopupCard({
             <button
               type="button"
               className="popup-favorite-btn"
-              onClick={(e) => {
+              onClick={async (e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                onToggleFavorite?.(listing.id, !listing.isFavorite);
+                const newFavoriteState = !listing.isFavorite;
+                onToggleFavorite?.(listing.id, newFavoriteState);
+                // تحديث الحالة المحلية فوراً للاستجابة السريعة
+                listing.isFavorite = newFavoriteState;
               }}
               onMouseDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
@@ -592,7 +595,10 @@ function ListingPopupCard({
                 justifyContent: "center",
                 cursor: "pointer",
                 flexShrink: 0,
+                zIndex: 10000,
+                position: "relative",
               }}
+              title={listing.isFavorite ? "إزالة من المفضلة" : "إضافة للمفضلة"}
             >
               <Heart 
                 size={16} 
@@ -750,20 +756,46 @@ function ListingPopupCard({
       </div>
 
       {/* الجسم - معلومات العقار */}
-      <div style={{ padding: "10px 12px 12px 12px" }}>
+      <div style={{ padding: "10px 12px 12px 12px", direction: "rtl" }}>
         {/* السعر */}
         <div
           style={{
             fontSize: 14,
             fontWeight: 800,
             color: "#002845",
-            marginBottom: 4,
+            marginBottom: 2,
           }}
         >
           {priceText}
         </div>
+        {/* سعر الدولار أسفل السعر الأساسي */}
+        {(() => {
+          let numPrice: number | undefined;
+          if (typeof listing.price === "string") {
+            const parsed = parseFloat(listing.price);
+            if (!Number.isNaN(parsed)) numPrice = parsed;
+          } else if (typeof listing.price === "number") {
+            numPrice = listing.price;
+          }
+          if (numPrice && numPrice > 0) {
+            const usdPrice = numPrice / 3.75; // سعر الدولار = 3.75 ريال
+            return (
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 500,
+                  color: "#6b7280",
+                  marginBottom: 4,
+                }}
+              >
+                ≈ ${usdPrice.toLocaleString("en-US", { maximumFractionDigits: 0 })} USD
+              </div>
+            );
+          }
+          return null;
+        })()}
 
-        {/* المواصفات: المساحة – غرف – حمامات */}
+        {/* المواصفات: غرف – حمامات – مساحة */}
         <div
           style={{
             display: "flex",
@@ -771,14 +803,9 @@ function ListingPopupCard({
             fontSize: 11,
             color: "#4b5563",
             marginBottom: 4,
+            direction: "rtl",
           }}
         >
-          {listing.area != null && (
-            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-              <Square size={11} />
-              <span>{listing.area} م²</span>
-            </div>
-          )}
           {listing.bedrooms != null && (
             <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
               <BedDouble size={11} />
@@ -789,6 +816,12 @@ function ListingPopupCard({
             <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
               <Bath size={11} />
               <span>{listing.bathrooms} حمام</span>
+            </div>
+          )}
+          {listing.area != null && (
+            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <Square size={11} />
+              <span>{listing.area} م²</span>
             </div>
           )}
         </div>
@@ -805,6 +838,8 @@ function ListingPopupCard({
               WebkitLineClamp: 2,
               WebkitBoxOrient: "vertical" as const,
               overflow: "hidden",
+              direction: "rtl",
+              textAlign: "right",
             }}
           >
             {listing.title}
@@ -820,6 +855,7 @@ function ListingPopupCard({
               gap: 4,
               fontSize: 11,
               color: "#6b7280",
+              direction: "rtl",
             }}
           >
             <MapPin size={12} />

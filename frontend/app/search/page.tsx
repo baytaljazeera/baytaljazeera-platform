@@ -1081,8 +1081,12 @@ function SearchPage() {
         <MapClient 
           listings={mapListings} 
           selectedCity={filters.city}
-          activeListingId={activeListingId}
-          onMarkerClick={(id) => setActiveListingId(id)}
+          selectedListingId={activeListingId}
+          onSelectListing={(id) => setActiveListingId(id)}
+          onToggleFavorite={(listingId, isFavorite) => {
+            toggleFavorite(listingId);
+          }}
+          showFavoriteButton={true}
         />
 
         {isLoading && (
