@@ -676,9 +676,9 @@ function NavbarContent() {
               <Image
                 src="/logo.svg"
                 alt={`شعار ${siteSettings.siteName}`}
-                width={40}
-                height={40}
-                className="rounded-xl shadow-md group-hover:shadow-lg transition"
+                width={32}
+                height={32}
+                className="rounded-xl shadow-md group-hover:shadow-lg transition w-8 h-8 sm:w-10 sm:h-10"
               />
               <div className="absolute -bottom-1 -right-1 w-3 h-3 sm:w-4 sm:h-4 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition">
                 <Crown className="w-2 h-2 sm:w-2.5 sm:h-2.5 text-[#002845]" />
