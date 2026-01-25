@@ -665,7 +665,7 @@ function NavbarContent() {
           backgroundPosition: "center",
         }}
       >
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between h-14 sm:h-16 lg:h-20">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between h-12 sm:h-14 lg:h-16">
           <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
             <button
               type="button"
