@@ -13,6 +13,7 @@ const db = require("./backend/db");
 const { authMiddleware, requireRoles, adminMiddleware } = require("./backend/middleware/auth");
 const { sanitizeInput, validatePagination } = require("./backend/middleware/validation");
 const { setCsrfToken, getCsrfToken, csrfProtection } = require("./backend/middleware/csrf");
+const { asyncHandler } = require("./backend/middleware/asyncHandler");
 
 // 📦 Modular imports - security, multer, scheduler, services
 const { 
