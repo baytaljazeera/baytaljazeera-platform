@@ -564,6 +564,24 @@ app.get("/api/user/ai-level", async (req, res) => {
 // 🟢 Auth & Account Routes
 app.use("/api/auth", authRoutes);
 
+// 🧪 Test Email Endpoint (for debugging - remove in production)
+app.post("/api/test-email", asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
+  }
+  
+  const { sendEmailVerificationEmail } = require('./backend/services/emailService');
+  const result = await sendEmailVerificationEmail(email, 'test-token-123', 'Test User');
+  
+  res.json({
+    success: result.success,
+    message: result.success ? 'Test email sent successfully' : 'Failed to send test email',
+    error: result.error,
+    messageId: result.messageId
+  });
+}));
+
 // 🟢 OAuth Routes (Google, Apple)
 const oauthRoutes = require("./backend/routes/oauth");
 app.use("/api/auth", oauthRoutes);
