@@ -1,7 +1,7 @@
 // backend/routes/favorites.js - Favorites Routes
 const express = require("express");
 const db = require("../db");
-const { authMiddlewareWithEmailCheckWithEmailCheck } = require("../middleware/auth");
+const { authMiddlewareWithEmailCheck } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
 
 const router = express.Router();
