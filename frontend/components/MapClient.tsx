@@ -577,33 +577,57 @@ function ListingPopupCard({
               onClick={async (e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                const newFavoriteState = !listing.isFavorite;
-                onToggleFavorite?.(listing.id, newFavoriteState);
-                // تحديث الحالة المحلية فوراً للاستجابة السريعة
-                listing.isFavorite = newFavoriteState;
+                e.nativeEvent.stopImmediatePropagation();
+                if (onToggleFavorite) {
+                  const newFavoriteState = !listing.isFavorite;
+                  await onToggleFavorite(listing.id, newFavoriteState);
+                  // تحديث الحالة المحلية فوراً للاستجابة السريعة
+                  listing.isFavorite = newFavoriteState;
+                }
               }}
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
               style={{
-                width: 32,
-                height: 32,
+                width: 36,
+                height: 36,
+                minWidth: 36,
+                minHeight: 36,
                 borderRadius: "50%",
                 border: "2px solid #fff",
-                backgroundColor: listing.isFavorite ? "#ef4444" : "rgba(0,0,0,0.4)",
+                backgroundColor: listing.isFavorite ? "#ef4444" : "rgba(0,0,0,0.5)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 cursor: "pointer",
                 flexShrink: 0,
-                zIndex: 10000,
+                zIndex: 10001,
                 position: "relative",
+                transition: "all 0.2s ease",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+              }}
+              onMouseEnter={(e) => {
+                if (!listing.isFavorite) {
+                  e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.7)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = listing.isFavorite ? "#ef4444" : "rgba(0,0,0,0.5)";
               }}
               title={listing.isFavorite ? "إزالة من المفضلة" : "إضافة للمفضلة"}
             >
               <Heart 
-                size={16} 
+                size={18} 
                 fill={listing.isFavorite ? "#fff" : "none"}
                 color="#fff"
+                style={{
+                  pointerEvents: "none",
+                }}
               />
             </button>
           )}
