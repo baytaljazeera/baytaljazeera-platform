@@ -579,10 +579,122 @@ export default function ListingsPage() {
             <p className="text-slate-500">لا توجد إعلانات</p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {filteredListings.map((listing) => (
-              <div key={listing.id} className="p-5 hover:bg-slate-50 transition">
-                <div className="flex flex-col md:flex-row md:items-start gap-4">
+          <>
+            {/* Mobile: Card View */}
+            <div className="md:hidden grid grid-cols-1 gap-4">
+              {filteredListings.map((listing) => (
+                <div key={listing.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="relative h-48 bg-slate-100">
+                    <img
+                      src={getListingImages(listing)[0]}
+                      alt={listing.title}
+                      className="w-full h-full object-cover"
+                      onError={(e) => { (e.target as HTMLImageElement).src = "/images/property1.jpg"; }}
+                    />
+                    <div className="absolute top-3 right-3 flex flex-wrap gap-2">
+                      <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${statusColors[listing.status]?.bg} ${statusColors[listing.status]?.text}`}>
+                        {statusColors[listing.status]?.label}
+                      </span>
+                      {listing.video_url && (
+                        <span className="bg-red-500 text-white px-2 py-1 rounded-full text-xs flex items-center gap-1">
+                          <Video className="w-3 h-3" />
+                        </span>
+                      )}
+                    </div>
+                    {listing.images && listing.images.length > 1 && (
+                      <div className="absolute bottom-3 left-3 bg-black/70 text-white px-2 py-1 rounded-full text-xs flex items-center gap-1">
+                        <ImageIcon className="w-3 h-3" />
+                        {listing.images.length}
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div>
+                      <h3 className="font-bold text-[#002845] mb-1 text-base">{listing.title}</h3>
+                      <p className="text-sm text-slate-600 flex items-center gap-1">
+                        <MapPin className="w-4 h-4 text-slate-400" />
+                        {listing.city} - {listing.district}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg font-bold text-[#D4AF37]">{formatPrice(listing.price)}</span>
+                      <span className="text-sm text-slate-500 flex items-center gap-1">
+                        <Maximize2 className="w-4 h-4" />
+                        {listing.land_area} م²
+                      </span>
+                      {listing.bedrooms && (
+                        <span className="text-sm text-slate-500">{listing.bedrooms} غرف</span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5" />
+                        {formatDate(listing.created_at)}
+                      </span>
+                      <span>#{listing.id.slice(0, 8)}</span>
+                    </div>
+                    {listing.rejection_reason && (
+                      <div className="bg-red-50 border border-red-100 rounded-xl p-3">
+                        <p className="text-xs text-red-600 mb-1 font-medium">سبب الرفض:</p>
+                        <p className="text-sm text-red-800">{listing.rejection_reason}</p>
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-2 pt-2">
+                      <button
+                        onClick={() => openReviewModal(listing.id)}
+                        disabled={reviewLoading}
+                        className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-100 text-blue-700 rounded-xl hover:bg-blue-200 transition text-sm font-medium touch-manipulation"
+                      >
+                        {reviewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+                        <span className="hidden sm:inline">مراجعة</span>
+                      </button>
+                      {listing.status === "pending" && (
+                        <>
+                          <button
+                            onClick={() => handleApprove(listing.id)}
+                            className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-3 py-2.5 bg-green-100 text-green-700 rounded-xl hover:bg-green-200 transition text-sm font-medium touch-manipulation"
+                          >
+                            <Check className="w-4 h-4" />
+                            <span className="hidden sm:inline">موافقة</span>
+                          </button>
+                          <button
+                            onClick={() => setRejectModal(listing.id)}
+                            className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-3 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition text-sm font-medium touch-manipulation"
+                          >
+                            <X className="w-4 h-4" />
+                            <span className="hidden sm:inline">رفض</span>
+                          </button>
+                        </>
+                      )}
+                      {listing.status === "approved" && (
+                        <button
+                          onClick={() => handleHide(listing.id)}
+                          className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-3 py-2.5 bg-yellow-100 text-yellow-700 rounded-xl hover:bg-yellow-200 transition text-sm font-medium touch-manipulation"
+                        >
+                          <EyeOff className="w-4 h-4" />
+                          <span className="hidden sm:inline">إخفاء</span>
+                        </button>
+                      )}
+                      {listing.status === "hidden" && (
+                        <button
+                          onClick={() => handleShow(listing.id)}
+                          className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-3 py-2.5 bg-green-100 text-green-700 rounded-xl hover:bg-green-200 transition text-sm font-medium touch-manipulation"
+                        >
+                          <Eye className="w-4 h-4" />
+                          <span className="hidden sm:inline">إظهار</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop: List View */}
+            <div className="hidden md:block divide-y divide-slate-100">
+              {filteredListings.map((listing) => (
+                <div key={listing.id} className="p-5 hover:bg-slate-50 transition">
+                  <div className="flex flex-col md:flex-row md:items-start gap-4">
                   <div className="flex-1 space-y-3">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">

@@ -706,13 +706,15 @@ export default function ListingDetailPage() {
                   <>
                     <button
                       onClick={prevImage}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 hover:bg-white rounded-full flex items-center justify-center shadow-lg"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 min-w-[48px] min-h-[48px] bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg touch-manipulation active:scale-95 transition-transform"
+                      aria-label="الصورة السابقة"
                     >
                       <ChevronRight className="w-6 h-6 text-[#002845]" />
                     </button>
                     <button
                       onClick={nextImage}
-                      className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 hover:bg-white rounded-full flex items-center justify-center shadow-lg"
+                      className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 min-w-[48px] min-h-[48px] bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg touch-manipulation active:scale-95 transition-transform"
+                      aria-label="الصورة التالية"
                     >
                       <ChevronLeft className="w-6 h-6 text-[#002845]" />
                     </button>
@@ -746,7 +748,7 @@ export default function ListingDetailPage() {
               </div>
 
               {images.length > 1 && (
-                <div className="flex gap-2 p-4 overflow-x-auto bg-white">
+                <div className="flex gap-3 p-4 overflow-x-auto bg-white scrollbar-hide">
                   {images.map((img, idx) => (
                     <button
                       key={img.id}
@@ -754,9 +756,12 @@ export default function ListingDetailPage() {
                         setCurrentImageIndex(idx);
                         setImageError(false);
                       }}
-                      className={`relative w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border-2 ${
-                        idx === currentImageIndex ? "border-[#D4AF37]" : "border-transparent"
+                      className={`relative w-24 h-24 min-w-[96px] min-h-[96px] flex-shrink-0 rounded-lg overflow-hidden border-2 transition-all duration-200 touch-manipulation active:scale-95 hover:scale-105 ${
+                        idx === currentImageIndex 
+                          ? "border-[#D4AF37] border-[3px] shadow-md ring-2 ring-[#D4AF37]/30 scale-105" 
+                          : "border-slate-200 hover:border-slate-300"
                       }`}
+                      aria-label={`صورة ${idx + 1}`}
                     >
                       <img
                         src={img.url}
@@ -766,6 +771,9 @@ export default function ListingDetailPage() {
                           (e.target as HTMLImageElement).src = "/images/property1.jpg";
                         }}
                       />
+                      {idx === currentImageIndex && (
+                        <div className="absolute inset-0 bg-[#D4AF37]/10 ring-2 ring-[#D4AF37]/20" />
+                      )}
                     </button>
                   ))}
                 </div>
