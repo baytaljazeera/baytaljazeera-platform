@@ -870,7 +870,8 @@ export default function ListingsPage() {
                 </div>
               </div>
             ))}
-          </div>
+            </div>
+          </>
         )}
       </div>
 

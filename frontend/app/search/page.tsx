@@ -1277,9 +1277,9 @@ function SearchPage() {
             </div>
 
             {/* 💻 شريط الديسكتوب الكامل */}
-            <div className="hidden sm:block bg-[#002845] rounded-2xl shadow-lg border border-[#D4AF37]/30 px-3 py-2.5">
+            <div className="hidden sm:block bg-[#002845] rounded-2xl shadow-lg border border-[#D4AF37]/30 px-4 py-3">
               {/* الصف الأول - الفلاتر الأساسية */}
-              <div className="flex items-center gap-1.5 flex-wrap relative">
+              <div className="flex items-center gap-2 flex-wrap relative">
                 {/* المدينة - أولاً */}
                 <div className="relative">
                   <FilterChip
@@ -1296,10 +1296,10 @@ function SearchPage() {
                 </div>
 
                 {/* بحث */}
-                <div className="w-28">
+                <div className="w-32">
                   <input
                     type="text"
-                    className="w-full rounded-full bg-white/15 border border-white/30 px-2.5 py-1.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-[#D4AF37] placeholder:text-white/60 text-white"
+                    className="w-full rounded-full bg-white/15 border border-white/30 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#D4AF37] placeholder:text-white/60 text-white"
                     placeholder="🔍 ابحث بالحي..."
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
@@ -1327,7 +1327,7 @@ function SearchPage() {
                             <button
                               key={tab.value}
                               onClick={() => { setUsageTab(tab.value); setFilters((prev) => ({ ...prev, propertyTypes: undefined })); setActivePanel("none"); }}
-                              className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition ${
+                              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition ${
                                 usageTab === tab.value 
                                   ? "bg-[#D4AF37] text-[#002845]" 
                                   : "bg-white/20 text-white hover:bg-white/30"
@@ -1348,7 +1348,7 @@ function SearchPage() {
                   <div className="relative">
                     <button
                       onClick={() => setActivePanel(activePanel === "purpose" ? "none" : "purpose")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                      className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-1.5 ${
                         purposeTab === "sell" 
                           ? "bg-[#8B0000] text-white" 
                           : "bg-[#F5DEB3] text-[#002845] border border-[#D4AF37]"
@@ -1367,7 +1367,7 @@ function SearchPage() {
                               <button
                                 key={tab.value}
                                 onClick={() => { setPurposeTab(tab.value as PurposeTab); setActivePanel("none"); }}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                                className={`px-4 py-2 rounded-lg text-sm font-bold transition ${
                                   purposeTab === tab.value 
                                     ? tab.color 
                                     : "bg-white/20 text-white hover:bg-white/30"
@@ -1388,7 +1388,7 @@ function SearchPage() {
                   <div className="relative">
                     <button
                       onClick={() => setActivePanel(activePanel === "dealStatus" ? "none" : "dealStatus")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                      className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-1.5 ${
                         filters.dealStatus === "active" 
                           ? "bg-emerald-500 text-white" 
                           : filters.dealStatus === "negotiating"
@@ -1422,7 +1422,7 @@ function SearchPage() {
                                   setFilters(prev => ({ ...prev, dealStatus: status.value })); 
                                   setActivePanel("none"); 
                                 }}
-                                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition whitespace-nowrap ${
+                                className={`px-3 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap ${
                                   filters.dealStatus === status.value 
                                     ? status.color 
                                     : "bg-white/20 text-white hover:bg-white/30"
@@ -1540,12 +1540,12 @@ function SearchPage() {
                     <div className="absolute top-full right-0 mt-1 z-[9999]">
                       <div className="bg-[#002845] rounded-xl shadow-lg border border-[#D4AF37]/40 p-2.5">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <button onClick={() => setFilters(prev => ({ ...prev, hasPool: !prev.hasPool }))} className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition ${filters.hasPool ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}>🏊 مسبح</button>
-                          <button onClick={() => setFilters(prev => ({ ...prev, hasGarden: !prev.hasGarden }))} className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition ${filters.hasGarden ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}>🌳 حديقة</button>
-                          <button onClick={() => setFilters(prev => ({ ...prev, hasElevator: !prev.hasElevator }))} className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition ${filters.hasElevator ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}>🛗 مصعد</button>
-                          <button onClick={() => setFilters(prev => ({ ...prev, hasParking: !prev.hasParking }))} className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition ${filters.hasParking ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}>🚗 مواقف</button>
+                          <button onClick={() => setFilters(prev => ({ ...prev, hasPool: !prev.hasPool }))} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition ${filters.hasPool ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}>🏊 مسبح</button>
+                          <button onClick={() => setFilters(prev => ({ ...prev, hasGarden: !prev.hasGarden }))} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition ${filters.hasGarden ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}>🌳 حديقة</button>
+                          <button onClick={() => setFilters(prev => ({ ...prev, hasElevator: !prev.hasElevator }))} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition ${filters.hasElevator ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}>🛗 مصعد</button>
+                          <button onClick={() => setFilters(prev => ({ ...prev, hasParking: !prev.hasParking }))} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition ${filters.hasParking ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}>🚗 مواقف</button>
                           {(filters.hasPool || filters.hasGarden || filters.hasElevator || filters.hasParking) && (
-                            <button onClick={() => setFilters(prev => ({ ...prev, hasPool: undefined, hasGarden: undefined, hasElevator: undefined, hasParking: undefined }))} className="text-[10px] text-red-400 hover:text-red-300 font-semibold">✕ مسح</button>
+                            <button onClick={() => setFilters(prev => ({ ...prev, hasPool: undefined, hasGarden: undefined, hasElevator: undefined, hasParking: undefined }))} className="text-xs text-red-400 hover:text-red-300 font-semibold">✕ مسح</button>
                           )}
                         </div>
                       </div>
@@ -1577,7 +1577,7 @@ function SearchPage() {
                       });
                       setActivePanel("none");
                     }}
-                    className="rounded-full px-2.5 py-1.5 text-[10px] font-semibold border border-red-400 text-red-400 bg-red-500/20 hover:bg-red-500/30 transition whitespace-nowrap"
+                    className="rounded-full px-3 py-2 text-xs font-semibold border border-red-400 text-red-400 bg-red-500/20 hover:bg-red-500/30 transition whitespace-nowrap"
                   >
                     ✕ إزالة
                   </button>
@@ -1587,9 +1587,9 @@ function SearchPage() {
                 <div className="flex-1" />
 
                 {/* الترتيب + العدد + العرض - في صف واحد */}
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
                   <SortDropdown value={sortOption} onChange={setSortOption} />
-                  <span className="text-[10px] font-bold whitespace-nowrap bg-[#D4AF37] text-[#002845] px-1.5 py-0.5 rounded-full">
+                  <span className="text-xs font-bold whitespace-nowrap bg-[#D4AF37] text-[#002845] px-2.5 py-1 rounded-full">
                     {filteredListings.length}
                   </span>
                   <ViewToggle active={viewMode} />
