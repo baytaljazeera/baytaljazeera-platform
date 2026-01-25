@@ -130,7 +130,7 @@ export default function NewsTicker() {
 
   return (
     <div
-      className="relative bg-gradient-to-l from-[#001a2e] via-[#002845] to-[#001a2e] text-white overflow-hidden"
+      className="relative bg-gradient-to-l from-[#001a2e] via-[#002845] to-[#001a2e] text-white overflow-hidden hidden sm:block"
       dir="rtl"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}

@@ -706,17 +706,17 @@ export default function ListingDetailPage() {
                   <>
                     <button
                       onClick={prevImage}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 hover:bg-white rounded-full flex items-center justify-center shadow-lg"
+                      className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 w-12 h-12 sm:w-14 sm:h-14 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
                     >
-                      <ChevronRight className="w-6 h-6 text-[#002845]" />
+                      <ChevronRight className="w-7 h-7 sm:w-8 sm:h-8 text-[#002845]" />
                     </button>
                     <button
                       onClick={nextImage}
-                      className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 hover:bg-white rounded-full flex items-center justify-center shadow-lg"
+                      className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 w-12 h-12 sm:w-14 sm:h-14 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
                     >
-                      <ChevronLeft className="w-6 h-6 text-[#002845]" />
+                      <ChevronLeft className="w-7 h-7 sm:w-8 sm:h-8 text-[#002845]" />
                     </button>
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/50 text-white px-3 py-1 rounded-full text-sm">
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 text-white px-4 py-1.5 rounded-full text-sm font-medium">
                       {currentImageIndex + 1} / {images.length}
                     </div>
                   </>
@@ -746,7 +746,7 @@ export default function ListingDetailPage() {
               </div>
 
               {images.length > 1 && (
-                <div className="flex gap-2 p-4 overflow-x-auto bg-white">
+                <div className="flex gap-3 p-4 overflow-x-auto bg-white">
                   {images.map((img, idx) => (
                     <button
                       key={img.id}
@@ -754,8 +754,8 @@ export default function ListingDetailPage() {
                         setCurrentImageIndex(idx);
                         setImageError(false);
                       }}
-                      className={`relative w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border-2 ${
-                        idx === currentImageIndex ? "border-[#D4AF37]" : "border-transparent"
+                      className={`relative w-16 h-16 sm:w-20 sm:h-20 flex-shrink-0 rounded-xl overflow-hidden border-3 transition-all active:scale-95 ${
+                        idx === currentImageIndex ? "border-[#D4AF37] shadow-lg scale-105" : "border-transparent opacity-70 hover:opacity-100"
                       }`}
                     >
                       <img
