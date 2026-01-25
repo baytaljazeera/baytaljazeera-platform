@@ -925,3 +925,70 @@ html {
     font-size: 16px !important; /* Prevents zoom on iOS */
   }
 }
+
+/* iPad and Tablet specific fixes */
+@media (min-width: 768px) and (max-width: 1024px) {
+  /* Ensure site name displays fully on iPad */
+  .site-name-container {
+    flex: 0 1 auto !important;
+    min-width: auto !important;
+    max-width: none !important;
+  }
+  
+  .site-name-link {
+    font-size: 1.25rem !important; /* 20px for iPad */
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    max-width: none !important;
+    flex-shrink: 0 !important;
+  }
+  
+  /* Ensure navbar has enough space */
+  header .max-w-7xl {
+    gap: 1rem !important;
+  }
+  
+  /* Reduce padding on iPad to give more space */
+  header .px-3 {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+}
+
+/* iPad Pro and larger tablets */
+@media (min-width: 1024px) and (max-width: 1280px) {
+  .site-name-link {
+    font-size: 1.5rem !important; /* 24px for iPad Pro */
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+}
+
+/* Specific fix for iPad in landscape mode */
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: landscape) {
+  .site-name-link {
+    font-size: 1.125rem !important; /* 18px for landscape iPad */
+  }
+  
+  header .max-w-7xl {
+    gap: 0.75rem !important;
+  }
+}
+
+/* Chrome on iPad specific fix */
+@media (min-width: 768px) and (max-width: 1024px) {
+  @supports (-webkit-appearance: none) {
+    .site-name-container {
+      flex: 0 0 auto !important;
+    }
+    
+    .site-name-link {
+      display: inline-block !important;
+      max-width: 100% !important;
+      overflow: visible !important;
+      text-overflow: clip !important;
+    }
+  }
+}

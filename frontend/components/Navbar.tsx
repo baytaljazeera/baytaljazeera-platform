@@ -665,8 +665,8 @@ function NavbarContent() {
           backgroundPosition: "center",
         }}
       >
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between h-12 sm:h-14 lg:h-16">
-          <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between h-12 sm:h-14 lg:h-16 gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 flex-shrink min-w-0 site-name-container">
             <button
               type="button"
               onClick={() => setAdminModalOpen(true)}
@@ -686,7 +686,7 @@ function NavbarContent() {
             </button>
             <Link
               href="/"
-              className="text-base sm:text-lg md:text-xl lg:text-2xl font-extrabold text-[#003366] tracking-tight hover:text-[#D4AF37] transition whitespace-nowrap flex-shrink-0"
+              className="site-name-link text-base sm:text-lg md:text-xl lg:text-2xl font-extrabold text-[#003366] tracking-tight hover:text-[#D4AF37] transition whitespace-nowrap flex-shrink-0"
               title={siteSettings.siteName}
             >
               {siteSettings.siteName}
