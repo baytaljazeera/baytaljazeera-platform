@@ -486,8 +486,20 @@ function ListingPopupCard({
   return (
     <div
       dir="rtl"
-      onMouseDown={stopPropagation}
-      onClick={stopPropagation}
+      onMouseDown={(e) => {
+        // السماح للنقر على زر المفضلة
+        if ((e.target as HTMLElement).closest('.popup-favorite-btn')) {
+          return;
+        }
+        stopPropagation(e);
+      }}
+      onClick={(e) => {
+        // السماح للنقر على زر المفضلة
+        if ((e.target as HTMLElement).closest('.popup-favorite-btn')) {
+          return;
+        }
+        stopPropagation(e);
+      }}
       onDoubleClick={stopPropagation}
       style={{
         width: 300,
@@ -497,6 +509,7 @@ function ListingPopupCard({
         boxShadow: "0 10px 25px rgba(0,0,0,0.18)",
         border: "2px solid #D4AF37",
         cursor: "default",
+        position: "relative",
       }}
     >
       {/* منطقة الصورة / السلايدر - wrapper خارجي للأزرار - double click/tap للتفاصيل */}
