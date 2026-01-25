@@ -250,10 +250,14 @@ router.post("/register", asyncHandler(async (req, res) => {
 
     // Send email verification email (non-blocking)
     try {
-      await sendEmailVerificationEmail(user.email, emailVerificationToken, user.name);
-      console.log(`📧 Email verification sent to ${user.email}`);
+      const emailResult = await sendEmailVerificationEmail(user.email, emailVerificationToken, user.name);
+      if (emailResult.success) {
+        console.log(`✅ [Auth] Email verification sent successfully to ${user.email}, messageId: ${emailResult.messageId}`);
+      } else {
+        console.error(`❌ [Auth] Failed to send email verification to ${user.email}:`, emailResult.error);
+      }
     } catch (emailErr) {
-      console.error('❌ Failed to send email verification:', emailErr);
+      console.error('❌ [Auth] Exception while sending email verification:', emailErr);
       // Don't fail registration if email fails
     }
 
