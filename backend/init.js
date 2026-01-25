@@ -316,8 +316,19 @@ async function initializeDatabase() {
         status TEXT NOT NULL DEFAULT 'active',
         started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         expires_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+    `);
+    
+    // Add updated_at column if it doesn't exist (for existing tables)
+    await db.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_plans' AND column_name = 'updated_at') THEN
+          ALTER TABLE user_plans ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
+        END IF;
+      END $$;
     `);
 
     // Create quota_buckets table for managing ad quotas per package
