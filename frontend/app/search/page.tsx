@@ -831,15 +831,20 @@ function SearchPage() {
     [filteredListings, favoritesSet]
   );
 
-  async function toggleFavorite(id: string) {
+  async function toggleFavorite(id: string, isFavorite?: boolean) {
     const apiBase = getApiBase();
     try {
       const token = localStorage.getItem("token");
+      if (!token) {
+        window.location.href = "/login";
+        return;
+      }
+      
       const res = await fetch(`${apiBase}/api/favorites/toggle`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Authorization: `Bearer ${token}`,
         },
         credentials: "include",
         body: JSON.stringify({ listingId: id }),
@@ -1084,7 +1089,7 @@ function SearchPage() {
           selectedListingId={activeListingId}
           onSelectListing={(id) => setActiveListingId(id)}
           onToggleFavorite={(listingId, isFavorite) => {
-            toggleFavorite(listingId);
+            toggleFavorite(listingId, isFavorite);
           }}
           showFavoriteButton={true}
         />
