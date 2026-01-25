@@ -58,9 +58,13 @@ if (GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN) {
  * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
  */
 async function sendEmail(to, subject, htmlBody, textBody = null) {
+  console.log(`📧 [EmailService] sendEmail called - To: ${to}, Subject: ${subject}`);
+  console.log(`📧 [EmailService] Gmail API status: ${gmail ? '✅ Initialized' : '❌ Not initialized'}`);
+  
   // If Gmail is not configured, log and return error
   if (!gmail) {
-    console.error('❌ Gmail API not configured. Cannot send email.');
+    console.error('❌ [EmailService] Gmail API not configured. Cannot send email.');
+    console.error('❌ [EmailService] Check environment variables: GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN');
     return { 
       success: false, 
       error: 'Gmail API not configured' 
@@ -68,6 +72,7 @@ async function sendEmail(to, subject, htmlBody, textBody = null) {
   }
 
   try {
+    console.log(`📧 [EmailService] Creating email message for ${to}...`);
     // Create email message
     const messageParts = [
       `To: ${to}`,
@@ -79,6 +84,7 @@ async function sendEmail(to, subject, htmlBody, textBody = null) {
     ];
 
     const message = messageParts.join('\n');
+    console.log(`📧 [EmailService] Message created, length: ${message.length} characters`);
     
     // Encode message in base64url format
     const encodedMessage = Buffer.from(message)
@@ -87,6 +93,7 @@ async function sendEmail(to, subject, htmlBody, textBody = null) {
       .replace(/\//g, '_')
       .replace(/=+$/, '');
 
+    console.log(`📧 [EmailService] Message encoded, calling Gmail API...`);
     // Send email
     const response = await gmail.users.messages.send({
       userId: 'me',
@@ -96,21 +103,29 @@ async function sendEmail(to, subject, htmlBody, textBody = null) {
     });
 
     const messageId = response.data.id;
-    console.log(`📧 Email sent successfully to ${to}, messageId: ${messageId}`);
+    console.log(`✅ [EmailService] Email sent successfully to ${to}, messageId: ${messageId}`);
+    console.log(`✅ [EmailService] Full Gmail API response:`, JSON.stringify(response.data, null, 2));
     
     return { 
       success: true, 
       messageId: messageId 
     };
   } catch (error) {
-    console.error('❌ Gmail API email send error:', error);
+    console.error('❌ [EmailService] Gmail API email send error:', error);
+    console.error('❌ [EmailService] Error type:', error.constructor.name);
+    console.error('❌ [EmailService] Error message:', error.message);
+    console.error('❌ [EmailService] Error stack:', error.stack);
     
     // Extract error message
     let errorMessage = 'Unknown error';
     if (error.response) {
       const { data, status } = error.response;
       errorMessage = data?.error?.message || `HTTP ${status}`;
-      console.error('Gmail API error details:', JSON.stringify(data, null, 2));
+      console.error('❌ [EmailService] Gmail API error response:', JSON.stringify(data, null, 2));
+      console.error('❌ [EmailService] HTTP Status:', status);
+    } else if (error.code) {
+      errorMessage = `Error code: ${error.code} - ${error.message}`;
+      console.error('❌ [EmailService] Error code:', error.code);
     } else {
       errorMessage = error.message;
     }
