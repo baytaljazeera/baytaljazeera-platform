@@ -411,6 +411,46 @@ app.get('/api/cloudinary-status', (req, res) => {
   });
 });
 
+// Test email endpoint - for debugging email issues
+app.post('/api/test-email', asyncHandler(async (req, res) => {
+  const { sendEmail } = require('./backend/services/emailService');
+  const { to = 'info@baytaljazeera.com', subject = 'Test Email', body = 'This is a test email from Bayt Al Jazeera' } = req.body;
+  
+  console.log('📧 [Test Email] Attempting to send test email to:', to);
+  
+  const htmlBody = `
+    <!DOCTYPE html>
+    <html dir="rtl" lang="ar">
+    <head>
+      <meta charset="UTF-8">
+    </head>
+    <body style="font-family: Arial, sans-serif; padding: 20px;">
+      <h2>اختبار إرسال البريد الإلكتروني</h2>
+      <p>${body}</p>
+      <p>تم إرسال هذا البريد في: ${new Date().toLocaleString('ar-SA')}</p>
+    </body>
+    </html>
+  `;
+  
+  const result = await sendEmail(to, subject || 'اختبار إرسال البريد - بيت الجزيرة', htmlBody);
+  
+  if (result.success) {
+    console.log('✅ [Test Email] Email sent successfully, messageId:', result.messageId);
+    res.json({ 
+      success: true, 
+      message: 'تم إرسال الإيميل بنجاح',
+      messageId: result.messageId 
+    });
+  } else {
+    console.error('❌ [Test Email] Failed to send email:', result.error);
+    res.status(500).json({ 
+      success: false, 
+      error: result.error || 'فشل إرسال الإيميل',
+      message: 'فشل إرسال الإيميل. تحقق من refresh token في Render environment variables.'
+    });
+  }
+}));
+
 // 📦 Listings routes moved to backend/routes/listings.js
 
 // 🟢 مسار إرسال التذكيرات المستحقة (محمي للمشرفين فقط)

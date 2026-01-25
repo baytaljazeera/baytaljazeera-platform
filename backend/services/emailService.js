@@ -81,13 +81,30 @@ async function sendEmail(to, subject, htmlBody, textBody = null) {
       console.log('✅ [EmailService] Access token refreshed successfully');
     } catch (refreshError) {
       console.error('❌ [EmailService] Failed to refresh access token:', refreshError.message);
-      if (refreshError.message.includes('invalid_grant') || refreshError.message.includes('Token has been expired')) {
+      console.error('❌ [EmailService] Refresh error details:', JSON.stringify(refreshError, null, 2));
+      
+      // Check for specific error types
+      if (refreshError.code === 'invalid_grant' || 
+          refreshError.message?.includes('invalid_grant') || 
+          refreshError.message?.includes('Token has been expired') ||
+          refreshError.message?.includes('revoked')) {
+        console.error('❌ [EmailService] Refresh token is expired or revoked. Please generate a new one from Google OAuth Playground.');
         return {
           success: false,
-          error: 'Gmail refresh token expired or revoked. Please update GMAIL_REFRESH_TOKEN in environment variables.'
+          error: 'Gmail refresh token expired or revoked. Please update GMAIL_REFRESH_TOKEN in Render environment variables. Generate a new token from: https://developers.google.com/oauthplayground/'
         };
       }
-      // Continue anyway, might still work
+      
+      // If it's an authentication error, don't continue
+      if (refreshError.code === 401 || refreshError.response?.status === 401) {
+        console.error('❌ [EmailService] Authentication failed (401). Refresh token may be invalid.');
+        return {
+          success: false,
+          error: 'Gmail authentication failed (401). Please check GMAIL_REFRESH_TOKEN in Render environment variables.'
+        };
+      }
+      
+      // Continue anyway for other errors, might still work
       console.warn('⚠️ [EmailService] Continuing despite refresh error...');
     }
     console.log(`📧 [EmailService] Creating email message for ${to}...`);
