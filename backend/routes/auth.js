@@ -280,12 +280,16 @@ router.post("/register", asyncHandler(async (req, res) => {
       });
   } catch (err) {
     if (err.code === "23505") {
-      if (err.constraint?.includes("email")) {
+      // Check constraint name to determine which field caused the duplicate
+      const constraintName = err.constraint || '';
+      if (constraintName.includes("email") || constraintName.includes("users_email")) {
         return res.status(409).json({ error: "البريد الإلكتروني مستخدم من قبل", errorEn: "Email already exists" });
       }
-      if (err.constraint?.includes("phone")) {
-        return res.status(409).json({ error: "رقم الجوال مستخدم من قبل", errorEn: "Phone already exists" });
+      if (constraintName.includes("phone") || constraintName.includes("users_phone")) {
+        return res.status(409).json({ error: "رقم الجوال مستخدم من قبل. يرجى استخدام رقم هاتف آخر أو ترك الحقل فارغاً", errorEn: "Phone number already exists. Please use a different phone number or leave it empty" });
       }
+      // Generic duplicate error
+      return res.status(409).json({ error: "البيانات المدخلة مستخدمة من قبل", errorEn: "Data already exists" });
     }
     throw err;
   }

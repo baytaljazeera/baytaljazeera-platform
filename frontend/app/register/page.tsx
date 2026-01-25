@@ -159,9 +159,19 @@ function RegisterForm() {
 
     try {
       // Combine country code with phone number
-      const fullPhone = formData.phone.trim() 
-        ? `${formData.phoneCountry}${formData.phone.trim().replace(/^\+?\d+/, '')}` 
-        : undefined;
+      // Remove any existing country code from phone number to avoid duplication
+      let fullPhone: string | undefined = undefined;
+      if (formData.phone.trim()) {
+        let cleanPhone = formData.phone.trim();
+        // Remove leading + and country code if present
+        cleanPhone = cleanPhone.replace(/^\+?\d{1,4}/, '');
+        // Remove any non-digit characters
+        cleanPhone = cleanPhone.replace(/\D/g, '');
+        // Only combine if we have digits after cleaning
+        if (cleanPhone.length > 0) {
+          fullPhone = `${formData.phoneCountry}${cleanPhone}`;
+        }
+      }
 
       const result = await authRegister({
         name: formData.name.trim(),
