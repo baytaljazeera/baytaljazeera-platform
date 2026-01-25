@@ -834,9 +834,13 @@ function SearchPage() {
   async function toggleFavorite(id: string) {
     const apiBase = getApiBase();
     try {
+      const token = localStorage.getItem("token");
       const res = await fetch(`${apiBase}/api/favorites/toggle`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         credentials: "include",
         body: JSON.stringify({ listingId: id }),
       });
@@ -852,6 +856,9 @@ function SearchPage() {
         });
       } else if (res.status === 401) {
         window.location.href = "/login";
+      } else {
+        const errorData = await res.json().catch(() => ({ error: "حدث خطأ" }));
+        console.error("Toggle favorite error:", errorData);
       }
     } catch (err) {
       console.error("Toggle favorite error:", err);

@@ -492,6 +492,25 @@ export default function ListingDetailPage() {
       setListing(data.listing);
       setIsFeatured(data.listing?.is_featured || false);
       
+      // جلب حالة المفضلة
+      const token = localStorage.getItem("token");
+      if (token) {
+        try {
+          const favRes = await fetch(`/api/favorites/ids`, {
+            credentials: "include",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (favRes.ok) {
+            const favData = await favRes.json();
+            if (favData.ids && Array.isArray(favData.ids)) {
+              setIsFavorite(favData.ids.includes(id));
+            }
+          }
+        } catch (err) {
+          console.error("Error fetching favorites:", err);
+        }
+      }
+      
       if (data.listing?.price) {
         try {
           const currency = getListingCurrency(data.listing.country);
