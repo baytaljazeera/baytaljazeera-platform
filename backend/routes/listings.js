@@ -23,7 +23,7 @@ const PROPERTY_IMAGES = {
 };
 
 // 📷 رفع صور مؤقتة لتوليد الفيديو
-router.post("/temp-images", authMiddlewareWithEmailCheckWithEmailCheck, upload.array('images', 20), asyncHandler(async (req, res) => {
+router.post("/temp-images", authMiddlewareWithEmailCheck, upload.array('images', 20), asyncHandler(async (req, res) => {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ error: "يرجى رفع صور" });
   }
