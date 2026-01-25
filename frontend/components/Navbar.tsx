@@ -686,18 +686,15 @@ function NavbarContent() {
             </button>
             <Link
               href="/"
-              className="text-base sm:text-lg md:text-xl lg:text-2xl font-extrabold text-[#003366] tracking-tight hover:text-[#D4AF37] transition whitespace-nowrap overflow-hidden text-ellipsis max-w-full"
-              style={{ 
-                maxWidth: 'calc(100vw - 200px)',
-                display: 'block'
-              }}
+              className="text-base sm:text-lg md:text-xl lg:text-2xl font-extrabold text-[#003366] tracking-tight hover:text-[#D4AF37] transition whitespace-nowrap flex-shrink-0"
+              title={siteSettings.siteName}
             >
               {siteSettings.siteName}
             </Link>
           </div>
 
           {/* Mobile: Fixed buttons in header */}
-          <div className="md:hidden flex items-center gap-2 ml-2 shrink-0">
+          <div className="md:hidden flex items-center gap-1.5 ml-2 shrink-0">
             {/* Map/List Toggle Button */}
             {isSearchPage ? (
               <Link
