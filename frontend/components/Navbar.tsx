@@ -686,7 +686,11 @@ function NavbarContent() {
             </button>
             <Link
               href="/"
-              className="text-lg sm:text-xl lg:text-2xl font-extrabold text-[#003366] tracking-tight hover:text-[#D4AF37] transition truncate"
+              className="text-base sm:text-lg md:text-xl lg:text-2xl font-extrabold text-[#003366] tracking-tight hover:text-[#D4AF37] transition whitespace-nowrap overflow-hidden text-ellipsis max-w-full"
+              style={{ 
+                maxWidth: 'calc(100vw - 200px)',
+                display: 'block'
+              }}
             >
               {siteSettings.siteName}
             </Link>
