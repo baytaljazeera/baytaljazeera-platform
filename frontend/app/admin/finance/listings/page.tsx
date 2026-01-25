@@ -55,6 +55,39 @@ interface Stats {
   cities: number;
 }
 
+// Helper functions
+const getListingImages = (listing: Listing): string[] => {
+  if (!listing.images || listing.images.length === 0) {
+    return ["/images/property1.jpg"];
+  }
+  if (Array.isArray(listing.images)) {
+    return listing.images.map((img: any) => {
+      if (typeof img === "string") return getImageUrl(img);
+      if (img.url) return getImageUrl(img.url);
+      return "/images/property1.jpg";
+    });
+  }
+  return ["/images/property1.jpg"];
+};
+
+const formatPrice = (price: number): string => {
+  return new Intl.NumberFormat("ar-SA", {
+    style: "currency",
+    currency: "SAR",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(price);
+};
+
+const formatDate = (dateString: string): string => {
+  const date = new Date(dateString);
+  return new Intl.DateTimeFormat("ar-SA", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(date);
+};
+
 const statusColors: Record<string, { bg: string; text: string; label: string }> = {
   pending: { bg: "bg-red-100", text: "text-red-700", label: "جديد" },
   in_review: { bg: "bg-amber-100", text: "text-amber-700", label: "قيد المراجعة" },
