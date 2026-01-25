@@ -3,7 +3,7 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 const db = require('../db');
-const { authMiddlewareWithEmailCheckWithEmailCheck, requireRoles } = require('../middleware/auth');
+const { authMiddlewareWithEmailCheck, requireRoles } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { upload, cleanupUploadedFiles, validateFileMagicBytes } = require('../config/multer');
 const { 

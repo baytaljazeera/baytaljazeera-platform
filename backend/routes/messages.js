@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
-const { authMiddlewareWithEmailCheckWithEmailCheck } = require("../middleware/auth");
+const { authMiddlewareWithEmailCheck } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
 const OpenAI = require("openai");
 
