@@ -8,6 +8,270 @@ import Link from "next/link";
 import { useAuthStore } from "@/lib/stores/authStore";
 import OAuthButtons from "@/components/auth/OAuthButtons";
 
+// قائمة شاملة بجميع دول العالم مع رموز الهاتف (بدون تكرار)
+const COUNTRIES_RAW = [
+  { code: "+966", name: "السعودية", flag: "🇸🇦" },
+  { code: "+971", name: "الإمارات", flag: "🇦🇪" },
+  { code: "+965", name: "الكويت", flag: "🇰🇼" },
+  { code: "+974", name: "قطر", flag: "🇶🇦" },
+  { code: "+973", name: "البحرين", flag: "🇧🇭" },
+  { code: "+968", name: "عمان", flag: "🇴🇲" },
+  { code: "+20", name: "مصر", flag: "🇪🇬" },
+  { code: "+961", name: "لبنان", flag: "🇱🇧" },
+  { code: "+962", name: "الأردن", flag: "🇯🇴" },
+  { code: "+963", name: "سوريا", flag: "🇸🇾" },
+  { code: "+964", name: "العراق", flag: "🇮🇶" },
+  { code: "+967", name: "اليمن", flag: "🇾🇪" },
+  { code: "+970", name: "فلسطين", flag: "🇵🇸" },
+  { code: "+212", name: "المغرب", flag: "🇲🇦" },
+  { code: "+213", name: "الجزائر", flag: "🇩🇿" },
+  { code: "+216", name: "تونس", flag: "🇹🇳" },
+  { code: "+218", name: "ليبيا", flag: "🇱🇾" },
+  { code: "+249", name: "السودان", flag: "🇸🇩" },
+  { code: "+90", name: "تركيا", flag: "🇹🇷" },
+  { code: "+1", name: "الولايات المتحدة/كندا", flag: "🇺🇸" },
+  { code: "+44", name: "المملكة المتحدة", flag: "🇬🇧" },
+  { code: "+33", name: "فرنسا", flag: "🇫🇷" },
+  { code: "+49", name: "ألمانيا", flag: "🇩🇪" },
+  { code: "+39", name: "إيطاليا", flag: "🇮🇹" },
+  { code: "+34", name: "إسبانيا", flag: "🇪🇸" },
+  { code: "+31", name: "هولندا", flag: "🇳🇱" },
+  { code: "+32", name: "بلجيكا", flag: "🇧🇪" },
+  { code: "+41", name: "سويسرا", flag: "🇨🇭" },
+  { code: "+43", name: "النمسا", flag: "🇦🇹" },
+  { code: "+46", name: "السويد", flag: "🇸🇪" },
+  { code: "+47", name: "النرويج", flag: "🇳🇴" },
+  { code: "+45", name: "الدنمارك", flag: "🇩🇰" },
+  { code: "+358", name: "فنلندا", flag: "🇫🇮" },
+  { code: "+7", name: "روسيا/كازاخستان", flag: "🇷🇺" },
+  { code: "+86", name: "الصين", flag: "🇨🇳" },
+  { code: "+81", name: "اليابان", flag: "🇯🇵" },
+  { code: "+82", name: "كوريا الجنوبية", flag: "🇰🇷" },
+  { code: "+91", name: "الهند", flag: "🇮🇳" },
+  { code: "+92", name: "باكستان", flag: "🇵🇰" },
+  { code: "+880", name: "بنغلاديش", flag: "🇧🇩" },
+  { code: "+94", name: "سريلانكا", flag: "🇱🇰" },
+  { code: "+60", name: "ماليزيا", flag: "🇲🇾" },
+  { code: "+62", name: "إندونيسيا", flag: "🇮🇩" },
+  { code: "+65", name: "سنغافورة", flag: "🇸🇬" },
+  { code: "+66", name: "تايلاند", flag: "🇹🇭" },
+  { code: "+84", name: "فيتنام", flag: "🇻🇳" },
+  { code: "+63", name: "الفلبين", flag: "🇵🇭" },
+  { code: "+61", name: "أستراليا", flag: "🇦🇺" },
+  { code: "+64", name: "نيوزيلندا", flag: "🇳🇿" },
+  { code: "+27", name: "جنوب أفريقيا", flag: "🇿🇦" },
+  { code: "+234", name: "نيجيريا", flag: "🇳🇬" },
+  { code: "+254", name: "كينيا", flag: "🇰🇪" },
+  { code: "+233", name: "غانا", flag: "🇬🇭" },
+  { code: "+256", name: "أوغندا", flag: "🇺🇬" },
+  { code: "+255", name: "تنزانيا", flag: "🇹🇿" },
+  { code: "+251", name: "إثيوبيا", flag: "🇪🇹" },
+  { code: "+52", name: "المكسيك", flag: "🇲🇽" },
+  { code: "+55", name: "البرازيل", flag: "🇧🇷" },
+  { code: "+54", name: "الأرجنتين", flag: "🇦🇷" },
+  { code: "+56", name: "تشيلي", flag: "🇨🇱" },
+  { code: "+57", name: "كولومبيا", flag: "🇨🇴" },
+  { code: "+51", name: "بيرو", flag: "🇵🇪" },
+  { code: "+58", name: "فنزويلا", flag: "🇻🇪" },
+  { code: "+593", name: "الإكوادور", flag: "🇪🇨" },
+  { code: "+595", name: "باراغواي", flag: "🇵🇾" },
+  { code: "+598", name: "الأوروغواي", flag: "🇺🇾" },
+  { code: "+591", name: "بوليفيا", flag: "🇧🇴" },
+  { code: "+506", name: "كوستاريكا", flag: "🇨🇷" },
+  { code: "+507", name: "بنما", flag: "🇵🇦" },
+  { code: "+502", name: "غواتيمالا", flag: "🇬🇹" },
+  { code: "+503", name: "السلفادور", flag: "🇸🇻" },
+  { code: "+504", name: "هندوراس", flag: "🇭🇳" },
+  { code: "+505", name: "نيكاراغوا", flag: "🇳🇮" },
+  { code: "+509", name: "هايتي", flag: "🇭🇹" },
+  { code: "+1-242", name: "البهاما", flag: "🇧🇸" },
+  { code: "+1-246", name: "بربادوس", flag: "🇧🇧" },
+  { code: "+1-284", name: "الجزر العذراء البريطانية", flag: "🇻🇬" },
+  { code: "+1-340", name: "الجزر العذراء الأمريكية", flag: "🇻🇮" },
+  { code: "+1-345", name: "جزر كايمان", flag: "🇰🇾" },
+  { code: "+1-441", name: "برمودا", flag: "🇧🇲" },
+  { code: "+1-649", name: "جزر تركس وكايكوس", flag: "🇹🇨" },
+  { code: "+1-758", name: "سانت لوسيا", flag: "🇱🇨" },
+  { code: "+1-767", name: "دومينيكا", flag: "🇩🇲" },
+  { code: "+1-784", name: "سانت فنسنت", flag: "🇻🇨" },
+  { code: "+1-849", name: "جمهورية الدومينيكان", flag: "🇩🇴" },
+  { code: "+1-868", name: "ترينيداد وتوباغو", flag: "🇹🇹" },
+  { code: "+1-869", name: "سانت كيتس ونيفيس", flag: "🇰🇳" },
+  { code: "+1-876", name: "جامايكا", flag: "🇯🇲" },
+  { code: "+48", name: "بولندا", flag: "🇵🇱" },
+  { code: "+40", name: "رومانيا", flag: "🇷🇴" },
+  { code: "+36", name: "المجر", flag: "🇭🇺" },
+  { code: "+420", name: "التشيك", flag: "🇨🇿" },
+  { code: "+421", name: "سلوفاكيا", flag: "🇸🇰" },
+  { code: "+385", name: "كرواتيا", flag: "🇭🇷" },
+  { code: "+386", name: "سلوفينيا", flag: "🇸🇮" },
+  { code: "+387", name: "البوسنة والهرسك", flag: "🇧🇦" },
+  { code: "+389", name: "مقدونيا", flag: "🇲🇰" },
+  { code: "+381", name: "صربيا", flag: "🇷🇸" },
+  { code: "+382", name: "الجبل الأسود", flag: "🇲🇪" },
+  { code: "+383", name: "كوسوفو", flag: "🇽🇰" },
+  { code: "+355", name: "ألبانيا", flag: "🇦🇱" },
+  { code: "+30", name: "اليونان", flag: "🇬🇷" },
+  { code: "+351", name: "البرتغال", flag: "🇵🇹" },
+  { code: "+353", name: "أيرلندا", flag: "🇮🇪" },
+  { code: "+352", name: "لوكسمبورغ", flag: "🇱🇺" },
+  { code: "+350", name: "جبل طارق", flag: "🇬🇮" },
+  { code: "+356", name: "مالطا", flag: "🇲🇹" },
+  { code: "+357", name: "قبرص", flag: "🇨🇾" },
+  { code: "+359", name: "بلغاريا", flag: "🇧🇬" },
+  { code: "+370", name: "ليتوانيا", flag: "🇱🇹" },
+  { code: "+371", name: "لاتفيا", flag: "🇱🇻" },
+  { code: "+372", name: "إستونيا", flag: "🇪🇪" },
+  { code: "+353", name: "أيرلندا", flag: "🇮🇪" },
+  { code: "+354", name: "آيسلندا", flag: "🇮🇸" },
+  { code: "+47", name: "النرويج", flag: "🇳🇴" },
+  { code: "+260", name: "زامبيا", flag: "🇿🇲" },
+  { code: "+263", name: "زيمبابوي", flag: "🇿🇼" },
+  { code: "+264", name: "ناميبيا", flag: "🇳🇦" },
+  { code: "+267", name: "بوتسوانا", flag: "🇧🇼" },
+  { code: "+268", name: "إسواتيني", flag: "🇸🇿" },
+  { code: "+269", name: "جزر القمر", flag: "🇰🇲" },
+  { code: "+230", name: "موريشيوس", flag: "🇲🇺" },
+  { code: "+212", name: "المغرب", flag: "🇲🇦" },
+  { code: "+213", name: "الجزائر", flag: "🇩🇿" },
+  { code: "+216", name: "تونس", flag: "🇹🇳" },
+  { code: "+218", name: "ليبيا", flag: "🇱🇾" },
+  { code: "+20", name: "مصر", flag: "🇪🇬" },
+  { code: "+249", name: "السودان", flag: "🇸🇩" },
+  { code: "+252", name: "الصومال", flag: "🇸🇴" },
+  { code: "+253", name: "جيبوتي", flag: "🇩🇯" },
+  { code: "+254", name: "كينيا", flag: "🇰🇪" },
+  { code: "+255", name: "تنزانيا", flag: "🇹🇿" },
+  { code: "+256", name: "أوغندا", flag: "🇺🇬" },
+  { code: "+257", name: "بوروندي", flag: "🇧🇮" },
+  { code: "+250", name: "رواندا", flag: "🇷🇼" },
+  { code: "+251", name: "إثيوبيا", flag: "🇪🇹" },
+  { code: "+252", name: "الصومال", flag: "🇸🇴" },
+  { code: "+253", name: "جيبوتي", flag: "🇩🇯" },
+  { code: "+254", name: "كينيا", flag: "🇰🇪" },
+  { code: "+255", name: "تنزانيا", flag: "🇹🇿" },
+  { code: "+256", name: "أوغندا", flag: "🇺🇬" },
+  { code: "+257", name: "بوروندي", flag: "🇧🇮" },
+  { code: "+258", name: "موزمبيق", flag: "🇲🇿" },
+  { code: "+260", name: "زامبيا", flag: "🇿🇲" },
+  { code: "+261", name: "مدغشقر", flag: "🇲🇬" },
+  { code: "+262", name: "ريونيون", flag: "🇷🇪" },
+  { code: "+263", name: "زيمبابوي", flag: "🇿🇼" },
+  { code: "+264", name: "ناميبيا", flag: "🇳🇦" },
+  { code: "+265", name: "مالاوي", flag: "🇲🇼" },
+  { code: "+266", name: "ليسوتو", flag: "🇱🇸" },
+  { code: "+267", name: "بوتسوانا", flag: "🇧🇼" },
+  { code: "+268", name: "إسواتيني", flag: "🇸🇿" },
+  { code: "+269", name: "جزر القمر", flag: "🇰🇲" },
+  { code: "+290", name: "سانت هيلينا", flag: "🇸🇭" },
+  { code: "+291", name: "إريتريا", flag: "🇪🇷" },
+  { code: "+297", name: "أروبا", flag: "🇦🇼" },
+  { code: "+298", name: "جزر فارو", flag: "🇫🇴" },
+  { code: "+299", name: "جرينلاند", flag: "🇬🇱" },
+  { code: "+350", name: "جبل طارق", flag: "🇬🇮" },
+  { code: "+351", name: "البرتغال", flag: "🇵🇹" },
+  { code: "+352", name: "لوكسمبورغ", flag: "🇱🇺" },
+  { code: "+353", name: "أيرلندا", flag: "🇮🇪" },
+  { code: "+354", name: "آيسلندا", flag: "🇮🇸" },
+  { code: "+356", name: "مالطا", flag: "🇲🇹" },
+  { code: "+357", name: "قبرص", flag: "🇨🇾" },
+  { code: "+358", name: "فنلندا", flag: "🇫🇮" },
+  { code: "+359", name: "بلغاريا", flag: "🇧🇬" },
+  { code: "+370", name: "ليتوانيا", flag: "🇱🇹" },
+  { code: "+371", name: "لاتفيا", flag: "🇱🇻" },
+  { code: "+372", name: "إستونيا", flag: "🇪🇪" },
+  { code: "+373", name: "مولدوفا", flag: "🇲🇩" },
+  { code: "+374", name: "أرمينيا", flag: "🇦🇲" },
+  { code: "+375", name: "بيلاروسيا", flag: "🇧🇾" },
+  { code: "+376", name: "أندورا", flag: "🇦🇩" },
+  { code: "+377", name: "موناكو", flag: "🇲🇨" },
+  { code: "+378", name: "سان مارينو", flag: "🇸🇲" },
+  { code: "+380", name: "أوكرانيا", flag: "🇺🇦" },
+  { code: "+381", name: "صربيا", flag: "🇷🇸" },
+  { code: "+382", name: "الجبل الأسود", flag: "🇲🇪" },
+  { code: "+383", name: "كوسوفو", flag: "🇽🇰" },
+  { code: "+385", name: "كرواتيا", flag: "🇭🇷" },
+  { code: "+386", name: "سلوفينيا", flag: "🇸🇮" },
+  { code: "+387", name: "البوسنة والهرسك", flag: "🇧🇦" },
+  { code: "+389", name: "مقدونيا", flag: "🇲🇰" },
+  { code: "+420", name: "التشيك", flag: "🇨🇿" },
+  { code: "+421", name: "سلوفاكيا", flag: "🇸🇰" },
+  { code: "+423", name: "ليختنشتاين", flag: "🇱🇮" },
+  { code: "+500", name: "جزر فوكلاند", flag: "🇫🇰" },
+  { code: "+501", name: "بليز", flag: "🇧🇿" },
+  { code: "+502", name: "غواتيمالا", flag: "🇬🇹" },
+  { code: "+503", name: "السلفادور", flag: "🇸🇻" },
+  { code: "+504", name: "هندوراس", flag: "🇭🇳" },
+  { code: "+505", name: "نيكاراغوا", flag: "🇳🇮" },
+  { code: "+506", name: "كوستاريكا", flag: "🇨🇷" },
+  { code: "+507", name: "بنما", flag: "🇵🇦" },
+  { code: "+508", name: "سان بيير وميكلون", flag: "🇵🇲" },
+  { code: "+509", name: "هايتي", flag: "🇭🇹" },
+  { code: "+590", name: "غواديلوب", flag: "🇬🇵" },
+  { code: "+591", name: "بوليفيا", flag: "🇧🇴" },
+  { code: "+592", name: "غيانا", flag: "🇬🇾" },
+  { code: "+593", name: "الإكوادور", flag: "🇪🇨" },
+  { code: "+594", name: "غويانا الفرنسية", flag: "🇬🇫" },
+  { code: "+595", name: "باراغواي", flag: "🇵🇾" },
+  { code: "+596", name: "مارتينيك", flag: "🇲🇶" },
+  { code: "+597", name: "سورينام", flag: "🇸🇷" },
+  { code: "+598", name: "الأوروغواي", flag: "🇺🇾" },
+  { code: "+599", name: "جزر الأنتيل الهولندية", flag: "🇧🇶" },
+  { code: "+670", name: "تيمور الشرقية", flag: "🇹🇱" },
+  { code: "+672", name: "جزيرة نورفولك", flag: "🇳🇫" },
+  { code: "+673", name: "بروناي", flag: "🇧🇳" },
+  { code: "+674", name: "ناورو", flag: "🇳🇷" },
+  { code: "+675", name: "بابوا غينيا الجديدة", flag: "🇵🇬" },
+  { code: "+676", name: "تونغا", flag: "🇹🇴" },
+  { code: "+677", name: "جزر سليمان", flag: "🇸🇧" },
+  { code: "+678", name: "فانواتو", flag: "🇻🇺" },
+  { code: "+679", name: "فيجي", flag: "🇫🇯" },
+  { code: "+680", name: "بالاو", flag: "🇵🇼" },
+  { code: "+681", name: "واليس وفوتونا", flag: "🇼🇫" },
+  { code: "+682", name: "جزر كوك", flag: "🇨🇰" },
+  { code: "+683", name: "نييوي", flag: "🇳🇺" },
+  { code: "+685", name: "ساموا", flag: "🇼🇸" },
+  { code: "+686", name: "كيريباتي", flag: "🇰🇮" },
+  { code: "+687", name: "كاليدونيا الجديدة", flag: "🇳🇨" },
+  { code: "+688", name: "توفالو", flag: "🇹🇻" },
+  { code: "+689", name: "بولينيزيا الفرنسية", flag: "🇵🇫" },
+  { code: "+850", name: "كوريا الشمالية", flag: "🇰🇵" },
+  { code: "+852", name: "هونغ كونغ", flag: "🇭🇰" },
+  { code: "+853", name: "ماكاو", flag: "🇲🇴" },
+  { code: "+855", name: "كمبوديا", flag: "🇰🇭" },
+  { code: "+856", name: "لاوس", flag: "🇱🇦" },
+  { code: "+880", name: "بنغلاديش", flag: "🇧🇩" },
+  { code: "+886", name: "تايوان", flag: "🇹🇼" },
+  { code: "+960", name: "جزر المالديف", flag: "🇲🇻" },
+  { code: "+961", name: "لبنان", flag: "🇱🇧" },
+  { code: "+962", name: "الأردن", flag: "🇯🇴" },
+  { code: "+963", name: "سوريا", flag: "🇸🇾" },
+  { code: "+964", name: "العراق", flag: "🇮🇶" },
+  { code: "+965", name: "الكويت", flag: "🇰🇼" },
+  { code: "+966", name: "السعودية", flag: "🇸🇦" },
+  { code: "+967", name: "اليمن", flag: "🇾🇪" },
+  { code: "+968", name: "عمان", flag: "🇴🇲" },
+  { code: "+970", name: "فلسطين", flag: "🇵🇸" },
+  { code: "+971", name: "الإمارات", flag: "🇦🇪" },
+  { code: "+972", name: "إسرائيل", flag: "🇮🇱" },
+  { code: "+973", name: "البحرين", flag: "🇧🇭" },
+  { code: "+974", name: "قطر", flag: "🇶🇦" },
+  { code: "+975", name: "بوتان", flag: "🇧🇹" },
+  { code: "+976", name: "منغوليا", flag: "🇲🇳" },
+  { code: "+977", name: "نيبال", flag: "🇳🇵" },
+  { code: "+992", name: "طاجيكستان", flag: "🇹🇯" },
+  { code: "+993", name: "تركمانستان", flag: "🇹🇲" },
+  { code: "+994", name: "أذربيجان", flag: "🇦🇿" },
+  { code: "+995", name: "جورجيا", flag: "🇬🇪" },
+  { code: "+996", name: "قيرغيزستان", flag: "🇰🇬" },
+  { code: "+998", name: "أوزبكستان", flag: "🇺🇿" },
+];
+
+// إزالة التكرارات والفرز حسب الاسم
+const COUNTRIES = Array.from(
+  new Map(COUNTRIES_RAW.map(item => [item.code, item])).values()
+).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -292,34 +556,8 @@ function RegisterForm() {
             <label className="block text-sm font-semibold text-[#002845] mb-2">
               رقم الجوال <span className="text-slate-400 font-normal">(اختياري)</span>
             </label>
-            <div className="flex gap-2">
-              {/* Country Code Selector */}
-              <div className="relative flex-shrink-0">
-                <select
-                  name="phoneCountry"
-                  value={formData.phoneCountry}
-                  onChange={handleChange}
-                  disabled={loading}
-                  className="min-h-[48px] rounded-xl border border-slate-200 px-3 py-3 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-[#f6d879] focus:border-transparent disabled:bg-slate-100 disabled:cursor-not-allowed transition-all appearance-none bg-white cursor-pointer"
-                >
-                  <option value="+966">🇸🇦 +966</option>
-                  <option value="+971">🇦🇪 +971</option>
-                  <option value="+965">🇰🇼 +965</option>
-                  <option value="+974">🇶🇦 +974</option>
-                  <option value="+973">🇧🇭 +973</option>
-                  <option value="+968">🇴🇲 +968</option>
-                  <option value="+20">🇪🇬 +20</option>
-                  <option value="+961">🇱🇧 +961</option>
-                  <option value="+90">🇹🇷 +90</option>
-                </select>
-                <div className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
-              </div>
-              
-              {/* Phone Number Input */}
+            <div className="flex gap-2 flex-row-reverse">
+              {/* Phone Number Input - على اليمين (لأن الأرقام تُقرأ من اليسار لليمين) */}
               <div className="relative flex-1">
                 <input
                   type="tel"
@@ -328,13 +566,36 @@ function RegisterForm() {
                   onChange={handleChange}
                   disabled={loading}
                   dir="ltr"
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 pl-11 text-sm text-left focus:outline-none focus:ring-2 focus:ring-[#f6d879] focus:border-transparent disabled:bg-slate-100 disabled:cursor-not-allowed transition-all"
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 pr-11 text-sm text-left focus:outline-none focus:ring-2 focus:ring-[#f6d879] focus:border-transparent disabled:bg-slate-100 disabled:cursor-not-allowed transition-all"
                   placeholder={formData.phoneCountry === "+966" ? "05xxxxxxxx" : "رقم الجوال"}
                   autoComplete="tel"
                 />
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                   <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  </svg>
+                </div>
+              </div>
+              
+              {/* Country Code Selector - على اليسار */}
+              <div className="relative flex-shrink-0">
+                <select
+                  name="phoneCountry"
+                  value={formData.phoneCountry}
+                  onChange={handleChange}
+                  disabled={loading}
+                  className="min-h-[48px] rounded-xl border border-slate-200 px-3 py-3 pl-8 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#f6d879] focus:border-transparent disabled:bg-slate-100 disabled:cursor-not-allowed transition-all appearance-none bg-white cursor-pointer"
+                  dir="ltr"
+                >
+                  {COUNTRIES.map((country) => (
+                    <option key={country.code} value={country.code}>
+                      {country.flag} {country.code} {country.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </div>
               </div>
