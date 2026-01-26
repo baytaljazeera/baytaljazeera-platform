@@ -1023,11 +1023,23 @@ function ListingMarker({
         minWidth={260}
         eventHandlers={{
           click: (e) => {
-            // منع الانتقال عند النقر على popup
+            // منع الانتقال عند النقر على زر المفضلة
             const target = e.originalEvent.target as HTMLElement;
             if (target.closest('.popup-favorite-btn')) {
               e.originalEvent.stopPropagation();
               e.originalEvent.preventDefault();
+              e.originalEvent.stopImmediatePropagation();
+              return false;
+            }
+          },
+          mousedown: (e) => {
+            // منع الانتقال عند mousedown على زر المفضلة
+            const target = e.originalEvent.target as HTMLElement;
+            if (target.closest('.popup-favorite-btn')) {
+              e.originalEvent.stopPropagation();
+              e.originalEvent.preventDefault();
+              e.originalEvent.stopImmediatePropagation();
+              return false;
             }
           }
         }}
