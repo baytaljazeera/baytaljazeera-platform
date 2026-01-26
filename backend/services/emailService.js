@@ -111,6 +111,7 @@ function getPasswordResetEmailTemplate(resetLink, userName) {
         <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
           <tr>
             <td style="background: linear-gradient(135deg, #002845 0%, #01375e 100%); padding: 40px; text-align: center;">
+              <img src="https://baytaljazeera.com/logo.svg" alt="بيت الجزيرة" style="width: 120px; height: auto; margin-bottom: 16px;" />
               <h1 style="color: #D4AF37; margin: 0; font-size: 32px; font-weight: bold;">بيت الجزيرة</h1>
               <p style="color: rgba(212, 175, 55, 0.8); margin: 8px 0 0 0; font-size: 14px;">منصة العقارات الخليجية الأولى</p>
             </td>
@@ -187,6 +188,7 @@ function getEmailVerificationTemplate(verifyLink, userName) {
         <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
           <tr>
             <td style="background: linear-gradient(135deg, #002845 0%, #01375e 100%); padding: 40px; text-align: center;">
+              <img src="https://baytaljazeera.com/logo.svg" alt="بيت الجزيرة" style="width: 120px; height: auto; margin-bottom: 16px;" />
               <h1 style="color: #D4AF37; margin: 0; font-size: 32px; font-weight: bold;">بيت الجزيرة</h1>
               <p style="color: rgba(212, 175, 55, 0.8); margin: 8px 0 0 0; font-size: 14px;">منصة العقارات الخليجية الأولى</p>
             </td>
