@@ -439,33 +439,30 @@ function ListingPopupCard({
     setIsFavorite(listing.isFavorite || false);
   }, [listing.isFavorite]);
   
-  // إضافة event listeners مباشرة على الزر لمنع الانتقال - لكن نسمح لـ onMouseDown بالعمل
+  // إضافة event listeners مباشرة على الزر لمنع الانتقال إلى Leaflet فقط
   useEffect(() => {
     const button = favoriteButtonRef.current;
     if (!button) return;
     
-    // نمنع فقط الأحداث التي قد تسبب انتقالاً، لكن نسمح لـ mousedown بالعمل
-    const handleClickEvents = (e: Event) => {
-      // نمنع الانتشار فقط للأحداث التي قد تسبب انتقالاً
-      // لكن نسمح لـ mousedown بالعمل لأنه يحتوي على منطق التحديث
-      if (e.type === 'click' || e.type === 'mouseup') {
-        e.stopPropagation();
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if ('cancelBubble' in e) {
-          (e as any).cancelBubble = true;
-        }
-        return false;
-      }
+    // نمنع فقط الانتشار إلى Leaflet، لكن نسمح لجميع الأحداث بالعمل على الزر نفسه
+    const handlePropagation = (e: Event) => {
+      // نمنع الانتشار فقط للأحداث التي قد تسبب انتقالاً في Leaflet
+      // لكن نسمح لجميع الأحداث بالعمل على الزر نفسه (onClick, onMouseDown, etc.)
+      e.stopPropagation();
+      // لا نمنع preventDefault لأننا نريد أن يعمل onClick و onMouseDown
     };
     
-    // نضيف فقط click و mouseup لمنع الانتقال، لكن نترك mousedown يعمل
-    button.addEventListener('click', handleClickEvents, true);
-    button.addEventListener('mouseup', handleClickEvents, true);
+    // نضيف فقط stopPropagation للأحداث، لكن نترك preventDefault يعمل
+    // هذا يمنع الانتشار إلى Leaflet لكن يسمح للأحداث بالعمل على الزر
+    const events = ['click', 'mousedown', 'mouseup', 'touchstart', 'touchend'];
+    events.forEach(eventType => {
+      button.addEventListener(eventType, handlePropagation, true);
+    });
     
     return () => {
-      button.removeEventListener('click', handleClickEvents, true);
-      button.removeEventListener('mouseup', handleClickEvents, true);
+      events.forEach(eventType => {
+        button.removeEventListener(eventType, handlePropagation, true);
+      });
     };
   }, []);
 
