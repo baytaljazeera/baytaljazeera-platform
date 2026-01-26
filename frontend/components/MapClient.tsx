@@ -180,9 +180,22 @@ function FitToView({ listings, selectedCity, selectedListingId }: MapClientProps
   useEffect(() => {
     if (!map || !mapCenter) return;
     
+    // التحقق من صحة الإحداثيات قبل استخدامها
+    const [lat, lng] = mapCenter;
+    if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
+      console.warn('Invalid mapCenter coordinates:', mapCenter);
+      return;
+    }
+    
+    // التحقق من أن الإحداثيات ضمن النطاق الصحيح
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      console.warn('MapCenter coordinates out of range:', mapCenter);
+      return;
+    }
+    
     if (mapVersion > lastVersionRef.current) {
       lastVersionRef.current = mapVersion;
-      map.flyTo(mapCenter as LatLngExpression, mapZoom, { duration: 0.8 });
+      map.flyTo([lat, lng], mapZoom || DEFAULT_ZOOM, { duration: 0.8 });
     }
   }, [map, mapCenter, mapZoom, mapVersion]);
 
