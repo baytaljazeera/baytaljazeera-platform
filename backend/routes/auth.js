@@ -33,6 +33,18 @@ function generateReferralCode() {
   return code;
 }
 
+function normalizePhone(phone) {
+  if (!phone) return null;
+  let cleaned = phone.replace(/[\s\-\(\)\.]/g, '').trim();
+  if (cleaned.startsWith('00')) {
+    cleaned = '+' + cleaned.slice(2);
+  }
+  if (!cleaned.startsWith('+') && cleaned.length >= 9) {
+    cleaned = '+' + cleaned;
+  }
+  return cleaned || null;
+}
+
 router.post("/register", asyncHandler(async (req, res) => {
   const allowRegResult = await db.query(
     `SELECT value FROM app_settings WHERE key = 'allow_registration'`
@@ -64,7 +76,33 @@ router.post("/register", asyncHandler(async (req, res) => {
 
   const sanitizedEmail = sanitizeInput(email.toLowerCase().trim());
   const sanitizedName = name ? sanitizeInput(name) : null;
-  const sanitizedPhone = phone ? sanitizeInput(phone) : null;
+  const sanitizedPhone = normalizePhone(phone);
+
+  // Pre-check for existing email
+  const existingEmail = await db.query(
+    `SELECT id FROM users WHERE LOWER(email) = LOWER($1)`,
+    [sanitizedEmail]
+  );
+  if (existingEmail.rows.length > 0) {
+    return res.status(409).json({ 
+      error: "البريد الإلكتروني مستخدم من قبل", 
+      errorEn: "Email already exists" 
+    });
+  }
+
+  // Pre-check for existing phone (if provided)
+  if (sanitizedPhone) {
+    const existingPhone = await db.query(
+      `SELECT id FROM users WHERE phone = $1`,
+      [sanitizedPhone]
+    );
+    if (existingPhone.rows.length > 0) {
+      return res.status(409).json({ 
+        error: "رقم الجوال مستخدم من قبل. يرجى استخدام رقم هاتف آخر أو ترك الحقل فارغاً", 
+        errorEn: "Phone number already exists" 
+      });
+    }
+  }
 
   let referrerId = null;
   let referrerCode = null;
