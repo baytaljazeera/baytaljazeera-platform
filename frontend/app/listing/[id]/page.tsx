@@ -1210,13 +1210,13 @@ export default function ListingDetailPage() {
               <div className="flex gap-2 mt-4 pt-4 border-t">
                 <button
                   onClick={() => setIsFavorite(!isFavorite)}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl border ${
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl border transition-colors ${
                     isFavorite 
                       ? "bg-red-50 border-red-200 text-red-500" 
-                      : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      : "border-slate-300 text-slate-500 hover:bg-slate-50 bg-slate-50"
                   }`}
                 >
-                  <Heart className={`w-5 h-5 ${isFavorite ? "fill-current" : ""}`} />
+                  <Heart className={`w-5 h-5 ${isFavorite ? "fill-current text-red-500" : "text-slate-500"}`} />
                   <span className="text-sm">المفضلة</span>
                 </button>
                 <ShareButton
