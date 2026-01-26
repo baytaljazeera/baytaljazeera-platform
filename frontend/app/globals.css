@@ -362,6 +362,8 @@ button.popup-dot-btn,
   -webkit-user-select: none !important;
   -moz-user-select: none !important;
   -ms-user-select: none !important;
+  position: relative !important;
+  z-index: 999999 !important;
 }
 
 .popup-favorite-btn * {
@@ -370,8 +372,26 @@ button.popup-dot-btn,
 
 /* منع الانتقال من Leaflet Popup عند النقر على زر المفضلة */
 .leaflet-popup-content-wrapper .popup-favorite-btn,
-.leaflet-popup-content .popup-favorite-btn {
+.leaflet-popup-content .popup-favorite-btn,
+.clean-popup .popup-favorite-btn {
   pointer-events: auto !important;
+  z-index: 999999 !important;
+}
+
+/* منع الانتقال من الـ popup wrapper عند النقر على زر المفضلة */
+.leaflet-popup-content-wrapper:has(.popup-favorite-btn:active),
+.leaflet-popup-content:has(.popup-favorite-btn:active) {
+  pointer-events: none !important;
+}
+
+.leaflet-popup-content-wrapper:has(.popup-favorite-btn:hover),
+.leaflet-popup-content:has(.popup-favorite-btn:hover) {
+  pointer-events: auto !important;
+}
+
+/* منع الانتقال من الـ marker عند النقر على زر المفضلة */
+.leaflet-marker-icon:has(+ .leaflet-popup .popup-favorite-btn:active) {
+  pointer-events: none !important;
 }
 
 .popup-dots-container {
