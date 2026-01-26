@@ -377,12 +377,50 @@ function ListingPopupCard({
   const [lastTap, setLastTap] = useState<number>(0);
   const [imgError, setImgError] = useState(false);
   const [isFavorite, setIsFavorite] = useState(listing.isFavorite || false);
+  const favoriteButtonRef = useRef<HTMLButtonElement>(null);
   const router = useRouter();
   
   // Update isFavorite when listing.isFavorite changes
   useEffect(() => {
     setIsFavorite(listing.isFavorite || false);
   }, [listing.isFavorite]);
+  
+  // إضافة event listeners مباشرة على الزر لمنع الانتقال
+  useEffect(() => {
+    const button = favoriteButtonRef.current;
+    if (!button) return;
+    
+    const handleClick = (e: MouseEvent | TouchEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if ('cancelBubble' in e) {
+        (e as any).cancelBubble = true;
+      }
+    };
+    
+    const handleMouseDown = (e: MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if ('cancelBubble' in e) {
+        (e as any).cancelBubble = true;
+      }
+    };
+    
+    // استخدام capture phase لمنع الانتشار مبكراً
+    button.addEventListener('click', handleClick, true);
+    button.addEventListener('mousedown', handleMouseDown, true);
+    button.addEventListener('touchstart', handleClick, true);
+    button.addEventListener('touchend', handleClick, true);
+    
+    return () => {
+      button.removeEventListener('click', handleClick, true);
+      button.removeEventListener('mousedown', handleMouseDown, true);
+      button.removeEventListener('touchstart', handleClick, true);
+      button.removeEventListener('touchend', handleClick, true);
+    };
+  }, []);
 
   const allImages = (
     listing.images && listing.images.length > 0
