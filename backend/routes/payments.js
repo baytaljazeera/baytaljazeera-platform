@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, authMiddlewareWithEmailCheck } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { paymentLimiter } = require('../config/security');
 const pricingService = require('../services/pricingService');
@@ -239,7 +239,7 @@ router.get('/available-upgrades', authMiddleware, asyncHandler(async (req, res) 
   });
 }));
 
-router.post('/initiate-upgrade', paymentLimiter, authMiddleware, asyncHandler(async (req, res) => {
+router.post('/initiate-upgrade', paymentLimiter, authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { planId, countryCode = 'SA' } = req.body;
   const country = SUPPORTED_COUNTRIES[countryCode] || SUPPORTED_COUNTRIES.SA;
@@ -346,7 +346,7 @@ router.post('/initiate-upgrade', paymentLimiter, authMiddleware, asyncHandler(as
   });
 }));
 
-router.post('/process-payment', paymentLimiter, authMiddleware, asyncHandler(async (req, res) => {
+router.post('/process-payment', paymentLimiter, authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const client = await db.pool.connect();
   
   try {

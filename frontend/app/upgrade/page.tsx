@@ -131,6 +131,18 @@ function UpgradePageContent() {
 
   useEffect(() => {
     const detectAndFetch = async () => {
+      // Check email verification first
+      try {
+        const meRes = await fetch("/api/auth/me", { credentials: "include" });
+        const meData = await meRes.json();
+        if (meData.user && !meData.user.emailVerified) {
+          router.push(`/verify-email?email=${encodeURIComponent(meData.user.email)}`);
+          return;
+        }
+      } catch (err) {
+        console.error("Error checking auth:", err);
+      }
+      
       if (!countryParam) {
         try {
           const geoRes = await fetch("/api/geolocation/detect");

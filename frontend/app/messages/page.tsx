@@ -123,6 +123,13 @@ export default function MessagesPage() {
         router.push("/login");
         return;
       }
+      if (res.status === 403) {
+        const data = await res.json();
+        if (data.requiresVerification && data.email) {
+          router.push(`/verify-email?email=${encodeURIComponent(data.email)}`);
+          return;
+        }
+      }
       if (res.ok) {
         const data = await res.json();
         setConversations(data.conversations || []);

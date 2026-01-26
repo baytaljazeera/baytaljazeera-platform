@@ -310,6 +310,13 @@ export default function NewListingPage() {
           setIsLoading(false);
           return;
         }
+        
+        // Check email verification - redirect if not verified
+        if (!meData.user.emailVerified) {
+          router.push(`/verify-email?email=${encodeURIComponent(meData.user.email)}`);
+          return;
+        }
+        
         setUser(meData.user);
 
         // IMPORTANT: Sync quota buckets first to ensure old users have their buckets created
