@@ -1217,7 +1217,7 @@ export default function ListingDetailPage() {
                   }`}
                 >
                   <Heart className={`w-5 h-5 ${isFavorite ? "fill-current" : ""}`} />
-                  <span className="text-sm">حفظ</span>
+                  <span className="text-sm">المفضلة</span>
                 </button>
                 <ShareButton
                   title={listing.title}
