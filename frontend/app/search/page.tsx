@@ -840,33 +840,107 @@ function SearchPage() {
         return;
       }
       
-      const res = await fetch(`${apiBase}/api/favorites/toggle`, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        credentials: "include",
-        body: JSON.stringify({ listingId: id }),
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
+      // إذا تم تمرير isFavorite، استخدمه مباشرة لتحديث الحالة فوراً
+      // وإلا استخدم toggle API
+      if (typeof isFavorite === 'boolean') {
+        // تحديث الحالة فوراً في الواجهة
         setFavorites((prev) => {
-          if (data.favorited) {
-            return [...prev, id];
+          if (isFavorite) {
+            // إضافة إلى المفضلة
+            if (!prev.includes(id)) {
+              return [...prev, id];
+            }
+            return prev;
           } else {
+            // إزالة من المفضلة
             return prev.filter((fid) => fid !== id);
           }
         });
-      } else if (res.status === 401) {
-        window.location.href = "/login";
+        
+        // إرسال الطلب في الخلفية
+        const res = await fetch(`${apiBase}/api/favorites/toggle`, {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "include",
+          body: JSON.stringify({ listingId: id }),
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          // تحديث الحالة بناءً على الاستجابة من الخادم
+          setFavorites((prev) => {
+            if (data.favorited) {
+              if (!prev.includes(id)) {
+                return [...prev, id];
+              }
+              return prev;
+            } else {
+              return prev.filter((fid) => fid !== id);
+            }
+          });
+        } else if (res.status === 401) {
+          window.location.href = "/login";
+        } else {
+          // Rollback في حالة الخطأ
+          setFavorites((prev) => {
+            if (isFavorite) {
+              return prev.filter((fid) => fid !== id);
+            } else {
+              if (!prev.includes(id)) {
+                return [...prev, id];
+              }
+              return prev;
+            }
+          });
+          const errorData = await res.json().catch(() => ({ error: "حدث خطأ" }));
+          console.error("Toggle favorite error:", errorData);
+        }
       } else {
-        const errorData = await res.json().catch(() => ({ error: "حدث خطأ" }));
-        console.error("Toggle favorite error:", errorData);
+        // استخدام toggle API التقليدي
+        const res = await fetch(`${apiBase}/api/favorites/toggle`, {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "include",
+          body: JSON.stringify({ listingId: id }),
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          setFavorites((prev) => {
+            if (data.favorited) {
+              return [...prev, id];
+            } else {
+              return prev.filter((fid) => fid !== id);
+            }
+          });
+        } else if (res.status === 401) {
+          window.location.href = "/login";
+        } else {
+          const errorData = await res.json().catch(() => ({ error: "حدث خطأ" }));
+          console.error("Toggle favorite error:", errorData);
+        }
       }
     } catch (err) {
       console.error("Toggle favorite error:", err);
+      // Rollback في حالة الخطأ
+      if (typeof isFavorite === 'boolean') {
+        setFavorites((prev) => {
+          if (isFavorite) {
+            return prev.filter((fid) => fid !== id);
+          } else {
+            if (!prev.includes(id)) {
+              return [...prev, id];
+            }
+            return prev;
+          }
+        });
+      }
     }
   }
 
