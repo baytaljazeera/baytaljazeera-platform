@@ -376,7 +376,13 @@ function ListingPopupCard({
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
   const [lastTap, setLastTap] = useState<number>(0);
   const [imgError, setImgError] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(listing.isFavorite || false);
   const router = useRouter();
+  
+  // Update isFavorite when listing.isFavorite changes
+  useEffect(() => {
+    setIsFavorite(listing.isFavorite || false);
+  }, [listing.isFavorite]);
 
   const allImages = (
     listing.images && listing.images.length > 0
