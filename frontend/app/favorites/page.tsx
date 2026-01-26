@@ -23,6 +23,7 @@ type Listing = {
   bedrooms?: number;
   bathrooms?: number;
   image_url?: string;
+  images?: string[]; // إضافة images array
 };
 
 export default function FavoritesPage() {

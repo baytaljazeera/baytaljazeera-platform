@@ -788,7 +788,7 @@ function ListingPopupCard({
                 minHeight: 36,
                 borderRadius: "50%",
                 border: "2px solid #fff",
-                backgroundColor: isFavorite ? "#ef4444" : "rgba(0,0,0,0.5)",
+                backgroundColor: isFavorite ? "#ef4444" : "rgba(107, 114, 128, 0.7)", // رمادي افتراضي
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -801,18 +801,18 @@ function ListingPopupCard({
               }}
               onMouseEnter={(e) => {
                 if (!isFavorite) {
-                  e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.7)";
+                  e.currentTarget.style.backgroundColor = "rgba(107, 114, 128, 0.9)"; // رمادي أغمق عند hover
                 }
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = isFavorite ? "#ef4444" : "rgba(0,0,0,0.5)";
+                e.currentTarget.style.backgroundColor = isFavorite ? "#ef4444" : "rgba(107, 114, 128, 0.7)"; // رمادي افتراضي
               }}
               title={isFavorite ? "إزالة من المفضلة" : "إضافة للمفضلة"}
             >
               <Heart 
                 size={18} 
                 fill={isFavorite ? "#fff" : "none"}
-                color="#fff"
+                color={isFavorite ? "#fff" : "#9ca3af"} // رمادي للقلب غير المحفوظ
                 style={{
                   pointerEvents: "none",
                 }}
