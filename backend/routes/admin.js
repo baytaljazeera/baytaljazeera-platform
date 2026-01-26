@@ -181,6 +181,7 @@ router.get("/users/customers", authMiddleware, requireRoles('super_admin'), vali
   const { page, limit, offset } = req.pagination;
   const search = req.query.search?.trim() || '';
   const planFilter = req.query.plan_id ? parseInt(req.query.plan_id) : null;
+  const statusFilter = req.query.status?.trim() || '';
   
   let params = [];
   let conditions = [`u.role = 'user'`];
@@ -193,6 +194,11 @@ router.get("/users/customers", authMiddleware, requireRoles('super_admin'), vali
   if (planFilter) {
     params.push(planFilter);
     conditions.push(`up.plan_id = $${params.length}`);
+  }
+  
+  if (statusFilter && ['active', 'on_hold', 'under_review', 'blocked'].includes(statusFilter)) {
+    params.push(statusFilter);
+    conditions.push(`u.status = $${params.length}`);
   }
   
   const whereClause = `WHERE ${conditions.join(' AND ')}`;
@@ -221,6 +227,26 @@ router.get("/users/customers", authMiddleware, requireRoles('super_admin'), vali
   });
   
   res.json({ users: result.data, pagination: result.pagination });
+}));
+
+router.get("/users/find-by-email", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
+  const email = req.query.email?.trim().toLowerCase();
+  
+  if (!email) {
+    return res.status(400).json({ error: "البريد الإلكتروني مطلوب" });
+  }
+  
+  const result = await db.query(
+    `SELECT id, name, email, phone, role, status, created_at 
+     FROM users WHERE LOWER(email) = $1`,
+    [email]
+  );
+  
+  if (result.rows.length === 0) {
+    return res.json({ found: false, message: "لم يتم العثور على المستخدم" });
+  }
+  
+  res.json({ found: true, user: result.rows[0] });
 }));
 
 router.get("/users/stats", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
