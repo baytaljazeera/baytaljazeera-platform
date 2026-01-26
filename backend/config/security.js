@@ -21,9 +21,9 @@ const authLimiter = rateLimit({
 });
 
 const strictAuthLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 3,
-  message: { error: "تم قفل محاولات إعادة التعيين، حاول بعد ساعة", errorEn: "Password reset locked, try again in 1 hour" },
+  windowMs: 5 * 60 * 1000, // 5 دقائق
+  max: 5, // 5 محاولات
+  message: { error: "محاولات كثيرة، حاول بعد 5 دقائق", errorEn: "Too many attempts, try again in 5 minutes" },
   standardHeaders: true,
   legacyHeaders: false,
 });
