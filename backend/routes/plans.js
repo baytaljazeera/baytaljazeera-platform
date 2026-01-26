@@ -3,7 +3,7 @@ const express = require("express");
 const db = require("../db");
 const fs = require("fs");
 const path = require("path");
-const { authMiddleware, adminOnly, requirePermission } = require("../middleware/auth");
+const { authMiddleware, authMiddlewareWithEmailCheck, adminOnly, requirePermission } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { subscriptionLimiter } = require("../config/security");
 const pricingService = require("../services/pricingService");
@@ -206,8 +206,8 @@ router.patch("/reorder", adminAuth, asyncHandler(async (req, res) => {
   res.json({ ok: true, message: "تم إعادة ترتيب الباقات بنجاح" });
 }));
 
-// 🔒 Security: Use centralized auth middleware for user authentication
-const userAuth = authMiddleware;
+// 🔒 Security: Use centralized auth middleware with email verification for user subscriptions
+const userAuth = authMiddlewareWithEmailCheck;
 
 // Subscribe to a plan with promotion support (using centralized planService)
 router.post("/subscribe", subscriptionLimiter, userAuth, asyncHandler(async (req, res) => {

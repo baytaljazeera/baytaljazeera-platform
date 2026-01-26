@@ -302,6 +302,11 @@ export default function PlansPage() {
           router.push("/login");
           return;
         }
+        if (res.status === 403 && data.requiresVerification) {
+          toast.warning("يجب تأكيد بريدك الإلكتروني أولاً");
+          router.push(`/verify-email?email=${encodeURIComponent(data.email || "")}`);
+          return;
+        }
         setInfoMessage(data.error || "حدث خطأ أثناء الاشتراك");
         setSelectedPlan(null);
         return;
