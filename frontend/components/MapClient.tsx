@@ -442,8 +442,8 @@ function ListingPopupCard({
   // دالة لتحديث المفضلة - نستخدمها في جميع الأحداث
   const handleToggleFavorite = useCallback((e?: React.MouseEvent | React.TouchEvent) => {
     if (e) {
+      // منع الانتشار إلى Leaflet فقط - لا نمنع السلوك الافتراضي
       e.stopPropagation();
-      e.preventDefault();
       if (e.nativeEvent) {
         e.nativeEvent.stopImmediatePropagation();
         e.nativeEvent.stopPropagation();
