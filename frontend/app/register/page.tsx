@@ -577,23 +577,23 @@ function RegisterForm() {
               </div>
               
               {/* Country Code Selector - على اليسار */}
-              <div className="relative flex-shrink-0">
+              <div className="relative flex-shrink-0 w-24">
                 <select
                   name="phoneCountry"
                   value={formData.phoneCountry}
                   onChange={handleChange}
                   disabled={loading}
-                  className="min-h-[48px] rounded-xl border border-slate-200 px-3 py-3 pl-8 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#f6d879] focus:border-transparent disabled:bg-slate-100 disabled:cursor-not-allowed transition-all appearance-none bg-white cursor-pointer"
+                  className="w-full min-h-[48px] rounded-xl border border-slate-200 px-2 py-3 pl-6 pr-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#f6d879] focus:border-transparent disabled:bg-slate-100 disabled:cursor-not-allowed transition-all appearance-none bg-white cursor-pointer"
                   dir="ltr"
                 >
                   {COUNTRIES.map((country) => (
                     <option key={country.code} value={country.code}>
-                      {country.flag} {country.code} {country.name}
+                      {country.flag} {country.code}
                     </option>
                   ))}
                 </select>
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </div>
