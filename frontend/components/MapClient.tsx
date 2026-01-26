@@ -1217,7 +1217,19 @@ export default function MapClient({
     listings.filter((l) => {
       const lat = typeof l.latitude === "string" ? parseFloat(l.latitude) : l.latitude;
       const lng = typeof l.longitude === "string" ? parseFloat(l.longitude) : l.longitude;
-      return typeof lat === "number" && typeof lng === "number" && !isNaN(lat) && !isNaN(lng);
+      
+      // التحقق من صحة الإحداثيات ونطاقها
+      if (typeof lat !== "number" || typeof lng !== "number" || isNaN(lat) || isNaN(lng)) {
+        return false;
+      }
+      
+      // التحقق من أن الإحداثيات ضمن النطاق الصحيح
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        console.warn(`Invalid coordinates for listing ${l.id}:`, { lat, lng });
+        return false;
+      }
+      
+      return true;
     }),
     [listings]
   );
