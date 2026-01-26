@@ -1207,14 +1207,42 @@ export default function ListingDetailPage() {
 
               <div className="flex gap-2 mt-4 pt-4 border-t">
                 <button
-                  onClick={() => setIsFavorite(!isFavorite)}
+                  onClick={async () => {
+                    const token = localStorage.getItem("token");
+                    if (!token) {
+                      const shouldLogin = window.confirm("يجب تسجيل الدخول لإضافة العقارات للمفضلة.\n\nهل تريد تسجيل الدخول الآن؟");
+                      if (shouldLogin) {
+                        window.location.href = "/login";
+                      }
+                      return;
+                    }
+                    try {
+                      const res = await fetch(`/api/favorites/toggle`, {
+                        method: "POST",
+                        headers: { 
+                          "Content-Type": "application/json",
+                          Authorization: `Bearer ${token}`,
+                        },
+                        credentials: "include",
+                        body: JSON.stringify({ listingId: listing.id }),
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        setIsFavorite(data.favorited);
+                      } else if (res.status === 401) {
+                        window.location.href = "/login";
+                      }
+                    } catch (err) {
+                      console.error("Error toggling favorite:", err);
+                    }
+                  }}
                   className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl border transition-colors ${
                     isFavorite 
                       ? "bg-red-50 border-red-200 text-red-500" 
                       : "border-slate-300 text-slate-500 hover:bg-slate-50 bg-slate-50"
                   }`}
                 >
-                  <Heart className={`w-5 h-5 ${isFavorite ? "fill-current text-red-500" : "text-slate-500"}`} />
+                  <Heart className={`w-5 h-5 ${isFavorite ? "fill-red-500 text-red-500" : "text-slate-500"}`} />
                   <span className="text-sm">المفضلة</span>
                 </button>
                 <ShareButton

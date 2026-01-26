@@ -30,7 +30,6 @@ const SyncedMapPane = dynamicImport(() => import("../../components/search/Synced
 });
 import {
   Heart,
-  HeartOff,
   MapPin,
   BedDouble,
   Bath,
@@ -836,10 +835,12 @@ function SearchPage() {
     try {
       const token = localStorage.getItem("token");
       if (!token) {
-        // إذا لم يكن المستخدم مسجل دخول، لا نحدث الحالة ولا ننتقل
-        // فقط نترك الحالة كما هي
-        console.log("User not logged in - favorite action ignored");
-        throw new Error("User not logged in");
+        // المستخدم غير مسجل - عرض رسالة وتوجيهه لتسجيل الدخول
+        const shouldLogin = window.confirm("يجب تسجيل الدخول لإضافة العقارات للمفضلة.\n\nهل تريد تسجيل الدخول الآن؟");
+        if (shouldLogin) {
+          window.location.href = "/login";
+        }
+        return;
       }
       
       // تحديث الحالة فوراً في الواجهة بناءً على isFavorite
@@ -2958,9 +2959,9 @@ function PropertyCard({
             className="absolute top-2 sm:top-3 left-2 sm:left-3 w-10 h-10 sm:w-9 sm:h-9 rounded-full bg-white/95 flex items-center justify-center shadow-lg active:scale-90 transition"
           >
             {isFavorite ? (
-              <Heart className="w-5 h-5 text-[#d72638] fill-[#d72638]" />
+              <Heart className="w-5 h-5 text-red-500 fill-red-500" />
             ) : (
-              <HeartOff className="w-5 h-5 text-slate-400" />
+              <Heart className="w-5 h-5 text-gray-400 hover:text-red-400" />
             )}
           </button>
         )}
