@@ -687,7 +687,7 @@ router.post("/reset-password", strictAuthLimiter, asyncHandler(async (req, res) 
   const hashedPassword = await bcrypt.hash(password, 10);
 
   await db.query(
-    `UPDATE users SET password_hash = $1, failed_login_attempts = 0, lockout_until = NULL, updated_at = NOW()
+    `UPDATE users SET password_hash = $1, failed_login_attempts = 0, locked_until = NULL, updated_at = NOW()
      WHERE id = $2`,
     [hashedPassword, resetRecord.user_id]
   );
