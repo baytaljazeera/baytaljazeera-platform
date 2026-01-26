@@ -4049,12 +4049,10 @@ export default function NewListingPage() {
                   whileTap={{ scale: 0.97 }}
                   transition={{ type: "spring", stiffness: 400, damping: 17 }}
                 >
-                  <TouchButton
+                  <button
                     type="button"
                     onClick={goNext}
-                    variant="secondary"
-                    size="md"
-                    className="flex items-center gap-2 relative overflow-hidden"
+                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-l from-[#002845] to-[#1a4a6e] text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-[1.02]"
                   >
                     <motion.span
                       className="flex items-center gap-2"
@@ -4064,13 +4062,13 @@ export default function NewListingPage() {
                     >
                       التالي
                       <motion.div
-                        animate={{ x: [0, 3, 0] }}
-                        transition={{ duration: 0.5, repeat: Infinity, repeatDelay: 2 }}
+                        animate={{ x: [0, 4, 0] }}
+                        transition={{ duration: 0.6, repeat: Infinity, repeatDelay: 1.5 }}
                       >
                         <ChevronLeft className="w-5 h-5" />
                       </motion.div>
                     </motion.span>
-                  </TouchButton>
+                  </button>
                 </motion.div>
               ) : (
                 <motion.div 
