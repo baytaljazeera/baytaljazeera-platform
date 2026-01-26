@@ -91,45 +91,43 @@ function HeroSection() {
         className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 pt-8 sm:pt-16 lg:pt-24 pb-8 sm:pb-16 lg:pb-24 text-center w-full"
         dir="rtl"
       >
-        {/* عنوان مُحسَّن للجوال - سطر واحد */}
-        <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl leading-tight sm:leading-relaxed" style={{ fontFamily: "'Cairo', sans-serif", fontWeight: 900, letterSpacing: '0.02em' }}>
-          <span className="sm:hidden"><span className="gold-shimmer-text">بيتك</span> أقرب بخطوة</span>
-          <span className="hidden sm:inline"><span className="gold-shimmer-text">بيتك</span> أقرب بخطوة</span>
+        {/* عنوان مُحسَّن للجوال */}
+        <h1 className="text-mobile-3xl sm:text-4xl md:text-5xl lg:text-6xl leading-[1.3] sm:leading-relaxed" style={{ fontFamily: "'Cairo', sans-serif", fontWeight: 900, letterSpacing: '0.02em' }}>
+          <span className="gold-shimmer-text">بيتك</span> أقرب بخطوة
         </h1>
 
         {/* وصف مختصر على الجوال */}
-        <p className="mt-2 sm:mt-4 text-sm sm:text-lg md:text-xl text-[#F3E7C9] max-w-3xl mx-auto leading-relaxed">
-          <span className="sm:hidden">منصة عالمية للبحث عن البيوت</span>
-          <span className="hidden sm:inline">منصة عالمية للبحث عن البيوت بسهولة وأمان</span>
+        <p className="mt-4 sm:mt-6 text-mobile-base sm:text-lg md:text-xl text-[#F3E7C9] max-w-3xl mx-auto leading-relaxed">
+          منصة عالمية للبحث عن البيوت بسهولة وأمان
         </p>
 
         {/* صندوق البحث السريع - مُحسَّن للجوال */}
-        <div className="mt-6 sm:mt-10 max-w-3xl mx-auto bg-white/95 backdrop-blur-sm rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-2xl flex flex-col md:flex-row items-center gap-2 sm:gap-3 border border-gold/20">
+        <div className="mt-6 sm:mt-10 max-w-3xl mx-auto bg-white/95 backdrop-blur-sm rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-2xl flex flex-col md:flex-row items-center gap-3 sm:gap-4 border border-gold/20">
           <Input
             placeholder="ابحث عن مدينة أو حي..."
-            className="flex-1 h-12 sm:h-12 text-base sm:text-lg text-black rounded-xl sm:rounded-2xl border border-[#E0D4B0] focus:border-gold focus:ring-2 focus:ring-gold/30 transition-all"
+            className="flex-1 min-h-[48px] sm:min-h-[56px] text-mobile-base sm:text-lg text-black rounded-xl sm:rounded-2xl border-2 border-[#E0D4B0] focus:border-gold focus:ring-2 focus:ring-gold/30 transition-all touch-manipulation"
           />
           <Link href="/search" className="w-full md:w-auto">
-            <Button className="h-12 w-full md:w-auto px-6 sm:px-8 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#D4AF37] to-[#E8C882] text-[#002244] hover:shadow-lg hover:shadow-gold/30 active:scale-[0.98] transition-all duration-300 font-bold text-base">
-              <SearchIcon className="w-5 h-5 ml-2" />
+            <Button className="min-h-[48px] sm:min-h-[56px] w-full md:w-auto px-6 sm:px-8 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#D4AF37] to-[#E8C882] text-[#002244] hover:shadow-lg hover:shadow-gold/30 active:scale-95 transition-all duration-300 font-bold text-mobile-base sm:text-lg touch-manipulation">
+              <SearchIcon className="w-5 h-5 sm:w-6 sm:h-6 ml-2" />
               بحث
             </Button>
           </Link>
         </div>
         
-        {/* إحصائيات سريعة - أصغر على الجوال */}
-        <div className="mt-6 sm:mt-12 flex justify-center gap-4 sm:gap-8">
+        {/* إحصائيات سريعة - محسّنة للجوال */}
+        <div className="mt-8 sm:mt-12 flex justify-center gap-6 sm:gap-8">
           <div className="text-center">
-            <div className="text-xl sm:text-3xl font-bold text-gold">+10K</div>
-            <div className="text-xs sm:text-sm text-white/70">عقار</div>
+            <div className="text-mobile-2xl sm:text-3xl font-bold text-gold">+10K</div>
+            <div className="text-mobile-sm sm:text-sm text-white/70 mt-1">عقار</div>
           </div>
           <div className="text-center">
-            <div className="text-xl sm:text-3xl font-bold text-gold">+5K</div>
-            <div className="text-xs sm:text-sm text-white/70">عميل</div>
+            <div className="text-mobile-2xl sm:text-3xl font-bold text-gold">+5K</div>
+            <div className="text-mobile-sm sm:text-sm text-white/70 mt-1">عميل</div>
           </div>
           <div className="text-center">
-            <div className="text-xl sm:text-3xl font-bold text-gold">+50</div>
-            <div className="text-xs sm:text-sm text-white/70">مدينة</div>
+            <div className="text-mobile-2xl sm:text-3xl font-bold text-gold">+50</div>
+            <div className="text-mobile-sm sm:text-sm text-white/70 mt-1">مدينة</div>
           </div>
         </div>
       </div>
@@ -146,30 +144,30 @@ function HeroSection() {
 
 function CityCardsSection() {
   return (
-    <section className="relative py-10 sm:py-20 px-4 sm:px-6 bg-[#F7F1E5]" dir="rtl">
+    <section className="relative py-12 sm:py-20 px-4 sm:px-6 bg-[#F7F1E5]" dir="rtl">
       <div className="max-w-7xl mx-auto">
-        <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-center mb-6 sm:mb-12 text-[#003366]">
+        <h2 className="text-mobile-2xl sm:text-3xl md:text-4xl font-extrabold text-center mb-8 sm:mb-12 text-[#003366]">
           المدن الأكثر طلباً
         </h2>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6">
           {cities.map((city) => (
             <Link
               key={city.title}
               href={`/search?city=${encodeURIComponent(city.title)}`}
-              className="relative bg-white rounded-2xl sm:rounded-3xl overflow-hidden shadow-lg hover:shadow-xl hover:-translate-y-1 active:scale-[0.98] transition-all duration-300 group touch-manipulation"
+              className="relative bg-white rounded-2xl sm:rounded-3xl overflow-hidden shadow-lg hover:shadow-xl hover:-translate-y-2 active:scale-95 transition-all duration-300 group touch-manipulation"
             >
-              <div className="relative aspect-[4/3] overflow-hidden">
+              <div className="relative aspect-[16/9] overflow-hidden min-h-[200px]">
                 <Image
                   src={city.img}
                   alt={city.title}
                   fill
-                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 20vw"
                   className="object-cover group-hover:scale-105 transition duration-300"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
               </div>
-              <div className="p-3 sm:p-4 text-center font-bold text-sm sm:text-lg text-[#003366] bg-white">
+              <div className="p-4 sm:p-5 text-center font-bold text-mobile-lg sm:text-lg text-[#003366] bg-white min-h-[64px] flex items-center justify-center">
                 {city.title}
               </div>
             </Link>
@@ -308,17 +306,17 @@ function FeaturedPropertiesSection() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-10">
             <div>
-              <p className="text-xs font-semibold text-[#D4AF37] mb-1 flex items-center gap-1">
-                <Crown className="w-4 h-4" /> الاختيار الأفضل
+              <p className="text-mobile-sm font-semibold text-[#D4AF37] mb-2 flex items-center gap-1.5">
+                <Crown className="w-5 h-5" /> الاختيار الأفضل
               </p>
-              <h2 className="text-3xl md:text-4xl font-extrabold text-[#003366] mb-2">
+              <h2 className="text-mobile-2xl sm:text-3xl md:text-4xl font-extrabold text-[#003366] mb-3">
                 نخبة العقارات المختارة
               </h2>
-              <p className="text-sm text-slate-600 flex items-center gap-2 flex-wrap">
+              <p className="text-mobile-sm sm:text-base text-slate-600 flex items-center gap-2 flex-wrap">
                 <span>خانات حصرية لرجال الأعمال والمستثمرين</span>
                 {locationStatus === 'success' && (
-                  <span className="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
-                    <Navigation className="w-3 h-3" />
+                  <span className="inline-flex items-center gap-1.5 text-mobile-xs bg-green-100 text-green-700 px-3 py-1.5 rounded-full">
+                    <Navigation className="w-4 h-4" />
                     مرتبة حسب قربك
                   </span>
                 )}
@@ -326,14 +324,14 @@ function FeaturedPropertiesSection() {
             </div>
             <Link
               href="/upgrade"
-              className="px-6 py-3 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#001A33] text-sm font-bold hover:shadow-lg transition flex items-center gap-2"
+              className="min-h-[48px] px-6 py-3 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#001A33] text-mobile-base font-bold hover:shadow-lg active:scale-95 transition flex items-center gap-2 touch-manipulation"
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-5 h-5" />
               احجز خانتك الآن
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {displaySlots.map((slot) => (
               slot.type === 'property' ? (
                 // عقار حقيقي
@@ -342,7 +340,7 @@ function FeaturedPropertiesSection() {
                   href={`/listing/${slot.data.id}`}
                   className="relative bg-[#FBF7F0] rounded-3xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-2 focus:shadow-xl focus:-translate-y-2 focus:outline-none focus:ring-4 focus:ring-[#D4AF37]/50 transition-all duration-300 cursor-pointer group"
                 >
-                  <div className="relative h-52">
+                  <div className="relative h-[240px] sm:h-52">
                     <Image
                       src={getImageUrl(slot.data.cover_image || slot.data.image_url) || '/images/property1.jpg'}
                       alt={slot.data.title}
@@ -352,34 +350,38 @@ function FeaturedPropertiesSection() {
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#001A33]/90 via-[#001A33]/30 to-transparent" />
                     
-                    <span className="absolute top-3 right-3 bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#001A33] text-xs px-3 py-1 rounded-full font-bold flex items-center gap-1">
-                      <Star className="w-3 h-3" />
+                    <span 
+                      className="absolute top-3 right-3 bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#001A33] text-mobile-xs px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5 select-none"
+                      onContextMenu={(e) => e.preventDefault()}
+                      style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+                    >
+                      <Star className="w-4 h-4" />
                       نخبة
                     </span>
 
                     {slot.data.distance !== undefined && (
-                      <span className="absolute top-3 left-3 bg-white/90 text-[#003366] text-xs px-2 py-1 rounded-full font-medium flex items-center gap-1">
-                        <MapPin className="w-3 h-3" />
+                      <span className="absolute top-3 left-3 bg-white/90 text-[#003366] text-mobile-xs px-2.5 py-1.5 rounded-full font-medium flex items-center gap-1.5">
+                        <MapPin className="w-4 h-4" />
                         {formatDistance(slot.data.distance)}
                       </span>
                     )}
 
-                    <div className="absolute bottom-0 left-0 right-0 p-4">
-                      <h3 className="text-white font-bold text-lg mb-1 drop-shadow-lg line-clamp-1">
+                    <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-5">
+                      <h3 className="text-white font-bold text-mobile-lg sm:text-lg mb-2 drop-shadow-lg line-clamp-1">
                         {slot.data.title}
                       </h3>
-                      <p className="text-white/80 text-sm flex items-center gap-1">
-                        <MapPin className="w-3 h-3" />
+                      <p className="text-white/80 text-mobile-sm flex items-center gap-1.5">
+                        <MapPin className="w-4 h-4" />
                         {slot.data.city} - {slot.data.district}
                       </p>
                     </div>
                   </div>
 
-                  <div className="p-4 bg-gradient-to-l from-[#001A33] to-[#002845] flex justify-between items-center">
-                    <p className="text-[#D4AF37] font-bold text-lg">
+                  <div className="p-4 sm:p-5 bg-gradient-to-l from-[#001A33] to-[#002845] flex justify-between items-center">
+                    <p className="text-[#D4AF37] font-bold text-mobile-lg sm:text-lg">
                       {formatPrice(slot.data.price)} ر.س
                     </p>
-                    <div className="flex items-center gap-3 text-white/70 text-xs">
+                    <div className="flex items-center gap-3 text-white/70 text-mobile-sm">
                       <span>{slot.data.land_area} م²</span>
                       <span>{slot.data.bedrooms} غرف</span>
                     </div>
@@ -396,7 +398,7 @@ function FeaturedPropertiesSection() {
                   onKeyDown={(e) => handleKeyDown(e, slot.data)}
                   className="relative bg-[#FBF7F0] rounded-3xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-2 focus:shadow-xl focus:-translate-y-2 focus:outline-none focus:ring-4 focus:ring-[#D4AF37]/50 transition-all duration-300 cursor-pointer group"
                 >
-                  <div className="relative h-52">
+                  <div className="relative h-[240px] sm:h-52">
                     <Image
                       src={slot.data.img}
                       alt={slot.data.tagline}
@@ -406,26 +408,26 @@ function FeaturedPropertiesSection() {
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#001A33]/90 via-[#001A33]/50 to-transparent" />
                     
-                    <span className="absolute top-3 right-3 bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#001A33] text-xs px-3 py-1 rounded-full font-bold flex items-center gap-1">
-                      <Star className="w-3 h-3" />
+                    <span className="absolute top-3 right-3 bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#001A33] text-mobile-xs px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5">
+                      <Star className="w-4 h-4" />
                       {slot.data.highlight}
                     </span>
 
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-4">
-                      <div className="w-14 h-14 rounded-full bg-[#D4AF37]/20 border-2 border-dashed border-[#D4AF37] flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                        <Crown className="w-7 h-7 text-[#D4AF37]" />
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-4 sm:p-6">
+                      <div className="w-16 h-16 sm:w-14 sm:h-14 rounded-full bg-[#D4AF37]/20 border-2 border-dashed border-[#D4AF37] flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                        <Crown className="w-8 h-8 sm:w-7 sm:h-7 text-[#D4AF37]" />
                       </div>
-                      <h3 className="text-white font-bold text-lg mb-1 drop-shadow-lg">
+                      <h3 className="text-white font-bold text-mobile-lg sm:text-lg mb-2 drop-shadow-lg">
                         {slot.data.tagline}
                       </h3>
-                      <p className="text-[#D4AF37] text-xs font-medium">
+                      <p className="text-[#D4AF37] text-mobile-sm font-medium">
                         اضغط للتفاصيل
                       </p>
                     </div>
                   </div>
 
-                  <div className="p-4 bg-gradient-to-l from-[#001A33] to-[#002845] text-center">
-                    <p className="text-white/80 text-xs">
+                  <div className="p-4 sm:p-5 bg-gradient-to-l from-[#001A33] to-[#002845] text-center">
+                    <p className="text-white/80 text-mobile-sm">
                       خانة رقم <span className="text-[#D4AF37] font-bold">#{slot.data.id}</span> • متاحة الآن
                     </p>
                   </div>

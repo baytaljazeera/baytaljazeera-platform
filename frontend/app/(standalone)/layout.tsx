@@ -1,8 +1,7 @@
+"use client";
+
 import nextDynamic from "next/dynamic";
 import "../globals.css";
-
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 const ToasterClient = nextDynamic(
   () => import("@/components/ToasterClient"),

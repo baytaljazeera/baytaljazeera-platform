@@ -23,6 +23,7 @@ type Listing = {
   bedrooms?: number;
   bathrooms?: number;
   image_url?: string;
+  images?: string[]; // إضافة images array
 };
 
 export default function FavoritesPage() {
@@ -112,9 +113,13 @@ export default function FavoritesPage() {
                 key={listing.id}
                 className="bg-white rounded-2xl overflow-hidden shadow-lg border border-slate-100 group"
               >
-                <div className="relative h-48">
+                <Link href={`/listing/${listing.id}`} className="relative h-48 block">
                   <Image
-                    src={getImageUrl(listing.image_url) || `/images/property${(parseInt(listing.id.slice(-2), 16) % 10) + 1}.jpg`}
+                    src={getImageUrl(
+                      listing.images && listing.images.length > 0 
+                        ? listing.images[0] 
+                        : listing.image_url
+                    ) || `/images/property${(parseInt(listing.id.slice(-2), 16) % 10) + 1}.jpg`}
                     alt={listing.title}
                     fill
                     className="object-cover"
@@ -123,17 +128,21 @@ export default function FavoritesPage() {
                     }}
                   />
                   <button
-                    onClick={() => removeFavorite(listing.id)}
-                    className="absolute top-3 left-3 bg-white/90 p-2 rounded-full shadow hover:bg-red-50 transition"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      removeFavorite(listing.id);
+                    }}
+                    className="absolute top-3 left-3 bg-white/90 p-2 rounded-full shadow hover:bg-red-50 transition z-10"
                   >
                     <Trash2 className="w-4 h-4 text-red-500" />
                   </button>
                   {listing.type && (
-                    <span className="absolute top-3 right-3 bg-[#002845]/80 text-white text-xs px-3 py-1 rounded-full">
+                    <span className="absolute top-3 right-3 bg-[#002845]/80 text-white text-xs px-3 py-1 rounded-full z-10">
                       {listing.type}
                     </span>
                   )}
-                </div>
+                </Link>
 
                 <div className="p-4 space-y-2">
                   <h3 className="font-bold text-[#002845] line-clamp-1">{listing.title}</h3>

@@ -14,6 +14,7 @@ import {
 import { useAuthStore } from "@/lib/stores/authStore";
 import { useSiteSettingsStore } from "@/lib/stores/siteSettingsStore";
 import LogoAdminModal from "./LogoAdminModal";
+import MobileBottomSheet from "./MobileBottomSheet";
 
 type Notification = {
   id: number;
@@ -45,6 +46,7 @@ function NavbarContent() {
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [ambassadorEnabled, setAmbassadorEnabled] = useState(true);
   const notificationRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
   
   // شارات قائمة المستخدم
   const [userBadges, setUserBadges] = useState({
@@ -153,7 +155,7 @@ function NavbarContent() {
     fetchNotifications();
   }, [showNotificationDropdown, isAuthenticated]);
 
-  // Close dropdown when clicking outside
+  // Close notification dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
@@ -165,6 +167,19 @@ function NavbarContent() {
     }
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showNotificationDropdown]);
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    }
+    if (showUserMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showUserMenu]);
 
   const markNotificationAsRead = async (id: number) => {
     try {
@@ -296,11 +311,12 @@ function NavbarContent() {
           <div className="relative" ref={notificationRef}>
             <button
               onClick={() => setShowNotificationDropdown(!showNotificationDropdown)}
-              className="relative p-2.5 rounded-xl bg-white/80 hover:bg-white transition-all shadow-sm hover:shadow-md border border-slate-100"
+              className="relative min-h-[44px] min-w-[44px] flex items-center justify-center p-2.5 rounded-xl bg-white/80 hover:bg-white transition-all shadow-sm hover:shadow-md border border-slate-100 touch-manipulation active:scale-95"
+              aria-label={`الإشعارات${unreadNotifications > 0 ? ` (${unreadNotifications} غير مقروء)` : ''}`}
             >
-              <Bell className="w-5 h-5 text-[#003366]" />
+              <Bell className="w-6 h-6 text-[#003366]" />
               {unreadNotifications > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center animate-pulse">
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-mobile-xs font-bold min-w-[22px] h-[22px] rounded-full flex items-center justify-center animate-pulse px-1.5">
                   {unreadNotifications > 99 ? '99+' : unreadNotifications}
                 </span>
               )}
@@ -313,7 +329,7 @@ function NavbarContent() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -10, scale: 0.95 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute left-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-[50000]"
+                  className="absolute left-0 mt-2 w-[320px] max-w-[calc(100vw-32px)] bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-[50000]"
                 >
                   {/* Header */}
                   <div className="px-4 py-3 bg-gradient-to-l from-[#003366] to-[#01375e] text-white flex items-center justify-between">
@@ -377,10 +393,11 @@ function NavbarContent() {
                               e.stopPropagation();
                               markNotificationAsRead(notification.id);
                             }}
-                            className="p-1.5 rounded-full hover:bg-green-100 text-slate-400 hover:text-green-600 transition shrink-0"
+                            className="min-h-[44px] min-w-[44px] flex items-center justify-center p-1.5 rounded-full hover:bg-green-100 text-slate-400 hover:text-green-600 transition shrink-0 touch-manipulation active:scale-95"
                             title="تحديد كمقروء"
+                            aria-label="تحديد كمقروء"
                           >
-                            <Check className="w-4 h-4" />
+                            <Check className="w-5 h-5" />
                           </button>
                         </div>
                       ))
@@ -402,7 +419,7 @@ function NavbarContent() {
             </AnimatePresence>
           </div>
           
-          <div className="relative">
+          <div className="relative" ref={userMenuRef}>
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#003366] to-[#01375e] text-white hover:from-[#01375e] hover:to-[#003366] transition-all shadow-md"
@@ -451,38 +468,38 @@ function NavbarContent() {
                         <Icon className="w-4 h-4 text-[#D4AF37]" />
                         <span>{label}</span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        {/* شارة مقبول - أخضر */}
-                        {badgeApproved !== undefined && badgeApproved > 0 && (
-                          <span className="bg-green-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                            {badgeApproved > 99 ? '99+' : badgeApproved}
-                          </span>
-                        )}
-                        {/* شارة قيد الانتظار - أصفر */}
-                        {badgePending !== undefined && badgePending > 0 && (
-                          <span className="bg-yellow-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                            {badgePending > 99 ? '99+' : badgePending}
-                          </span>
-                        )}
-                        {/* شارة غير مقبول - أحمر */}
-                        {badgeRejected !== undefined && badgeRejected > 0 && (
-                          <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                            {badgeRejected > 99 ? '99+' : badgeRejected}
-                          </span>
-                        )}
-                        {/* شارة جديد - أحمر */}
-                        {badgeNew !== undefined && badgeNew > 0 && (
-                          <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center animate-pulse">
-                            {badgeNew > 99 ? '99+' : badgeNew}
-                          </span>
-                        )}
-                        {/* شارة عادية (للرسائل والإشعارات) */}
-                        {badge !== undefined && badge > 0 && (
-                          <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                            {badge > 99 ? '99+' : badge}
-                          </span>
-                        )}
-                      </div>
+                  <div className="flex items-center gap-1.5">
+                    {/* شارة مقبول - أخضر */}
+                    {badgeApproved !== undefined && badgeApproved > 0 && (
+                      <span className="bg-green-500 text-white text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center">
+                        {badgeApproved > 99 ? '99+' : badgeApproved}
+                      </span>
+                    )}
+                    {/* شارة قيد الانتظار - أصفر */}
+                    {badgePending !== undefined && badgePending > 0 && (
+                      <span className="bg-yellow-500 text-black text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center">
+                        {badgePending > 99 ? '99+' : badgePending}
+                      </span>
+                    )}
+                    {/* شارة غير مقبول - أحمر */}
+                    {badgeRejected !== undefined && badgeRejected > 0 && (
+                      <span className="bg-red-500 text-white text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center">
+                        {badgeRejected > 99 ? '99+' : badgeRejected}
+                      </span>
+                    )}
+                    {/* شارة جديد - أحمر */}
+                    {badgeNew !== undefined && badgeNew > 0 && (
+                      <span className="bg-red-500 text-white text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center animate-pulse">
+                        {badgeNew > 99 ? '99+' : badgeNew}
+                      </span>
+                    )}
+                    {/* شارة عادية (للرسائل والإشعارات) */}
+                    {badge !== undefined && badge > 0 && (
+                      <span className="bg-red-500 text-white text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center">
+                        {badge > 99 ? '99+' : badge}
+                      </span>
+                    )}
+                  </div>
                     </Link>
                   );
                 })}
@@ -640,7 +657,7 @@ function NavbarContent() {
       />
 
       <header 
-        className="shadow-sm border-b border-slate-100 sticky top-0 z-[200]" 
+        className="shadow-sm border-b border-slate-100 sticky top-0 z-[200] bg-white/95 backdrop-blur-sm" 
         dir="rtl"
         style={{
           backgroundImage: "url('/patterns/card-pattern.png')",
@@ -648,12 +665,12 @@ function NavbarContent() {
           backgroundPosition: "center",
         }}
       >
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between h-14 sm:h-16 lg:h-20">
-          <div className="flex items-center gap-2 sm:gap-3">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between h-12 sm:h-14 lg:h-16 gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 flex-shrink min-w-0 site-name-container">
             <button
               type="button"
               onClick={() => setAdminModalOpen(true)}
-              className="relative hover:opacity-90 transition group"
+              className="relative hover:opacity-90 transition group shrink-0"
               aria-label={`شعار ${siteSettings.siteName} - اضغط لفتح بوابة الإدارة`}
             >
               <Image
@@ -661,7 +678,7 @@ function NavbarContent() {
                 alt={`شعار ${siteSettings.siteName}`}
                 width={40}
                 height={40}
-                className="rounded-xl shadow-md group-hover:shadow-lg transition w-auto h-auto"
+                className="rounded-xl shadow-md group-hover:shadow-lg transition w-8 h-8 sm:w-10 sm:h-10"
                 priority
               />
               <div className="absolute -bottom-1 -right-1 w-3 h-3 sm:w-4 sm:h-4 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition">
@@ -670,9 +687,41 @@ function NavbarContent() {
             </button>
             <Link
               href="/"
-              className="text-lg sm:text-xl lg:text-2xl font-extrabold text-[#003366] tracking-tight hover:text-[#D4AF37] transition"
+              className="site-name-link text-base sm:text-lg md:text-xl lg:text-2xl font-extrabold text-[#003366] tracking-tight hover:text-[#D4AF37] transition whitespace-nowrap flex-shrink-0"
+              title={siteSettings.siteName}
             >
               {siteSettings.siteName}
+            </Link>
+          </div>
+
+          {/* Mobile: Fixed buttons in header */}
+          <div className="md:hidden flex items-center gap-1.5 ml-2 shrink-0">
+            {/* Map/List Toggle Button */}
+            {isSearchPage ? (
+              <Link
+                href={`/search?view=${nextView}`}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md hover:shadow-lg transition-all active:scale-95"
+              >
+                <SearchIcon className="w-4 h-4" />
+                <span className="text-xs font-semibold hidden sm:inline">{searchLabel}</span>
+              </Link>
+            ) : (
+              <Link
+                href="/search?view=map"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md hover:shadow-lg transition-all active:scale-95"
+              >
+                <Map className="w-4 h-4" />
+                <span className="text-xs font-semibold hidden sm:inline">الخريطة</span>
+              </Link>
+            )}
+            
+            {/* Add Listing Button */}
+            <Link
+              href="/listings/new"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md hover:shadow-lg transition-all active:scale-95 font-semibold"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span className="text-xs hidden sm:inline">إضافة</span>
             </Link>
           </div>
 
@@ -720,8 +769,9 @@ function NavbarContent() {
           {renderAuthSection()}
         </nav>
 
+        {/* Mobile Menu Button */}
         <button
-          className="md:hidden p-2 rounded-lg hover:bg-slate-100 transition"
+          className="md:hidden p-2 rounded-lg hover:bg-slate-100 transition shrink-0"
           onClick={() => setShowMobileMenu(!showMobileMenu)}
         >
           {showMobileMenu ? (
@@ -732,74 +782,33 @@ function NavbarContent() {
         </button>
       </div>
 
-      <AnimatePresence>
-        {showMobileMenu && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="md:hidden bg-white border-t border-slate-100 max-h-[calc(100vh-60px)] overflow-y-auto"
-            style={{ WebkitOverflowScrolling: 'touch' }}
-          >
-            <nav className="px-4 py-4 space-y-2">
-              <div className="flex items-center bg-[#E8F5F0] rounded-xl p-1 mb-2 border border-[#5FBDAA]/30">
-                <Link
-                  href="/search?view=list"
-                  onClick={() => setShowMobileMenu(false)}
-                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg transition-all duration-300 ${
-                    isSearchPage && currentView === 'list'
-                      ? 'bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md' 
-                      : 'text-[#003366]'
-                  }`}
-                >
-                  <List className="w-5 h-5" />
-                  <span className="font-medium">القائمة</span>
-                </Link>
-                <Link
-                  href="/search?view=map"
-                  onClick={() => setShowMobileMenu(false)}
-                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg transition-all duration-300 ${
-                    isSearchPage && currentView === 'map'
-                      ? 'bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md' 
-                      : 'text-[#003366]'
-                  }`}
-                >
-                  <Map className="w-5 h-5" />
-                  <span className="font-medium">الخريطة</span>
-                </Link>
-              </div>
+      <MobileBottomSheet
+        isOpen={showMobileMenu}
+        onClose={() => setShowMobileMenu(false)}
+        title="القائمة الرئيسية"
+        maxHeight="70vh"
+      >
+        <nav className="space-y-2">
+          {staticNavItems.map(({ href, label, icon: Icon }) => (
+            <Link
+              key={href}
+              href={href}
+              onClick={() => setShowMobileMenu(false)}
+              className={`flex items-center gap-3 min-h-[48px] px-4 py-3 rounded-xl transition-all duration-300 bg-[#E8F5F0] border border-[#5FBDAA]/30 touch-manipulation ${
+                pathname === href 
+                  ? 'bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-sm' 
+                  : 'hover:bg-[#D4F1E8] active:scale-95'
+              }`}
+            >
+              <Icon className={`w-6 h-6 transition-colors ${pathname === href ? 'text-white' : 'text-[#4DB6A0]'}`} />
+              <span className={`text-mobile-base font-semibold ${pathname === href ? 'text-white' : 'text-[#003366]'}`}>{label}</span>
+            </Link>
+          ))}
 
-              {staticNavItems.map(({ href, label, icon: Icon }) => (
-                <Link
-                  key={href}
-                  href={href}
-                  onClick={() => setShowMobileMenu(false)}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 bg-[#E8F5F0] border border-[#5FBDAA]/30 ${
-                    pathname === href 
-                      ? 'bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-sm' 
-                      : 'hover:bg-[#D4F1E8]'
-                  }`}
-                >
-                  <Icon className={`w-5 h-5 transition-colors ${pathname === href ? 'text-white' : 'text-[#4DB6A0]'}`} />
-                  <span className={`font-medium ${pathname === href ? 'text-white' : 'text-[#003366]'}`}>{label}</span>
-                </Link>
-              ))}
+          {renderMobileAuthSection()}
+        </nav>
+      </MobileBottomSheet>
 
-              {renderMobileAuthSection()}
-            </nav>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {(showUserMenu || showNotificationDropdown) && (
-        <div 
-          className="fixed inset-0 z-40" 
-          onClick={() => {
-            setShowUserMenu(false);
-            setShowNotificationDropdown(false);
-          }}
-        />
-      )}
       </header>
     </>
   );

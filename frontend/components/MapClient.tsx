@@ -94,10 +94,19 @@ const CITY_CENTER: Record<string, LatLngExpression> = {
 function getPos(listing: MapListing): LatLngExpression | null {
   const lat = typeof listing.latitude === "string" ? parseFloat(listing.latitude) : listing.latitude;
   const lng = typeof listing.longitude === "string" ? parseFloat(listing.longitude) : listing.longitude;
-  if (typeof lat === "number" && typeof lng === "number" && !isNaN(lat) && !isNaN(lng)) {
-    return [lat, lng];
+  
+  // التحقق من صحة الإحداثيات ونطاقها
+  if (typeof lat !== "number" || typeof lng !== "number" || isNaN(lat) || isNaN(lng)) {
+    return null;
   }
-  return null;
+  
+  // التحقق من أن الإحداثيات ضمن النطاق الصحيح
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    console.warn(`Invalid coordinates for listing ${listing.id}:`, { lat, lng });
+    return null;
+  }
+  
+  return [lat, lng];
 }
 
 function formatPrice(price: number | undefined): string {
@@ -180,9 +189,37 @@ function FitToView({ listings, selectedCity, selectedListingId }: MapClientProps
   useEffect(() => {
     if (!map || !mapCenter) return;
     
+    // التحقق من صحة الإحداثيات قبل استخدامها
+    const [lat, lng] = mapCenter;
+    if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
+      console.warn('Invalid mapCenter coordinates:', mapCenter);
+      // إعادة تعيين إلى القيمة الافتراضية الآمنة
+      map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+      return;
+    }
+    
+    // التحقق من أن الإحداثيات ضمن النطاق الصحيح
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      console.warn('MapCenter coordinates out of range:', mapCenter);
+      // إعادة تعيين إلى القيمة الافتراضية الآمنة
+      map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+      return;
+    }
+    
+    // التحقق من صحة mapZoom
+    const safeZoom = (typeof mapZoom === 'number' && !isNaN(mapZoom) && mapZoom >= 1 && mapZoom <= 20) 
+      ? mapZoom 
+      : DEFAULT_ZOOM;
+    
     if (mapVersion > lastVersionRef.current) {
       lastVersionRef.current = mapVersion;
-      map.flyTo(mapCenter as LatLngExpression, mapZoom, { duration: 0.8 });
+      try {
+        map.flyTo([lat, lng], safeZoom, { duration: 0.8 });
+      } catch (error) {
+        console.error('Error in map.flyTo:', error);
+        // Fallback إلى setView في حالة الخطأ
+        map.setView([lat, lng], safeZoom);
+      }
     }
   }, [map, mapCenter, mapZoom, mapVersion]);
 
@@ -192,7 +229,24 @@ function FitToView({ listings, selectedCity, selectedListingId }: MapClientProps
 
     if (selectedCity && selectedCity !== lastCityRef.current && CITY_CENTER[selectedCity]) {
       lastCityRef.current = selectedCity;
-      map.flyTo(CITY_CENTER[selectedCity], 12, { duration: 0.5, easeLinearity: 0.3 });
+      const cityCenter = CITY_CENTER[selectedCity];
+      // التحقق من صحة إحداثيات المدينة
+      if (Array.isArray(cityCenter) && cityCenter.length === 2) {
+        const [lat, lng] = cityCenter;
+        if (typeof lat === 'number' && typeof lng === 'number' && 
+            !isNaN(lat) && !isNaN(lng) &&
+            lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          try {
+            map.flyTo(cityCenter, 12, { duration: 0.5, easeLinearity: 0.3 });
+          } catch (error) {
+            console.error('Error flying to city:', error);
+            map.setView(cityCenter, 12);
+          }
+        } else {
+          console.warn('Invalid city center coordinates:', cityCenter);
+          map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+        }
+      }
       return;
     }
 
@@ -376,7 +430,43 @@ function ListingPopupCard({
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
   const [lastTap, setLastTap] = useState<number>(0);
   const [imgError, setImgError] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(listing.isFavorite || false);
+  const favoriteButtonRef = useRef<HTMLButtonElement>(null);
   const router = useRouter();
+  
+  // Update isFavorite when listing.isFavorite changes
+  useEffect(() => {
+    setIsFavorite(listing.isFavorite || false);
+  }, [listing.isFavorite]);
+  
+  // دالة لتحديث المفضلة - نستخدمها في جميع الأحداث
+  const handleToggleFavorite = useCallback((e?: React.MouseEvent | React.TouchEvent) => {
+    if (e) {
+      // منع الانتشار إلى Leaflet فقط - لا نمنع السلوك الافتراضي
+      e.stopPropagation();
+      if (e.nativeEvent) {
+        e.nativeEvent.stopImmediatePropagation();
+        e.nativeEvent.stopPropagation();
+      }
+    }
+    
+    // تحديث الحالة فوراً - بدون أي تأخير أو popup
+    const newFavoriteState = !isFavorite;
+    setIsFavorite(newFavoriteState);
+    listing.isFavorite = newFavoriteState;
+    
+    // إرسال الطلب في الخلفية
+    if (onToggleFavorite) {
+      onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
+        console.error("Error toggling favorite:", error);
+        // Rollback on error
+        setIsFavorite(!newFavoriteState);
+        listing.isFavorite = !newFavoriteState;
+      });
+    }
+    
+    return false;
+  }, [isFavorite, listing, onToggleFavorite]);
 
   const allImages = (
     listing.images && listing.images.length > 0
@@ -483,11 +573,40 @@ function ListingPopupCard({
 
   const showNavButtons = hasImages && allImages.length > 1;
 
+  const popupContentRef = useRef<HTMLDivElement>(null);
+  
+  // استخدام Leaflet's disableClickPropagation لمنع Leaflet من اعتراض الأحداث
+  useEffect(() => {
+    if (popupContentRef.current) {
+      L.DomEvent.disableClickPropagation(popupContentRef.current);
+      L.DomEvent.disableScrollPropagation(popupContentRef.current);
+    }
+  }, []);
+
   return (
     <div
+      ref={popupContentRef}
       dir="rtl"
-      onMouseDown={stopPropagation}
-      onClick={stopPropagation}
+      onMouseDown={(e) => {
+        // السماح للأحداث بالوصول إلى زر المفضلة - لا نمنعها
+        const target = e.target as HTMLElement;
+        if (target.closest('.popup-favorite-btn')) {
+          // لا نفعل شيء - نترك الأحداث تصل إلى الزر
+          return;
+        }
+        // منع الانتشار فقط للأحداث الأخرى
+        stopPropagation(e);
+      }}
+      onClick={(e) => {
+        // السماح للأحداث بالوصول إلى زر المفضلة - لا نمنعها
+        const target = e.target as HTMLElement;
+        if (target.closest('.popup-favorite-btn')) {
+          // لا نفعل شيء - نترك الأحداث تصل إلى الزر
+          return;
+        }
+        // منع الانتشار فقط للأحداث الأخرى
+        stopPropagation(e);
+      }}
       onDoubleClick={stopPropagation}
       style={{
         width: 300,
@@ -497,6 +616,7 @@ function ListingPopupCard({
         boxShadow: "0 10px 25px rgba(0,0,0,0.18)",
         border: "2px solid #D4AF37",
         cursor: "default",
+        position: "relative",
       }}
     >
       {/* منطقة الصورة / السلايدر - wrapper خارجي للأزرار - double click/tap للتفاصيل */}
@@ -572,32 +692,105 @@ function ListingPopupCard({
           {/* زر القلب - أعلى يمين */}
           {showFavoriteButton && (
             <button
+              ref={favoriteButtonRef}
               type="button"
               className="popup-favorite-btn"
+              onMouseDown={(e) => {
+                // منع الانتشار إلى Leaflet فقط
+                e.stopPropagation();
+                if (e.nativeEvent) {
+                  e.nativeEvent.stopImmediatePropagation();
+                  e.nativeEvent.stopPropagation();
+                }
+                // تحديث الحالة فوراً بدون preventDefault
+                const newFavoriteState = !isFavorite;
+                setIsFavorite(newFavoriteState);
+                listing.isFavorite = newFavoriteState;
+                // إرسال الطلب في الخلفية
+                if (onToggleFavorite) {
+                  onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
+                    console.error("Error toggling favorite:", error);
+                    setIsFavorite(!newFavoriteState);
+                    listing.isFavorite = !newFavoriteState;
+                  });
+                }
+                return false;
+              }}
               onClick={(e) => {
+                // منع الانتشار إلى Leaflet فقط
+                e.stopPropagation();
+                if (e.nativeEvent) {
+                  e.nativeEvent.stopImmediatePropagation();
+                  e.nativeEvent.stopPropagation();
+                }
+                // تحديث الحالة فوراً بدون preventDefault
+                const newFavoriteState = !isFavorite;
+                setIsFavorite(newFavoriteState);
+                listing.isFavorite = newFavoriteState;
+                // إرسال الطلب في الخلفية
+                if (onToggleFavorite) {
+                  onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
+                    console.error("Error toggling favorite:", error);
+                    setIsFavorite(!newFavoriteState);
+                    listing.isFavorite = !newFavoriteState;
+                  });
+                }
+                return false;
+              }}
+              onTouchStart={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                onToggleFavorite?.(listing.id, !listing.isFavorite);
+                if (e.nativeEvent) {
+                  e.nativeEvent.stopImmediatePropagation();
+                  e.nativeEvent.stopPropagation();
+                }
+                handleToggleFavorite(e);
+                return false;
               }}
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                e.nativeEvent.stopImmediatePropagation();
+                if (e.cancelable) {
+                  e.cancelBubble = true;
+                }
+                return false;
+              }}
               style={{
-                width: 32,
-                height: 32,
+                width: 36,
+                height: 36,
+                minWidth: 36,
+                minHeight: 36,
                 borderRadius: "50%",
                 border: "2px solid #fff",
-                backgroundColor: listing.isFavorite ? "#ef4444" : "rgba(0,0,0,0.4)",
+                backgroundColor: isFavorite ? "#ef4444" : "rgba(107, 114, 128, 0.7)", // رمادي افتراضي
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 cursor: "pointer",
                 flexShrink: 0,
+                zIndex: 10001,
+                position: "relative",
+                transition: "all 0.2s ease",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
               }}
+              onMouseEnter={(e) => {
+                if (!isFavorite) {
+                  e.currentTarget.style.backgroundColor = "rgba(107, 114, 128, 0.9)"; // رمادي أغمق عند hover
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = isFavorite ? "#ef4444" : "rgba(107, 114, 128, 0.7)"; // رمادي افتراضي
+              }}
+              title={isFavorite ? "إزالة من المفضلة" : "إضافة للمفضلة"}
             >
               <Heart 
-                size={16} 
-                fill={listing.isFavorite ? "#fff" : "none"}
-                color="#fff"
+                size={18} 
+                fill={isFavorite ? "#fff" : "none"}
+                color={isFavorite ? "#fff" : "#9ca3af"} // رمادي للقلب غير المحفوظ
+                style={{
+                  pointerEvents: "none",
+                }}
               />
             </button>
           )}
@@ -750,20 +943,46 @@ function ListingPopupCard({
       </div>
 
       {/* الجسم - معلومات العقار */}
-      <div style={{ padding: "10px 12px 12px 12px" }}>
+      <div style={{ padding: "10px 12px 12px 12px", direction: "rtl" }}>
         {/* السعر */}
         <div
           style={{
             fontSize: 14,
             fontWeight: 800,
             color: "#002845",
-            marginBottom: 4,
+            marginBottom: 2,
           }}
         >
           {priceText}
         </div>
+        {/* سعر الدولار أسفل السعر الأساسي */}
+        {(() => {
+          let numPrice: number | undefined;
+          if (typeof listing.price === "string") {
+            const parsed = parseFloat(listing.price);
+            if (!Number.isNaN(parsed)) numPrice = parsed;
+          } else if (typeof listing.price === "number") {
+            numPrice = listing.price;
+          }
+          if (numPrice && numPrice > 0) {
+            const usdPrice = numPrice / 3.75; // سعر الدولار = 3.75 ريال
+            return (
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 500,
+                  color: "#6b7280",
+                  marginBottom: 4,
+                }}
+              >
+                ≈ ${usdPrice.toLocaleString("en-US", { maximumFractionDigits: 0 })} USD
+              </div>
+            );
+          }
+          return null;
+        })()}
 
-        {/* المواصفات: المساحة – غرف – حمامات */}
+        {/* المواصفات: غرف – حمامات – مساحة */}
         <div
           style={{
             display: "flex",
@@ -771,14 +990,9 @@ function ListingPopupCard({
             fontSize: 11,
             color: "#4b5563",
             marginBottom: 4,
+            direction: "rtl",
           }}
         >
-          {listing.area != null && (
-            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-              <Square size={11} />
-              <span>{listing.area} م²</span>
-            </div>
-          )}
           {listing.bedrooms != null && (
             <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
               <BedDouble size={11} />
@@ -789,6 +1003,12 @@ function ListingPopupCard({
             <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
               <Bath size={11} />
               <span>{listing.bathrooms} حمام</span>
+            </div>
+          )}
+          {listing.area != null && (
+            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <Square size={11} />
+              <span>{listing.area} م²</span>
             </div>
           )}
         </div>
@@ -805,6 +1025,8 @@ function ListingPopupCard({
               WebkitLineClamp: 2,
               WebkitBoxOrient: "vertical" as const,
               overflow: "hidden",
+              direction: "rtl",
+              textAlign: "right",
             }}
           >
             {listing.title}
@@ -820,6 +1042,7 @@ function ListingPopupCard({
               gap: 4,
               fontSize: 11,
               color: "#6b7280",
+              direction: "rtl",
             }}
           >
             <MapPin size={12} />
@@ -866,9 +1089,47 @@ function ListingMarker({
       position={pos}
       ref={markerRef}
       icon={icon}
-      eventHandlers={{ click: () => onSelectListing?.(listing.id) }}
+      eventHandlers={{ 
+        click: (e) => {
+          // منع الانتقال إذا كان النقر على زر المفضلة
+          const target = e.originalEvent.target as HTMLElement;
+          if (target.closest('.popup-favorite-btn')) {
+            e.originalEvent.stopPropagation();
+            e.originalEvent.preventDefault();
+            e.originalEvent.stopImmediatePropagation();
+            return;
+          }
+          onSelectListing?.(listing.id);
+        }
+      }}
     >
-      <Popup className="clean-popup" maxWidth={280} minWidth={260}>
+      <Popup 
+        className="clean-popup" 
+        maxWidth={280} 
+        minWidth={260}
+        eventHandlers={{
+          click: (e) => {
+            // منع الانتقال عند النقر على زر المفضلة
+            const target = e.originalEvent.target as HTMLElement;
+            if (target.closest('.popup-favorite-btn')) {
+              e.originalEvent.stopPropagation();
+              e.originalEvent.preventDefault();
+              e.originalEvent.stopImmediatePropagation();
+              return false;
+            }
+          },
+          mousedown: (e) => {
+            // منع الانتقال عند mousedown على زر المفضلة
+            const target = e.originalEvent.target as HTMLElement;
+            if (target.closest('.popup-favorite-btn')) {
+              e.originalEvent.stopPropagation();
+              e.originalEvent.preventDefault();
+              e.originalEvent.stopImmediatePropagation();
+              return false;
+            }
+          }
+        }}
+      >
         <ListingPopupCard 
           listing={listing} 
           onToggleFavorite={onToggleFavorite}
@@ -962,7 +1223,19 @@ export default function MapClient({
     listings.filter((l) => {
       const lat = typeof l.latitude === "string" ? parseFloat(l.latitude) : l.latitude;
       const lng = typeof l.longitude === "string" ? parseFloat(l.longitude) : l.longitude;
-      return typeof lat === "number" && typeof lng === "number" && !isNaN(lat) && !isNaN(lng);
+      
+      // التحقق من صحة الإحداثيات ونطاقها
+      if (typeof lat !== "number" || typeof lng !== "number" || isNaN(lat) || isNaN(lng)) {
+        return false;
+      }
+      
+      // التحقق من أن الإحداثيات ضمن النطاق الصحيح
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        console.warn(`Invalid coordinates for listing ${l.id}:`, { lat, lng });
+        return false;
+      }
+      
+      return true;
     }),
     [listings]
   );

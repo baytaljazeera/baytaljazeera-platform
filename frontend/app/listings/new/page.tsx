@@ -13,7 +13,11 @@ import {
   BrainCircuit, ArrowLeft, Check, DollarSign, RefreshCw
 } from "lucide-react";
 import { toast } from "sonner";
+import { motion, AnimatePresence } from "framer-motion";
 import SliderInput from "@/components/SliderInput";
+import MobileInput from "@/components/ui/MobileInput";
+import MobileSelect from "@/components/ui/MobileSelect";
+import TouchButton from "@/components/ui/TouchButton";
 
 const LeafletLocationPicker = nextDynamic(
   () => import("@/components/LeafletLocationPicker"),
@@ -665,13 +669,42 @@ export default function NewListingPage() {
   // 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي (FFmpeg - مجاني) 
   async function handleGenerateVideo() {
     if (!form.propertyType) {
-      setVideoError("يرجى اختيار نوع العقار أولاً");
+      setVideoError("يرجى اختيار نوع العقار أولاً من الخطوة الأولى");
+      toast.error("يرجى اختيار نوع العقار أولاً", { duration: 3000 });
       return;
     }
 
     if (images.length === 0) {
       setVideoError("يرجى رفع صور العقار أولاً لتوليد الفيديو");
+      toast.error("يرجى رفع صور العقار أولاً", { duration: 3000 });
       return;
+    }
+    
+    // للباقات المتقدمة (aiSupportLevel >= 3): يجب اختيار صور
+    const aiSupportLevel = selectedBucket?.benefits?.aiSupportLevel ?? 0;
+    if (aiSupportLevel >= 3) {
+      if (selectedImagesForVideo.size === 0) {
+        setVideoError("يرجى اختيار صور أولاً لتوليد الفيديو");
+        toast.error("يرجى اختيار صور أولاً", { duration: 3000 });
+        return;
+      }
+    }
+    
+    // استخدام الصور المختارة إذا كانت موجودة، وإلا استخدام جميع الصور
+    const imagesToUse = selectedImagesForVideo.size > 0 
+      ? Array.from(selectedImagesForVideo).map(idx => images[idx]).filter(Boolean)
+      : images;
+    
+    if (imagesToUse.length === 0) {
+      setVideoError("يرجى اختيار صور للفيديو أو رفع صور جديدة");
+      toast.error("لا توجد صور متاحة", { duration: 3000 });
+      return;
+    }
+    
+    // تحذير إذا كانت الصور كثيرة
+    if (imagesToUse.length > 10) {
+      const proceed = window.confirm(`تم اختيار ${imagesToUse.length} صورة. عدد أقل من الصور يعني سرعة أكبر في التوليد. هل تريد المتابعة؟`);
+      if (!proceed) return;
     }
 
     setVideoLoading(true);
@@ -682,7 +715,7 @@ export default function NewListingPage() {
     try {
       // Step 1: Upload images temporarily for video generation
       const formData = new FormData();
-      images.forEach((img, idx) => {
+      imagesToUse.forEach((img) => {
         formData.append('images', img);
       });
 
@@ -823,25 +856,96 @@ export default function NewListingPage() {
     setErrors((prev) => ({ ...prev, [key]: undefined }));
   }
 
-  const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-  const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm'];
+  // دعم جميع أنواع الصور بما في ذلك صور الجوال (HEIC, HEIF, etc.)
+  const ALLOWED_IMAGE_TYPES = [
+    'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+    'image/heic', 'image/heif', 'image/avif', 'image/bmp', 'image/tiff',
+    'image/svg+xml', 'image/x-icon'
+  ];
+  
+  // دعم جميع أنواع الفيديو بما في ذلك فيديوهات الجوال
+  const ALLOWED_VIDEO_TYPES = [
+    'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime',
+    'video/x-msvideo', 'video/x-ms-wmv', 'video/x-matroska',
+    'video/3gpp', 'video/3gpp2', 'video/x-flv'
+  ];
 
-  const handleImagesChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  // ضغط الصور تلقائياً على الجوال لتحسين الجودة والأداء
+  const compressImage = useCallback((file: File, maxWidth: number = 1920, quality: number = 0.85): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          // حساب الأبعاد الجديدة مع الحفاظ على النسبة
+          if (width > maxWidth) {
+            height = (height * maxWidth) / width;
+            width = maxWidth;
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('لا يمكن الوصول إلى canvas'));
+            return;
+          }
+          
+          // تحسين جودة الرسم
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                reject(new Error('فشل في ضغط الصورة'));
+                return;
+              }
+              const compressedFile = new File([blob], file.name, {
+                type: 'image/jpeg',
+                lastModified: Date.now()
+              });
+              resolve(compressedFile);
+            },
+            'image/jpeg',
+            quality
+          );
+        };
+        img.onerror = () => reject(new Error('فشل في تحميل الصورة'));
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject(new Error('فشل في قراءة الملف'));
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const handleImagesChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
     const maxImages = selectedBucket?.benefits.maxPhotos || plan?.maxPhotosPerListing || 5;
     
-    // التحقق من نوع الملفات
-    const invalidFiles = files.filter(file => !ALLOWED_IMAGE_TYPES.includes(file.type));
-    if (invalidFiles.length > 0) {
-      const invalidNames = invalidFiles.map(f => f.name).join(', ');
-      setErrors(prev => ({ 
-        ...prev, 
-        media: `نوع الملف غير مدعوم (${invalidNames}). الأنواع المسموحة: JPEG, PNG, WebP, GIF` 
-      }));
-      toast.error(`نوع الملف غير مدعوم: ${invalidNames}`, { duration: 4000 });
+    // التحقق من نوع الملفات - قبول جميع أنواع الصور
+    const imageFiles = files.filter(file => {
+      // قبول أي ملف يبدأ بـ image/ أو له امتداد صورة معروف
+      const isImage = file.type.startsWith('image/') || 
+                     /\.(jpg|jpeg|png|gif|webp|heic|heif|avif|bmp|tiff|svg|ico)$/i.test(file.name);
+      return isImage;
+    });
+    
+    if (imageFiles.length === 0) {
+      toast.error('لم يتم العثور على صور صالحة', { duration: 3000 });
       e.target.value = '';
       return;
+    }
+    
+    if (imageFiles.length !== files.length) {
+      toast.warning(`تم قبول ${imageFiles.length} من ${files.length} ملف`, { duration: 3000 });
     }
 
     const total = images.length + files.length;
@@ -929,9 +1033,12 @@ export default function NewListingPage() {
     if (!e.target.files || !e.target.files[0]) return;
     const file = e.target.files[0];
 
-    // التحقق من نوع الملف
-    if (!ALLOWED_VIDEO_TYPES.includes(file.type)) {
-      setVideoError(`نوع الملف غير مدعوم. الأنواع المسموحة: MP4, WebM`);
+    // قبول جميع أنواع الفيديو - التحقق من الامتداد أو النوع
+    const isVideo = file.type.startsWith('video/') || 
+                   /\.(mp4|webm|ogg|mov|avi|wmv|mkv|flv|3gp|3g2|m4v)$/i.test(file.name);
+    
+    if (!isVideo) {
+      setVideoError(`نوع الملف غير مدعوم. يرجى رفع ملف فيديو صالح`);
       e.target.value = "";
       return;
     }
@@ -1074,35 +1181,68 @@ export default function NewListingPage() {
   }
 
   function goNext() {
-    if (!validateStep(step)) return;
+    if (!validateStep(step)) {
+      // Enhanced shake animation for error with haptic feedback
+      const formElement = document.getElementById("listing-form");
+      if (formElement) {
+        formElement.style.animation = "shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97)";
+        setTimeout(() => {
+          formElement.style.animation = "";
+        }, 500);
+      }
+      // Haptic feedback on mobile
+      if (navigator.vibrate) {
+        navigator.vibrate([50, 30, 50]);
+      }
+      return;
+    }
     if (step < 5) {
-      setStepTransition(true);
-      setTimeout(() => {
-        const nextStep = step + 1;
-        setStep(nextStep as any);
-        setStepTransition(false);
-        // في الخطوة الأخيرة (المراجعة) لا تنتقل للأعلى - ابقَ عند زر النشر والملخص
-        if (nextStep < 5) {
+      const nextStep = step + 1;
+      setStep(nextStep as any);
+      
+      // Smooth scroll with optimized timing for animation
+      requestAnimationFrame(() => {
+        setTimeout(() => {
           const formElement = document.getElementById("listing-form");
           if (formElement) {
-            formElement.scrollIntoView({ behavior: "smooth", block: "start" });
+            formElement.scrollIntoView({ 
+              behavior: "smooth", 
+              block: "start",
+              inline: "nearest"
+            });
           }
-        }
-      }, 200);
+        }, 150);
+      });
+      
+      // Subtle haptic feedback on successful navigation
+      if (navigator.vibrate) {
+        navigator.vibrate(10);
+      }
     }
   }
 
   function goBack() {
     if (step > 0) {
-      setStepTransition(true);
-      setTimeout(() => {
-        setStep((s) => (s - 1) as any);
-        setStepTransition(false);
-        const formElement = document.getElementById("listing-form");
-        if (formElement) {
-          formElement.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      }, 200);
+      setStep((s) => (s - 1) as any);
+      
+      // Smooth scroll with optimized timing
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          const formElement = document.getElementById("listing-form");
+          if (formElement) {
+            formElement.scrollIntoView({ 
+              behavior: "smooth", 
+              block: "start",
+              inline: "nearest"
+            });
+          }
+        }, 150);
+      });
+      
+      // Subtle haptic feedback
+      if (navigator.vibrate) {
+        navigator.vibrate(10);
+      }
     }
   }
 
@@ -1447,45 +1587,129 @@ export default function NewListingPage() {
       </div>
 
       <div className="max-w-5xl mx-auto px-4 py-6">
-        <div className="flex items-center justify-between mb-8 overflow-x-auto pb-4">
+        {/* Progress Bar */}
+        <div className="mb-6">
+          <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+            <motion.div
+              className="h-full bg-gradient-to-r from-[#D4AF37] to-[#B8860B] rounded-full"
+              initial={{ width: 0 }}
+              animate={{ width: `${((step + 1) / (STEPS.length)) * 100 + "%"}` }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+            />
+          </div>
+          <p className="text-mobile-xs text-slate-500 mt-2 text-center">
+            الخطوة {step + 1} من {STEPS.length}
+          </p>
+        </div>
+
+        {/* Steps Indicator */}
+        <div className="flex items-center justify-between mb-8 overflow-x-auto pb-4 scrollbar-hide">
           {STEPS.map((s, idx) => (
-            <div key={s.id} className="flex items-center">
-              <button
+            <div key={s.id} className="flex items-center flex-shrink-0">
+              <motion.button
                 onClick={() => {
                   if (s.id < step || validateStep(step)) {
                     setStep(s.id as any);
                   }
                 }}
-                className={`flex flex-col items-center gap-2 px-4 py-2 rounded-xl transition min-w-[80px] ${
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`flex flex-col items-center gap-2 px-3 sm:px-4 py-2 rounded-xl transition-all min-w-[70px] sm:min-w-[80px] touch-manipulation ${
                   step === s.id
-                    ? "bg-[#D4AF37] text-white shadow-lg"
+                    ? "bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30"
                     : step > s.id
                     ? "bg-green-100 text-green-700"
                     : "bg-slate-100 text-slate-400"
                 }`}
               >
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  step === s.id ? "bg-white/20" : step > s.id ? "bg-green-200" : "bg-slate-200"
-                }`}>
+                <motion.div 
+                  className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    step === s.id ? "bg-white/20" : step > s.id ? "bg-green-200" : "bg-slate-200"
+                  }`}
+                  animate={step === s.id ? { 
+                    scale: [1, 1.15, 1],
+                    rotate: [0, 5, -5, 0]
+                  } : step > s.id ? {
+                    scale: 1
+                  } : {}}
+                  transition={{ 
+                    type: "spring",
+                    stiffness: 400,
+                    damping: 15,
+                    duration: 0.6
+                  }}
+                >
                   {step > s.id ? (
                     <CheckCircle2 className="w-5 h-5" />
                   ) : (
                     <s.icon className="w-5 h-5" />
                   )}
-                </div>
-                <span className="text-xs font-medium whitespace-nowrap">{s.title}</span>
-              </button>
+                </motion.div>
+                <span className="text-mobile-xs sm:text-xs font-medium whitespace-nowrap">{s.title}</span>
+              </motion.button>
               {idx < STEPS.length - 1 && (
-                <div className={`w-8 h-1 mx-1 rounded ${step > s.id ? "bg-green-300" : "bg-slate-200"}`} />
+                <motion.div 
+                  className={`w-6 sm:w-8 h-1 mx-1 rounded relative overflow-hidden ${
+                    step > s.id ? "bg-green-300" : "bg-slate-200"
+                  }`}
+                  initial={{ scaleX: 0 }}
+                  animate={{ 
+                    scaleX: step > s.id ? 1 : step === s.id ? 0.5 : 0.3,
+                  }}
+                  transition={{ 
+                    type: "spring",
+                    stiffness: 300,
+                    damping: 25
+                  }}
+                >
+                  {step === s.id && (
+                    <motion.div
+                      className="absolute inset-0 bg-gradient-to-r from-[#D4AF37] to-[#B8860B] rounded"
+                      initial={{ x: "-100%" }}
+                      animate={{ x: "100%" }}
+                      transition={{
+                        duration: 1.5,
+                        repeat: Infinity,
+                        ease: "linear"
+                      }}
+                    />
+                  )}
+                </motion.div>
               )}
             </div>
           ))}
         </div>
 
         <form onSubmit={handleSubmit} id="listing-form">
-          <div className={`bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden transition-all duration-300 ${stepTransition ? 'opacity-0 translate-y-2' : 'opacity-100 translate-y-0'}`}>
-            {step === 0 && (
-              <div className="p-6 md:p-8">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={step}
+              initial={{ opacity: 0, x: 30, scale: 0.96 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -30, scale: 0.96 }}
+              transition={{ 
+                type: "spring",
+                stiffness: 300,
+                damping: 30,
+                mass: 0.8
+              }}
+              className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden"
+              style={{ willChange: "transform, opacity" }}
+            >
+              {step === 0 && (
+              <motion.div 
+                key="step-0"
+                className="p-6 md:p-8"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ 
+                  type: "spring",
+                  stiffness: 400,
+                  damping: 25,
+                  delay: 0.1
+                }}
+              >
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="text-xl font-bold text-[#002845] flex items-center gap-2">
                     <Package className="w-6 h-6 text-[#D4AF37]" />
@@ -1663,11 +1887,23 @@ export default function NewListingPage() {
                   </div>
                 )}
 
-              </div>
+              </motion.div>
             )}
 
             {step === 1 && (
-              <div className="p-6 md:p-8">
+              <motion.div 
+                key="step-1"
+                className="p-6 md:p-8"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ 
+                  type: "spring",
+                  stiffness: 400,
+                  damping: 25,
+                  delay: 0.1
+                }}
+              >
                 <h2 className="text-xl font-bold text-[#002845] mb-6 flex items-center gap-2">
                   <Home className="w-6 h-6 text-[#D4AF37]" />
                   نوع العقار والعرض
@@ -1751,11 +1987,23 @@ export default function NewListingPage() {
                   {errors.propertyType && <p className="text-red-500 text-xs mt-2">{errors.propertyType}</p>}
                 </div>
 
-                </div>
+                </motion.div>
             )}
 
             {step === 2 && (
-              <div className="p-6 md:p-8">
+              <motion.div 
+                key="step-2"
+                className="p-6 md:p-8"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ 
+                  type: "spring",
+                  stiffness: 400,
+                  damping: 25,
+                  delay: 0.1
+                }}
+              >
                 <h2 className="text-xl font-bold text-[#002845] mb-6 flex items-center gap-2">
                   <FileText className="w-6 h-6 text-[#D4AF37]" />
                   تفاصيل العقار
@@ -1807,17 +2055,13 @@ export default function NewListingPage() {
                   </div>
 
                   <div id="field-district">
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">
-                      الحي <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
+                    <MobileInput
+                      label="الحي *"
                       value={form.district}
                       onChange={(e) => updateField("district", e.target.value)}
                       placeholder="مثال: النرجس"
-                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-[#D4AF37] outline-none transition"
+                      error={errors.district}
                     />
-                    {errors.district && <p className="text-red-500 text-xs mt-2">{errors.district}</p>}
                   </div>
 
                   <div id="field-landArea">
@@ -2192,7 +2436,7 @@ export default function NewListingPage() {
                         value={form.propertyAge || ""}
                         onChange={(e) => updateField("propertyAge", e.target.value)}
                         placeholder="السنة"
-                        className="w-24 px-3 py-2 border-2 border-slate-200 rounded-xl focus:border-[#D4AF37] outline-none transition text-center font-semibold"
+                        className="w-24 min-h-[48px] px-3 py-2 border-2 border-slate-200 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-center font-semibold text-mobile-base touch-manipulation"
                       />
                     </div>
                     <p className="text-xs text-slate-400 mt-2 text-center">
@@ -2832,16 +3076,28 @@ export default function NewListingPage() {
                         onChange={(e) => updateField("description", e.target.value)}
                         placeholder="اكتب وصفاً تفصيلياً للعقار... أو اضغط على زر التوليد لإنشاء وصف تلقائي"
                         rows={5}
-                        className="w-full px-4 py-3 border-2 border-purple-200 rounded-xl focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 outline-none transition resize-none text-base bg-white"
+                        className="w-full min-h-[120px] px-4 py-3 border-2 border-purple-200 rounded-xl focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 outline-none transition resize-none text-mobile-base bg-white touch-manipulation"
                       />
                     </div>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             )}
 
             {step === 3 && (
-              <div className="p-6 md:p-8">
+              <motion.div 
+                key="step-3"
+                className="p-6 md:p-8"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ 
+                  type: "spring",
+                  stiffness: 400,
+                  damping: 25,
+                  delay: 0.1
+                }}
+              >
                 <h2 className="text-xl font-bold text-[#002845] mb-6 flex items-center gap-2">
                   <MapPin className="w-6 h-6 text-[#D4AF37]" />
                   موقع العقار على الخريطة
@@ -2857,41 +3113,70 @@ export default function NewListingPage() {
                 </div>
 
                 {form.latitude && form.longitude && (
-                  <div className="mt-4 p-4 bg-slate-50 rounded-xl border-2 border-slate-200">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-5 h-5 text-[#D4AF37]" />
-                        <span className="font-semibold text-[#002845]">الموقع المحدد</span>
+                  <div className={`mt-4 p-5 rounded-xl border-2 transition-all ${
+                    locationConfirmed 
+                      ? 'bg-gradient-to-l from-green-50 to-emerald-50 border-green-300 shadow-lg' 
+                      : 'bg-gradient-to-l from-amber-50 to-yellow-50 border-amber-300'
+                  }`}>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                          locationConfirmed ? 'bg-green-500' : 'bg-[#D4AF37]'
+                        }`}>
+                          <MapPin className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                          <span className="font-bold text-lg text-[#002845] block">الموقع المحدد</span>
+                          {locationConfirmed ? (
+                            <span className="text-xs text-green-700 mt-1 block">✓ تم التأكيد بنجاح</span>
+                          ) : (
+                            <span className="text-xs text-amber-700 mt-1 block">⚠ يرجى التأكيد</span>
+                          )}
+                        </div>
                       </div>
                       {locationConfirmed ? (
-                        <span className="flex items-center gap-1 text-sm text-green-600 bg-green-50 px-3 py-1 rounded-full">
-                          <CheckCircle2 className="w-4 h-4" />
-                          تم التأكيد
-                        </span>
+                        <div className="flex items-center gap-2 bg-green-100 px-4 py-2 rounded-full border-2 border-green-300">
+                          <CheckCircle2 className="w-5 h-5 text-green-600 animate-pulse" />
+                          <span className="text-sm font-bold text-green-700">تم التأكيد</span>
+                        </div>
                       ) : (
-                        <span className="text-xs text-amber-600 bg-amber-50 px-3 py-1 rounded-full">
-                          بانتظار التأكيد
-                        </span>
+                        <div className="flex items-center gap-2 bg-amber-100 px-4 py-2 rounded-full border-2 border-amber-300 animate-pulse">
+                          <AlertTriangle className="w-5 h-5 text-amber-600" />
+                          <span className="text-sm font-bold text-amber-700">بانتظار التأكيد</span>
+                        </div>
                       )}
                     </div>
-                    <p className="text-sm text-slate-600 mb-3">
-                      الإحداثيات: {form.latitude.toFixed(6)}, {form.longitude.toFixed(6)}
-                    </p>
-                    {form.formattedAddress && (
-                      <p className="text-sm text-slate-600 mb-3">
-                        العنوان: {form.formattedAddress}
-                      </p>
-                    )}
+                    
+                    <div className="bg-white/80 rounded-lg p-4 mb-4 border border-slate-200">
+                      {form.formattedAddress && (
+                        <div className="mb-3">
+                          <p className="text-xs font-semibold text-slate-500 mb-1">العنوان:</p>
+                          <p className="text-sm text-slate-800 leading-relaxed">
+                            {form.formattedAddress}
+                          </p>
+                        </div>
+                      )}
+                      <div className="flex flex-wrap gap-4 text-xs">
+                        <div>
+                          <span className="font-semibold text-slate-500">العرض:</span>
+                          <span className="text-slate-700 mr-2 font-mono">{form.latitude.toFixed(6)}</span>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-slate-500">الطول:</span>
+                          <span className="text-slate-700 mr-2 font-mono">{form.longitude.toFixed(6)}</span>
+                        </div>
+                      </div>
+                    </div>
                     
                     {!locationConfirmed && (
-                      <div className="flex gap-3 mt-4">
+                      <div className="flex flex-col sm:flex-row gap-3">
                         <button
                           type="button"
                           onClick={() => setLocationConfirmed(true)}
-                          className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-l from-[#0B6B4C] to-[#0d8a5e] text-white font-semibold rounded-xl hover:opacity-90 transition"
+                          className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-l from-[#0B6B4C] to-[#0d8a5e] text-white font-bold rounded-xl hover:opacity-90 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-xl"
                         >
-                          <CheckCircle2 className="w-5 h-5" />
-                          أكد الموقع
+                          <CheckCircle2 className="w-6 h-6" />
+                          <span className="text-base">أكد الموقع</span>
                         </button>
                         <button
                           type="button"
@@ -2899,11 +3184,20 @@ export default function NewListingPage() {
                             setForm(prev => ({ ...prev, latitude: 0, longitude: 0, formattedAddress: "" }));
                             setLocationConfirmed(false);
                           }}
-                          className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border-2 border-slate-300 text-slate-700 font-semibold rounded-xl hover:bg-slate-100 transition"
+                          className="flex-1 flex items-center justify-center gap-2 px-6 py-4 border-2 border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-100 transition-all hover:scale-[1.02] active:scale-[0.98]"
                         >
                           <RefreshCw className="w-5 h-5" />
-                          إعادة المحاولة
+                          <span className="text-base">إعادة المحاولة</span>
                         </button>
+                      </div>
+                    )}
+                    
+                    {locationConfirmed && (
+                      <div className="mt-4 p-3 bg-green-100 rounded-lg border border-green-300">
+                        <p className="text-sm text-green-800 text-center font-medium flex items-center justify-center gap-2">
+                          <CheckCircle2 className="w-5 h-5" />
+                          <span>تم تأكيد الموقع بنجاح! يمكنك المتابعة إلى الخطوة التالية</span>
+                        </p>
                       </div>
                     )}
                   </div>
@@ -2943,11 +3237,23 @@ export default function NewListingPage() {
                     </div>
                   </div>
                 )}
-              </div>
+              </motion.div>
             )}
 
             {step === 4 && (
-              <div className="p-6 md:p-8">
+              <motion.div 
+                key="step-4"
+                className="p-6 md:p-8"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ 
+                  type: "spring",
+                  stiffness: 400,
+                  damping: 25,
+                  delay: 0.1
+                }}
+              >
                 <h2 className="text-xl font-bold text-[#002845] mb-6 flex items-center gap-2">
                   <ImageIcon className="w-6 h-6 text-[#D4AF37]" />
                   صور وفيديو العقار
@@ -2963,7 +3269,11 @@ export default function NewListingPage() {
                     </span>
                   </div>
 
-                  <div className="border-2 border-dashed border-slate-300 rounded-2xl p-6 text-center hover:border-[#D4AF37] transition">
+                  <motion.div 
+                    className="border-2 border-dashed border-slate-300 rounded-2xl p-6 text-center hover:border-[#D4AF37] transition relative overflow-hidden"
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
+                  >
                     <input
                       type="file"
                       accept="image/*"
@@ -2972,18 +3282,169 @@ export default function NewListingPage() {
                       className="hidden"
                       id="images-upload"
                     />
-                    <label htmlFor="images-upload" className="cursor-pointer">
-                      <Upload className="w-12 h-12 text-slate-400 mx-auto mb-3" />
-                      <p className="text-slate-600 font-medium">اضغط لرفع الصور أو اسحبها هنا</p>
-                      <p className="text-xs text-slate-400 mt-1">PNG, JPG, WEBP حتى 10 ميجابايت</p>
-                    </label>
-                  </div>
+                    <motion.label 
+                      htmlFor="images-upload" 
+                      className="cursor-pointer block w-full min-h-[200px] flex flex-col items-center justify-center touch-manipulation active:bg-slate-50 transition relative z-10"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      <motion.div
+                        animate={{ 
+                          y: [0, -5, 0],
+                          rotate: [0, 5, -5, 0]
+                        }}
+                        transition={{ 
+                          duration: 2,
+                          repeat: Infinity,
+                          repeatDelay: 3
+                        }}
+                      >
+                        <Upload className="w-12 h-12 md:w-16 md:h-16 text-slate-400 mx-auto mb-3" />
+                      </motion.div>
+                      <p className="text-slate-600 font-medium text-mobile-base md:text-lg">اضغط لرفع الصور أو اسحبها هنا</p>
+                      <p className="text-mobile-xs md:text-sm text-slate-400 mt-2 text-center px-4">
+                        جميع أنواع الصور مدعومة (JPG, PNG, WEBP, HEIC, GIF, AVIF, BMP)
+                      </p>
+                      <p className="text-mobile-xs text-slate-400 mt-1">حتى 20 ميجابايت لكل صورة - ضغط تلقائي على الجوال</p>
+                    </motion.label>
+                    <motion.div
+                      className="absolute inset-0 bg-gradient-to-br from-[#D4AF37]/5 to-transparent opacity-0"
+                      whileHover={{ opacity: 1 }}
+                      transition={{ duration: 0.3 }}
+                    />
+                  </motion.div>
 
                   {imagePreviews.length > 0 && (
                     <div className="mt-4">
-                      {/* Video Generation Image Selection - Only for Business tier */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
+                        {imagePreviews.map((preview, idx) => {
+                          const isSelected = selectedImagesForVideo.has(idx);
+                          const showVideoSelection = (selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && imagePreviews.length > 0;
+                          
+                          return (
+                            <motion.div 
+                              key={idx} 
+                              initial={{ opacity: 0, scale: 0.8, y: 20 }}
+                              animate={{ opacity: 1, scale: 1, y: 0 }}
+                              exit={{ opacity: 0, scale: 0.8, y: -20 }}
+                              transition={{ 
+                                type: "spring",
+                                stiffness: 300,
+                                damping: 25,
+                                delay: idx * 0.05
+                              }}
+                              whileHover={{ scale: 1.02, zIndex: 10 }}
+                              className={`relative group aspect-square rounded-xl overflow-hidden border-2 transition-all ${
+                                showVideoSelection && isSelected 
+                                  ? 'border-emerald-500 ring-2 ring-emerald-300 ring-offset-2' 
+                                  : 'border-slate-200'
+                              }`}
+                              onContextMenu={(e) => e.preventDefault()}
+                            >
+                              <motion.img 
+                                src={preview} 
+                                alt={`صورة ${idx + 1}`} 
+                                className="w-full h-full object-cover pointer-events-none select-none" 
+                                draggable={false}
+                                whileHover={{ scale: 1.05 }}
+                                transition={{ duration: 0.3 }}
+                              />
+                              {/* Cover image indicator and click to set cover */}
+                              {coverImageIndex === idx ? (
+                                <motion.div 
+                                  initial={{ scale: 0 }}
+                                  animate={{ scale: 1 }}
+                                  className="absolute top-2 right-2 bg-[#D4AF37] text-white text-xs px-2 py-1 rounded-full flex items-center gap-1 z-10 shadow-lg"
+                                >
+                                  <motion.div
+                                    animate={{ rotate: [0, 15, -15, 0] }}
+                                    transition={{ duration: 1, repeat: Infinity, repeatDelay: 3 }}
+                                  >
+                                    <Star className="w-3 h-3 fill-current" />
+                                  </motion.div>
+                                  الغلاف
+                                </motion.div>
+                              ) : (
+                                <motion.button
+                                  type="button"
+                                  onClick={() => setCoverImage(idx)}
+                                  className="absolute top-2 right-2 bg-white/80 hover:bg-[#D4AF37] hover:text-white text-slate-600 text-xs px-2 py-1 rounded-full flex items-center gap-1 z-10 transition-all opacity-0 group-hover:opacity-100"
+                                  title="تعيين كصورة غلاف"
+                                  whileHover={{ scale: 1.1 }}
+                                  whileTap={{ scale: 0.95 }}
+                                >
+                                  <Star className="w-3 h-3" />
+                                  غلاف
+                                </motion.button>
+                              )}
+                              {/* Video selection checkbox - Only for Business tier with >3 images */}
+                              {showVideoSelection && (
+                                <motion.button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleImageSelection(idx);
+                                    if (navigator.vibrate) {
+                                      navigator.vibrate(10);
+                                    }
+                                  }}
+                                  className={`absolute top-2 left-2 w-8 h-8 rounded-full flex items-center justify-center transition-all z-10 ${
+                                    isSelected
+                                      ? 'bg-emerald-500 text-white shadow-lg'
+                                      : 'bg-white/90 text-slate-600 hover:bg-emerald-100'
+                                  }`}
+                                  title={isSelected ? 'إلغاء الاختيار' : 'اختيار للفيديو'}
+                                  whileHover={{ scale: 1.1 }}
+                                  whileTap={{ scale: 0.9 }}
+                                  animate={isSelected ? { 
+                                    scale: [1, 1.2, 1],
+                                    rotate: [0, 10, -10, 0]
+                                  } : {}}
+                                  transition={{ duration: 0.3 }}
+                                >
+                                  {isSelected ? (
+                                    <motion.div
+                                      initial={{ scale: 0, rotate: -180 }}
+                                      animate={{ scale: 1, rotate: 0 }}
+                                      transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                                    >
+                                      <Check className="w-5 h-5" />
+                                    </motion.div>
+                                  ) : (
+                                    <Film className="w-4 h-4" />
+                                  )}
+                                </motion.button>
+                              )}
+                              <motion.button
+                                type="button"
+                                onClick={() => {
+                                  removeImage(idx);
+                                  if (navigator.vibrate) {
+                                    navigator.vibrate([50, 30, 50]);
+                                  }
+                                }}
+                                className="absolute bottom-2 left-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition z-10"
+                                whileHover={{ scale: 1.1, rotate: 90 }}
+                                whileTap={{ scale: 0.9 }}
+                              >
+                                <X className="w-4 h-4" />
+                              </motion.button>
+                              {/* Selected indicator overlay */}
+                              {isSelected && (
+                                <motion.div 
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  className="absolute inset-0 bg-emerald-500/20 border-2 border-emerald-500 rounded-xl pointer-events-none" 
+                                />
+                              )}
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Video Generation Image Selection - Only for Business tier - بعد الصور */}
                       {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && imagePreviews.length > 0 && (
-                        <div className="mb-4 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border-2 border-emerald-200">
+                        <div className="mt-4 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border-2 border-emerald-200">
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
                               <Film className="w-5 h-5 text-emerald-600" />
@@ -3024,82 +3485,6 @@ export default function NewListingPage() {
                           </div>
                         </div>
                       )}
-                      
-                      <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
-                        {imagePreviews.map((preview, idx) => {
-                          const isSelected = selectedImagesForVideo.has(idx);
-                          const showVideoSelection = (selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && imagePreviews.length > 0;
-                          
-                          return (
-                            <div 
-                              key={idx} 
-                              className={`relative group aspect-square rounded-xl overflow-hidden border-2 transition-all ${
-                                showVideoSelection && isSelected 
-                                  ? 'border-emerald-500 ring-2 ring-emerald-300 ring-offset-2' 
-                                  : 'border-slate-200'
-                              }`}
-                              onContextMenu={(e) => e.preventDefault()}
-                            >
-                              <img 
-                                src={preview} 
-                                alt={`صورة ${idx + 1}`} 
-                                className="w-full h-full object-cover pointer-events-none select-none" 
-                                draggable={false}
-                              />
-                              {/* Cover image indicator and click to set cover */}
-                              {coverImageIndex === idx ? (
-                                <div className="absolute top-2 right-2 bg-[#D4AF37] text-white text-xs px-2 py-1 rounded-full flex items-center gap-1 z-10 shadow-lg">
-                                  <Star className="w-3 h-3 fill-current" />
-                                  الغلاف
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setCoverImage(idx)}
-                                  className="absolute top-2 right-2 bg-white/80 hover:bg-[#D4AF37] hover:text-white text-slate-600 text-xs px-2 py-1 rounded-full flex items-center gap-1 z-10 transition-all opacity-0 group-hover:opacity-100"
-                                  title="تعيين كصورة غلاف"
-                                >
-                                  <Star className="w-3 h-3" />
-                                  غلاف
-                                </button>
-                              )}
-                              {/* Video selection checkbox - Only for Business tier with >3 images */}
-                              {showVideoSelection && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleImageSelection(idx);
-                                  }}
-                                  className={`absolute top-2 left-2 w-8 h-8 rounded-full flex items-center justify-center transition-all z-10 ${
-                                    isSelected
-                                      ? 'bg-emerald-500 text-white shadow-lg'
-                                      : 'bg-white/90 text-slate-600 hover:bg-emerald-100'
-                                  }`}
-                                  title={isSelected ? 'إلغاء الاختيار' : 'اختيار للفيديو'}
-                                >
-                                  {isSelected ? (
-                                    <Check className="w-5 h-5" />
-                                  ) : (
-                                    <Film className="w-4 h-4" />
-                                  )}
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => removeImage(idx)}
-                                className="absolute bottom-2 left-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition z-10"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                              {/* Selected indicator overlay */}
-                              {isSelected && (
-                                <div className="absolute inset-0 bg-emerald-500/20 border-2 border-emerald-500 rounded-xl pointer-events-none" />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
                     </div>
                   )}
 
@@ -3111,7 +3496,7 @@ export default function NewListingPage() {
                   )}
                 </div>
 
-                {/* توليد فيديو بالذكاء الاصطناعي - متاح للباقات المتقدمة */}
+                {/* توليد فيديو بالذكاء الاصطناعي - متاح للباقات المتقدمة - بعد الصور */}
                 {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 2 && imagePreviews.length > 0 && (
                   <div className="mb-6 p-5 bg-gradient-to-br from-purple-50 via-indigo-50 to-blue-50 rounded-2xl border-2 border-purple-200">
                     <div className="flex items-center gap-3 mb-4">
@@ -3215,16 +3600,35 @@ export default function NewListingPage() {
                         <button
                           type="button"
                           onClick={handleGenerateVideo}
-                          disabled={!form.propertyType || videoLoading}
-                          className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-lg"
+                          disabled={
+                            !form.propertyType || 
+                            videoLoading || 
+                            images.length === 0 ||
+                            ((selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && selectedImagesForVideo.size === 0)
+                          }
+                          className="w-full flex items-center justify-center gap-3 px-6 py-4 md:py-5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-base md:text-lg shadow-lg active:scale-95 touch-manipulation"
                         >
-                          <BrainCircuit className="w-5 h-5" />
-                          <span>توليد فيديو بالذكاء الاصطناعي</span>
-                          <Sparkles className="w-4 h-4" />
+                          {videoLoading ? (
+                            <>
+                              <Loader2 className="w-5 h-5 md:w-6 md:h-6 animate-spin" />
+                              <span>جاري التوليد...</span>
+                            </>
+                          ) : (
+                            <>
+                              <BrainCircuit className="w-5 h-5 md:w-6 md:h-6" />
+                              <span>توليد فيديو بالذكاء الاصطناعي</span>
+                              <Sparkles className="w-4 h-4 md:w-5 md:h-5" />
+                            </>
+                          )}
                         </button>
                         {!form.propertyType && (
                           <p className="text-xs text-amber-600 text-center">
                             ⚠️ يرجى اختيار نوع العقار أولاً من الخطوة السابقة
+                          </p>
+                        )}
+                        {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && selectedImagesForVideo.size === 0 && (
+                          <p className="text-xs text-red-600 text-center font-medium">
+                            ⚠️ يرجى اختيار صور أولاً لتوليد الفيديو
                           </p>
                         )}
                       </div>
@@ -3245,18 +3649,22 @@ export default function NewListingPage() {
                     </div>
 
                     {!videoPreview ? (
-                      <div className="border-2 border-dashed border-slate-300 rounded-2xl p-6 text-center hover:border-[#D4AF37] transition">
+                      <div className="border-2 border-dashed border-slate-300 rounded-2xl p-6 md:p-8 text-center hover:border-[#D4AF37] transition active:bg-slate-50 touch-manipulation">
                         <input
                           type="file"
-                          accept="video/*"
+                          accept="video/*,.mp4,.mov,.avi,.webm,.3gp,.mkv"
                           onChange={handleVideoChange}
                           className="hidden"
                           id="video-upload"
+                          capture="environment"
                         />
-                        <label htmlFor="video-upload" className="cursor-pointer">
-                          <Video className="w-12 h-12 text-slate-400 mx-auto mb-3" />
-                          <p className="text-slate-600 font-medium">اضغط لرفع فيديو</p>
-                          <p className="text-xs text-slate-400 mt-1">MP4, WEBM حتى 50 ميجابايت</p>
+                        <label htmlFor="video-upload" className="cursor-pointer block w-full min-h-[200px] flex flex-col items-center justify-center touch-manipulation active:bg-slate-50 transition">
+                          <Video className="w-12 h-12 md:w-16 md:h-16 text-slate-400 mx-auto mb-3" />
+                          <p className="text-slate-600 font-medium text-mobile-base md:text-lg">اضغط لرفع فيديو</p>
+                          <p className="text-mobile-xs md:text-sm text-slate-400 mt-2 text-center px-4">
+                            جميع أنواع الفيديو مدعومة (MP4, MOV, AVI, WEBM, 3GP, MKV)
+                          </p>
+                          <p className="text-mobile-xs text-slate-400 mt-1">حتى 50 ميجابايت</p>
                         </label>
                       </div>
                     ) : (
@@ -3274,11 +3682,23 @@ export default function NewListingPage() {
                   </div>
                 )}
 
-              </div>
+              </motion.div>
             )}
 
             {step === 5 && (
-              <div className="p-6 md:p-8">
+              <motion.div 
+                key="step-5"
+                className="p-6 md:p-8"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ 
+                  type: "spring",
+                  stiffness: 400,
+                  damping: 25,
+                  delay: 0.1
+                }}
+              >
                 <h2 className="text-xl font-bold text-[#002845] mb-6 flex items-center gap-2">
                   <Eye className="w-6 h-6 text-[#D4AF37]" />
                   مراجعة الإعلان
@@ -3579,71 +3999,130 @@ export default function NewListingPage() {
                     </p>
                   </div>
                 )}
-              </div>
+              </motion.div>
             )}
 
-            <div className="p-6 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={goBack}
-                disabled={step === 0}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition ${
-                  step === 0
-                    ? "text-slate-400 cursor-not-allowed"
-                    : "text-slate-700 hover:bg-slate-200"
-                }`}
+            <motion.div 
+              className="p-6 bg-slate-50 border-t border-slate-200 flex items-center justify-between safe-area-inset-bottom"
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ 
+                type: "spring",
+                stiffness: 300,
+                damping: 25,
+                delay: 0.1
+              }}
+            >
+              <motion.div
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.96 }}
+                transition={{ type: "spring", stiffness: 400, damping: 17 }}
               >
-                <ChevronRight className="w-5 h-5" />
-                السابق
-              </button>
+                <TouchButton
+                  type="button"
+                  onClick={goBack}
+                  disabled={step === 0}
+                  variant="ghost"
+                  size="md"
+                  className="flex items-center gap-2"
+                >
+                  <motion.div
+                    animate={step > 0 ? { x: [0, -3, 0] } : {}}
+                    transition={{ duration: 0.5, repeat: Infinity, repeatDelay: 2 }}
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </motion.div>
+                  السابق
+                </TouchButton>
+              </motion.div>
 
               {step < 5 ? (
-                <button
-                  type="button"
-                  onClick={goNext}
-                  className="flex items-center gap-2 px-8 py-3 bg-[#002845] text-white rounded-xl font-semibold hover:bg-[#003356] transition"
+                <motion.div
+                  whileHover={{ scale: 1.03, y: -2 }}
+                  whileTap={{ scale: 0.97 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 17 }}
                 >
-                  التالي
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-              ) : (
-                <div className="flex flex-col items-end gap-2">
-                  {selectedEliteSlot && !elitePaymentData && (
-                    <p className="text-xs text-amber-600 flex items-center gap-1">
-                      <Crown className="w-3 h-3" />
-                      يتضمن دفع النخبة: {parseFloat(selectedEliteSlot.base_price).toFixed(0)} ريال
-                    </p>
-                  )}
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className={`flex items-center gap-2 px-8 py-3 text-white rounded-xl font-semibold transition disabled:opacity-50 ${
-                      submitting 
-                        ? 'bg-gradient-to-l from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800' 
-                        : 'bg-gradient-to-l from-[#D4AF37] to-[#B8860B] hover:opacity-90'
-                    }`}
+                  <TouchButton
+                    type="button"
+                    onClick={goNext}
+                    variant="secondary"
+                    size="md"
+                    className="flex items-center gap-2 relative overflow-hidden"
                   >
-                    {submitting ? (
+                    <motion.span
+                      className="flex items-center gap-2"
+                      initial={false}
+                      animate={{ x: 0 }}
+                      whileTap={{ x: -2 }}
+                    >
+                      التالي
+                      <motion.div
+                        animate={{ x: [0, 3, 0] }}
+                        transition={{ duration: 0.5, repeat: Infinity, repeatDelay: 2 }}
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </motion.div>
+                    </motion.span>
+                  </TouchButton>
+                </motion.div>
+              ) : (
+                <motion.div 
+                  className="flex flex-col items-end gap-2"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                >
+                  {selectedEliteSlot && !elitePaymentData && (
+                    <motion.p 
+                      className="text-mobile-xs text-amber-600 flex items-center gap-1"
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.2 }}
+                    >
+                      <motion.div
+                        animate={{ rotate: [0, 10, -10, 0] }}
+                        transition={{ duration: 1, repeat: Infinity, repeatDelay: 3 }}
+                      >
+                        <Crown className="w-3 h-3" />
+                      </motion.div>
+                      يتضمن دفع النخبة: {parseFloat(selectedEliteSlot.base_price).toFixed(0)} ريال
+                    </motion.p>
+                  )}
+                  <motion.div
+                    whileHover={{ scale: 1.03, y: -2 }}
+                    whileTap={{ scale: 0.97 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                  >
+                    <TouchButton
+                      type="submit"
+                      disabled={submitting}
+                      variant="primary"
+                      size="md"
+                      loading={submitting}
+                      className="flex items-center gap-2 relative overflow-hidden"
+                    >
+                    {!submitting && (
                       <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        جاري النشر...
-                      </>
-                    ) : selectedEliteSlot && !elitePaymentData ? (
-                      <>
-                        <Crown className="w-5 h-5" />
-                        نشر مع النخبة
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-5 h-5" />
-                        نشر الإعلان
+                        {selectedEliteSlot && !elitePaymentData ? (
+                          <>
+                            <Crown className="w-5 h-5" />
+                            نشر مع النخبة
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-5 h-5" />
+                            نشر الإعلان
+                          </>
+                        )}
                       </>
                     )}
-                  </button>
-                </div>
+                    </TouchButton>
+                  </motion.div>
+                </motion.div>
               )}
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
+          </AnimatePresence>
         </form>
 
         {showConfirmModal && (
@@ -3700,36 +4179,41 @@ export default function NewListingPage() {
                 </div>
 
                 <div className="flex gap-3">
-                  <button
+                  <TouchButton
                     type="button"
                     onClick={() => setShowConfirmModal(false)}
-                    className="flex-1 py-3 px-6 rounded-xl font-semibold border-2 border-slate-200 text-slate-700 hover:bg-slate-100 transition"
+                    variant="outline"
+                    size="md"
+                    fullWidth
                   >
                     مراجعة مرة أخرى
-                  </button>
-                  <button
+                  </TouchButton>
+                  <TouchButton
                     type="button"
                     onClick={handleConfirmSubmit}
                     disabled={submitting || elitePaymentLoading}
-                    className="flex-1 py-3 px-6 rounded-xl font-semibold bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-white hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                    variant="primary"
+                    size="md"
+                    loading={submitting || elitePaymentLoading}
+                    fullWidth
+                    className="flex items-center justify-center gap-2"
                   >
-                    {submitting || elitePaymentLoading ? (
+                    {!submitting && !elitePaymentLoading && (
                       <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        {elitePaymentLoading ? 'جاري الدفع...' : 'جاري الإرسال...'}
-                      </>
-                    ) : selectedEliteSlot && !elitePaymentData ? (
-                      <>
-                        <Crown className="w-5 h-5" />
-                        ادفع وانشر ({parseFloat(selectedEliteSlot.base_price).toFixed(0)} ر.س)
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="w-5 h-5" />
-                        تأكيد ونشر
+                        {selectedEliteSlot && !elitePaymentData ? (
+                          <>
+                            <Crown className="w-5 h-5" />
+                            ادفع وانشر ({parseFloat(selectedEliteSlot.base_price).toFixed(0)} ر.س)
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-5 h-5" />
+                            تأكيد ونشر
+                          </>
+                        )}
                       </>
                     )}
-                  </button>
+                  </TouchButton>
                 </div>
               </div>
             </div>
@@ -3781,24 +4265,23 @@ export default function NewListingPage() {
                   >
                     إلغاء
                   </button>
-                  <button
+                  <TouchButton
                     type="button"
                     onClick={handleElitePayment}
                     disabled={elitePaymentLoading}
-                    className="flex-1 py-3 px-6 rounded-xl font-semibold bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-white hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                    variant="primary"
+                    size="md"
+                    loading={elitePaymentLoading}
+                    fullWidth
+                    className="flex items-center justify-center gap-2"
                   >
-                    {elitePaymentLoading ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        جاري التأكيد...
-                      </>
-                    ) : (
+                    {!elitePaymentLoading && (
                       <>
                         <CheckCircle2 className="w-5 h-5" />
                         تأكيد الحجز التجريبي
                       </>
                     )}
-                  </button>
+                  </TouchButton>
                 </div>
               </div>
             </div>
@@ -3809,7 +4292,7 @@ export default function NewListingPage() {
         {showScrollTop && (
           <button
             onClick={scrollToTop}
-            className="fixed bottom-24 left-6 z-50 bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-white p-3 rounded-full shadow-lg hover:opacity-90 transition-all duration-300 animate-in fade-in zoom-in"
+            className="fixed bottom-24 left-6 z-50 min-h-[48px] min-w-[48px] bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-white p-3 rounded-full shadow-lg hover:opacity-90 active:scale-95 transition-all duration-300 animate-in fade-in zoom-in touch-manipulation"
             aria-label="العودة للأعلى"
           >
             <ArrowUp className="w-6 h-6" />

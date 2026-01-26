@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
-const { authMiddleware } = require("../middleware/auth");
+const { authMiddlewareWithEmailCheck } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
 const OpenAI = require("openai");
 
@@ -119,7 +119,7 @@ router.get("/departments", (req, res) => {
   res.json(departments);
 });
 
-router.get("/conversations", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/conversations", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { status } = req.query;
 
@@ -149,7 +149,7 @@ router.get("/conversations", authMiddleware, asyncHandler(async (req, res) => {
   res.json(conversations);
 }));
 
-router.post("/conversations", authMiddleware, asyncHandler(async (req, res) => {
+router.post("/conversations", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { department, subject, message } = req.body;
 
@@ -189,7 +189,7 @@ router.post("/conversations", authMiddleware, asyncHandler(async (req, res) => {
   });
 }));
 
-router.get("/conversations/:id", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/conversations/:id", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const conversationId = req.params.id;
 
@@ -222,7 +222,7 @@ router.get("/conversations/:id", authMiddleware, asyncHandler(async (req, res) =
   });
 }));
 
-router.post("/conversations/:id/messages", authMiddleware, asyncHandler(async (req, res) => {
+router.post("/conversations/:id/messages", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const conversationId = req.params.id;
   const { content } = req.body;
@@ -261,7 +261,7 @@ router.post("/conversations/:id/messages", authMiddleware, asyncHandler(async (r
   res.json(msgResult.rows[0]);
 }));
 
-router.get("/unread-count", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/unread-count", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
 
   const result = await db.query(
@@ -275,7 +275,7 @@ router.get("/unread-count", authMiddleware, asyncHandler(async (req, res) => {
   res.json({ count: parseInt(result.rows[0].count) || 0 });
 }));
 
-router.get("/customer-messages-unread-count", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/customer-messages-unread-count", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
 
   const result = await db.query(
@@ -288,7 +288,7 @@ router.get("/customer-messages-unread-count", authMiddleware, asyncHandler(async
   res.json({ count: parseInt(result.rows[0].count) || 0 });
 }));
 
-router.patch("/conversations/:id/close", authMiddleware, asyncHandler(async (req, res) => {
+router.patch("/conversations/:id/close", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const conversationId = req.params.id;
 
@@ -305,7 +305,7 @@ router.patch("/conversations/:id/close", authMiddleware, asyncHandler(async (req
   res.json(result.rows[0]);
 }));
 
-router.post("/to-advertiser", authMiddleware, asyncHandler(async (req, res) => {
+router.post("/to-advertiser", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const senderId = req.user.id;
   const { listingId, recipientId, message } = req.body;
 
@@ -416,7 +416,7 @@ router.post("/to-advertiser", authMiddleware, asyncHandler(async (req, res) => {
   });
 }));
 
-router.get("/listing-inquiries", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/listing-inquiries", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
 
   const result = await db.query(
@@ -432,7 +432,7 @@ router.get("/listing-inquiries", authMiddleware, asyncHandler(async (req, res) =
   res.json(result.rows);
 }));
 
-router.get("/my-sent-inquiries", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/my-sent-inquiries", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
 
   const result = await db.query(
@@ -448,7 +448,7 @@ router.get("/my-sent-inquiries", authMiddleware, asyncHandler(async (req, res) =
   res.json(result.rows);
 }));
 
-router.patch("/listing-inquiries/:id/read", authMiddleware, asyncHandler(async (req, res) => {
+router.patch("/listing-inquiries/:id/read", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const messageId = req.params.id;
 
@@ -465,7 +465,7 @@ router.patch("/listing-inquiries/:id/read", authMiddleware, asyncHandler(async (
   res.json(result.rows[0]);
 }));
 
-router.get("/customer-conversations", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/customer-conversations", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
 
   const result = await db.query(
@@ -508,7 +508,7 @@ router.get("/customer-conversations", authMiddleware, asyncHandler(async (req, r
   res.json({ conversations: result.rows });
 }));
 
-router.get("/customer-conversations/:id", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/customer-conversations/:id", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const convId = req.params.id;
   const parts = convId.split("___");
@@ -556,7 +556,7 @@ router.get("/customer-conversations/:id", authMiddleware, asyncHandler(async (re
   });
 }));
 
-router.post("/customer-conversations/:id/reply", authMiddleware, asyncHandler(async (req, res) => {
+router.post("/customer-conversations/:id/reply", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const convId = req.params.id;
   const { message } = req.body;

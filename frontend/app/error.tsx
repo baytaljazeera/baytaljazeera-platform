@@ -1,10 +1,12 @@
-import { NextPageContext } from 'next';
+"use client";
 
-interface ErrorProps {
-  statusCode: number;
-}
-
-function Error({ statusCode }: ErrorProps) {
+export default function Error({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
   return (
     <div style={{
       minHeight: '100vh',
@@ -16,34 +18,30 @@ function Error({ statusCode }: ErrorProps) {
       color: 'white',
       fontFamily: 'system-ui, -apple-system, sans-serif',
       textAlign: 'center',
-      direction: 'rtl'
+      direction: 'rtl',
+      padding: '2rem'
     }}>
       <h1 style={{ fontSize: '4rem', fontWeight: 'bold', marginBottom: '1rem', color: '#D4AF37' }}>
-        {statusCode}
+        حدث خطأ
       </h1>
       <h2 style={{ fontSize: '1.5rem', marginBottom: '2rem' }}>
-        {statusCode === 404 ? 'الصفحة غير موجودة' : 'حدث خطأ'}
+        {error.message || 'حدث خطأ غير متوقع'}
       </h2>
-      <a 
-        href="/"
+      <button
+        onClick={reset}
         style={{
           padding: '0.75rem 1.5rem',
           background: '#D4AF37',
           color: '#01273C',
           borderRadius: '0.5rem',
           fontWeight: '600',
-          textDecoration: 'none'
+          border: 'none',
+          cursor: 'pointer',
+          fontSize: '1rem'
         }}
       >
-        العودة للرئيسية
-      </a>
+        إعادة المحاولة
+      </button>
     </div>
   );
 }
-
-Error.getInitialProps = ({ res, err }: NextPageContext) => {
-  const statusCode = res ? res.statusCode : err ? err.statusCode : 404;
-  return { statusCode };
-};
-
-export default Error;

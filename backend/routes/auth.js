@@ -3,10 +3,10 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const db = require("../db");
-const { JWT_SECRET, JWT_CONFIG, JWT_VERIFY_OPTIONS } = require("../middleware/auth");
+const { JWT_SECRET, JWT_CONFIG, JWT_VERIFY_OPTIONS, optionalAuth } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { validatePassword, PASSWORD_POLICY, sanitizeInput, strictAuthLimiter } = require("../config/security");
-const { sendPasswordResetEmail, sendVerificationEmail, resendVerificationEmail } = require("../services/emailService");
+const { sendPasswordResetEmail, sendVerificationEmail, resendVerificationEmail, sendWelcomeEmail, sendEmailVerificationEmail } = require("../services/emailService");
 
 const router = express.Router();
 
@@ -97,12 +97,16 @@ router.post("/register", asyncHandler(async (req, res) => {
     }
   }
 
+  // Generate email verification token
+  const emailVerificationToken = crypto.randomBytes(32).toString('hex');
+  const emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
   try {
     const result = await db.query(
-      `INSERT INTO users (email, password_hash, name, phone, referral_code, referred_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO users (email, password_hash, name, phone, referral_code, referred_by, email_verification_token, email_verification_expires)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, email, name, phone, role, created_at, referral_code`,
-      [sanitizedEmail, hashed, sanitizedName, sanitizedPhone, newReferralCode, referrerId]
+      [sanitizedEmail, hashed, sanitizedName, sanitizedPhone, newReferralCode, referrerId, emailVerificationToken, emailVerificationExpires]
     );
 
     const user = result.rows[0];
@@ -256,8 +260,12 @@ router.post("/register", asyncHandler(async (req, res) => {
         [user.id, tokenHash, expiresAt]
       );
       
-      await sendVerificationEmail(user.email, verificationToken, user.name);
-      console.log(`📧 Verification email sent to ${user.email}`);
+      const emailResult = await sendVerificationEmail(user.email, verificationToken, user.name);
+      if (emailResult.success) {
+        console.log(`✅ [Auth] Email verification sent successfully to ${user.email}, messageId: ${emailResult.messageId}`);
+      } else {
+        console.error(`❌ [Auth] Failed to send email verification to ${user.email}:`, emailResult.error);
+      }
     } catch (emailErr) {
       console.error('⚠️ Failed to send verification email:', emailErr.message);
     }
@@ -280,12 +288,16 @@ router.post("/register", asyncHandler(async (req, res) => {
       });
   } catch (err) {
     if (err.code === "23505") {
-      if (err.constraint?.includes("email")) {
+      // Check constraint name to determine which field caused the duplicate
+      const constraintName = err.constraint || '';
+      if (constraintName.includes("email") || constraintName.includes("users_email")) {
         return res.status(409).json({ error: "البريد الإلكتروني مستخدم من قبل", errorEn: "Email already exists" });
       }
-      if (err.constraint?.includes("phone")) {
-        return res.status(409).json({ error: "رقم الجوال مستخدم من قبل", errorEn: "Phone already exists" });
+      if (constraintName.includes("phone") || constraintName.includes("users_phone")) {
+        return res.status(409).json({ error: "رقم الجوال مستخدم من قبل. يرجى استخدام رقم هاتف آخر أو ترك الحقل فارغاً", errorEn: "Phone number already exists. Please use a different phone number or leave it empty" });
       }
+      // Generic duplicate error
+      return res.status(409).json({ error: "البيانات المدخلة مستخدمة من قبل", errorEn: "Data already exists" });
     }
     throw err;
   }
@@ -742,8 +754,12 @@ router.post("/resend-verification", strictAuthLimiter, asyncHandler(async (req, 
   );
 
   try {
-    await resendVerificationEmail(user.email, verificationToken, user.name);
-    console.log(`📧 Verification email resent to ${user.email}`);
+    const emailResult = await resendVerificationEmail(user.email, verificationToken, user.name);
+    if (emailResult.success) {
+      console.log(`✅ [Auth] Verification email resent to ${user.email}, messageId: ${emailResult.messageId}`);
+    } else {
+      console.error(`❌ [Auth] Failed to resend verification email to ${user.email}:`, emailResult.error);
+    }
   } catch (emailErr) {
     console.error('❌ Failed to resend verification email:', emailErr.message);
   }

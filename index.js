@@ -13,6 +13,7 @@ const db = require("./backend/db");
 const { authMiddleware, requireRoles, adminMiddleware } = require("./backend/middleware/auth");
 const { sanitizeInput, validatePagination } = require("./backend/middleware/validation");
 const { setCsrfToken, getCsrfToken, csrfProtection } = require("./backend/middleware/csrf");
+const { asyncHandler } = require("./backend/middleware/asyncHandler");
 
 // 📦 Modular imports - security, multer, scheduler, services
 const { 
@@ -30,6 +31,9 @@ const { generateListingSlideshow } = require("./backend/services/videoService");
 const { cache, isRedisConnected } = require("./backend/config/redis");
 const { initializeWorkers, closeAllQueues } = require("./backend/queues");
 const { setupAuth, registerAuthRoutes } = require("./backend/replit_auth");
+
+// 📧 Initialize Email Service (Gmail API) - Load early to show initialization messages
+require("./backend/services/emailService");
 
 // 🔒 Startup Environment Validation
 const REQUIRED_ENV_VARS = ['SESSION_SECRET', 'DATABASE_URL'];
@@ -334,6 +338,39 @@ process.on("unhandledRejection", (err) =>
   }
 })();
 
+// 🔐 OAuth Fallback Routes (when Replit Auth is not available)
+// These routes handle OAuth requests when running outside Replit environment
+app.get('/api/login', (req, res) => {
+  // Check if Replit Auth is available
+  if (process.env.REPL_ID) {
+    // If Replit Auth is available, it should handle this route
+    // This should not be reached if Replit Auth is properly configured
+    return res.status(404).json({ 
+      error: 'OAuth login not configured',
+      errorEn: 'OAuth login endpoint not found'
+    });
+  }
+  
+  // Return a user-friendly error message
+  res.status(503).json({ 
+    error: 'تسجيل الدخول عبر Google و Apple غير متاح حالياً. يرجى استخدام البريد الإلكتروني وكلمة المرور.',
+    errorEn: 'OAuth login (Google, Apple) is currently unavailable. Please use email and password to register/login.',
+    available: false
+  });
+});
+
+app.get('/api/logout', (req, res) => {
+  // Simple logout - clear any cookies and redirect
+  res.clearCookie('token');
+  res.clearCookie('connect.sid');
+  res.json({ 
+    message: 'تم تسجيل الخروج بنجاح',
+    messageEn: 'Logged out successfully'
+  });
+});
+
+// 🔐 Check OAuth availability (now handled by oauth.js routes)
+
 // 🟢 مسار اختبار بسيط
 app.get("/", (req, res) => {
   res.json({ message: "Aqar Al Jazeera API", status: "ok", version: "2.0.0" });
@@ -373,6 +410,46 @@ app.get('/api/cloudinary-status', (req, res) => {
     hasIndividualVars: !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET)
   });
 });
+
+// Test email endpoint - for debugging email issues
+app.post('/api/test-email', asyncHandler(async (req, res) => {
+  const { sendEmail } = require('./backend/services/emailService');
+  const { to = 'info@baytaljazeera.com', subject = 'Test Email', body = 'This is a test email from Bayt Al Jazeera' } = req.body;
+  
+  console.log('📧 [Test Email] Attempting to send test email to:', to);
+  
+  const htmlBody = `
+    <!DOCTYPE html>
+    <html dir="rtl" lang="ar">
+    <head>
+      <meta charset="UTF-8">
+    </head>
+    <body style="font-family: Arial, sans-serif; padding: 20px;">
+      <h2>اختبار إرسال البريد الإلكتروني</h2>
+      <p>${body}</p>
+      <p>تم إرسال هذا البريد في: ${new Date().toLocaleString('ar-SA')}</p>
+    </body>
+    </html>
+  `;
+  
+  const result = await sendEmail(to, subject || 'اختبار إرسال البريد - بيت الجزيرة', htmlBody);
+  
+  if (result.success) {
+    console.log('✅ [Test Email] Email sent successfully, messageId:', result.messageId);
+    res.json({ 
+      success: true, 
+      message: 'تم إرسال الإيميل بنجاح',
+      messageId: result.messageId 
+    });
+  } else {
+    console.error('❌ [Test Email] Failed to send email:', result.error);
+    res.status(500).json({ 
+      success: false, 
+      error: result.error || 'فشل إرسال الإيميل',
+      message: 'فشل إرسال الإيميل. تحقق من refresh token في Render environment variables.'
+    });
+  }
+}));
 
 // 📦 Listings routes moved to backend/routes/listings.js
 
@@ -527,6 +604,28 @@ app.get("/api/user/ai-level", async (req, res) => {
 
 // 🟢 Auth & Account Routes
 app.use("/api/auth", authRoutes);
+
+// 🧪 Test Email Endpoint (for debugging - remove in production)
+app.post("/api/test-email", asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
+  }
+  
+  const { sendEmailVerificationEmail } = require('./backend/services/emailService');
+  const result = await sendEmailVerificationEmail(email, 'test-token-123', 'Test User');
+  
+  res.json({
+    success: result.success,
+    message: result.success ? 'Test email sent successfully' : 'Failed to send test email',
+    error: result.error,
+    messageId: result.messageId
+  });
+}));
+
+// 🟢 OAuth Routes (Google, Apple)
+const oauthRoutes = require("./backend/routes/oauth");
+app.use("/api/auth", oauthRoutes);
 app.use("/api/favorites", favoritesRoutes);
 app.use("/api/notifications", notificationsRoutes);
 app.use("/api/account", accountRoutes);

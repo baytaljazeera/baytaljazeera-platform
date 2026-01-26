@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/lib/stores/authStore';
 
 interface OAuthButtonsProps {
@@ -10,11 +10,46 @@ interface OAuthButtonsProps {
 export default function OAuthButtons({ className = '' }: OAuthButtonsProps) {
   const { loginWithOAuth } = useAuthStore();
   const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
+  const [oauthAvailable, setOauthAvailable] = useState<boolean | null>(null);
+
+  // Check OAuth availability on mount
+  useEffect(() => {
+    const checkOAuthStatus = async () => {
+      try {
+        const response = await fetch('/api/auth/status', { credentials: 'include' });
+        const data = await response.json();
+        // OAuth is available if Google or Apple is configured
+        setOauthAvailable(data.available || data.google || false);
+      } catch (error) {
+        console.error('Error checking OAuth status:', error);
+        // Default to showing buttons - let the backend handle errors
+        setOauthAvailable(true);
+      }
+    };
+    checkOAuthStatus();
+  }, []);
 
   const handleOAuthClick = (provider: string) => {
     setLoadingProvider(provider);
-    loginWithOAuth();
+    // Redirect to OAuth provider
+    if (provider === 'google') {
+      window.location.href = '/api/auth/google';
+    } else if (provider === 'apple') {
+      window.location.href = '/api/auth/apple';
+    } else {
+      loginWithOAuth(); // Fallback for other providers
+    }
   };
+
+  // Don't render if OAuth is not available
+  if (oauthAvailable === false) {
+    return null;
+  }
+
+  // Show loading state while checking
+  if (oauthAvailable === null) {
+    return null;
+  }
 
   return (
     <div className={`space-y-3 ${className}`}>

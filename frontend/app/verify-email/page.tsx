@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -8,14 +10,20 @@ function VerifyEmailContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
+  const email = searchParams.get('email');
   
   const [loading, setLoading] = useState(true);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     if (!token) {
-      setError("رابط غير صالح. يرجى طلب رابط تأكيد جديد.");
+      if (email) {
+        setError("يرجى التحقق من بريدك الإلكتروني والضغط على رابط التأكيد.");
+      } else {
+        setError("رابط غير صالح. يرجى طلب رابط تأكيد جديد.");
+      }
       setLoading(false);
       return;
     }
@@ -47,6 +55,30 @@ function VerifyEmailContent() {
     }
     
     setLoading(false);
+  }
+
+  async function resendVerification() {
+    if (!email) return;
+    setResending(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/auth/resend-verification`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        setError("تم إرسال رابط التأكيد إلى بريدك الإلكتروني.");
+      } else {
+        setError(data.error || "فشل إرسال رابط التأكيد.");
+      }
+    } catch (err) {
+      setError("حدث خطأ في الاتصال. يرجى المحاولة مرة أخرى.");
+    } finally {
+      setResending(false);
+    }
   }
 
   return (
@@ -125,9 +157,18 @@ function VerifyEmailContent() {
                 >
                   تسجيل الدخول
                 </Link>
+                {email && (
+                  <button 
+                    onClick={resendVerification}
+                    disabled={resending}
+                    className="block w-full border-2 border-[#0B6B4C] text-[#0B6B4C] font-bold py-3 rounded-xl transition-all hover:bg-[#0B6B4C]/5 disabled:opacity-50"
+                  >
+                    {resending ? 'جاري الإرسال...' : 'إعادة إرسال رابط التأكيد'}
+                  </button>
+                )}
                 <button 
                   onClick={() => window.location.reload()}
-                  className="block w-full border-2 border-[#0B6B4C] text-[#0B6B4C] font-bold py-3 rounded-xl transition-all hover:bg-[#0B6B4C]/5"
+                  className="block w-full border-2 border-slate-300 text-slate-600 font-bold py-3 rounded-xl transition-all hover:bg-slate-50"
                 >
                   إعادة المحاولة
                 </button>

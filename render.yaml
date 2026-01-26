@@ -1,9 +1,11 @@
 services:
   - type: web
     name: baytaljazeera-backend
-    env: node
-    buildCommand: npm ci && npm run build || true
-    startCommand: node index.js
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    buildCommand: ""
+    startCommand: ""
     envVars:
       - key: NODE_ENV
         value: production

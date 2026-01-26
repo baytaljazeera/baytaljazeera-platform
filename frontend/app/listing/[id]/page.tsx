@@ -492,6 +492,25 @@ export default function ListingDetailPage() {
       setListing(data.listing);
       setIsFeatured(data.listing?.is_featured || false);
       
+      // جلب حالة المفضلة
+      const token = localStorage.getItem("token");
+      if (token) {
+        try {
+          const favRes = await fetch(`/api/favorites/ids`, {
+            credentials: "include",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (favRes.ok) {
+            const favData = await favRes.json();
+            if (favData.ids && Array.isArray(favData.ids)) {
+              setIsFavorite(favData.ids.includes(id));
+            }
+          }
+        } catch (err) {
+          console.error("Error fetching favorites:", err);
+        }
+      }
+      
       if (data.listing?.price) {
         try {
           const currency = getListingCurrency(data.listing.country);
@@ -706,13 +725,15 @@ export default function ListingDetailPage() {
                   <>
                     <button
                       onClick={prevImage}
-                      className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 w-12 h-12 sm:w-14 sm:h-14 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+                      className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 w-12 h-12 sm:w-14 sm:h-14 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform touch-manipulation"
+                      aria-label="الصورة السابقة"
                     >
                       <ChevronRight className="w-7 h-7 sm:w-8 sm:h-8 text-[#002845]" />
                     </button>
                     <button
                       onClick={nextImage}
-                      className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 w-12 h-12 sm:w-14 sm:h-14 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+                      className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 w-12 h-12 sm:w-14 sm:h-14 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform touch-manipulation"
+                      aria-label="الصورة التالية"
                     >
                       <ChevronLeft className="w-7 h-7 sm:w-8 sm:h-8 text-[#002845]" />
                     </button>
@@ -746,7 +767,7 @@ export default function ListingDetailPage() {
               </div>
 
               {images.length > 1 && (
-                <div className="flex gap-3 p-4 overflow-x-auto bg-white">
+                <div className="flex gap-3 p-4 overflow-x-auto bg-white scrollbar-hide">
                   {images.map((img, idx) => (
                     <button
                       key={img.id}
@@ -754,9 +775,10 @@ export default function ListingDetailPage() {
                         setCurrentImageIndex(idx);
                         setImageError(false);
                       }}
-                      className={`relative w-16 h-16 sm:w-20 sm:h-20 flex-shrink-0 rounded-xl overflow-hidden border-3 transition-all active:scale-95 ${
+                      className={`relative w-16 h-16 sm:w-20 sm:h-20 flex-shrink-0 rounded-xl overflow-hidden border-3 transition-all active:scale-95 touch-manipulation ${
                         idx === currentImageIndex ? "border-[#D4AF37] shadow-lg scale-105" : "border-transparent opacity-70 hover:opacity-100"
                       }`}
+                      aria-label={`صورة ${idx + 1}`}
                     >
                       <img
                         src={img.url}
@@ -766,6 +788,9 @@ export default function ListingDetailPage() {
                           (e.target as HTMLImageElement).src = "/images/property1.jpg";
                         }}
                       />
+                      {idx === currentImageIndex && (
+                        <div className="absolute inset-0 bg-[#D4AF37]/10 ring-2 ring-[#D4AF37]/20" />
+                      )}
                     </button>
                   ))}
                 </div>
@@ -938,24 +963,26 @@ export default function ListingDetailPage() {
             )}
 
             <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm">
-              <div className="flex items-start justify-between gap-4 mb-2">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-2">
                 <h1 className="text-xl sm:text-2xl font-bold text-[#002845] flex-1">{listing.title}</h1>
                 {isOwner && (
                   <div className="flex items-center gap-2 shrink-0">
                     <Link
                       href={`/edit-listing/${listing.id}`}
-                      className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:from-emerald-700 hover:to-teal-700 transition-all shadow-lg hover:shadow-xl"
+                      className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-4 py-2.5 sm:px-5 sm:py-2.5 rounded-xl text-sm font-bold hover:from-emerald-700 hover:to-teal-700 active:scale-95 transition-all shadow-lg hover:shadow-xl touch-manipulation"
                       title="تعديل الإعلان"
                     >
-                      <FileText className="w-4 h-4" />
-                      تعديل الإعلان
+                      <Pencil className="w-4 h-4 sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">تعديل الإعلان</span>
+                      <span className="sm:hidden">تعديل</span>
                     </Link>
                     <Link
                       href="/my-listings"
-                      className="flex items-center gap-2 bg-slate-100 text-slate-700 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-200 transition-all"
+                      className="flex items-center gap-2 bg-slate-100 text-slate-700 px-3 py-2.5 sm:px-4 sm:py-2.5 rounded-xl text-sm font-medium hover:bg-slate-200 active:scale-95 transition-all touch-manipulation"
                       title="العودة لإعلاناتي"
                     >
                       <ArrowRight className="w-4 h-4" />
+                      <span className="hidden sm:inline">إعلاناتي</span>
                     </Link>
                   </div>
                 )}
@@ -1181,14 +1208,14 @@ export default function ListingDetailPage() {
               <div className="flex gap-2 mt-4 pt-4 border-t">
                 <button
                   onClick={() => setIsFavorite(!isFavorite)}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl border ${
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl border transition-colors ${
                     isFavorite 
                       ? "bg-red-50 border-red-200 text-red-500" 
-                      : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      : "border-slate-300 text-slate-500 hover:bg-slate-50 bg-slate-50"
                   }`}
                 >
-                  <Heart className={`w-5 h-5 ${isFavorite ? "fill-current" : ""}`} />
-                  <span className="text-sm">حفظ</span>
+                  <Heart className={`w-5 h-5 ${isFavorite ? "fill-current text-red-500" : "text-slate-500"}`} />
+                  <span className="text-sm">المفضلة</span>
                 </button>
                 <ShareButton
                   title={listing.title}
@@ -1340,6 +1367,27 @@ export default function ListingDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* زر التعديل في أسفل الصفحة - للمالك فقط */}
+      {isOwner && (
+        <div className="max-w-7xl mx-auto px-4 pb-4">
+          <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-200 rounded-2xl p-4 sm:p-6 shadow-lg">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="text-center sm:text-right">
+                <h3 className="text-lg font-bold text-[#002845] mb-1">إدارة الإعلان</h3>
+                <p className="text-sm text-slate-600">يمكنك تعديل تفاصيل الإعلان في أي وقت</p>
+              </div>
+              <Link
+                href={`/edit-listing/${listing.id}`}
+                className="flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-6 py-3.5 rounded-xl font-bold hover:from-emerald-700 hover:to-teal-700 active:scale-95 transition-all shadow-lg hover:shadow-xl text-base touch-manipulation w-full sm:w-auto"
+              >
+                <Pencil className="w-5 h-5" />
+                تعديل الإعلان
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* شريط التواصل السريع للجوال */}
       {!isPendingOrHidden && (

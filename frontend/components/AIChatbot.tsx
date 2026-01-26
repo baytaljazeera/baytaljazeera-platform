@@ -72,7 +72,15 @@ export default function AIChatbot() {
       const saved = localStorage.getItem("chatbot-position");
       if (saved) {
         try {
-          return JSON.parse(saved);
+          const parsed = JSON.parse(saved);
+          // On mobile, ensure button is within screen bounds
+          if (window.innerWidth < 768) {
+            return {
+              x: Math.max(8, Math.min(parsed.x, window.innerWidth - 64)),
+              y: Math.max(8, Math.min(parsed.y, window.innerHeight - 64))
+            };
+          }
+          return parsed;
         } catch {
           // Default position
           return { x: window.innerWidth - 80, y: window.innerHeight - 80 };
@@ -97,8 +105,9 @@ export default function AIChatbot() {
   useEffect(() => {
     if (typeof window !== "undefined" && position.x === 0 && position.y === 0) {
       // Set default position based on screen size
-      const defaultX = window.innerWidth > 768 ? 24 : window.innerWidth - 80;
-      const defaultY = window.innerHeight - 80;
+      const isMobile = window.innerWidth < 768;
+      const defaultX = isMobile ? window.innerWidth - 64 : 24;
+      const defaultY = isMobile ? window.innerHeight - 64 : window.innerHeight - 80;
       setPosition({ x: defaultX, y: defaultY });
     }
   }, []);
@@ -118,13 +127,16 @@ export default function AIChatbot() {
       const newX = e.clientX - dragStart.x;
       const newY = e.clientY - dragStart.y;
       
-      // Constrain to viewport
-      const maxX = window.innerWidth - 56; // button width
-      const maxY = window.innerHeight - 56; // button height
+      // Constrain to viewport - tighter constraints on mobile
+      const isMobile = window.innerWidth < 768;
+      const buttonSize = isMobile ? 56 : 56;
+      const padding = isMobile ? 8 : 0;
+      const maxX = window.innerWidth - buttonSize - padding;
+      const maxY = window.innerHeight - buttonSize - padding;
       
       setPosition({
-        x: Math.max(0, Math.min(newX, maxX)),
-        y: Math.max(0, Math.min(newY, maxY)),
+        x: Math.max(padding, Math.min(newX, maxX)),
+        y: Math.max(padding, Math.min(newY, maxY)),
       });
     };
 
@@ -298,8 +310,19 @@ export default function AIChatbot() {
         aria-hidden="true"
       />
       <div 
-        className="fixed z-50 w-[360px] max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 duration-300" 
-        style={{ 
+        className={`fixed z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col transition-all duration-300 ease-out ${
+          typeof window !== "undefined" && window.innerWidth < 768
+            ? "w-[calc(100vw-1rem)] left-2 right-2 bottom-4 top-auto max-h-[calc(100vh-5rem)] animate-in slide-in-from-bottom-4 fade-in"
+            : `w-[360px] max-w-[calc(100vw-2rem)] ${
+                typeof window !== "undefined" && position.x > window.innerWidth / 2
+                  ? "animate-in slide-in-from-right-4 fade-in"
+                  : "animate-in slide-in-from-left-4 fade-in"
+              }`
+        }`}
+        style={typeof window !== "undefined" && window.innerWidth < 768 ? {
+          height: "calc(100vh - 5rem)",
+          maxHeight: "calc(100vh - 5rem)",
+        } : {
           height: "520px", 
           maxHeight: "calc(100vh - 100px)",
           left: `${position.x}px`,

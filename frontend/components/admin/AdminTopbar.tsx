@@ -228,32 +228,32 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
   }
 
   return (
-    <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:px-6 shadow-sm">
-      <div className="flex items-center gap-4">
+    <header className="flex items-center justify-between border-b border-slate-200 bg-white px-3 py-3 md:px-6 md:py-4 shadow-sm sticky top-0 z-40">
+      <div className="flex items-center gap-3 md:gap-4 flex-1 min-w-0">
         <button 
-          className="md:hidden p-2 rounded-lg hover:bg-slate-100"
+          className="md:hidden p-2.5 rounded-lg hover:bg-slate-100 active:bg-slate-200 touch-manipulation shrink-0"
           onClick={onMenuClick}
         >
-          <Menu className="w-5 h-5 text-slate-600" />
+          <Menu className="w-6 h-6 text-slate-600" />
         </button>
         
-        <div>
-          <h2 className="text-sm font-bold text-[#002845]">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-base md:text-lg font-bold text-[#002845] truncate">
             منطقة الإدارة
           </h2>
-          <p className="text-[10px] text-slate-500">
+          <p className="text-xs md:text-sm text-slate-500 truncate">
             تحكم كامل في جميع أقسام المنصة
           </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="hidden sm:flex items-center gap-2 bg-slate-100 rounded-xl px-3 py-1.5">
+      <div className="flex items-center gap-2 shrink-0">
+        <div className="hidden md:flex items-center gap-2 bg-slate-100 rounded-xl px-3 py-2">
           <Search className="w-4 h-4 text-slate-400" />
           <input 
             type="text"
             placeholder="بحث سريع..."
-            className="bg-transparent text-xs w-32 focus:outline-none placeholder:text-slate-400"
+            className="bg-transparent text-sm w-32 focus:outline-none placeholder:text-slate-400"
           />
         </div>
 
@@ -261,11 +261,11 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
         {ticketsCount > 0 && (
           <Link
             href="/admin/support"
-            className="relative inline-flex h-9 items-center gap-1.5 px-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 transition"
+            className="relative inline-flex h-10 md:h-9 items-center gap-1.5 px-2.5 md:px-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 active:bg-blue-200 transition touch-manipulation"
             title="تذاكر الدعم المفتوحة"
           >
-            <Headset className="w-4 h-4 text-blue-600" />
-            <span className="text-xs font-bold text-blue-700">{ticketsCount}</span>
+            <Headset className="w-4 h-4 md:w-4 text-blue-600" />
+            <span className="text-sm md:text-xs font-bold text-blue-700">{ticketsCount}</span>
           </Link>
         )}
 
@@ -273,11 +273,11 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
         {pendingBankCount > 0 && (
           <Link
             href="/admin/finance"
-            className="relative inline-flex h-9 items-center gap-1.5 px-3 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition"
+            className="relative inline-flex h-10 md:h-9 items-center gap-1.5 px-2.5 md:px-3 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 transition touch-manipulation"
             title="بانتظار التحويل البنكي"
           >
-            <Banknote className="w-4 h-4 text-emerald-600" />
-            <span className="text-xs font-bold text-emerald-700">{pendingBankCount}</span>
+            <Banknote className="w-4 h-4 md:w-4 text-emerald-600" />
+            <span className="text-sm md:text-xs font-bold text-emerald-700">{pendingBankCount}</span>
           </Link>
         )}
 
@@ -285,40 +285,40 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
         {complaintsCount > 0 && (
           <Link
             href="/admin/complaints"
-            className="relative inline-flex h-9 items-center gap-1.5 px-3 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 transition"
+            className="relative inline-flex h-10 md:h-9 items-center gap-1.5 px-2.5 md:px-3 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 transition touch-manipulation"
             title="الشكاوى المفتوحة"
           >
-            <AlertTriangle className="w-4 h-4 text-amber-600" />
-            <span className="text-xs font-bold text-amber-700">{complaintsCount}</span>
+            <AlertTriangle className="w-4 h-4 md:w-4 text-amber-600" />
+            <span className="text-sm md:text-xs font-bold text-amber-700">{complaintsCount}</span>
           </Link>
         )}
 
         <div className="relative" ref={dropdownRef}>
           <button 
             onClick={toggleNotifications}
-            className="relative inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition"
+            className="relative inline-flex h-10 w-10 md:h-9 md:w-9 items-center justify-center rounded-xl border border-slate-200 bg-white hover:bg-slate-50 active:bg-slate-100 transition touch-manipulation"
           >
-            <Bell className="w-4 h-4 text-slate-600" />
+            <Bell className="w-5 h-5 md:w-4 md:h-4 text-slate-600" />
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] md:min-w-[16px] md:h-4 px-1 bg-red-500 text-white text-xs md:text-[9px] font-bold rounded-full flex items-center justify-center">
                 {unreadCount > 99 ? "99+" : unreadCount}
               </span>
             )}
           </button>
 
           {showNotifications && (
-            <div className="absolute left-0 top-12 w-80 bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden">
-              <div className="flex items-center justify-between p-3 border-b border-slate-100 bg-gradient-to-r from-[#002845] to-[#1a4a6e]">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Bell className="w-4 h-4" />
+            <div className="absolute left-0 top-14 md:top-12 w-[calc(100vw-2rem)] md:w-80 max-w-sm bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden">
+              <div className="flex items-center justify-between p-4 md:p-3 border-b border-slate-100 bg-gradient-to-r from-[#002845] to-[#1a4a6e]">
+                <h3 className="text-base md:text-sm font-bold text-white flex items-center gap-2">
+                  <Bell className="w-5 h-5 md:w-4 md:h-4" />
                   الإشعارات
                 </h3>
                 {unreadCount > 0 && (
                   <button 
                     onClick={markAllAsRead}
-                    className="text-[10px] text-white/80 hover:text-white flex items-center gap-1"
+                    className="text-xs md:text-[10px] text-white/80 hover:text-white active:text-white flex items-center gap-1 touch-manipulation px-2 py-1"
                   >
-                    <Check className="w-3 h-3" />
+                    <Check className="w-4 h-4 md:w-3 md:h-3" />
                     قراءة الكل
                   </button>
                 )}
@@ -348,21 +348,21 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
                         }`} />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="text-xs font-bold text-[#002845] truncate flex-1">
+                            <p className="text-sm md:text-xs font-bold text-[#002845] truncate flex-1">
                               {notification.title}
                             </p>
                             {notification.read_at && (
-                              <span className="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
-                                <Eye className="w-2.5 h-2.5" />
-                                تم الإعلام
+                              <span className="text-xs md:text-[9px] bg-green-100 text-green-700 px-2 py-1 md:px-1.5 md:py-0.5 rounded-full flex items-center gap-1 md:gap-0.5 shrink-0">
+                                <Eye className="w-3 h-3 md:w-2.5 md:h-2.5" />
+                                <span className="hidden md:inline">تم الإعلام</span>
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">
+                          <p className="text-sm md:text-[11px] text-slate-500 line-clamp-2 mt-1 md:mt-0.5">
                             {notification.body}
                           </p>
-                          <div className="flex items-center justify-between mt-1.5">
-                            <p className="text-[10px] text-slate-400">
+                          <div className="flex items-center justify-between mt-2 md:mt-1.5">
+                            <p className="text-xs md:text-[10px] text-slate-400">
                               {formatDate(notification.created_at)}
                             </p>
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -417,13 +417,13 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
           )}
         </div>
 
-        <button className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 hover:bg-slate-50 transition">
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#D4AF37] to-[#B8860B] flex items-center justify-center">
-            <UserCircle2 className="w-4 h-4 text-[#002845]" />
+        <button className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 md:px-3 py-2 md:py-1.5 hover:bg-slate-50 active:bg-slate-100 transition touch-manipulation">
+          <div className="w-8 h-8 md:w-7 md:h-7 rounded-full bg-gradient-to-br from-[#D4AF37] to-[#B8860B] flex items-center justify-center shrink-0">
+            <UserCircle2 className="w-5 h-5 md:w-4 md:h-4 text-[#002845]" />
           </div>
-          <div className="hidden sm:block text-right">
-            <p className="text-xs font-bold text-[#002845]">{user?.name || 'المدير'}</p>
-            <p className="text-[9px] text-slate-500">{ROLE_NAMES[user?.role || ''] || 'مدير'}</p>
+          <div className="hidden md:block text-right">
+            <p className="text-sm md:text-xs font-bold text-[#002845] truncate max-w-[100px]">{user?.name || 'المدير'}</p>
+            <p className="text-xs md:text-[9px] text-slate-500">{ROLE_NAMES[user?.role || ''] || 'مدير'}</p>
           </div>
         </button>
       </div>

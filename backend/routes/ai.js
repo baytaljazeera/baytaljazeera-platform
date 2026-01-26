@@ -1627,37 +1627,41 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
   const userId = req.user.id;
   const { propertyType, purpose, city, district, price, landArea, buildingArea, bedrooms, bathrooms, title, hasPool, hasElevator, hasGarden, selectedImageUrl, customPromoText, description, imagePaths, template = "luxury" } = req.body;
 
-  // Check user's support level - متاح للباقات المميزة فقط
-  const planResult = await db.query(
-    `SELECT COALESCE(MAX(support_level), 0) as support_level
-     FROM (
-       SELECT p.support_level
-       FROM user_plans up
-       JOIN plans p ON up.plan_id = p.id
-       WHERE up.user_id = $1 AND up.status = 'active' AND (up.expires_at IS NULL OR up.expires_at > NOW())
-       UNION ALL
-       SELECT p.support_level
-       FROM quota_buckets qb
-       JOIN plans p ON qb.plan_id = p.id
-       WHERE qb.user_id = $1 AND qb.active = true 
-         AND (qb.expires_at IS NULL OR qb.expires_at > NOW())
-         AND (qb.total_slots - qb.used_slots) > 0
-     ) AS combined`,
-    [userId]
-  );
-  
-  const supportLevel = parseInt(planResult.rows[0]?.support_level) || 0;
-  
-  if (supportLevel < 2) {
-    return res.status(403).json({ 
-      error: "ميزة توليد الفيديو الترويجي متاحة لمشتركي الباقات المميزة (النخبة وأعلى)",
-      upgradeRequired: true 
-    });
-  }
+  // Initialize variables outside try block for error handling
+  let imagePathsToUse = [];
+  let selectedTemplate = "luxury";
 
-  if (!propertyType || !city) {
-    return res.status(400).json({ error: "يرجى تحديد نوع العقار والمدينة" });
-  }
+  // Check user's support level - متاح للباقات المميزة فقط
+    const planResult = await db.query(
+      `SELECT COALESCE(MAX(support_level), 0) as support_level
+       FROM (
+         SELECT p.support_level
+         FROM user_plans up
+         JOIN plans p ON up.plan_id = p.id
+         WHERE up.user_id = $1 AND up.status = 'active' AND (up.expires_at IS NULL OR up.expires_at > NOW())
+         UNION ALL
+         SELECT p.support_level
+         FROM quota_buckets qb
+         JOIN plans p ON qb.plan_id = p.id
+         WHERE qb.user_id = $1 AND qb.active = true 
+           AND (qb.expires_at IS NULL OR qb.expires_at > NOW())
+           AND (qb.total_slots - qb.used_slots) > 0
+       ) AS combined`,
+      [userId]
+    );
+    
+    const supportLevel = parseInt(planResult.rows[0]?.support_level) || 0;
+    
+  if (supportLevel < 2) {
+      return res.status(403).json({ 
+      error: "ميزة توليد الفيديو الترويجي متاحة لمشتركي الباقات المميزة (النخبة وأعلى)",
+        upgradeRequired: true 
+      });
+    }
+
+    if (!propertyType || !city) {
+      return res.status(400).json({ error: "يرجى تحديد نوع العقار والمدينة" });
+    }
 
   // Check if FFmpeg is available
   const { execSync } = require('child_process');
@@ -1681,7 +1685,7 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
 
     // Validate template
     const validTemplates = Object.keys(VIDEO_TEMPLATES);
-    const selectedTemplate = validTemplates.includes(template) ? template : "luxury";
+    selectedTemplate = validTemplates.includes(template) ? template : "luxury";
 
     // Generate promotional text
     let promoText;
@@ -1706,9 +1710,11 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
     console.log("[Video] Promotional text:", JSON.stringify(promoText, null, 2));
 
     // Prepare image paths - use provided imagePaths or selectedImageUrl
-    let imagePathsToUse = [];
+    imagePathsToUse = [];
     if (imagePaths && imagePaths.length > 0) {
+      // imagePaths can be Cloudinary URLs or local paths
       imagePathsToUse = imagePaths;
+      console.log("[Video] Using provided imagePaths:", imagePathsToUse.length, "images");
     } else if (selectedImageUrl && !selectedImageUrl.startsWith('blob:')) {
       // Handle single image URL
       if (selectedImageUrl.startsWith('/uploads/')) {
@@ -1728,6 +1734,18 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
       });
     }
 
+    console.log("[Video] Image paths to use:", imagePathsToUse.map(p => 
+      typeof p === 'string' && p.length > 50 ? p.substring(0, 50) + '...' : p
+    ));
+    console.log("[Video] Image paths types:", imagePathsToUse.map(p => {
+      if (typeof p === 'string') {
+        if (p.startsWith('http')) return 'cloudinary/remote';
+        if (p.startsWith('/uploads/')) return 'local';
+        return 'unknown';
+      }
+      return 'invalid';
+    }));
+
     // Create video output directory
     const videoDir = path.join(__dirname, "../../public/uploads/videos");
     await fs.mkdir(videoDir, { recursive: true });
@@ -1745,7 +1763,7 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
 
     console.log("[Video] ✅ Video generated successfully:", videoUrl);
 
-    res.json({
+    res.json({ 
       success: true,
       videoUrl,
       promoText,
@@ -1756,9 +1774,25 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
 
   } catch (error) {
     console.error("[Video] FFmpeg video generation error:", error);
+    console.error("[Video] Error stack:", error.stack);
+    console.error("[Video] Request body:", {
+      hasImagePaths: !!imagePaths,
+      imagePathsLength: imagePaths?.length || 0,
+      hasSelectedImageUrl: !!selectedImageUrl,
+      propertyType,
+      city
+    });
+    console.error("[Video] Error details:", {
+      message: error.message,
+      name: error.name,
+      userId,
+      imagePathsCount: imagePathsToUse?.length || 0,
+      template: selectedTemplate || "unknown"
+    });
     return res.status(500).json({ 
       error: "حدث خطأ في توليد الفيديو. يرجى المحاولة مرة أخرى.",
-      errorEn: error.message || "Video generation error"
+      errorEn: error.message || "Video generation error",
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }));

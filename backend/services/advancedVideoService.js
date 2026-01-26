@@ -19,7 +19,7 @@ const VIDEO_TEMPLATES = {
       text: "&H00FFFFFF",
       glow: "&H0037AFD4"
     },
-    transitions: ["fade", "dissolve", "circleopen", "radial"],
+    transitions: ["fade", "dissolve", "circleopen", "radial", "zoom", "blur"],
     kenBurns: "slow",
     musicMood: "elegant",
     fontStyle: "bold"
@@ -34,7 +34,7 @@ const VIDEO_TEMPLATES = {
       text: "&H00FFFFFF",
       glow: "&H00FF6B35"
     },
-    transitions: ["wipeleft", "wiperight", "slideup", "slidedown"],
+    transitions: ["wipeleft", "wiperight", "slideup", "slidedown", "distance", "fade"],
     kenBurns: "dynamic",
     musicMood: "upbeat",
     fontStyle: "clean"
@@ -49,7 +49,7 @@ const VIDEO_TEMPLATES = {
       text: "&H00FFFFFE",
       glow: "&H00C4A35A"
     },
-    transitions: ["fade", "dissolve", "wipeleft", "wiperight"],
+    transitions: ["fade", "dissolve", "wipeleft", "wiperight", "circleopen"],
     kenBurns: "gentle",
     musicMood: "warm",
     fontStyle: "elegant"
@@ -68,6 +68,51 @@ const VIDEO_TEMPLATES = {
     kenBurns: "subtle",
     musicMood: "calm",
     fontStyle: "light"
+  },
+  cinematic: {
+    name: "سينمائي",
+    nameEn: "Cinematic",
+    colors: {
+      primary: "&H00FFD700",
+      secondary: "&H00000000",
+      accent: "&H00FF6B35",
+      text: "&H00FFFFFF",
+      glow: "&H00FFD700"
+    },
+    transitions: ["fade", "dissolve", "blur", "zoom", "distance", "radial"],
+    kenBurns: "cinematic",
+    musicMood: "cinematic",
+    fontStyle: "bold"
+  },
+  premium: {
+    name: "بريميوم",
+    nameEn: "Premium",
+    colors: {
+      primary: "&H00B8860B",
+      secondary: "&H001C1C1C",
+      accent: "&H00FFD700",
+      text: "&H00FFFFFF",
+      glow: "&H00FFD700"
+    },
+    transitions: ["fade", "dissolve", "circleopen", "radial", "zoom", "blur"],
+    kenBurns: "premium",
+    musicMood: "elegant",
+    fontStyle: "bold"
+  },
+  elegant: {
+    name: "أنيق",
+    nameEn: "Elegant",
+    colors: {
+      primary: "&H00C0C0C0",
+      secondary: "&H00202020",
+      accent: "&H00FFFFFF",
+      text: "&H00FFFFFF",
+      glow: "&H00C0C0C0"
+    },
+    transitions: ["fade", "dissolve", "wipeleft", "wiperight"],
+    kenBurns: "elegant",
+    musicMood: "elegant",
+    fontStyle: "elegant"
   }
 };
 
@@ -95,6 +140,28 @@ const KEN_BURNS_PRESETS = {
   subtle: [
     { zoom: "min(zoom+0.0003,1.05)", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
     { zoom: "if(lte(zoom,1.0),1.06,max(1.0,zoom-0.0003))", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" }
+  ],
+  cinematic: [
+    { zoom: "min(zoom+0.0012,1.20)", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
+    { zoom: "if(lte(zoom,1.0),1.22,max(1.0,zoom-0.0012))", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
+    { zoom: "min(zoom+0.0010,1.18)", x: "iw*0.3", y: "ih*0.3" },
+    { zoom: "min(zoom+0.0010,1.18)", x: "iw*0.7-iw/zoom", y: "ih*0.7-ih/zoom" },
+    { zoom: "min(zoom+0.0009,1.16)", x: "iw/2-(iw/zoom/2)", y: "ih*0.2" },
+    { zoom: "min(zoom+0.0009,1.16)", x: "iw/2-(iw/zoom/2)", y: "ih*0.8-ih/zoom" }
+  ],
+  premium: [
+    { zoom: "min(zoom+0.0009,1.16)", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
+    { zoom: "if(lte(zoom,1.0),1.19,max(1.0,zoom-0.0009))", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
+    { zoom: "min(zoom+0.0007,1.14)", x: "iw*0.25", y: "ih*0.25" },
+    { zoom: "min(zoom+0.0007,1.14)", x: "iw*0.75-iw/zoom", y: "ih*0.75-ih/zoom" },
+    { zoom: "min(zoom+0.0006,1.13)", x: "iw/2-(iw/zoom/2)", y: "ih*0.15" },
+    { zoom: "min(zoom+0.0006,1.13)", x: "iw/2-(iw/zoom/2)", y: "ih*0.85-ih/zoom" }
+  ],
+  elegant: [
+    { zoom: "min(zoom+0.0007,1.13)", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
+    { zoom: "if(lte(zoom,1.0),1.15,max(1.0,zoom-0.0007))", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
+    { zoom: "min(zoom+0.0005,1.11)", x: "iw*0.35", y: "ih*0.35" },
+    { zoom: "min(zoom+0.0005,1.11)", x: "iw*0.65-iw/zoom", y: "ih*0.65-ih/zoom" }
   ]
 };
 
@@ -251,21 +318,49 @@ Dialogue: 1,${toAssTime(t3)},${toAssTime(totalDuration)},PriceMain,,0,0,0,,{\\po
 
 async function generateAmbientAudio(outputPath, duration, mood = "elegant") {
   const moodSettings = {
-    elegant: { freq: 220, modFreq: 0.5, volume: 0.15 },
-    upbeat: { freq: 330, modFreq: 1.2, volume: 0.18 },
-    warm: { freq: 196, modFreq: 0.3, volume: 0.12 },
-    calm: { freq: 174, modFreq: 0.2, volume: 0.10 }
+    elegant: { 
+      freq: 220, 
+      modFreq: 0.5, 
+      volume: 0.15,
+      harmonics: "0.5*sin(f*2*PI*t)*sin(m*PI*t)+0.3*sin(f*1.5*2*PI*t)*sin(m*0.7*PI*t)+0.15*sin(f*2*2*PI*t)*sin(m*1.3*PI*t)+0.05*sin(f*3*2*PI*t)"
+    },
+    upbeat: { 
+      freq: 330, 
+      modFreq: 1.2, 
+      volume: 0.18,
+      harmonics: "0.4*sin(f*2*PI*t)*sin(m*PI*t)+0.3*sin(f*1.5*2*PI*t)*sin(m*0.8*PI*t)+0.2*sin(f*2*2*PI*t)*sin(m*1.2*PI*t)+0.1*sin(f*2.5*2*PI*t)"
+    },
+    warm: { 
+      freq: 196, 
+      modFreq: 0.3, 
+      volume: 0.12,
+      harmonics: "0.5*sin(f*2*PI*t)*sin(m*PI*t)+0.3*sin(f*1.2*2*PI*t)*sin(m*0.5*PI*t)+0.2*sin(f*1.8*2*PI*t)"
+    },
+    calm: { 
+      freq: 174, 
+      modFreq: 0.2, 
+      volume: 0.10,
+      harmonics: "0.6*sin(f*2*PI*t)*sin(m*PI*t)+0.3*sin(f*1.3*2*PI*t)*sin(m*0.4*PI*t)+0.1*sin(f*2*2*PI*t)"
+    },
+    cinematic: {
+      freq: 250,
+      modFreq: 0.4,
+      volume: 0.16,
+      harmonics: "0.4*sin(f*2*PI*t)*sin(m*PI*t)+0.3*sin(f*1.4*2*PI*t)*sin(m*0.6*PI*t)+0.2*sin(f*2*2*PI*t)*sin(m*1.1*PI*t)+0.1*sin(f*2.7*2*PI*t)"
+    }
   };
 
   const settings = moodSettings[mood] || moodSettings.elegant;
+  const harmonics = settings.harmonics.replace(/f/g, settings.freq).replace(/m/g, settings.modFreq);
 
   const args = [
     "-y",
     "-f", "lavfi",
-    "-i", `aevalsrc=0.5*sin(${settings.freq}*2*PI*t)*sin(${settings.modFreq}*PI*t)+0.3*sin(${settings.freq*1.5}*2*PI*t)*sin(${settings.modFreq*0.7}*PI*t)+0.2*sin(${settings.freq*2}*2*PI*t)*sin(${settings.modFreq*1.3}*PI*t):d=${duration}:s=44100`,
-    "-af", `volume=${settings.volume},afade=t=in:st=0:d=2,afade=t=out:st=${duration-2}:d=2,lowpass=f=2000,highpass=f=80`,
+    "-i", `aevalsrc=${harmonics}:d=${duration}:s=44100`,
+    "-af", `volume=${settings.volume},afade=t=in:st=0:d=2.5,afade=t=out:st=${duration-2.5}:d=2.5,lowpass=f=2500,highpass=f=60,equalizer=f=200:width_type=h:width=100:g=2,equalizer=f=2000:width_type=h:width=200:g=1.5`,
     "-c:a", "aac",
-    "-b:a", "128k",
+    "-b:a", "160k",
+    "-ar", "44100",
     outputPath
   ];
 
@@ -275,7 +370,7 @@ async function generateAmbientAudio(outputPath, duration, mood = "elegant") {
     ff.stderr.on("data", d => stderr += d.toString());
     ff.on("close", code => {
       if (code === 0) {
-        console.log("[AdvancedVideo] Generated ambient audio:", mood);
+        console.log("[AdvancedVideo] Generated enhanced ambient audio:", mood);
         resolve(outputPath);
       } else {
         console.error("[AdvancedVideo] Audio generation failed:", stderr.slice(-500));
@@ -317,11 +412,85 @@ async function createAdvancedSlideshow(imagePaths, outputPath, promoText, option
   const totalDuration = (numImages * slideDuration) - ((numImages - 1) * transition);
 
   const publicDir = path.resolve(__dirname, "../public");
+  const os = require('os');
+  const tmpDir = os.tmpdir();
+  const https = require('https');
+  const http = require('http');
+
+  // Helper function to download remote images
+  async function downloadImage(url, destPath) {
+    return new Promise((resolve, reject) => {
+      const protocol = url.startsWith('https') ? https : http;
+      const file = require('fs').createWriteStream(destPath);
+      
+      protocol.get(url, (response) => {
+        if (response.statusCode === 301 || response.statusCode === 302) {
+          // Handle redirect
+          downloadImage(response.headers.location, destPath).then(resolve).catch(reject);
+          return;
+        }
+        if (response.statusCode !== 200) {
+          reject(new Error(`Failed to download: ${response.statusCode}`));
+          return;
+        }
+        response.pipe(file);
+        file.on('finish', () => {
+          file.close();
+          resolve(destPath);
+        });
+      }).on('error', (err) => {
+        require('fs').unlink(destPath, () => {});
+        reject(err);
+      });
+    });
+  }
 
   const validPaths = [];
+  const downloadedFiles = []; // Track downloaded files for cleanup
+
   for (const imgPath of imagePaths) {
-    if (typeof imgPath !== 'string' || imgPath.length > 500) continue;
-    if (imgPath.includes('..') || imgPath.includes('\0')) continue;
+    if (typeof imgPath !== 'string' || imgPath.length > 1000) {
+      console.log(`[AdvancedVideo] ❌ Invalid image path type or too long`);
+      continue;
+    }
+
+    // 🌐 Handle Cloudinary/remote URLs
+    if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
+      try {
+        const ext = path.extname(new URL(imgPath).pathname) || '.jpg';
+        const tempFile = path.join(tmpDir, `remote_${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
+        console.log(`[AdvancedVideo] 📥 Downloading remote image: ${imgPath.substring(0, 80)}...`);
+        await downloadImage(imgPath, tempFile);
+        
+        // Verify file was downloaded
+        try {
+          await fs.access(tempFile);
+          const stats = await fs.stat(tempFile);
+          if (stats.size === 0) {
+            console.log(`[AdvancedVideo] ❌ Downloaded file is empty: ${tempFile}`);
+            await fs.unlink(tempFile).catch(() => {});
+            continue;
+          }
+          validPaths.push(tempFile);
+          downloadedFiles.push(tempFile);
+          console.log(`[AdvancedVideo] ✅ Downloaded to: ${tempFile} (${stats.size} bytes)`);
+        } catch (verifyErr) {
+          console.log(`[AdvancedVideo] ❌ Downloaded file verification failed: ${verifyErr.message}`);
+          await fs.unlink(tempFile).catch(() => {});
+          continue;
+        }
+        continue;
+      } catch (dlErr) {
+        console.error(`[AdvancedVideo] ❌ Failed to download: ${dlErr.message}`, dlErr);
+        continue;
+      }
+    }
+
+    // 🔒 Security: Block path traversal attempts
+    if (imgPath.includes('..') || imgPath.includes('\0')) {
+      console.log(`[AdvancedVideo] ❌ Blocked path traversal attempt: ${imgPath.substring(0, 50)}`);
+      continue;
+    }
 
     let fullPath = imgPath;
     if (imgPath.startsWith('/uploads/')) {
@@ -332,19 +501,34 @@ async function createAdvancedSlideshow(imagePaths, outputPath, promoText, option
       fullPath = path.join(publicDir, imgPath);
     }
 
-    if (!isPathSafe(fullPath, publicDir)) continue;
+    // Allow paths in /tmp/ directory (for downloaded images)
+    const isInPublicDir = isPathSafe(fullPath, publicDir);
+    const isInTmpDir = fullPath.startsWith('/tmp/') || fullPath.startsWith(tmpDir);
+    
+    if (!isInPublicDir && !isInTmpDir) {
+      console.log(`[AdvancedVideo] ❌ Path outside allowed directory: ${fullPath}`);
+      continue;
+    }
 
     try {
       await fs.access(fullPath);
       validPaths.push(fullPath);
+      console.log(`[AdvancedVideo] ✅ Found image: ${fullPath}`);
     } catch (e) {
-      console.log(`[AdvancedVideo] Image not found: ${fullPath}`);
+      console.log(`[AdvancedVideo] ❌ Image not found: ${fullPath}`);
     }
   }
 
   if (validPaths.length === 0) {
-    throw new Error("لم يتم العثور على صور صالحة");
+    console.error("[AdvancedVideo] ❌ No valid images found after processing:", {
+      totalInput: imagePaths.length,
+      processed: validPaths.length,
+      imagePaths: imagePaths.map(p => typeof p === 'string' ? p.substring(0, 100) : typeof p)
+    });
+    throw new Error("لم يتم العثور على صور صالحة. يرجى التأكد من رفع الصور بشكل صحيح.");
   }
+
+  console.log(`[AdvancedVideo] ✅ Found ${validPaths.length} valid images out of ${imagePaths.length} input paths`);
 
   const assPath = path.join(tempDir, `captions_${Date.now()}.ass`);
   const fontsDir = path.join(__dirname, "../public/fonts");
@@ -393,9 +577,20 @@ async function createAdvancedSlideshow(imagePaths, outputPath, promoText, option
   for (let i = 1; i < validPaths.length; i++) {
     const outLabel = `vx${i}`;
     const transType = transitionTypes[i % transitionTypes.length];
-    filters.push(
-      `[${lastLabel}][v${i}]xfade=transition=${transType}:duration=${transition}:offset=${currentOffset.toFixed(2)}[${outLabel}]`
-    );
+    
+    // Enhanced transitions with better effects
+    let transitionFilter = `[${lastLabel}][v${i}]xfade=transition=${transType}:duration=${transition}:offset=${currentOffset.toFixed(2)}`;
+    
+    // Add blur effect for certain transitions
+    if (transType === "blur" || transType === "zoom") {
+      filters.push(
+        `[${lastLabel}]boxblur=10:enable='between(t,${currentOffset.toFixed(2)},${(currentOffset + transition).toFixed(2)})'[blur${i}]`,
+        `[blur${i}][v${i}]${transitionFilter}[${outLabel}]`
+      );
+    } else {
+      filters.push(`${transitionFilter}[${outLabel}]`);
+    }
+    
     lastLabel = outLabel;
     currentOffset += (slideDuration - transition);
   }
@@ -431,12 +626,18 @@ async function createAdvancedSlideshow(imagePaths, outputPath, promoText, option
 
   args.push(
     "-c:v", "libx264",
-    "-preset", "medium",
-    "-crf", "18",
+    "-preset", "slow",  // Better quality
+    "-crf", "16",  // Higher quality (lower CRF = better quality)
     "-profile:v", "high",
     "-level", "4.0",
     "-pix_fmt", "yuv420p",
     "-r", String(fps),
+    "-g", String(fps * 2),  // Keyframe interval
+    "-bf", "3",  // B-frames
+    "-b_strategy", "2",  // Better B-frame strategy
+    "-me_method", "umh",  // Better motion estimation
+    "-subq", "8",  // Better subpixel motion estimation
+    "-trellis", "2",  // Trellis quantization
     "-movflags", "+faststart",
     "-t", String(Math.ceil(totalDuration)),
     outputPath
@@ -452,8 +653,12 @@ async function createAdvancedSlideshow(imagePaths, outputPath, promoText, option
     });
 
     ff.on("close", async (code) => {
+      // Cleanup temporary files
       await fs.unlink(assPath).catch(() => {});
       await fs.unlink(audioPath).catch(() => {});
+      for (const f of downloadedFiles) {
+        try { await fs.unlink(f); } catch {}
+      }
 
       if (code === 0) {
         console.log("[AdvancedVideo] FFmpeg completed successfully");

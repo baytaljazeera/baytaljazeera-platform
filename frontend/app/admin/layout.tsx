@@ -1,7 +1,6 @@
-import nextDynamic from "next/dynamic";
+"use client";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+import nextDynamic from "next/dynamic";
 
 const AdminShell = nextDynamic(() => import("@/components/admin/AdminShell"), {
   ssr: false,

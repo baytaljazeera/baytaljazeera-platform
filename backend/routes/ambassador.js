@@ -1567,6 +1567,58 @@ router.post('/accept-terms', combinedAuthMiddleware, requireAmbassadorEnabled, a
     });
   }
   
+  // Get user info first to check for ambassador_code
+  const userInfo = await db.query(
+    `SELECT name, email, ambassador_code, referral_code FROM users WHERE id = $1`,
+    [userId]
+  );
+  const user = userInfo.rows[0];
+  
+  // Generate ambassador_code if it doesn't exist
+  let ambassadorCode = user.ambassador_code || user.referral_code;
+  if (!ambassadorCode) {
+    // Generate a unique ambassador code
+    const crypto = require('crypto');
+    let codeExists = true;
+    let attempts = 0;
+    while (codeExists && attempts < 10) {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      let code = 'AQR';
+      for (let i = 0; i < 6; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      
+      const checkCode = await db.query('SELECT 1 FROM users WHERE ambassador_code = $1 OR referral_code = $1', [code]);
+      if (checkCode.rows.length === 0) {
+        ambassadorCode = code;
+        codeExists = false;
+        
+        // Update user with the new ambassador_code
+        await db.query(
+          `UPDATE users SET ambassador_code = $1 WHERE id = $2`,
+          [code, userId]
+        );
+      } else {
+        attempts++;
+      }
+    }
+    
+    // If still no code after attempts, use referral_code or generate a fallback
+    if (!ambassadorCode) {
+      // Try to use referral_code if exists
+      if (user.referral_code) {
+        ambassadorCode = user.referral_code;
+      } else {
+        // Last resort: generate a simple code
+        ambassadorCode = 'AQR' + crypto.randomBytes(3).toString('hex').toUpperCase().substring(0, 6);
+        await db.query(
+          `UPDATE users SET ambassador_code = $1 WHERE id = $2`,
+          [ambassadorCode, userId]
+        );
+      }
+    }
+  }
+  
   // Create or update wallet with terms acceptance
   const wallet = await db.query(`
     INSERT INTO ambassador_wallet (user_id, terms_accepted_at) 
@@ -1576,14 +1628,7 @@ router.post('/accept-terms', combinedAuthMiddleware, requireAmbassadorEnabled, a
     RETURNING terms_accepted_at
   `, [userId]);
   
-  // Get user info for admin notification
-  const userInfo = await db.query(
-    `SELECT name, email, ambassador_code FROM users WHERE id = $1`,
-    [userId]
-  );
-  const user = userInfo.rows[0];
   const ambassadorName = user.name || user.email || 'مستخدم';
-  const ambassadorCode = user.ambassador_code || 'غير متوفر';
   
   // Send notification to all super admins
   const admins = await db.query(

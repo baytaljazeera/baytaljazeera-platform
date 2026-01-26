@@ -231,7 +231,7 @@ function MapInner({
                   )}
                   {listing.bedrooms && (
                     <span className="inline-flex items-center gap-1">
-                      <BedDouble className="w-3 ه-3" />
+                      <BedDouble className="w-3 h-3" />
                       <span>{listing.bedrooms} غرف</span>
                     </span>
                   )}

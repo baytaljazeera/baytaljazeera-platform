@@ -112,11 +112,16 @@ function PopupContent({ marker }: { marker: PropertyMarker }) {
       <p className="text-xs text-gray-500 mb-1">
         {marker.city}{marker.district ? ` - ${marker.district}` : ""}
       </p>
-      <p className="text-base font-bold text-[#d4af37] mb-2">
+      <p className="text-base font-bold text-[#d4af37] mb-1">
         {marker.price.toLocaleString("en-US")} ريال
+      </p>
+      {/* سعر الدولار أسفل السعر الأساسي */}
+      <p className="text-xs text-gray-500 mb-2">
+        ≈ ${(marker.price / 3.75).toLocaleString("en-US", { maximumFractionDigits: 0 })} USD
       </p>
       <div className="flex items-center gap-2 text-xs text-gray-500">
         {marker.bedrooms && <span>{marker.bedrooms} غرف</span>}
+        {marker.bathrooms && <span>{marker.bathrooms} حمام</span>}
         {marker.area && <span>{marker.area} م²</span>}
       </div>
       <div className="flex gap-1.5 mt-2">

@@ -37,6 +37,12 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'phone_verified_at') THEN
           ALTER TABLE users ADD COLUMN phone_verified_at TIMESTAMPTZ;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'email_verification_token') THEN
+          ALTER TABLE users ADD COLUMN email_verification_token TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'email_verification_expires') THEN
+          ALTER TABLE users ADD COLUMN email_verification_expires TIMESTAMPTZ;
+        END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'updated_at') THEN
           ALTER TABLE users ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
         END IF;
@@ -61,9 +67,18 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'stripe_subscription_id') THEN
           ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'google_id') THEN
+          ALTER TABLE users ADD COLUMN google_id TEXT UNIQUE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'email_verified') THEN
+          ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT false;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'profile_image') THEN
+          ALTER TABLE users ADD COLUMN profile_image TEXT;
+        END IF;
       END $$;
     `);
-    console.log("✅ Account lockout and Stripe columns added");
+    console.log("✅ Account lockout, Stripe, and OAuth columns added");
 
     // Create admin sidebar settings table early to avoid being blocked by later errors
     await db.query(`
@@ -301,8 +316,19 @@ async function initializeDatabase() {
         status TEXT NOT NULL DEFAULT 'active',
         started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         expires_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+    `);
+    
+    // Add updated_at column if it doesn't exist (for existing tables)
+    await db.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_plans' AND column_name = 'updated_at') THEN
+          ALTER TABLE user_plans ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
+        END IF;
+      END $$;
     `);
 
     // Create quota_buckets table for managing ad quotas per package
