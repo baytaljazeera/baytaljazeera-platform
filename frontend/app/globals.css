@@ -354,6 +354,26 @@ button.popup-dot-btn,
   z-index: 99999 !important;
 }
 
+/* منع الانتقال عند النقر على زر المفضلة */
+.popup-favorite-btn {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+}
+
+.popup-favorite-btn * {
+  pointer-events: none !important;
+}
+
+/* منع الانتقال من Leaflet Popup عند النقر على زر المفضلة */
+.leaflet-popup-content-wrapper .popup-favorite-btn,
+.leaflet-popup-content .popup-favorite-btn {
+  pointer-events: auto !important;
+}
+
 .popup-dots-container {
   display: flex !important;
   visibility: visible !important;

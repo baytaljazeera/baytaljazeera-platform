@@ -591,6 +591,7 @@ function ListingPopupCard({
           {/* زر القلب - أعلى يمين */}
           {showFavoriteButton && (
             <button
+              ref={favoriteButtonRef}
               type="button"
               className="popup-favorite-btn"
               onClick={async (e) => {
@@ -978,7 +979,21 @@ function ListingMarker({
       icon={icon}
       eventHandlers={{ click: () => onSelectListing?.(listing.id) }}
     >
-      <Popup className="clean-popup" maxWidth={280} minWidth={260}>
+      <Popup 
+        className="clean-popup" 
+        maxWidth={280} 
+        minWidth={260}
+        eventHandlers={{
+          click: (e) => {
+            // منع الانتقال عند النقر على popup
+            const target = e.originalEvent.target as HTMLElement;
+            if (target.closest('.popup-favorite-btn')) {
+              e.originalEvent.stopPropagation();
+              e.originalEvent.preventDefault();
+            }
+          }
+        }}
+      >
         <ListingPopupCard 
           listing={listing} 
           onToggleFavorite={onToggleFavorite}
