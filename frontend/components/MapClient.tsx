@@ -1026,7 +1026,19 @@ function ListingMarker({
       position={pos}
       ref={markerRef}
       icon={icon}
-      eventHandlers={{ click: () => onSelectListing?.(listing.id) }}
+      eventHandlers={{ 
+        click: (e) => {
+          // منع الانتقال إذا كان النقر على زر المفضلة
+          const target = e.originalEvent.target as HTMLElement;
+          if (target.closest('.popup-favorite-btn')) {
+            e.originalEvent.stopPropagation();
+            e.originalEvent.preventDefault();
+            e.originalEvent.stopImmediatePropagation();
+            return;
+          }
+          onSelectListing?.(listing.id);
+        }
+      }}
     >
       <Popup 
         className="clean-popup" 
