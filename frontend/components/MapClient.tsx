@@ -193,18 +193,33 @@ function FitToView({ listings, selectedCity, selectedListingId }: MapClientProps
     const [lat, lng] = mapCenter;
     if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
       console.warn('Invalid mapCenter coordinates:', mapCenter);
+      // إعادة تعيين إلى القيمة الافتراضية الآمنة
+      map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
       return;
     }
     
     // التحقق من أن الإحداثيات ضمن النطاق الصحيح
     if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
       console.warn('MapCenter coordinates out of range:', mapCenter);
+      // إعادة تعيين إلى القيمة الافتراضية الآمنة
+      map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
       return;
     }
     
+    // التحقق من صحة mapZoom
+    const safeZoom = (typeof mapZoom === 'number' && !isNaN(mapZoom) && mapZoom >= 1 && mapZoom <= 20) 
+      ? mapZoom 
+      : DEFAULT_ZOOM;
+    
     if (mapVersion > lastVersionRef.current) {
       lastVersionRef.current = mapVersion;
-      map.flyTo([lat, lng], mapZoom || DEFAULT_ZOOM, { duration: 0.8 });
+      try {
+        map.flyTo([lat, lng], safeZoom, { duration: 0.8 });
+      } catch (error) {
+        console.error('Error in map.flyTo:', error);
+        // Fallback إلى setView في حالة الخطأ
+        map.setView([lat, lng], safeZoom);
+      }
     }
   }, [map, mapCenter, mapZoom, mapVersion]);
 
@@ -214,7 +229,24 @@ function FitToView({ listings, selectedCity, selectedListingId }: MapClientProps
 
     if (selectedCity && selectedCity !== lastCityRef.current && CITY_CENTER[selectedCity]) {
       lastCityRef.current = selectedCity;
-      map.flyTo(CITY_CENTER[selectedCity], 12, { duration: 0.5, easeLinearity: 0.3 });
+      const cityCenter = CITY_CENTER[selectedCity];
+      // التحقق من صحة إحداثيات المدينة
+      if (Array.isArray(cityCenter) && cityCenter.length === 2) {
+        const [lat, lng] = cityCenter;
+        if (typeof lat === 'number' && typeof lng === 'number' && 
+            !isNaN(lat) && !isNaN(lng) &&
+            lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          try {
+            map.flyTo(cityCenter, 12, { duration: 0.5, easeLinearity: 0.3 });
+          } catch (error) {
+            console.error('Error flying to city:', error);
+            map.setView(cityCenter, 12);
+          }
+        } else {
+          console.warn('Invalid city center coordinates:', cityCenter);
+          map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+        }
+      }
       return;
     }
 
