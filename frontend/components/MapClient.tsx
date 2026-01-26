@@ -531,16 +531,24 @@ function ListingPopupCard({
     <div
       dir="rtl"
       onMouseDown={(e) => {
-        // السماح للنقر على زر المفضلة
-        if ((e.target as HTMLElement).closest('.popup-favorite-btn')) {
-          return;
+        // منع الانتشار تماماً عند النقر على زر المفضلة
+        const target = e.target as HTMLElement;
+        if (target.closest('.popup-favorite-btn')) {
+          e.stopPropagation();
+          e.preventDefault();
+          e.nativeEvent.stopImmediatePropagation();
+          return false;
         }
         stopPropagation(e);
       }}
       onClick={(e) => {
-        // السماح للنقر على زر المفضلة
-        if ((e.target as HTMLElement).closest('.popup-favorite-btn')) {
-          return;
+        // منع الانتشار تماماً عند النقر على زر المفضلة
+        const target = e.target as HTMLElement;
+        if (target.closest('.popup-favorite-btn')) {
+          e.stopPropagation();
+          e.preventDefault();
+          e.nativeEvent.stopImmediatePropagation();
+          return false;
         }
         stopPropagation(e);
       }}
@@ -633,34 +641,38 @@ function ListingPopupCard({
               type="button"
               className="popup-favorite-btn"
               onMouseDown={async (e) => {
-                // استخدام onMouseDown بدلاً من onClick لمنع الانتقال مبكراً
+                // منع الانتقال تماماً - استخدام onMouseDown لمنع الانتقال مبكراً
                 e.stopPropagation();
                 e.preventDefault();
                 e.nativeEvent.stopImmediatePropagation();
                 
-                // منع الانتقال
+                // منع الانتقال من جميع المصادر
                 if (e.cancelable) {
                   e.cancelBubble = true;
                 }
                 
-                // منع الانتقال من Leaflet
+                // منع الانتقال من Leaflet و React
                 if (e.nativeEvent) {
                   e.nativeEvent.stopImmediatePropagation();
                   e.nativeEvent.stopPropagation();
+                  if (e.nativeEvent.cancelable) {
+                    (e.nativeEvent as any).cancelBubble = true;
+                  }
                 }
                 
+                // تحديث الحالة فوراً
                 if (onToggleFavorite) {
                   const newFavoriteState = !isFavorite;
-                  setIsFavorite(newFavoriteState); // تحديث فوري للواجهة
+                  setIsFavorite(newFavoriteState); // تحديث فوري للواجهة - القلب يتحول إلى أحمر
                   listing.isFavorite = newFavoriteState; // تحديث الـ listing object
-                  try {
-                    await onToggleFavorite(listing.id, newFavoriteState);
-                  } catch (error) {
+                  
+                  // إرسال الطلب في الخلفية (لا ننتظر النتيجة)
+                  onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
                     console.error("Error toggling favorite:", error);
                     // Rollback on error
                     setIsFavorite(!newFavoriteState);
                     listing.isFavorite = !newFavoriteState;
-                  }
+                  });
                 }
                 
                 return false;
