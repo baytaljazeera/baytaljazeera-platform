@@ -439,31 +439,33 @@ function ListingPopupCard({
     setIsFavorite(listing.isFavorite || false);
   }, [listing.isFavorite]);
   
-  // إضافة event listeners مباشرة على الزر لمنع الانتقال
+  // إضافة event listeners مباشرة على الزر لمنع الانتقال - لكن نسمح لـ onMouseDown بالعمل
   useEffect(() => {
     const button = favoriteButtonRef.current;
     if (!button) return;
     
-    const handleAllEvents = (e: Event) => {
-      e.stopPropagation();
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      if ('cancelBubble' in e) {
-        (e as any).cancelBubble = true;
+    // نمنع فقط الأحداث التي قد تسبب انتقالاً، لكن نسمح لـ mousedown بالعمل
+    const handleClickEvents = (e: Event) => {
+      // نمنع الانتشار فقط للأحداث التي قد تسبب انتقالاً
+      // لكن نسمح لـ mousedown بالعمل لأنه يحتوي على منطق التحديث
+      if (e.type === 'click' || e.type === 'mouseup') {
+        e.stopPropagation();
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if ('cancelBubble' in e) {
+          (e as any).cancelBubble = true;
+        }
+        return false;
       }
-      return false;
     };
     
-    // استخدام capture phase لمنع الانتشار مبكراً - إضافة جميع أنواع الأحداث
-    const events = ['click', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'touchcancel', 'pointerdown', 'pointerup'];
-    events.forEach(eventType => {
-      button.addEventListener(eventType, handleAllEvents, true);
-    });
+    // نضيف فقط click و mouseup لمنع الانتقال، لكن نترك mousedown يعمل
+    button.addEventListener('click', handleClickEvents, true);
+    button.addEventListener('mouseup', handleClickEvents, true);
     
     return () => {
-      events.forEach(eventType => {
-        button.removeEventListener(eventType, handleAllEvents, true);
-      });
+      button.removeEventListener('click', handleClickEvents, true);
+      button.removeEventListener('mouseup', handleClickEvents, true);
     };
   }, []);
 
