@@ -439,32 +439,34 @@ function ListingPopupCard({
     setIsFavorite(listing.isFavorite || false);
   }, [listing.isFavorite]);
   
-  // إضافة event listeners مباشرة على الزر لمنع الانتقال إلى Leaflet فقط
-  useEffect(() => {
-    const button = favoriteButtonRef.current;
-    if (!button) return;
-    
-    // نمنع فقط الانتشار إلى Leaflet، لكن نسمح لجميع الأحداث بالعمل على الزر نفسه
-    const handlePropagation = (e: Event) => {
-      // نمنع الانتشار فقط للأحداث التي قد تسبب انتقالاً في Leaflet
-      // لكن نسمح لجميع الأحداث بالعمل على الزر نفسه (onClick, onMouseDown, etc.)
+  // دالة لتحديث المفضلة - نستخدمها في جميع الأحداث
+  const handleToggleFavorite = useCallback((e?: React.MouseEvent | React.TouchEvent) => {
+    if (e) {
       e.stopPropagation();
-      // لا نمنع preventDefault لأننا نريد أن يعمل onClick و onMouseDown
-    };
+      e.preventDefault();
+      if (e.nativeEvent) {
+        e.nativeEvent.stopImmediatePropagation();
+        e.nativeEvent.stopPropagation();
+      }
+    }
     
-    // نضيف فقط stopPropagation للأحداث، لكن نترك preventDefault يعمل
-    // هذا يمنع الانتشار إلى Leaflet لكن يسمح للأحداث بالعمل على الزر
-    const events = ['click', 'mousedown', 'mouseup', 'touchstart', 'touchend'];
-    events.forEach(eventType => {
-      button.addEventListener(eventType, handlePropagation, true);
-    });
+    // تحديث الحالة فوراً - بدون أي تأخير أو popup
+    const newFavoriteState = !isFavorite;
+    setIsFavorite(newFavoriteState);
+    listing.isFavorite = newFavoriteState;
     
-    return () => {
-      events.forEach(eventType => {
-        button.removeEventListener(eventType, handlePropagation, true);
+    // إرسال الطلب في الخلفية
+    if (onToggleFavorite) {
+      onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
+        console.error("Error toggling favorite:", error);
+        // Rollback on error
+        setIsFavorite(!newFavoriteState);
+        listing.isFavorite = !newFavoriteState;
       });
-    };
-  }, []);
+    }
+    
+    return false;
+  }, [isFavorite, listing, onToggleFavorite]);
 
   const allImages = (
     listing.images && listing.images.length > 0
@@ -684,92 +686,34 @@ function ListingPopupCard({
               ref={favoriteButtonRef}
               type="button"
               className="popup-favorite-btn"
-              onMouseDown={async (e) => {
-                // منع الانتقال تماماً - استخدام onMouseDown لمنع الانتقال مبكراً
+              onMouseDown={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                e.nativeEvent.stopImmediatePropagation();
-                
-                // منع الانتقال من جميع المصادر
-                if (e.cancelable) {
-                  e.cancelBubble = true;
-                }
-                
-                // منع الانتقال من Leaflet و React
                 if (e.nativeEvent) {
                   e.nativeEvent.stopImmediatePropagation();
                   e.nativeEvent.stopPropagation();
-                  if (e.nativeEvent.cancelable) {
-                    (e.nativeEvent as any).cancelBubble = true;
-                  }
                 }
-                
-                // تحديث الحالة فوراً - بدون أي تأخير أو popup
-                const newFavoriteState = !isFavorite;
-                setIsFavorite(newFavoriteState); // تحديث فوري للواجهة - القلب يتحول إلى أحمر مباشرة
-                listing.isFavorite = newFavoriteState; // تحديث الـ listing object
-                
-                // إرسال الطلب في الخلفية (لا ننتظر النتيجة) - بدون أي popup
-                if (onToggleFavorite) {
-                  // استدعاء async بدون await - لا ننتظر النتيجة
-                  onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
-                    console.error("Error toggling favorite:", error);
-                    // Rollback on error فقط في حالة الخطأ
-                    setIsFavorite(!newFavoriteState);
-                    listing.isFavorite = !newFavoriteState;
-                  });
-                }
-                
+                handleToggleFavorite(e);
                 return false;
               }}
               onClick={(e) => {
-                // تحديث الحالة فوراً عند النقر أيضاً (للديسكتوب)
                 e.stopPropagation();
                 e.preventDefault();
-                e.nativeEvent.stopImmediatePropagation();
-                
-                // تحديث الحالة فوراً - بدون أي تأخير أو popup
-                const newFavoriteState = !isFavorite;
-                setIsFavorite(newFavoriteState);
-                listing.isFavorite = newFavoriteState;
-                
-                // إرسال الطلب في الخلفية
-                if (onToggleFavorite) {
-                  onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
-                    console.error("Error toggling favorite:", error);
-                    setIsFavorite(!newFavoriteState);
-                    listing.isFavorite = !newFavoriteState;
-                  });
+                if (e.nativeEvent) {
+                  e.nativeEvent.stopImmediatePropagation();
+                  e.nativeEvent.stopPropagation();
                 }
-                
-                if (e.cancelable) {
-                  e.cancelBubble = true;
-                }
+                handleToggleFavorite(e);
                 return false;
               }}
               onTouchStart={(e) => {
-                // تحديث الحالة فوراً عند اللمس أيضاً
                 e.stopPropagation();
                 e.preventDefault();
-                e.nativeEvent.stopImmediatePropagation();
-                
-                // تحديث الحالة فوراً - بدون أي تأخير أو popup
-                const newFavoriteState = !isFavorite;
-                setIsFavorite(newFavoriteState);
-                listing.isFavorite = newFavoriteState;
-                
-                // إرسال الطلب في الخلفية
-                if (onToggleFavorite) {
-                  onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
-                    console.error("Error toggling favorite:", error);
-                    setIsFavorite(!newFavoriteState);
-                    listing.isFavorite = !newFavoriteState;
-                  });
+                if (e.nativeEvent) {
+                  e.nativeEvent.stopImmediatePropagation();
+                  e.nativeEvent.stopPropagation();
                 }
-                
-                if (e.cancelable) {
-                  e.cancelBubble = true;
-                }
+                handleToggleFavorite(e);
                 return false;
               }}
               onTouchEnd={(e) => {
