@@ -573,28 +573,35 @@ function ListingPopupCard({
 
   const showNavButtons = hasImages && allImages.length > 1;
 
+  const popupContentRef = useRef<HTMLDivElement>(null);
+  
+  // استخدام Leaflet's disableClickPropagation لمنع Leaflet من اعتراض الأحداث
+  useEffect(() => {
+    if (popupContentRef.current) {
+      L.DomEvent.disableClickPropagation(popupContentRef.current);
+      L.DomEvent.disableScrollPropagation(popupContentRef.current);
+    }
+  }, []);
+
   return (
     <div
+      ref={popupContentRef}
       dir="rtl"
       onMouseDown={(e) => {
-        // منع الانتشار تماماً عند النقر على زر المفضلة
+        // السماح للأحداث بالوصول إلى زر المفضلة
         const target = e.target as HTMLElement;
         if (target.closest('.popup-favorite-btn')) {
-          e.stopPropagation();
-          e.preventDefault();
-          e.nativeEvent.stopImmediatePropagation();
-          return false;
+          // لا نمنع الأحداث هنا - نتركها تصل إلى الزر
+          return;
         }
         stopPropagation(e);
       }}
       onClick={(e) => {
-        // منع الانتشار تماماً عند النقر على زر المفضلة
+        // السماح للأحداث بالوصول إلى زر المفضلة
         const target = e.target as HTMLElement;
         if (target.closest('.popup-favorite-btn')) {
-          e.stopPropagation();
-          e.preventDefault();
-          e.nativeEvent.stopImmediatePropagation();
-          return false;
+          // لا نمنع الأحداث هنا - نتركها تصل إلى الزر
+          return;
         }
         stopPropagation(e);
       }}
