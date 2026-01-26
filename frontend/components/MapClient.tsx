@@ -390,35 +390,26 @@ function ListingPopupCard({
     const button = favoriteButtonRef.current;
     if (!button) return;
     
-    const handleClick = (e: MouseEvent | TouchEvent) => {
+    const handleAllEvents = (e: Event) => {
       e.stopPropagation();
       e.preventDefault();
       e.stopImmediatePropagation();
       if ('cancelBubble' in e) {
         (e as any).cancelBubble = true;
       }
+      return false;
     };
     
-    const handleMouseDown = (e: MouseEvent) => {
-      e.stopPropagation();
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      if ('cancelBubble' in e) {
-        (e as any).cancelBubble = true;
-      }
-    };
-    
-    // استخدام capture phase لمنع الانتشار مبكراً
-    button.addEventListener('click', handleClick, true);
-    button.addEventListener('mousedown', handleMouseDown, true);
-    button.addEventListener('touchstart', handleClick, true);
-    button.addEventListener('touchend', handleClick, true);
+    // استخدام capture phase لمنع الانتشار مبكراً - إضافة جميع أنواع الأحداث
+    const events = ['click', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'touchcancel', 'pointerdown', 'pointerup'];
+    events.forEach(eventType => {
+      button.addEventListener(eventType, handleAllEvents, true);
+    });
     
     return () => {
-      button.removeEventListener('click', handleClick, true);
-      button.removeEventListener('mousedown', handleMouseDown, true);
-      button.removeEventListener('touchstart', handleClick, true);
-      button.removeEventListener('touchend', handleClick, true);
+      events.forEach(eventType => {
+        button.removeEventListener(eventType, handleAllEvents, true);
+      });
     };
   }, []);
 
