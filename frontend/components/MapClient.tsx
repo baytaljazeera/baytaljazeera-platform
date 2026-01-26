@@ -94,10 +94,19 @@ const CITY_CENTER: Record<string, LatLngExpression> = {
 function getPos(listing: MapListing): LatLngExpression | null {
   const lat = typeof listing.latitude === "string" ? parseFloat(listing.latitude) : listing.latitude;
   const lng = typeof listing.longitude === "string" ? parseFloat(listing.longitude) : listing.longitude;
-  if (typeof lat === "number" && typeof lng === "number" && !isNaN(lat) && !isNaN(lng)) {
-    return [lat, lng];
+  
+  // التحقق من صحة الإحداثيات ونطاقها
+  if (typeof lat !== "number" || typeof lng !== "number" || isNaN(lat) || isNaN(lng)) {
+    return null;
   }
-  return null;
+  
+  // التحقق من أن الإحداثيات ضمن النطاق الصحيح
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    console.warn(`Invalid coordinates for listing ${listing.id}:`, { lat, lng });
+    return null;
+  }
+  
+  return [lat, lng];
 }
 
 function formatPrice(price: number | undefined): string {
