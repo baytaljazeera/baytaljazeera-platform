@@ -591,20 +591,51 @@ function ListingPopupCard({
                 e.stopPropagation();
                 e.preventDefault();
                 e.nativeEvent.stopImmediatePropagation();
-                if (onToggleFavorite) {
-                  const newFavoriteState = !listing.isFavorite;
-                  await onToggleFavorite(listing.id, newFavoriteState);
-                  // تحديث الحالة المحلية فوراً للاستجابة السريعة
-                  listing.isFavorite = newFavoriteState;
+                // منع أي انتقال أو navigation
+                if (e.cancelable) {
+                  e.cancelBubble = true;
                 }
+                if (onToggleFavorite) {
+                  const newFavoriteState = !isFavorite;
+                  setIsFavorite(newFavoriteState); // تحديث فوري للواجهة
+                  listing.isFavorite = newFavoriteState; // تحديث الـ listing object
+                  try {
+                    await onToggleFavorite(listing.id, newFavoriteState);
+                  } catch (error) {
+                    console.error("Error toggling favorite:", error);
+                    // Rollback on error
+                    setIsFavorite(!newFavoriteState);
+                    listing.isFavorite = !newFavoriteState;
+                  }
+                }
+                return false;
               }}
               onMouseDown={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
+                e.nativeEvent.stopImmediatePropagation();
+                if (e.cancelable) {
+                  e.cancelBubble = true;
+                }
+                return false;
               }}
               onTouchStart={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
+                e.nativeEvent.stopImmediatePropagation();
+                if (e.cancelable) {
+                  e.cancelBubble = true;
+                }
+                return false;
+              }}
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                e.nativeEvent.stopImmediatePropagation();
+                if (e.cancelable) {
+                  e.cancelBubble = true;
+                }
+                return false;
               }}
               style={{
                 width: 36,
@@ -613,7 +644,7 @@ function ListingPopupCard({
                 minHeight: 36,
                 borderRadius: "50%",
                 border: "2px solid #fff",
-                backgroundColor: listing.isFavorite ? "#ef4444" : "rgba(0,0,0,0.5)",
+                backgroundColor: isFavorite ? "#ef4444" : "rgba(0,0,0,0.5)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -625,18 +656,18 @@ function ListingPopupCard({
                 boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
               }}
               onMouseEnter={(e) => {
-                if (!listing.isFavorite) {
+                if (!isFavorite) {
                   e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.7)";
                 }
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = listing.isFavorite ? "#ef4444" : "rgba(0,0,0,0.5)";
+                e.currentTarget.style.backgroundColor = isFavorite ? "#ef4444" : "rgba(0,0,0,0.5)";
               }}
-              title={listing.isFavorite ? "إزالة من المفضلة" : "إضافة للمفضلة"}
+              title={isFavorite ? "إزالة من المفضلة" : "إضافة للمفضلة"}
             >
               <Heart 
                 size={18} 
-                fill={listing.isFavorite ? "#fff" : "none"}
+                fill={isFavorite ? "#fff" : "none"}
                 color="#fff"
                 style={{
                   pointerEvents: "none",
