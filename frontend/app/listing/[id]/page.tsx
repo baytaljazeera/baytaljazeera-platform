@@ -1209,20 +1209,13 @@ export default function ListingDetailPage() {
                 <button
                   onClick={async () => {
                     const token = localStorage.getItem("token");
-                    if (!token) {
-                      const shouldLogin = window.confirm("يجب تسجيل الدخول لإضافة العقارات للمفضلة.\n\nهل تريد تسجيل الدخول الآن؟");
-                      if (shouldLogin) {
-                        window.location.href = "/login";
-                      }
-                      return;
-                    }
                     try {
+                      const headers: Record<string, string> = { "Content-Type": "application/json" };
+                      if (token) headers["Authorization"] = `Bearer ${token}`;
+                      
                       const res = await fetch(`/api/favorites/toggle`, {
                         method: "POST",
-                        headers: { 
-                          "Content-Type": "application/json",
-                          Authorization: `Bearer ${token}`,
-                        },
+                        headers,
                         credentials: "include",
                         body: JSON.stringify({ listingId: listing.id }),
                       });

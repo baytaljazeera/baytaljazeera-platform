@@ -832,17 +832,9 @@ function SearchPage() {
 
   async function toggleFavorite(id: string, isFavorite?: boolean): Promise<void> {
     const apiBase = getApiBase();
+    const token = localStorage.getItem("token");
+    
     try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        // المستخدم غير مسجل - عرض رسالة وتوجيهه لتسجيل الدخول
-        const shouldLogin = window.confirm("يجب تسجيل الدخول لإضافة العقارات للمفضلة.\n\nهل تريد تسجيل الدخول الآن؟");
-        if (shouldLogin) {
-          window.location.href = "/login";
-        }
-        return;
-      }
-      
       // تحديث الحالة فوراً في الواجهة بناءً على isFavorite
       if (typeof isFavorite === 'boolean') {
         setFavorites((prev) => {
@@ -860,12 +852,12 @@ function SearchPage() {
       }
       
       // إرسال الطلب في الخلفية - دائماً نستخدم toggle API
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      
       const res = await fetch(`${apiBase}/api/favorites/toggle`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers,
         credentials: "include",
         body: JSON.stringify({ listingId: id }),
       });
