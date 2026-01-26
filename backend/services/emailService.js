@@ -93,13 +93,21 @@ async function sendEmail(to, subject, htmlBody, textBody = null) {
     }
     
     console.log(`📧 [EmailService] Creating email message for ${to}...`);
+    
+    // Encode subject for proper Arabic display (RFC 2047 MIME Encoded-Word)
+    const encodedSubject = `=?UTF-8?B?${Buffer.from(subject, 'utf-8').toString('base64')}?=`;
+    // Encode From name for proper Arabic display
+    const encodedFromName = `=?UTF-8?B?${Buffer.from(GMAIL_FROM_NAME, 'utf-8').toString('base64')}?=`;
+    
     const messageParts = [
       `To: ${to}`,
-      `From: ${GMAIL_FROM_NAME} <${GMAIL_USER_EMAIL}>`,
-      `Subject: ${subject}`,
+      `From: ${encodedFromName} <${GMAIL_USER_EMAIL}>`,
+      `Subject: ${encodedSubject}`,
+      'MIME-Version: 1.0',
       'Content-Type: text/html; charset=utf-8',
+      'Content-Transfer-Encoding: base64',
       '',
-      htmlBody
+      Buffer.from(htmlBody, 'utf-8').toString('base64')
     ];
 
     const message = messageParts.join('\n');
