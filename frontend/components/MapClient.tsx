@@ -588,21 +588,23 @@ function ListingPopupCard({
       ref={popupContentRef}
       dir="rtl"
       onMouseDown={(e) => {
-        // السماح للأحداث بالوصول إلى زر المفضلة
+        // السماح للأحداث بالوصول إلى زر المفضلة - لا نمنعها
         const target = e.target as HTMLElement;
         if (target.closest('.popup-favorite-btn')) {
-          // لا نمنع الأحداث هنا - نتركها تصل إلى الزر
+          // لا نفعل شيء - نترك الأحداث تصل إلى الزر
           return;
         }
+        // منع الانتشار فقط للأحداث الأخرى
         stopPropagation(e);
       }}
       onClick={(e) => {
-        // السماح للأحداث بالوصول إلى زر المفضلة
+        // السماح للأحداث بالوصول إلى زر المفضلة - لا نمنعها
         const target = e.target as HTMLElement;
         if (target.closest('.popup-favorite-btn')) {
-          // لا نمنع الأحداث هنا - نتركها تصل إلى الزر
+          // لا نفعل شيء - نترك الأحداث تصل إلى الزر
           return;
         }
+        // منع الانتشار فقط للأحداث الأخرى
         stopPropagation(e);
       }}
       onDoubleClick={stopPropagation}
