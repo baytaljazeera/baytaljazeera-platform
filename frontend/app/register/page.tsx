@@ -555,8 +555,8 @@ function RegisterForm() {
             <label className="block text-sm font-semibold text-[#002845] mb-2">
               رقم الجوال <span className="text-slate-400 font-normal">(اختياري)</span>
             </label>
-            <div className="flex gap-2 flex-row-reverse">
-              {/* Phone Number Input - على اليمين (لأن الأرقام تُقرأ من اليسار لليمين) */}
+            <div className="flex gap-2">
+              {/* Phone Number Input - على اليمين */}
               <div className="relative flex-1">
                 <input
                   type="tel"
