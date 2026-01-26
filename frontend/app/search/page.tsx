@@ -836,7 +836,9 @@ function SearchPage() {
     try {
       const token = localStorage.getItem("token");
       if (!token) {
-        window.location.href = "/login";
+        // إذا لم يكن المستخدم مسجل دخول، لا نحدث الحالة ولا ننتقل
+        // فقط نترك الحالة كما هي
+        console.log("User not logged in - favorite action ignored");
         return;
       }
       

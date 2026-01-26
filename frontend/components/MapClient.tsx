@@ -705,16 +705,17 @@ function ListingPopupCard({
                   }
                 }
                 
-                // تحديث الحالة فوراً
+                // تحديث الحالة فوراً - بدون أي تأخير أو popup
+                const newFavoriteState = !isFavorite;
+                setIsFavorite(newFavoriteState); // تحديث فوري للواجهة - القلب يتحول إلى أحمر مباشرة
+                listing.isFavorite = newFavoriteState; // تحديث الـ listing object
+                
+                // إرسال الطلب في الخلفية (لا ننتظر النتيجة) - بدون أي popup
                 if (onToggleFavorite) {
-                  const newFavoriteState = !isFavorite;
-                  setIsFavorite(newFavoriteState); // تحديث فوري للواجهة - القلب يتحول إلى أحمر
-                  listing.isFavorite = newFavoriteState; // تحديث الـ listing object
-                  
-                  // إرسال الطلب في الخلفية (لا ننتظر النتيجة)
+                  // استدعاء async بدون await - لا ننتظر النتيجة
                   onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
                     console.error("Error toggling favorite:", error);
-                    // Rollback on error
+                    // Rollback on error فقط في حالة الخطأ
                     setIsFavorite(!newFavoriteState);
                     listing.isFavorite = !newFavoriteState;
                   });
