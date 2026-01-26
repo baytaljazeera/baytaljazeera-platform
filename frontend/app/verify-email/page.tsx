@@ -17,6 +17,7 @@ function VerifyEmailContent() {
   const [error, setError] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
   const [waitingForEmail, setWaitingForEmail] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -61,6 +62,8 @@ function VerifyEmailContent() {
   async function resendVerification() {
     if (!email) return;
     setResending(true);
+    setResendSuccess(false);
+    setError(null);
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/auth/resend-verification`, {
         method: "POST",
@@ -71,7 +74,7 @@ function VerifyEmailContent() {
       const data = await res.json();
 
       if (res.ok) {
-        setError("تم إرسال رابط التأكيد إلى بريدك الإلكتروني.");
+        setResendSuccess(true);
       } else {
         setError(data.error || "فشل إرسال رابط التأكيد.");
       }
@@ -138,6 +141,31 @@ function VerifyEmailContent() {
                 <br />
                 قد تجد الرسالة في مجلد البريد غير المرغوب (Spam).
               </p>
+              
+              {resendSuccess && (
+                <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-3">
+                  <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <p className="text-emerald-700 text-sm font-medium">
+                    تم إرسال رابط التأكيد بنجاح! تحقق من بريدك الإلكتروني.
+                  </p>
+                </div>
+              )}
+              
+              {error && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
+                  <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                  <p className="text-red-700 text-sm font-medium">{error}</p>
+                </div>
+              )}
+              
               <div className="space-y-3">
                 <button 
                   onClick={resendVerification}
