@@ -696,23 +696,45 @@ function ListingPopupCard({
               type="button"
               className="popup-favorite-btn"
               onMouseDown={(e) => {
+                // منع الانتشار إلى Leaflet فقط
                 e.stopPropagation();
-                e.preventDefault();
                 if (e.nativeEvent) {
                   e.nativeEvent.stopImmediatePropagation();
                   e.nativeEvent.stopPropagation();
                 }
-                handleToggleFavorite(e);
+                // تحديث الحالة فوراً بدون preventDefault
+                const newFavoriteState = !isFavorite;
+                setIsFavorite(newFavoriteState);
+                listing.isFavorite = newFavoriteState;
+                // إرسال الطلب في الخلفية
+                if (onToggleFavorite) {
+                  onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
+                    console.error("Error toggling favorite:", error);
+                    setIsFavorite(!newFavoriteState);
+                    listing.isFavorite = !newFavoriteState;
+                  });
+                }
                 return false;
               }}
               onClick={(e) => {
+                // منع الانتشار إلى Leaflet فقط
                 e.stopPropagation();
-                e.preventDefault();
                 if (e.nativeEvent) {
                   e.nativeEvent.stopImmediatePropagation();
                   e.nativeEvent.stopPropagation();
                 }
-                handleToggleFavorite(e);
+                // تحديث الحالة فوراً بدون preventDefault
+                const newFavoriteState = !isFavorite;
+                setIsFavorite(newFavoriteState);
+                listing.isFavorite = newFavoriteState;
+                // إرسال الطلب في الخلفية
+                if (onToggleFavorite) {
+                  onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
+                    console.error("Error toggling favorite:", error);
+                    setIsFavorite(!newFavoriteState);
+                    listing.isFavorite = !newFavoriteState;
+                  });
+                }
                 return false;
               }}
               onTouchStart={(e) => {
