@@ -76,7 +76,10 @@ The application comprises a Node.js/Express.js backend and a Next.js 16 + React 
     - **Sidebar Visibility Control**: Admin settings page at `/admin/settings/sidebar` allowing super admins to show/hide sidebar menu sections dynamically. Protected sections (dashboard, settings) cannot be hidden. Changes apply to all admins immediately and are logged in audit trail.
 
 ### System Design Choices
-- **Database**: PostgreSQL on Neon, managed with Knex.js migrations.
+- **Database**: 
+    - Development: PostgreSQL on Neon (Replit environment)
+    - Production: PostgreSQL on Render
+    - Managed with Knex.js migrations
 - **Caching**: Upstash Redis for caching with automatic fallback and smart invalidation; in-memory caching for dashboard stats.
 - **Task Queues**: BullMQ for background job processing (emails, video, AI tasks).
 - **Exchange Rates**: Daily-updated exchange rates stored in a database table via a cron job using exchangerate-api.com.
@@ -96,13 +99,26 @@ The application comprises a Node.js/Express.js backend and a Next.js 16 + React 
 - **Memory Management**: Automatic cleanup of video operations.
 - **Scalability**: Designed with clear separation of concerns and modular features.
 
+## Deployment Architecture
+| Component | Development | Production |
+|-----------|-------------|------------|
+| **Frontend** | Replit (port 5000) | Vercel (baytaljazeera.com) |
+| **Backend** | Replit (port 3001) | Render |
+| **Database** | Neon PostgreSQL | Render PostgreSQL |
+| **Files/Media** | Cloudinary | Cloudinary |
+| **Cache** | Upstash Redis | Upstash Redis |
+
+**Deployment Flow**: Push to GitHub → Vercel/Render auto-deploy
+
 ## External Dependencies
-- **Database**: PostgreSQL (Neon)
+- **Database**: PostgreSQL (Neon for dev, Render for prod)
+- **Hosting**: Vercel (Frontend), Render (Backend)
+- **File Storage**: Cloudinary (images, videos)
 - **Mapping**: Leaflet, `react-leaflet`, OpenStreetMap
 - **Styling**: Tailwind CSS
 - **Authentication**: JWT + bcrypt, Replit Auth (Google, Apple, GitHub, X, Email/Password)
 - **State Management**: Zustand
-- **AI**: OpenAI (via Replit AI Integrations), Google Veo (via Gemini API)
-- **WhatsApp Marketing**: Twilio
+- **AI**: OpenAI (via Replit AI Integrations), FFmpeg (video generation)
+- **WhatsApp Marketing**: Twilio (requires API keys)
 - **Task Scheduling**: node-cron
 - **Testing**: Jest + Supertest
