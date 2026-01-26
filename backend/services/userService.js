@@ -1,16 +1,26 @@
 const db = require('../db');
 
 const deleteUserCascade = async (userId) => {
-  await db.query("DELETE FROM email_verification_tokens WHERE user_id = $1", [userId]);
-  await db.query("DELETE FROM password_reset_tokens WHERE user_id = $1", [userId]);
-  await db.query("DELETE FROM favorites WHERE user_id = $1", [userId]);
-  await db.query("DELETE FROM notifications WHERE user_id = $1", [userId]);
-  await db.query("DELETE FROM user_plans WHERE user_id = $1", [userId]);
-  await db.query("DELETE FROM quota_buckets WHERE user_id = $1", [userId]);
-  await db.query("DELETE FROM membership_requests WHERE user_id = $1", [userId]);
-  await db.query("DELETE FROM listing_inquiries WHERE sender_id = $1 OR recipient_id = $1", [userId]);
-  await db.query("DELETE FROM referrals WHERE referrer_id = $1 OR referred_id = $1", [userId]);
-  await db.query("UPDATE properties SET user_id = NULL WHERE user_id = $1", [userId]);
+  const safeDelete = async (query, params) => {
+    try {
+      await db.query(query, params);
+    } catch (err) {
+      if (!err.message?.includes('does not exist')) {
+        console.warn(`[UserService] Warning during cascade delete: ${err.message}`);
+      }
+    }
+  };
+  
+  await safeDelete("DELETE FROM email_verification_tokens WHERE user_id = $1", [userId]);
+  await safeDelete("DELETE FROM password_reset_tokens WHERE user_id = $1", [userId]);
+  await safeDelete("DELETE FROM favorites WHERE user_id = $1", [userId]);
+  await safeDelete("DELETE FROM notifications WHERE user_id = $1", [userId]);
+  await safeDelete("DELETE FROM user_plans WHERE user_id = $1", [userId]);
+  await safeDelete("DELETE FROM quota_buckets WHERE user_id = $1", [userId]);
+  await safeDelete("DELETE FROM membership_requests WHERE user_id = $1", [userId]);
+  await safeDelete("DELETE FROM listing_inquiries WHERE sender_id = $1 OR recipient_id = $1", [userId]);
+  await safeDelete("DELETE FROM referrals WHERE referrer_id = $1 OR referred_id = $1", [userId]);
+  await safeDelete("UPDATE properties SET user_id = NULL WHERE user_id = $1", [userId]);
   await db.query("DELETE FROM users WHERE id = $1", [userId]);
 };
 
