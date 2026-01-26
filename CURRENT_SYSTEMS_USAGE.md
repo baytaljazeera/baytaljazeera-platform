@@ -32,7 +32,9 @@
 | **Recharts** | ❌ غير مستخدم | - | غير مستخدم حالياً في الكود |
 | **Jest** | ⚠️ مهم | `backend/__tests__/` | الاختبارات - اختبار الـ API |
 | **Vercel** | ⚠️ مهم | `frontend/vercel.json` | استضافة الواجهة - نشر الواجهة الأمامية |
-| **Render/Railway** | ⚠️ مهم | `render.yaml`, `nixpacks.toml` | استضافة الخادم - نشر الـ Backend |
+| **Render** | ⚠️ مهم | `render.yaml` | استضافة الخادم - نشر الـ Backend (يمكن إنشاء PostgreSQL من Render) |
+| **Neon** | ⚠️ مهم | `DATABASE_URL` | قاعدة بيانات PostgreSQL - قاعدة البيانات المستخدمة حالياً |
+| **Upstash** | ⚠️ مهم | `UPSTASH_REDIS_URL` | Redis - التخزين المؤقت (يمكن استخدام Redis من Render) |
 | **Docker** | ⚠️ اختياري | `Dockerfile` | الحاويات - نشر التطبيق |
 
 ## التفاصيل حسب الاستخدام
