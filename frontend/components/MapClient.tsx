@@ -726,10 +726,25 @@ function ListingPopupCard({
                 return false;
               }}
               onClick={(e) => {
-                // منع onClick أيضاً كإجراء احتياطي
+                // تحديث الحالة فوراً عند النقر أيضاً (للديسكتوب)
                 e.stopPropagation();
                 e.preventDefault();
                 e.nativeEvent.stopImmediatePropagation();
+                
+                // تحديث الحالة فوراً - بدون أي تأخير أو popup
+                const newFavoriteState = !isFavorite;
+                setIsFavorite(newFavoriteState);
+                listing.isFavorite = newFavoriteState;
+                
+                // إرسال الطلب في الخلفية
+                if (onToggleFavorite) {
+                  onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
+                    console.error("Error toggling favorite:", error);
+                    setIsFavorite(!newFavoriteState);
+                    listing.isFavorite = !newFavoriteState;
+                  });
+                }
+                
                 if (e.cancelable) {
                   e.cancelBubble = true;
                 }
