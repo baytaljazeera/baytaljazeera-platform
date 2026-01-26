@@ -14,7 +14,7 @@ exports.up = async function(knex) {
   if (!tableExists) {
     await knex.schema.createTable('email_verification_tokens', (table) => {
       table.increments('id').primary();
-      table.integer('user_id').references('id').inTable('users').onDelete('CASCADE').notNullable();
+      table.uuid('user_id').references('id').inTable('users').onDelete('CASCADE').notNullable();
       table.string('token_hash').notNullable();
       table.timestamp('expires_at').notNullable();
       table.timestamp('used_at');

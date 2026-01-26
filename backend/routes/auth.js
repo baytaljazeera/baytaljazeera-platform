@@ -364,6 +364,17 @@ router.post("/login", asyncHandler(async (req, res) => {
     });
   }
   
+  // Check if email is verified (skip for admins)
+  const adminRoles = ['admin', 'super_admin', 'content', 'finance', 'support'];
+  if (!user.email_verified && !adminRoles.includes(user.role)) {
+    return res.status(403).json({ 
+      error: "يرجى تأكيد بريدك الإلكتروني أولاً. تحقق من صندوق الوارد أو اطلب رابط تأكيد جديد.", 
+      errorEn: "Please verify your email first",
+      requiresVerification: true,
+      email: user.email
+    });
+  }
+  
   await db.query(
     `UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = $1`,
     [user.id]
