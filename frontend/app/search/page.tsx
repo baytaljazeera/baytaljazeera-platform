@@ -1060,24 +1060,27 @@ function SearchPage() {
             className={`transition-all duration-300 ${showMiniMap ? 'w-full lg:w-[70%]' : 'w-full'}`}
           >
             <div className="grid gap-4 md:gap-6 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-              {filteredListings.map((item) => (
-                <PropertyCard
-                  key={item.id}
-                  listing={item}
-                  isFavorite={favoritesSet.has(item.id)}
-                  onToggleFavorite={() => toggleFavorite(item.id)}
-                  onHover={() => {
-                    setActiveListingId(item.id);
-                    setStoreActiveId(item.id);
-                    if (item.latitude && item.longitude) {
-                      const lat = typeof item.latitude === 'string' ? parseFloat(item.latitude) : item.latitude;
-                      const lng = typeof item.longitude === 'string' ? parseFloat(item.longitude) : item.longitude;
-                      setMapCenter([lat, lng]);
-                    }
-                  }}
-                  isActive={activeListingId === item.id}
-                />
-              ))}
+              {filteredListings.map((item) => {
+                const currentIsFavorite = favoritesSet.has(item.id);
+                return (
+                  <PropertyCard
+                    key={item.id}
+                    listing={item}
+                    isFavorite={currentIsFavorite}
+                    onToggleFavorite={() => toggleFavorite(item.id, !currentIsFavorite)}
+                    onHover={() => {
+                      setActiveListingId(item.id);
+                      setStoreActiveId(item.id);
+                      if (item.latitude && item.longitude) {
+                        const lat = typeof item.latitude === 'string' ? parseFloat(item.latitude) : item.latitude;
+                        const lng = typeof item.longitude === 'string' ? parseFloat(item.longitude) : item.longitude;
+                        setMapCenter([lat, lng]);
+                      }
+                    }}
+                    isActive={activeListingId === item.id}
+                  />
+                );
+              })}
             </div>
           </div>
 
