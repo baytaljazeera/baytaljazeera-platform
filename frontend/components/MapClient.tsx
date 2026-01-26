@@ -632,14 +632,23 @@ function ListingPopupCard({
               ref={favoriteButtonRef}
               type="button"
               className="popup-favorite-btn"
-              onClick={async (e) => {
+              onMouseDown={async (e) => {
+                // استخدام onMouseDown بدلاً من onClick لمنع الانتقال مبكراً
                 e.stopPropagation();
                 e.preventDefault();
                 e.nativeEvent.stopImmediatePropagation();
-                // منع أي انتقال أو navigation
+                
+                // منع الانتقال
                 if (e.cancelable) {
                   e.cancelBubble = true;
                 }
+                
+                // منع الانتقال من Leaflet
+                if (e.nativeEvent) {
+                  e.nativeEvent.stopImmediatePropagation();
+                  e.nativeEvent.stopPropagation();
+                }
+                
                 if (onToggleFavorite) {
                   const newFavoriteState = !isFavorite;
                   setIsFavorite(newFavoriteState); // تحديث فوري للواجهة
@@ -653,9 +662,11 @@ function ListingPopupCard({
                     listing.isFavorite = !newFavoriteState;
                   }
                 }
+                
                 return false;
               }}
-              onMouseDown={(e) => {
+              onClick={(e) => {
+                // منع onClick أيضاً كإجراء احتياطي
                 e.stopPropagation();
                 e.preventDefault();
                 e.nativeEvent.stopImmediatePropagation();
