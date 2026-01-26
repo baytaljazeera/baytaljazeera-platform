@@ -161,9 +161,11 @@ function getPasswordResetEmailTemplate(resetLink, userName) {
         <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
           <tr>
             <td style="background: linear-gradient(135deg, #002845 0%, #01375e 100%); padding: 40px; text-align: center;">
-              <div style="width: 80px; height: 80px; margin: 0 auto 16px auto; background: linear-gradient(135deg, #D4AF37 0%, #f6e27a 50%, #D4AF37 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-                <span style="font-size: 36px; color: #002845; font-weight: bold;">🏠</span>
-              </div>
+              <table width="80" height="80" cellpadding="0" cellspacing="0" style="margin: 0 auto 16px auto; border-radius: 50%; background: linear-gradient(135deg, #D4AF37 0%, #f6e27a 50%, #D4AF37 100%);">
+                <tr>
+                  <td align="center" valign="middle" style="font-size: 36px; line-height: 80px;">🏠</td>
+                </tr>
+              </table>
               <h1 style="color: #D4AF37; margin: 0; font-size: 32px; font-weight: bold;">بيت الجزيرة</h1>
               <p style="color: rgba(212, 175, 55, 0.8); margin: 8px 0 0 0; font-size: 14px;">منصة العقارات الخليجية الأولى</p>
             </td>
@@ -240,9 +242,11 @@ function getEmailVerificationTemplate(verifyLink, userName) {
         <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
           <tr>
             <td style="background: linear-gradient(135deg, #002845 0%, #01375e 100%); padding: 40px; text-align: center;">
-              <div style="width: 80px; height: 80px; margin: 0 auto 16px auto; background: linear-gradient(135deg, #D4AF37 0%, #f6e27a 50%, #D4AF37 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-                <span style="font-size: 36px; color: #002845; font-weight: bold;">🏠</span>
-              </div>
+              <table width="80" height="80" cellpadding="0" cellspacing="0" style="margin: 0 auto 16px auto; border-radius: 50%; background: linear-gradient(135deg, #D4AF37 0%, #f6e27a 50%, #D4AF37 100%);">
+                <tr>
+                  <td align="center" valign="middle" style="font-size: 36px; line-height: 80px;">🏠</td>
+                </tr>
+              </table>
               <h1 style="color: #D4AF37; margin: 0; font-size: 32px; font-weight: bold;">بيت الجزيرة</h1>
               <p style="color: rgba(212, 175, 55, 0.8); margin: 8px 0 0 0; font-size: 14px;">منصة العقارات الخليجية الأولى</p>
             </td>
@@ -326,9 +330,11 @@ async function sendWelcomeEmail(email, userName) {
         <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
           <tr>
             <td style="background: linear-gradient(135deg, #002845 0%, #01375e 100%); padding: 40px; text-align: center;">
-              <div style="width: 80px; height: 80px; margin: 0 auto 16px auto; background: linear-gradient(135deg, #D4AF37 0%, #f6e27a 50%, #D4AF37 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-                <span style="font-size: 36px; color: #002845; font-weight: bold;">🏠</span>
-              </div>
+              <table width="80" height="80" cellpadding="0" cellspacing="0" style="margin: 0 auto 16px auto; border-radius: 50%; background: linear-gradient(135deg, #D4AF37 0%, #f6e27a 50%, #D4AF37 100%);">
+                <tr>
+                  <td align="center" valign="middle" style="font-size: 36px; line-height: 80px;">🏠</td>
+                </tr>
+              </table>
               <h1 style="color: #D4AF37; margin: 0; font-size: 32px; font-weight: bold;">بيت الجزيرة</h1>
               <p style="color: rgba(212, 175, 55, 0.8); margin: 8px 0 0 0; font-size: 14px;">منصة العقارات الخليجية الأولى</p>
             </td>
