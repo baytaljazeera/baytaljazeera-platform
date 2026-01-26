@@ -287,6 +287,9 @@ router.post("/register", asyncHandler(async (req, res) => {
     );
 
     // Send verification email
+    let emailSent = false;
+    let emailError = null;
+    
     try {
       const verificationToken = crypto.randomBytes(32).toString('hex');
       const tokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
@@ -300,11 +303,14 @@ router.post("/register", asyncHandler(async (req, res) => {
       
       const emailResult = await sendVerificationEmail(user.email, verificationToken, user.name);
       if (emailResult.success) {
+        emailSent = true;
         console.log(`✅ [Auth] Email verification sent successfully to ${user.email}, messageId: ${emailResult.messageId}`);
       } else {
+        emailError = emailResult.error;
         console.error(`❌ [Auth] Failed to send email verification to ${user.email}:`, emailResult.error);
       }
     } catch (emailErr) {
+      emailError = emailErr.message;
       console.error('⚠️ Failed to send verification email:', emailErr.message);
     }
 
@@ -321,8 +327,12 @@ router.post("/register", asyncHandler(async (req, res) => {
           email_verified: false
         },
         token,
-        message: "تم إنشاء الحساب بنجاح! يرجى تأكيد بريدك الإلكتروني",
-        requiresVerification: true
+        message: emailSent 
+          ? "تم إنشاء الحساب بنجاح! يرجى تأكيد بريدك الإلكتروني"
+          : "تم إنشاء الحساب. فشل إرسال رسالة التأكيد - يرجى إعادة الإرسال لاحقاً",
+        requiresVerification: true,
+        emailSent,
+        emailError: emailError ? String(emailError) : null
       });
   } catch (err) {
     if (err.code === "23505") {
@@ -795,17 +805,26 @@ router.post("/resend-verification", strictAuthLimiter, asyncHandler(async (req, 
     const emailResult = await resendVerificationEmail(user.email, verificationToken, user.name);
     if (emailResult.success) {
       console.log(`✅ [Auth] Verification email resent to ${user.email}, messageId: ${emailResult.messageId}`);
+      return res.json({ 
+        ok: true, 
+        message: "تم إرسال رسالة تأكيد جديدة إلى بريدك الإلكتروني" 
+      });
     } else {
       console.error(`❌ [Auth] Failed to resend verification email to ${user.email}:`, emailResult.error);
+      return res.status(500).json({ 
+        ok: false, 
+        error: "فشل في إرسال البريد الإلكتروني. يرجى المحاولة لاحقاً.",
+        details: emailResult.error
+      });
     }
   } catch (emailErr) {
     console.error('❌ Failed to resend verification email:', emailErr.message);
+    return res.status(500).json({ 
+      ok: false, 
+      error: "حدث خطأ أثناء إرسال البريد الإلكتروني",
+      details: emailErr.message
+    });
   }
-
-  res.json({ 
-    ok: true, 
-    message: "تم إرسال رسالة تأكيد جديدة إلى بريدك الإلكتروني" 
-  });
 }));
 
 module.exports = router;
