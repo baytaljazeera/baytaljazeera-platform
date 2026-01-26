@@ -6,7 +6,7 @@ const db = require("../db");
 const { JWT_SECRET, JWT_CONFIG, JWT_VERIFY_OPTIONS } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { validatePassword, PASSWORD_POLICY, sanitizeInput, strictAuthLimiter } = require("../config/security");
-const { sendPasswordResetEmail } = require("../services/emailService");
+const { sendPasswordResetEmail, sendVerificationEmail, resendVerificationEmail } = require("../services/emailService");
 
 const router = express.Router();
 
@@ -244,6 +244,24 @@ router.post("/register", asyncHandler(async (req, res) => {
       }
     );
 
+    // Send verification email
+    try {
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      
+      await db.query(
+        `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
+         VALUES ($1, $2, $3)`,
+        [user.id, tokenHash, expiresAt]
+      );
+      
+      await sendVerificationEmail(user.email, verificationToken, user.name);
+      console.log(`📧 Verification email sent to ${user.email}`);
+    } catch (emailErr) {
+      console.error('⚠️ Failed to send verification email:', emailErr.message);
+    }
+
     res
       .cookie("token", token, getCookieOptions())
       .json({ 
@@ -254,9 +272,11 @@ router.post("/register", asyncHandler(async (req, res) => {
           name: user.name,
           phone: user.phone,
           role: user.role,
+          email_verified: false
         },
         token,
-        message: "تم إنشاء الحساب بنجاح"
+        message: "تم إنشاء الحساب بنجاح! يرجى تأكيد بريدك الإلكتروني",
+        requiresVerification: true
       });
   } catch (err) {
     if (err.code === "23505") {
@@ -611,6 +631,115 @@ router.post("/reset-password", strictAuthLimiter, asyncHandler(async (req, res) 
   res.json({ 
     ok: true, 
     message: "تم إعادة تعيين كلمة المرور بنجاح! يمكنك الآن تسجيل الدخول." 
+  });
+}));
+
+// Email verification endpoint
+router.post("/verify-email", asyncHandler(async (req, res) => {
+  const { token } = req.body;
+  
+  if (!token) {
+    return res.status(400).json({ 
+      error: "رمز التحقق مطلوب", 
+      errorEn: "Verification token is required" 
+    });
+  }
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+  const tokenResult = await db.query(
+    `SELECT evt.*, u.email, u.name 
+     FROM email_verification_tokens evt
+     JOIN users u ON evt.user_id = u.id
+     WHERE evt.token_hash = $1 AND evt.expires_at > NOW() AND evt.used_at IS NULL`,
+    [tokenHash]
+  );
+
+  if (tokenResult.rows.length === 0) {
+    return res.status(400).json({ 
+      error: "الرابط غير صالح أو منتهي الصلاحية", 
+      errorEn: "Invalid or expired verification link" 
+    });
+  }
+
+  const verifyRecord = tokenResult.rows[0];
+
+  await db.query(
+    `UPDATE users SET email_verified = true, email_verified_at = NOW(), updated_at = NOW()
+     WHERE id = $1`,
+    [verifyRecord.user_id]
+  );
+
+  await db.query(
+    `UPDATE email_verification_tokens SET used_at = NOW() WHERE id = $1`,
+    [verifyRecord.id]
+  );
+
+  console.log(`✅ Email verified for user ${verifyRecord.email}`);
+
+  res.json({ 
+    ok: true, 
+    message: "تم تأكيد البريد الإلكتروني بنجاح!" 
+  });
+}));
+
+// Resend verification email
+router.post("/resend-verification", strictAuthLimiter, asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({ 
+      error: "البريد الإلكتروني مطلوب", 
+      errorEn: "Email is required" 
+    });
+  }
+
+  const userResult = await db.query(
+    `SELECT id, email, name, email_verified FROM users WHERE email = $1`,
+    [email.toLowerCase().trim()]
+  );
+
+  if (userResult.rows.length === 0) {
+    return res.json({ 
+      ok: true, 
+      message: "إذا كان البريد مسجلاً لدينا، ستصلك رسالة تأكيد" 
+    });
+  }
+
+  const user = userResult.rows[0];
+
+  if (user.email_verified) {
+    return res.status(400).json({ 
+      error: "البريد الإلكتروني مؤكد مسبقاً", 
+      errorEn: "Email is already verified" 
+    });
+  }
+
+  await db.query(
+    `DELETE FROM email_verification_tokens WHERE user_id = $1`,
+    [user.id]
+  );
+
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  await db.query(
+    `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
+     VALUES ($1, $2, $3)`,
+    [user.id, tokenHash, expiresAt]
+  );
+
+  try {
+    await resendVerificationEmail(user.email, verificationToken, user.name);
+    console.log(`📧 Verification email resent to ${user.email}`);
+  } catch (emailErr) {
+    console.error('❌ Failed to resend verification email:', emailErr.message);
+  }
+
+  res.json({ 
+    ok: true, 
+    message: "تم إرسال رسالة تأكيد جديدة إلى بريدك الإلكتروني" 
   });
 }));
 
