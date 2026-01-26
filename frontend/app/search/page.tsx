@@ -831,7 +831,7 @@ function SearchPage() {
     [filteredListings, favoritesSet]
   );
 
-  async function toggleFavorite(id: string, isFavorite?: boolean) {
+  async function toggleFavorite(id: string, isFavorite?: boolean): Promise<void> {
     const apiBase = getApiBase();
     try {
       const token = localStorage.getItem("token");
@@ -839,13 +839,11 @@ function SearchPage() {
         // إذا لم يكن المستخدم مسجل دخول، لا نحدث الحالة ولا ننتقل
         // فقط نترك الحالة كما هي
         console.log("User not logged in - favorite action ignored");
-        return;
+        throw new Error("User not logged in");
       }
       
-      // إذا تم تمرير isFavorite، استخدمه مباشرة لتحديث الحالة فوراً
-      // وإلا استخدم toggle API
+      // تحديث الحالة فوراً في الواجهة بناءً على isFavorite
       if (typeof isFavorite === 'boolean') {
-        // تحديث الحالة فوراً في الواجهة
         setFavorites((prev) => {
           if (isFavorite) {
             // إضافة إلى المفضلة
@@ -858,35 +856,36 @@ function SearchPage() {
             return prev.filter((fid) => fid !== id);
           }
         });
-        
-        // إرسال الطلب في الخلفية
-        const res = await fetch(`${apiBase}/api/favorites/toggle`, {
-          method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          credentials: "include",
-          body: JSON.stringify({ listingId: id }),
-        });
-        
-        if (res.ok) {
-          const data = await res.json();
-          // تحديث الحالة بناءً على الاستجابة من الخادم
-          setFavorites((prev) => {
-            if (data.favorited) {
-              if (!prev.includes(id)) {
-                return [...prev, id];
-              }
-              return prev;
-            } else {
-              return prev.filter((fid) => fid !== id);
+      }
+      
+      // إرسال الطلب في الخلفية - دائماً نستخدم toggle API
+      const res = await fetch(`${apiBase}/api/favorites/toggle`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({ listingId: id }),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        // تحديث الحالة بناءً على الاستجابة من الخادم للتأكد من التزامن
+        setFavorites((prev) => {
+          if (data.favorited) {
+            if (!prev.includes(id)) {
+              return [...prev, id];
             }
-          });
-        } else if (res.status === 401) {
-          window.location.href = "/login";
-        } else {
-          // Rollback في حالة الخطأ
+            return prev;
+          } else {
+            return prev.filter((fid) => fid !== id);
+          }
+        });
+      } else if (res.status === 401) {
+        window.location.href = "/login";
+        // Rollback في حالة عدم التصريح
+        if (typeof isFavorite === 'boolean') {
           setFavorites((prev) => {
             if (isFavorite) {
               return prev.filter((fid) => fid !== id);
@@ -897,36 +896,25 @@ function SearchPage() {
               return prev;
             }
           });
-          const errorData = await res.json().catch(() => ({ error: "حدث خطأ" }));
-          console.error("Toggle favorite error:", errorData);
         }
+        throw new Error("Unauthorized");
       } else {
-        // استخدام toggle API التقليدي
-        const res = await fetch(`${apiBase}/api/favorites/toggle`, {
-          method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          credentials: "include",
-          body: JSON.stringify({ listingId: id }),
-        });
-        
-        if (res.ok) {
-          const data = await res.json();
+        // Rollback في حالة الخطأ
+        if (typeof isFavorite === 'boolean') {
           setFavorites((prev) => {
-            if (data.favorited) {
-              return [...prev, id];
-            } else {
+            if (isFavorite) {
               return prev.filter((fid) => fid !== id);
+            } else {
+              if (!prev.includes(id)) {
+                return [...prev, id];
+              }
+              return prev;
             }
           });
-        } else if (res.status === 401) {
-          window.location.href = "/login";
-        } else {
-          const errorData = await res.json().catch(() => ({ error: "حدث خطأ" }));
-          console.error("Toggle favorite error:", errorData);
         }
+        const errorData = await res.json().catch(() => ({ error: "حدث خطأ" }));
+        console.error("Toggle favorite error:", errorData);
+        throw new Error(errorData.error || "فشل في تحديث المفضلة");
       }
     } catch (err) {
       console.error("Toggle favorite error:", err);
@@ -943,6 +931,7 @@ function SearchPage() {
           }
         });
       }
+      throw err;
     }
   }
 
