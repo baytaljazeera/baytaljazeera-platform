@@ -8,8 +8,48 @@ const listingService = require("../services/listingService");
 const { ROLE_LABELS, VALID_ROLES, VALID_USER_STATUSES, CACHE_KEYS } = require("../utils/constants");
 const { logAdminAction, AUDIT_ACTIONS } = require("../services/auditService");
 const { buildSearchClause, buildWhereClause, paginatedQuery, handleDatabaseError } = require("../utils/queryHelpers");
+const emailService = require("../services/emailService");
 
 const router = express.Router();
+
+// 🔧 اختبار خدمة البريد الإلكتروني
+router.get("/test-email-status", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
+  const gmailClient = emailService.getGmailClient();
+  
+  res.json({
+    ok: true,
+    emailService: {
+      initialized: !!gmailClient,
+      status: gmailClient ? 'جاهز للإرسال' : 'غير مفعل - تحقق من إعدادات Gmail'
+    }
+  });
+}));
+
+router.post("/test-send-email", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({ error: "البريد الإلكتروني مطلوب" });
+  }
+  
+  const htmlBody = `
+    <div style="direction: rtl; font-family: Arial, sans-serif; padding: 20px;">
+      <h2 style="color: #D4AF37;">اختبار البريد الإلكتروني - بيت الجزيرة</h2>
+      <p>هذا بريد اختباري للتأكد من عمل خدمة البريد الإلكتروني.</p>
+      <p>الوقت: ${new Date().toLocaleString('ar-SA')}</p>
+      <hr style="border-color: #D4AF37;" />
+      <p style="color: #666;">فريق بيت الجزيرة</p>
+    </div>
+  `;
+  
+  const result = await emailService.sendEmail(email, 'اختبار البريد - بيت الجزيرة', htmlBody);
+  
+  if (result.success) {
+    res.json({ ok: true, message: `تم إرسال البريد الاختباري إلى ${email}` });
+  } else {
+    res.status(500).json({ ok: false, error: result.error || 'فشل في إرسال البريد' });
+  }
+}));
 
 // 🟢 جلب الأعداد للشريط الجانبي - GET /api/admin/pending-counts
 // النظام الموحد: أحمر = جديد (أولوية قصوى)، أصفر = قيد التنفيذ، أخضر = مكتمل
