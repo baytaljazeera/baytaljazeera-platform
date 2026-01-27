@@ -7,6 +7,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import dynamicImport from "next/dynamic";
+import { getAuthHeaders } from "@/lib/api";
 
 const MapClient = dynamicImport(() => import("../../components/MapClient"), {
   ssr: false,
@@ -115,9 +116,9 @@ type SortOption =
 
 type ViewMode = "list" | "map";
 
-// دالة بناء رابط الـ API - نستخدم مسار نسبي لأن Next.js rewrites يتولى تحويل الطلبات
+// دالة بناء رابط الـ API
 function getApiBase(): string {
-  return "";
+  return process.env.NEXT_PUBLIC_API_URL || "";
 }
 
 // استيراد دالة تنسيق السعر الموحدة من currencyStore
@@ -588,6 +589,7 @@ function SearchPage() {
       try {
         const res = await fetch(`${apiBase}/api/favorites/ids`, {
           credentials: "include",
+          headers: getAuthHeaders(),
         });
         if (res.ok) {
           const data = await res.json();
@@ -832,7 +834,6 @@ function SearchPage() {
 
   async function toggleFavorite(id: string, isFavorite?: boolean): Promise<void> {
     const apiBase = getApiBase();
-    const token = localStorage.getItem("token");
     
     try {
       // تحديث الحالة فوراً في الواجهة بناءً على isFavorite
@@ -852,12 +853,12 @@ function SearchPage() {
       }
       
       // إرسال الطلب في الخلفية - دائماً نستخدم toggle API
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      
       const res = await fetch(`${apiBase}/api/favorites/toggle`, {
         method: "POST",
-        headers,
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
         credentials: "include",
         body: JSON.stringify({ listingId: id }),
       });

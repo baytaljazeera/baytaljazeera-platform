@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { useSiteSettingsStore } from "@/lib/stores/siteSettingsStore";
+import { apiGet, API_URL } from "@/lib/api";
 import LogoAdminModal from "./LogoAdminModal";
 import MobileBottomSheet from "./MobileBottomSheet";
 
@@ -91,11 +92,11 @@ function NavbarContent() {
       if (!isAuthenticated) return;
       try {
         const [notifRes, msgRes, customerMsgRes, badgesRes, favRes] = await Promise.all([
-          fetch("/api/notifications/unread-count", { credentials: "include" }),
-          fetch("/api/messages/unread-count", { credentials: "include" }),
-          fetch("/api/messages/customer-messages-unread-count", { credentials: "include" }),
-          fetch("/api/account/pending-counts", { credentials: "include" }),
-          fetch("/api/favorites/ids", { credentials: "include" })
+          apiGet("/api/notifications/unread-count"),
+          apiGet("/api/messages/unread-count"),
+          apiGet("/api/messages/customer-messages-unread-count"),
+          apiGet("/api/account/pending-counts"),
+          apiGet("/api/favorites/ids")
         ]);
         if (notifRes.ok) {
           const notifData = await notifRes.json();
@@ -141,7 +142,7 @@ function NavbarContent() {
       if (!showNotificationDropdown || !isAuthenticated) return;
       setLoadingNotifications(true);
       try {
-        const res = await fetch("/api/notifications?limit=10", { credentials: "include" });
+        const res = await apiGet("/api/notifications?limit=10");
         if (res.ok) {
           const data = await res.json();
           setNotifications(data.notifications || []);
