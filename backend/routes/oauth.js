@@ -122,11 +122,11 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 
 // Google OAuth Routes
 router.get('/google',
-  passport.authenticate('google', { scope: ['profile', 'email'] })
+  passport.authenticate('google', { session: false, scope: ['profile', 'email'] })
 );
 
 router.get('/google/callback',
-  passport.authenticate('google', { failureRedirect: '/register?error=oauth_failed' }),
+  passport.authenticate('google', { session: false, failureRedirect: '/register?error=oauth_failed' }),
   asyncHandler(async (req, res) => {
     const user = req.user;
     
