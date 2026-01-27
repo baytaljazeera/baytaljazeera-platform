@@ -51,10 +51,12 @@ function csrfProtection(req, res, next) {
 function setCsrfToken(req, res, next) {
   if (!req.cookies?.[CSRF_COOKIE_NAME]) {
     const token = generateCsrfToken();
+    const isProduction = process.env.NODE_ENV === 'production';
+    // Use 'none' for cross-origin (Vercel frontend ↔ Render backend)
     res.cookie(CSRF_COOKIE_NAME, token, {
       httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
       maxAge: 24 * 60 * 60 * 1000
     });
   }
@@ -63,13 +65,15 @@ function setCsrfToken(req, res, next) {
 
 function getCsrfToken(req, res) {
   let token = req.cookies?.[CSRF_COOKIE_NAME];
+  const isProduction = process.env.NODE_ENV === 'production';
   
   if (!token) {
     token = generateCsrfToken();
+    // Use 'none' for cross-origin (Vercel frontend ↔ Render backend)
     res.cookie(CSRF_COOKIE_NAME, token, {
       httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
       maxAge: 24 * 60 * 60 * 1000
     });
   }
