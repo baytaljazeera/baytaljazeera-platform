@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/lib/stores/authStore';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
 interface OAuthButtonsProps {
   className?: string;
 }
@@ -16,7 +18,7 @@ export default function OAuthButtons({ className = '' }: OAuthButtonsProps) {
   useEffect(() => {
     const checkOAuthStatus = async () => {
       try {
-        const response = await fetch('/api/auth/status', { credentials: 'include' });
+        const response = await fetch(`${API_URL}/api/auth/status`, { credentials: 'include' });
         const data = await response.json();
         // OAuth is available if Google or Apple is configured
         setOauthAvailable(data.available || data.google || false);
@@ -31,11 +33,11 @@ export default function OAuthButtons({ className = '' }: OAuthButtonsProps) {
 
   const handleOAuthClick = (provider: string) => {
     setLoadingProvider(provider);
-    // Redirect to OAuth provider
+    // Redirect to OAuth provider via backend
     if (provider === 'google') {
-      window.location.href = '/api/auth/google';
+      window.location.href = `${API_URL}/api/auth/google`;
     } else if (provider === 'apple') {
-      window.location.href = '/api/auth/apple';
+      window.location.href = `${API_URL}/api/auth/apple`;
     } else {
       loginWithOAuth(); // Fallback for other providers
     }

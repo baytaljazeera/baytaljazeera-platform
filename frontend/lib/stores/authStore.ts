@@ -1,4 +1,17 @@
 import { create } from 'zustand';
+import Cookies from 'js-cookie';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
+// Helper to get auth headers
+const getAuthHeaders = (): HeadersInit => {
+  const token = Cookies.get('token');
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+};
 
 export interface User {
   id: string;
@@ -50,7 +63,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     try {
       set({ isLoading: true });
       
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -127,7 +140,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     try {
       set({ isLoading: true });
       
-      const response = await fetch('/api/auth/register', {
+      const response = await fetch(`${API_URL}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -206,13 +219,15 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   logout: async () => {
     try {
-      await fetch('/api/auth/logout', { 
+      await fetch(`${API_URL}/api/auth/logout`, { 
         method: 'POST',
-        credentials: 'include' 
+        credentials: 'include',
+        headers: getAuthHeaders(),
       });
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
+      Cookies.remove('token');
       set({ user: null, token: null, isAuthenticated: false });
     }
   },
@@ -226,8 +241,9 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     try {
       set({ isLoading: true });
       
-      const response = await fetch('/api/auth/me', { 
+      const response = await fetch(`${API_URL}/api/auth/me`, { 
         credentials: 'include',
+        headers: getAuthHeaders(),
       });
       
       if (response.ok) {
@@ -239,6 +255,8 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           isLoading: false 
         });
       } else {
+        // Clear invalid token
+        Cookies.remove('token');
         set({ user: null, isAuthenticated: false, isLoading: false });
       }
     } catch {
@@ -258,7 +276,10 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   checkOAuthStatus: async () => {
     try {
-      const response = await fetch('/api/auth/status', { credentials: 'include' });
+      const response = await fetch(`${API_URL}/api/auth/status`, { 
+        credentials: 'include',
+        headers: getAuthHeaders(),
+      });
       const data = await response.json();
       
       if (data.authenticated && data.user) {
