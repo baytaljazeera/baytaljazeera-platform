@@ -80,12 +80,14 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       const referralCode = generateReferralCode();
       const emailVerificationToken = crypto.randomBytes(32).toString('hex');
       const emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      // OAuth users don't have a password - use a random hash that can never be matched
+      const oauthPasswordPlaceholder = `oauth_${crypto.randomBytes(32).toString('hex')}`;
 
       const result = await db.query(
-        `INSERT INTO users (email, name, google_id, profile_image, email_verified, referral_code, email_verification_token, email_verification_expires)
-         VALUES ($1, $2, $3, $4, true, $5, $6, $7)
+        `INSERT INTO users (email, name, google_id, profile_image, email_verified, referral_code, email_verification_token, email_verification_expires, password_hash)
+         VALUES ($1, $2, $3, $4, true, $5, $6, $7, $8)
          RETURNING id, email, name, phone, role, created_at, referral_code`,
-        [email.toLowerCase(), name, googleId, photo, referralCode, emailVerificationToken, emailVerificationExpires]
+        [email.toLowerCase(), name, googleId, photo, referralCode, emailVerificationToken, emailVerificationExpires, oauthPasswordPlaceholder]
       );
 
       const newUser = result.rows[0];
