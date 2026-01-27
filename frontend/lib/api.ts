@@ -1,6 +1,7 @@
 import Cookies from 'js-cookie';
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+// Production fallback for Vercel deployment
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://baytaljazeera-backend.onrender.com';
 
 // Helper function to get API base URL
 export const getApiBase = (): string => API_URL;

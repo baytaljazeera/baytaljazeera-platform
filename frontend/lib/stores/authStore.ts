@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import Cookies from 'js-cookie';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+// Production fallback for Vercel deployment
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://baytaljazeera-backend.onrender.com';
 
 // Helper to get token from cookie with fallbacks (essential for incognito mode)
 const getToken = (): string | null => {
