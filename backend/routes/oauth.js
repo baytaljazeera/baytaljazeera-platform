@@ -141,12 +141,9 @@ router.get('/google/callback',
       }
     );
 
-    // Set cookie and redirect to frontend
-    res.cookie("token", token, getCookieOptions());
-    
     const frontendUrl = process.env.FRONTEND_URL || 'https://baytaljazeera.com';
-    // Redirect to home page with success message
-    res.redirect(`${frontendUrl}/?oauth=success&provider=google`);
+    // Redirect to frontend with token - frontend will set the cookie
+    res.redirect(`${frontendUrl}/oauth-callback?token=${encodeURIComponent(token)}&provider=google`);
   })
 );
 
