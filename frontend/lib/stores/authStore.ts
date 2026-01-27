@@ -153,8 +153,20 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         return { success: false, error: 'لم يتم استلام بيانات المستخدم' };
       }
 
+      // Save token to localStorage for cross-origin support (Vercel ↔ Render)
+      if (data.token && typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem('token', data.token);
+          // Also save to cookie as backup
+          Cookies.set('token', data.token, { expires: 7 });
+        } catch (e) {
+          console.warn('Could not save token to localStorage:', e);
+        }
+      }
+
       set({ 
         user: data.user, 
+        token: data.token || null,
         isAuthenticated: true,
         isLoading: false 
       });

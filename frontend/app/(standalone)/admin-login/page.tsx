@@ -36,13 +36,20 @@ export default function AdminLoginPage() {
     setLoading(true);
     setError("");
     
+    console.log('[Admin Login] Attempting login for:', email);
+    
     try {
       const result = await login(email, password);
+      
+      console.log('[Admin Login] Login result:', result);
       
       if (result.success) {
         // Get the updated user from store after login
         const currentUser = useAuthStore.getState().user;
+        console.log('[Admin Login] Current user:', currentUser);
+        
         if (currentUser && isAdminRole(currentUser.role)) {
+          console.log('[Admin Login] Redirecting to dashboard...');
           router.push("/admin/dashboard");
           return;
         } else {
@@ -51,10 +58,12 @@ export default function AdminLoginPage() {
           useAuthStore.getState().logout();
         }
       } else {
+        console.log('[Admin Login] Login failed:', result.error);
         setError(result.error || "فشل تسجيل الدخول");
       }
-    } catch (err) {
-      setError("حدث خطأ غير متوقع");
+    } catch (err: any) {
+      console.error('[Admin Login] Unexpected error:', err);
+      setError(err.message || "حدث خطأ غير متوقع");
     } finally {
       setLoading(false);
     }
