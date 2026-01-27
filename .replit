@@ -68,8 +68,9 @@ externalPort = 8080
 [userenv.development]
 NODE_ENV = "development"
 NEXT_DISABLE_DEVTOOLS = "1"
+NEXT_PUBLIC_API_URL = "https://baytaljazeera-backend.onrender.com"
 
 [userenv.shared]
 
 [userenv.production]
-NEXT_PUBLIC_API_URL = "https://baytaljazeera-platform-production.up.railway.app"
+NEXT_PUBLIC_API_URL = "https://baytaljazeera-backend.onrender.com"
