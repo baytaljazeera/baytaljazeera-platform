@@ -405,9 +405,12 @@ function SearchPage() {
   useEffect(() => {
     const detectUserLocation = async () => {
       try {
-        const res = await fetch("/api/geolocation/detect");
+        const apiBase = getApiBase();
+        const res = await fetch(`${apiBase}/api/geolocation/detect`);
         const data = await res.json();
-        if (data.country?.code) {
+        if (data.country?.code && 
+            typeof data.country.lat === 'number' && !isNaN(data.country.lat) &&
+            typeof data.country.lng === 'number' && !isNaN(data.country.lng)) {
           flyToCoords(data.country.lat, data.country.lng, data.country.zoom || 6);
         }
       } catch (err) {
@@ -2581,8 +2584,10 @@ function CityPanel({
           );
           if (matchedCountry) {
             setSelectedCountry(matchedCountry.id);
-            if (geoData.country.lat && geoData.country.lng) {
-              flyToCoords(geoData.country.lat, geoData.country.lng, geoData.country.zoom || 6);
+            const lat = geoData.country.lat;
+            const lng = geoData.country.lng;
+            if (typeof lat === 'number' && !isNaN(lat) && typeof lng === 'number' && !isNaN(lng)) {
+              flyToCoords(lat, lng, geoData.country.zoom || 6);
             }
             onChange({ ...filters, country: matchedCountry.name_ar, city: undefined });
           }
@@ -2642,7 +2647,9 @@ function CityPanel({
         const lat = parseFloat(country.latitude);
         const lng = parseFloat(country.longitude);
         const zoom = country.default_zoom || 6;
-        flyToCoords(lat, lng, zoom);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          flyToCoords(lat, lng, zoom);
+        }
       }
       // تحديث فلتر الدولة ومسح فلتر المدينة
       onChange({ ...filters, country: country.name_ar, city: undefined });
@@ -2660,18 +2667,20 @@ function CityPanel({
       if (city.latitude && city.longitude) {
         const lat = parseFloat(city.latitude);
         const lng = parseFloat(city.longitude);
-        flyToCoords(lat, lng, 12);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          flyToCoords(lat, lng, 12);
+        }
       }
       // تحديث فلتر المدينة والدولة معاً
       onChange({ ...filters, city: city.name_ar, country: city.country_name_ar });
     } else {
       const selectedCountryData = countries.find(c => c.id === selectedCountry);
       if (selectedCountryData?.latitude && selectedCountryData?.longitude) {
-        flyToCoords(
-          parseFloat(selectedCountryData.latitude), 
-          parseFloat(selectedCountryData.longitude), 
-          selectedCountryData.default_zoom || 6
-        );
+        const lat = parseFloat(selectedCountryData.latitude);
+        const lng = parseFloat(selectedCountryData.longitude);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          flyToCoords(lat, lng, selectedCountryData.default_zoom || 6);
+        }
       }
       // مسح فلتر المدينة فقط وإبقاء الدولة
       onChange({ ...filters, city: undefined });
