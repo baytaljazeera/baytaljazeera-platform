@@ -94,8 +94,8 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 
       // Assign free plan
       const { getFreePlan } = require("../services/planService");
-      const freePlan = getFreePlan();
-      if (freePlan) {
+      const freePlan = await getFreePlan();
+      if (freePlan && freePlan.id) {
         await db.query(
           `INSERT INTO user_plans (user_id, plan_id, status, created_at)
            VALUES ($1, $2, 'active', NOW())
