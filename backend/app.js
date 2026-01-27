@@ -6,6 +6,8 @@ const cookieParser = require("cookie-parser");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const path = require("path");
+const session = require("express-session");
+const passport = require("passport");
 const { sanitizeInput } = require("./middleware/validation");
 
 const isTest = process.env.NODE_ENV === 'test';
@@ -49,6 +51,7 @@ const geolocationRoutes = require("./routes/geolocation");
 const referralsRoutes = require("./routes/referrals");
 const ambassadorRoutes = require("./routes/ambassador");
 const promotionsRoutes = require("./routes/promotions");
+const oauthRoutes = require("./routes/oauth");
 
 function createApp() {
   const app = express();
@@ -144,6 +147,25 @@ function createApp() {
   app.use(express.json({ limit: '100mb' }));
   app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
+  // Session configuration for OAuth
+  app.use(session({
+    secret: process.env.SESSION_SECRET || 'fallback-secret-for-dev',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+    }
+  }));
+
+  // Initialize Passport
+  passport.serializeUser((user, done) => done(null, user.id || user));
+  passport.deserializeUser((id, done) => done(null, id));
+  app.use(passport.initialize());
+  app.use(passport.session());
+
   // Input Sanitization
   app.use(sanitizeInput);
 
@@ -214,6 +236,7 @@ function createApp() {
 
   // API Routes
   app.use("/api/auth", authRoutes);
+  app.use("/api/auth", oauthRoutes);
   app.use("/api/favorites", favoritesRoutes);
   app.use("/api/notifications", notificationsRoutes);
   app.use("/api/account", accountRoutes);
