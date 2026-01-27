@@ -92,7 +92,14 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   hydrate: () => {
     if (typeof window === 'undefined') return;
-    set({ isHydrated: true });
+    
+    // Try to restore token from localStorage on hydration
+    const token = getToken();
+    if (token) {
+      set({ token, isHydrated: true });
+    } else {
+      set({ isHydrated: true });
+    }
   },
 
   login: async (email: string, password: string) => {
@@ -286,29 +293,55 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       state.hydrate();
     }
     
+    // Check if we have a token first
+    const token = getToken();
+    if (!token) {
+      set({ user: null, isAuthenticated: false, isLoading: false });
+      return;
+    }
+    
     try {
       set({ isLoading: true });
       
       const response = await fetch(`${API_URL}/api/auth/me`, { 
         credentials: 'include',
-        headers: getAuthHeaders(),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
       });
       
       if (response.ok) {
         const data = await response.json();
         const user = data.user || data;
         set({ 
-          user, 
+          user,
+          token,
           isAuthenticated: true,
           isLoading: false 
         });
       } else {
-        // Clear invalid token
-        Cookies.remove('token');
-        set({ user: null, isAuthenticated: false, isLoading: false });
+        // Only clear tokens if we get 401 (unauthorized)
+        if (response.status === 401) {
+          Cookies.remove('token');
+          if (typeof localStorage !== 'undefined') {
+            try {
+              localStorage.removeItem('token');
+              localStorage.removeItem('oauth_token');
+            } catch (e) {
+              // Ignore
+            }
+          }
+          set({ user: null, token: null, isAuthenticated: false, isLoading: false });
+        } else {
+          // For other errors (network, 500, etc), keep token and try again later
+          set({ isLoading: false });
+        }
       }
-    } catch {
-      set({ user: null, isAuthenticated: false, isLoading: false });
+    } catch (error) {
+      console.error('checkAuth error:', error);
+      // Network error - don't clear token, just set loading to false
+      set({ isLoading: false });
     }
   },
 
