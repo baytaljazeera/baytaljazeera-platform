@@ -5,8 +5,10 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Cookies from 'js-cookie';
 import { useAuthStore } from '@/lib/stores/authStore';
 
-// Helper to set cookie using multiple methods for maximum compatibility
-function setTokenCookie(token: string): boolean {
+// Helper to set token using ALL available methods
+function saveToken(token: string): boolean {
+  let success = false;
+  
   try {
     // Method 1: Use js-cookie
     Cookies.set('token', token, {
@@ -15,36 +17,61 @@ function setTokenCookie(token: string): boolean {
       sameSite: 'lax',
       path: '/'
     });
-    
-    // Method 2: Also set via document.cookie as fallback
+    success = true;
+  } catch (e) {
+    console.warn('js-cookie failed:', e);
+  }
+  
+  try {
+    // Method 2: Also set via document.cookie
     const expires = new Date();
     expires.setTime(expires.getTime() + 7 * 24 * 60 * 60 * 1000);
     const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
     document.cookie = `token=${encodeURIComponent(token)}; expires=${expires.toUTCString()}; path=/; SameSite=Lax${secureFlag}`;
-    
-    return true;
+    success = true;
   } catch (e) {
-    console.error('Error setting cookie:', e);
-    return false;
+    console.warn('document.cookie failed:', e);
   }
+  
+  try {
+    // Method 3: Always save to localStorage as backup (essential for incognito)
+    localStorage.setItem('token', token);
+    localStorage.setItem('oauth_token', token); // For compatibility
+    success = true;
+  } catch (e) {
+    console.warn('localStorage failed:', e);
+  }
+  
+  return success;
 }
 
-// Helper to get token from cookie
-function getTokenFromCookie(): string | null {
-  // Try js-cookie first
+// Helper to verify token was saved somewhere
+function verifyTokenSaved(expectedToken: string): boolean {
+  // Check js-cookie
   const jsCookieToken = Cookies.get('token');
-  if (jsCookieToken) return jsCookieToken;
+  if (jsCookieToken === expectedToken) return true;
   
-  // Fallback to document.cookie parsing
+  // Check document.cookie
   const cookies = document.cookie.split(';');
   for (const cookie of cookies) {
     const [name, value] = cookie.trim().split('=');
-    if (name === 'token' && value) {
-      return decodeURIComponent(value);
+    if (name === 'token' && decodeURIComponent(value || '') === expectedToken) {
+      return true;
     }
   }
   
-  return null;
+  // Check localStorage
+  try {
+    const lsToken = localStorage.getItem('token');
+    if (lsToken === expectedToken) return true;
+    
+    const oauthToken = localStorage.getItem('oauth_token');
+    if (oauthToken === expectedToken) return true;
+  } catch (e) {
+    // localStorage not available
+  }
+  
+  return false;
 }
 
 export default function OAuthCallbackPage() {
@@ -67,23 +94,17 @@ export default function OAuthCallbackPage() {
       if (token) {
         setStatus('جاري حفظ بيانات الدخول...');
         
-        // Set the cookie using multiple methods
-        setTokenCookie(token);
+        // Save token using ALL available methods
+        saveToken(token);
         
-        // Wait a moment for cookie to be saved
-        await new Promise(resolve => setTimeout(resolve, 200));
+        // Wait a moment for storage operations
+        await new Promise(resolve => setTimeout(resolve, 100));
         
-        // Verify the cookie was set
-        const savedToken = getTokenFromCookie();
-        if (!savedToken) {
-          console.error('Failed to save token cookie - trying localStorage fallback');
-          // Try localStorage as last resort
-          try {
-            localStorage.setItem('oauth_token', token);
-          } catch (e) {
-            console.error('localStorage also failed:', e);
-          }
-          router.replace('/login?error=cookie_failed');
+        // Verify the token was saved somewhere
+        const tokenSaved = verifyTokenSaved(token);
+        if (!tokenSaved) {
+          console.error('Failed to save token in any storage method');
+          router.replace('/login?error=storage_failed');
           return;
         }
         

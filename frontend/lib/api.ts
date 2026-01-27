@@ -2,9 +2,45 @@ import Cookies from 'js-cookie';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
+// Helper function to get API base URL
+export const getApiBase = (): string => API_URL;
+
+// Helper to get token from multiple sources (essential for incognito mode)
+const getToken = (): string | null => {
+  // Try js-cookie first
+  const jsCookieToken = Cookies.get('token');
+  if (jsCookieToken) return jsCookieToken;
+  
+  // Fallback to document.cookie parsing
+  if (typeof document !== 'undefined') {
+    const cookies = document.cookie.split(';');
+    for (const cookie of cookies) {
+      const [name, value] = cookie.trim().split('=');
+      if (name === 'token' && value) {
+        return decodeURIComponent(value);
+      }
+    }
+  }
+  
+  // Check localStorage (essential for incognito mode where cookies may fail)
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const lsToken = localStorage.getItem('token');
+      if (lsToken) return lsToken;
+      
+      const oauthToken = localStorage.getItem('oauth_token');
+      if (oauthToken) return oauthToken;
+    } catch (e) {
+      // localStorage not available
+    }
+  }
+  
+  return null;
+};
+
 export const getAuthHeaders = (): HeadersInit => {
-  const token = Cookies.get('token');
-  const headers: HeadersInit = {};
+  const token = getToken();
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }

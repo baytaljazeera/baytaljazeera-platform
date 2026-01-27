@@ -3,7 +3,7 @@ import Cookies from 'js-cookie';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
-// Helper to get token from cookie with fallbacks
+// Helper to get token from cookie with fallbacks (essential for incognito mode)
 const getToken = (): string | null => {
   // Try js-cookie first
   const jsCookieToken = Cookies.get('token');
@@ -18,16 +18,18 @@ const getToken = (): string | null => {
         return decodeURIComponent(value);
       }
     }
-    
-    // Last resort: check localStorage for OAuth fallback
+  }
+  
+  // Check localStorage (essential for incognito mode where cookies may fail)
+  if (typeof localStorage !== 'undefined') {
     try {
+      // Check direct token first
+      const lsToken = localStorage.getItem('token');
+      if (lsToken) return lsToken;
+      
+      // Then check oauth_token
       const oauthToken = localStorage.getItem('oauth_token');
-      if (oauthToken) {
-        // Move it to cookie for consistency
-        Cookies.set('token', oauthToken, { expires: 7, path: '/' });
-        localStorage.removeItem('oauth_token');
-        return oauthToken;
-      }
+      if (oauthToken) return oauthToken;
     } catch (e) {
       // localStorage not available
     }
