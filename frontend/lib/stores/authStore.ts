@@ -3,9 +3,42 @@ import Cookies from 'js-cookie';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
+// Helper to get token from cookie with fallbacks
+const getToken = (): string | null => {
+  // Try js-cookie first
+  const jsCookieToken = Cookies.get('token');
+  if (jsCookieToken) return jsCookieToken;
+  
+  // Fallback to document.cookie parsing
+  if (typeof document !== 'undefined') {
+    const cookies = document.cookie.split(';');
+    for (const cookie of cookies) {
+      const [name, value] = cookie.trim().split('=');
+      if (name === 'token' && value) {
+        return decodeURIComponent(value);
+      }
+    }
+    
+    // Last resort: check localStorage for OAuth fallback
+    try {
+      const oauthToken = localStorage.getItem('oauth_token');
+      if (oauthToken) {
+        // Move it to cookie for consistency
+        Cookies.set('token', oauthToken, { expires: 7, path: '/' });
+        localStorage.removeItem('oauth_token');
+        return oauthToken;
+      }
+    } catch (e) {
+      // localStorage not available
+    }
+  }
+  
+  return null;
+};
+
 // Helper to get auth headers
 const getAuthHeaders = (): HeadersInit => {
-  const token = Cookies.get('token');
+  const token = getToken();
   const headers: HeadersInit = { 'Content-Type': 'application/json' };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;

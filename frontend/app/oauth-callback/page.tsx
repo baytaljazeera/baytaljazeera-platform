@@ -5,6 +5,48 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Cookies from 'js-cookie';
 import { useAuthStore } from '@/lib/stores/authStore';
 
+// Helper to set cookie using multiple methods for maximum compatibility
+function setTokenCookie(token: string): boolean {
+  try {
+    // Method 1: Use js-cookie
+    Cookies.set('token', token, {
+      expires: 7,
+      secure: window.location.protocol === 'https:',
+      sameSite: 'lax',
+      path: '/'
+    });
+    
+    // Method 2: Also set via document.cookie as fallback
+    const expires = new Date();
+    expires.setTime(expires.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `token=${encodeURIComponent(token)}; expires=${expires.toUTCString()}; path=/; SameSite=Lax${secureFlag}`;
+    
+    return true;
+  } catch (e) {
+    console.error('Error setting cookie:', e);
+    return false;
+  }
+}
+
+// Helper to get token from cookie
+function getTokenFromCookie(): string | null {
+  // Try js-cookie first
+  const jsCookieToken = Cookies.get('token');
+  if (jsCookieToken) return jsCookieToken;
+  
+  // Fallback to document.cookie parsing
+  const cookies = document.cookie.split(';');
+  for (const cookie of cookies) {
+    const [name, value] = cookie.trim().split('=');
+    if (name === 'token' && value) {
+      return decodeURIComponent(value);
+    }
+  }
+  
+  return null;
+}
+
 export default function OAuthCallbackPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -25,21 +67,22 @@ export default function OAuthCallbackPage() {
       if (token) {
         setStatus('جاري حفظ بيانات الدخول...');
         
-        // Set the cookie
-        Cookies.set('token', token, {
-          expires: 7,
-          secure: true,
-          sameSite: 'lax',
-          path: '/'
-        });
+        // Set the cookie using multiple methods
+        setTokenCookie(token);
         
         // Wait a moment for cookie to be saved
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 200));
         
         // Verify the cookie was set
-        const savedToken = Cookies.get('token');
+        const savedToken = getTokenFromCookie();
         if (!savedToken) {
-          console.error('Failed to save token cookie');
+          console.error('Failed to save token cookie - trying localStorage fallback');
+          // Try localStorage as last resort
+          try {
+            localStorage.setItem('oauth_token', token);
+          } catch (e) {
+            console.error('localStorage also failed:', e);
+          }
           router.replace('/login?error=cookie_failed');
           return;
         }
