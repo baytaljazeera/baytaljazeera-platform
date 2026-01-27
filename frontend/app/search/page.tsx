@@ -879,6 +879,8 @@ function SearchPage() {
             return prev.filter((fid) => fid !== id);
           }
         });
+        // إرسال حدث لتحديث عداد المفضلة في الـ Navbar
+        window.dispatchEvent(new CustomEvent('favoritesUpdated'));
       } else if (res.status === 401) {
         window.location.href = "/login";
         // Rollback في حالة عدم التصريح

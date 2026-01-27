@@ -128,11 +128,14 @@ function NavbarContent() {
     const interval = setInterval(fetchUnreadCounts, 30000);
     
     const handleNotificationsUpdated = () => fetchUnreadCounts();
+    const handleFavoritesUpdated = () => fetchUnreadCounts();
     window.addEventListener('notificationsUpdated', handleNotificationsUpdated);
+    window.addEventListener('favoritesUpdated', handleFavoritesUpdated);
     
     return () => {
       clearInterval(interval);
       window.removeEventListener('notificationsUpdated', handleNotificationsUpdated);
+      window.removeEventListener('favoritesUpdated', handleFavoritesUpdated);
     };
   }, [isAuthenticated]);
 

@@ -17,6 +17,7 @@ import ShareButton from "@/components/shared/ShareButton";
 import AdvertiserReputation from "@/components/ratings/AdvertiserReputation";
 import RatingModal from "@/components/ratings/RatingModal";
 import { getImageUrl } from "@/lib/imageUrl";
+import { getApiBase, getAuthHeaders } from "@/lib/api";
 
 type ListingDetail = {
   id: string;
@@ -1208,20 +1209,19 @@ export default function ListingDetailPage() {
               <div className="flex gap-2 mt-4 pt-4 border-t">
                 <button
                   onClick={async () => {
-                    const token = localStorage.getItem("token");
                     try {
-                      const headers: Record<string, string> = { "Content-Type": "application/json" };
-                      if (token) headers["Authorization"] = `Bearer ${token}`;
-                      
-                      const res = await fetch(`/api/favorites/toggle`, {
+                      const apiBase = getApiBase();
+                      const res = await fetch(`${apiBase}/api/favorites/toggle`, {
                         method: "POST",
-                        headers,
+                        headers: getAuthHeaders(),
                         credentials: "include",
                         body: JSON.stringify({ listingId: listing.id }),
                       });
                       if (res.ok) {
                         const data = await res.json();
                         setIsFavorite(data.favorited);
+                        // إرسال حدث لتحديث عداد المفضلة في الـ Navbar
+                        window.dispatchEvent(new CustomEvent('favoritesUpdated'));
                       } else if (res.status === 401) {
                         window.location.href = "/login";
                       }

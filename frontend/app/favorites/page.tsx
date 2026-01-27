@@ -8,6 +8,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { MapPin, BedDouble, Bath, Square, Heart, Trash2 } from "lucide-react";
 import { getImageUrl } from "@/lib/imageUrl";
+import { getApiBase, getAuthHeaders } from "@/lib/api";
 
 type Listing = {
   id: string;
@@ -37,10 +38,10 @@ export default function FavoritesPage() {
 
   async function fetchFavorites() {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/favorites", {
+      const apiBase = getApiBase();
+      const res = await fetch(`${apiBase}/api/favorites`, {
         credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
@@ -62,13 +63,17 @@ export default function FavoritesPage() {
 
   async function removeFavorite(listingId: string) {
     try {
-      const token = localStorage.getItem("token");
-      await fetch(`/api/favorites/${listingId}`, {
+      const apiBase = getApiBase();
+      const res = await fetch(`${apiBase}/api/favorites/${listingId}`, {
         method: "DELETE",
         credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: getAuthHeaders(),
       });
-      setFavorites(favorites.filter((f) => f.id !== listingId));
+      if (res.ok) {
+        setFavorites(favorites.filter((f) => f.id !== listingId));
+        // إرسال حدث لتحديث عداد المفضلة في الـ Navbar
+        window.dispatchEvent(new CustomEvent('favoritesUpdated'));
+      }
     } catch (err) {
       console.error(err);
     }
