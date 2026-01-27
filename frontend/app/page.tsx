@@ -4,12 +4,14 @@ export const dynamic = "force-dynamic";
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
+import { useSearchParams } from 'next/navigation';
 import { Search as SearchIcon, Crown, Sparkles, Star, X, MapPin, Navigation } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import PlansHighlightSection from "@/components/home/PlansHighlightSection";
 import { getImageUrl } from "@/lib/imageUrl";
+import { useAuthStore } from '@/lib/stores/authStore';
 
 const cities = [
   { title: "مكة المكرمة", img: "/makkah.jpg" },
@@ -566,7 +568,31 @@ function FreeAdCallToActionSection() {
   );
 }
 
-export default function HomePage() {
+function HomePageContent() {
+  const searchParams = useSearchParams();
+  const { checkAuth, isAuthenticated } = useAuthStore();
+
+  // Handle OAuth redirect - sync auth state
+  useEffect(() => {
+    const oauth = searchParams.get('oauth');
+    const provider = searchParams.get('provider');
+    
+    if (oauth === 'success' && provider) {
+      // OAuth login successful - ensure auth state is synced
+      if (!isAuthenticated) {
+        checkAuth().then(() => {
+          // Clean up URL by removing oauth params
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('oauth');
+            url.searchParams.delete('provider');
+            window.history.replaceState({}, '', url.pathname);
+          }
+        });
+      }
+    }
+  }, [searchParams, checkAuth, isAuthenticated]);
+
   return (
     <div className="bg-[#F7F1E5] text-[#003366] min-h-screen" dir="rtl">
       <HeroSection />
@@ -575,5 +601,13 @@ export default function HomePage() {
       <PlansHighlightSection />
       <FreeAdCallToActionSection />
     </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={<div className="bg-[#F7F1E5] min-h-screen" />}>
+      <HomePageContent />
+    </Suspense>
   );
 }
