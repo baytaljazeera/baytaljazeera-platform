@@ -97,8 +97,8 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       const freePlan = getFreePlan();
       if (freePlan) {
         await db.query(
-          `INSERT INTO user_plans (user_id, plan_id, status, starts_at, expires_at)
-           VALUES ($1, $2, 'active', NOW(), NULL)
+          `INSERT INTO user_plans (user_id, plan_id, status, created_at)
+           VALUES ($1, $2, 'active', NOW())
            ON CONFLICT DO NOTHING`,
           [newUser.id, freePlan.id]
         );
