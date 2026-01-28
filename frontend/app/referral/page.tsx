@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/stores/authStore";
+import { API_URL, getAuthHeaders } from "@/lib/api";
 import type { 
   AmbassadorStats as AmbassadorStatsType, 
   BuildingData as BuildingDataType, 
@@ -1756,7 +1757,7 @@ export default function ReferralPage() {
   useEffect(() => {
     async function checkSystemStatus() {
       try {
-        const res = await fetch('/api/ambassador/status');
+        const res = await fetch(`${API_URL}/api/ambassador/status`, { credentials: 'include', headers: getAuthHeaders() });
         if (res.ok) {
           const data = await res.json();
           setSystemEnabled(data.enabled);
@@ -1796,7 +1797,7 @@ export default function ReferralPage() {
 
   async function fetchTermsStatus() {
     try {
-      const res = await fetch('/api/ambassador/terms-status', { credentials: 'include' });
+      const res = await fetch(`${API_URL}/api/ambassador/terms-status`, { credentials: 'include', headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         const accepted = data.terms_accepted;
@@ -1823,9 +1824,10 @@ export default function ReferralPage() {
     if (!termsCheckbox) return;
     setAcceptingTerms(true);
     try {
-      const res = await fetch('/api/ambassador/accept-terms', {
+      const res = await fetch(`${API_URL}/api/ambassador/accept-terms`, {
         method: 'POST',
-        credentials: 'include'
+        credentials: 'include',
+        headers: getAuthHeaders()
       });
       if (res.ok) {
         setTermsAccepted(true);
@@ -1853,10 +1855,11 @@ export default function ReferralPage() {
   async function fetchWalletData() {
     try {
       // استخدام cache busting للتأكد من جلب البيانات الأحدث
-      const res = await fetch(`/api/ambassador/wallet?t=${Date.now()}`, { 
+      const res = await fetch(`${API_URL}/api/ambassador/wallet?t=${Date.now()}`, { 
         credentials: 'include',
         cache: 'no-store',
         headers: {
+          ...getAuthHeaders(),
           'Cache-Control': 'no-cache'
         }
       });
@@ -1917,7 +1920,7 @@ export default function ReferralPage() {
     setWithdrawing(true);
     setError('');
     try {
-      const res = await fetch('/api/ambassador/wallet/withdraw', {
+      const res = await fetch(`${API_URL}/api/ambassador/wallet/withdraw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -1987,7 +1990,7 @@ export default function ReferralPage() {
 
   async function fetchShareTextConfig() {
     try {
-      const res = await fetch('/api/ambassador/share-text');
+      const res = await fetch(`${API_URL}/api/ambassador/share-text`, { credentials: 'include', headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setShareTextConfig(data);
@@ -2001,7 +2004,7 @@ export default function ReferralPage() {
     try {
       setLoading(true);
       setError("");
-      const res = await fetch('/api/ambassador/my-stats', { 
+      const res = await fetch(`${API_URL}/api/ambassador/my-stats`, { 
         credentials: 'include',
         cache: 'no-store',
         headers: {
@@ -2088,7 +2091,7 @@ export default function ReferralPage() {
     setRequesting(true);
     setRequestSuccess(false);
     try {
-      const res = await fetch('/api/ambassador/request-reward', {
+      const res = await fetch(`${API_URL}/api/ambassador/request-reward`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -2129,9 +2132,10 @@ export default function ReferralPage() {
     setSelectedCollapsedFloor(null);
     
     try {
-      const res = await fetch(`/api/ambassador/floor/${referralId}`, {
+      const res = await fetch(`${API_URL}/api/ambassador/floor/${referralId}`, {
         method: 'DELETE',
-        credentials: 'include'
+        credentials: 'include',
+        headers: getAuthHeaders()
       });
       if (res.ok) {
         await fetchStats();
@@ -2157,7 +2161,7 @@ export default function ReferralPage() {
     if (!stats?.can_consume) return;
     setConsuming(true);
     try {
-      const res = await fetch('/api/ambassador/consume', {
+      const res = await fetch(`${API_URL}/api/ambassador/consume`, {
         method: 'POST',
         credentials: 'include'
       });
@@ -2174,7 +2178,7 @@ export default function ReferralPage() {
 
   const cancelRequest = async () => {
     try {
-      const res = await fetch('/api/ambassador/cancel-request', {
+      const res = await fetch(`${API_URL}/api/ambassador/cancel-request`, {
         method: 'DELETE',
         credentials: 'include'
       });
@@ -2191,7 +2195,7 @@ export default function ReferralPage() {
     setTestToolsLoading(true);
     setError("");
     try {
-      const res = await fetch('/api/ambassador/dev/add-test-referrals', {
+      const res = await fetch(`${API_URL}/api/ambassador/dev/add-test-referrals`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -2255,7 +2259,7 @@ export default function ReferralPage() {
     
     setTestToolsLoading(true);
     try {
-      const res = await fetch('/api/ambassador/dev/clear-test-referrals', {
+      const res = await fetch(`${API_URL}/api/ambassador/dev/clear-test-referrals`, {
         method: 'DELETE',
         credentials: 'include'
       });
@@ -2284,7 +2288,7 @@ export default function ReferralPage() {
     setTestToolsLoading(true);
     console.log('🗑️ Deleting withdrawal requests...');
     try {
-      const res = await fetch('/api/ambassador/dev/clear-withdrawal-requests', {
+      const res = await fetch(`${API_URL}/api/ambassador/dev/clear-withdrawal-requests`, {
         method: 'DELETE',
         credentials: 'include'
       });
@@ -3131,7 +3135,7 @@ export default function ReferralPage() {
                     onClick={async () => {
                       setSubmittingBuilding(true);
                       try {
-                        const res = await fetch('/api/ambassador/request-building', {
+                        const res = await fetch(`${API_URL}/api/ambassador/request-building`, {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           credentials: 'include',
