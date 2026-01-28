@@ -1,37 +1,73 @@
 const { google } = require('googleapis');
 
-console.log('📧 [EmailService] Initializing with Replit Gmail Integration...');
+console.log('📧 [EmailService] Starting Gmail API initialization...');
 
+const GMAIL_CLIENT_ID = process.env.GMAIL_CLIENT_ID;
+const GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET;
+const GMAIL_REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN;
 const GMAIL_USER_EMAIL = process.env.GMAIL_USER_EMAIL || 'info@baytaljazeera.com';
 const GMAIL_FROM_NAME = process.env.GMAIL_FROM_NAME || 'بيت الجزيرة';
 
-let connectionSettings = null;
+console.log('📋 [EmailService] Environment variables check:');
+console.log(`   - GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID ? '✅ Set' : '❌ Missing'}`);
+console.log(`   - GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET ? '✅ Set' : '❌ Missing'}`);
+console.log(`   - GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN ? '✅ Set' : '❌ Missing'}`);
 
-async function getAccessToken() {
-  if (connectionSettings && connectionSettings.settings?.expires_at && 
-      new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
-    return connectionSettings.settings.access_token;
+let gmail = null;
+let oauth2Client = null;
+let useReplitIntegration = false;
+let replitConnectionSettings = null;
+
+if (GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN) {
+  try {
+    console.log('🔧 [EmailService] Creating OAuth2 client with manual credentials...');
+    oauth2Client = new google.auth.OAuth2(
+      GMAIL_CLIENT_ID,
+      GMAIL_CLIENT_SECRET,
+      'urn:ietf:wg:oauth:2.0:oob'
+    );
+
+    oauth2Client.setCredentials({
+      refresh_token: GMAIL_REFRESH_TOKEN
+    });
+
+    gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    console.log('✅ [EmailService] Gmail API initialized with manual credentials!');
+  } catch (error) {
+    console.error('❌ [EmailService] Failed to initialize Gmail API:', error.message);
   }
-  
+} else {
+  console.log('📧 [EmailService] Checking for Replit Gmail Integration...');
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  
+  if (hostname) {
+    useReplitIntegration = true;
+    console.log('✅ [EmailService] Will use Replit Gmail Integration');
+  } else {
+    console.warn('⚠️ [EmailService] No Gmail credentials and no Replit integration. Email sending disabled.');
+  }
+}
+
+async function getReplitGmailClient() {
+  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY 
     ? 'repl ' + process.env.REPL_IDENTITY 
     : process.env.WEB_REPL_RENEWAL 
     ? 'depl ' + process.env.WEB_REPL_RENEWAL 
     : null;
 
-  if (!hostname) {
-    console.warn('⚠️ [EmailService] REPLIT_CONNECTORS_HOSTNAME not found - email disabled');
-    return null;
-  }
-
-  if (!xReplitToken) {
-    console.warn('⚠️ [EmailService] Replit token not found - email disabled');
+  if (!hostname || !xReplitToken) {
     return null;
   }
 
   try {
+    if (replitConnectionSettings && replitConnectionSettings.settings?.expires_at && 
+        new Date(replitConnectionSettings.settings.expires_at).getTime() > Date.now()) {
+      const accessToken = replitConnectionSettings.settings.access_token;
+      const oauth = new google.auth.OAuth2();
+      oauth.setCredentials({ access_token: accessToken });
+      return google.gmail({ version: 'v1', auth: oauth });
+    }
+
     const response = await fetch(
       'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=google-mail',
       {
@@ -43,56 +79,62 @@ async function getAccessToken() {
     );
     
     if (!response.ok) {
-      console.error('❌ [EmailService] Failed to fetch Gmail connection:', response.status);
+      console.error('❌ [EmailService] Replit Gmail connection failed:', response.status);
       return null;
     }
     
     const data = await response.json();
-    connectionSettings = data.items?.[0];
+    replitConnectionSettings = data.items?.[0];
+    const accessToken = replitConnectionSettings?.settings?.access_token || 
+                       replitConnectionSettings?.settings?.oauth?.credentials?.access_token;
 
-    const accessToken = connectionSettings?.settings?.access_token || 
-                       connectionSettings?.settings?.oauth?.credentials?.access_token;
-
-    if (!connectionSettings || !accessToken) {
-      console.error('❌ [EmailService] Gmail not connected or no access token');
+    if (!accessToken) {
       return null;
     }
     
-    console.log('✅ [EmailService] Gmail access token obtained');
-    return accessToken;
+    const oauth = new google.auth.OAuth2();
+    oauth.setCredentials({ access_token: accessToken });
+    return google.gmail({ version: 'v1', auth: oauth });
   } catch (error) {
-    console.error('❌ [EmailService] Error getting access token:', error.message);
+    console.error('❌ [EmailService] Replit Gmail error:', error.message);
     return null;
   }
 }
 
-async function getGmailClient() {
-  const accessToken = await getAccessToken();
-  
-  if (!accessToken) {
-    return null;
-  }
-
-  const oauth2Client = new google.auth.OAuth2();
-  oauth2Client.setCredentials({
-    access_token: accessToken
-  });
-
-  return google.gmail({ version: 'v1', auth: oauth2Client });
+function getGmailClient() {
+  return gmail;
 }
 
 async function sendEmail(to, subject, htmlBody, textBody = null) {
   console.log(`📧 [EmailService] sendEmail called - To: ${to}, Subject: ${subject}`);
   
-  try {
-    const gmail = await getGmailClient();
-    
-    if (!gmail) {
-      console.error('❌ [EmailService] Gmail client not available');
-      return { success: false, error: 'Gmail API not configured' };
+  let gmailClient = gmail;
+  let authClient = oauth2Client;
+  
+  if (!gmailClient && useReplitIntegration) {
+    console.log('📧 [EmailService] Using Replit Gmail Integration...');
+    gmailClient = await getReplitGmailClient();
+    if (gmailClient) {
+      console.log('✅ [EmailService] Got Replit Gmail client');
     }
-    
-    console.log(`📧 [EmailService] Creating email message for ${to}...`);
+  }
+  
+  if (!gmailClient) {
+    console.error('❌ [EmailService] No Gmail client available. Cannot send email.');
+    return { success: false, error: 'Gmail API not configured' };
+  }
+
+  try {
+    if (authClient) {
+      console.log('🔄 [EmailService] Refreshing access token...');
+      try {
+        const { credentials } = await authClient.refreshAccessToken();
+        authClient.setCredentials(credentials);
+        console.log('✅ [EmailService] Access token refreshed');
+      } catch (refreshError) {
+        console.warn('⚠️ [EmailService] Token refresh failed, continuing...', refreshError.message);
+      }
+    }
     
     const encodedSubject = `=?UTF-8?B?${Buffer.from(subject, 'utf-8').toString('base64')}?=`;
     const encodedFromName = `=?UTF-8?B?${Buffer.from(GMAIL_FROM_NAME, 'utf-8').toString('base64')}?=`;
@@ -109,16 +151,14 @@ async function sendEmail(to, subject, htmlBody, textBody = null) {
     ];
 
     const message = messageParts.join('\n');
-    console.log(`📧 [EmailService] Message created, length: ${message.length} characters`);
-    
     const encodedMessage = Buffer.from(message)
       .toString('base64')
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(/=+$/, '');
 
-    console.log(`📧 [EmailService] Calling Gmail API...`);
-    const response = await gmail.users.messages.send({
+    console.log(`📧 [EmailService] Sending email to ${to}...`);
+    const response = await gmailClient.users.messages.send({
       userId: 'me',
       requestBody: { raw: encodedMessage }
     });
@@ -128,14 +168,11 @@ async function sendEmail(to, subject, htmlBody, textBody = null) {
     
     return { success: true, messageId: messageId };
   } catch (error) {
-    console.error('❌ [EmailService] Gmail API email send error:', error);
+    console.error('❌ [EmailService] Gmail API error:', error);
     
     let errorMessage = 'Unknown error';
     if (error.response) {
-      const { data, status } = error.response;
-      errorMessage = data?.error?.message || `HTTP ${status}`;
-    } else if (error.code) {
-      errorMessage = `Error code: ${error.code} - ${error.message}`;
+      errorMessage = error.response.data?.error?.message || `HTTP ${error.response.status}`;
     } else {
       errorMessage = error.message;
     }
@@ -171,39 +208,24 @@ function getPasswordResetEmailTemplate(resetLink, userName) {
           <tr>
             <td style="padding: 40px;">
               <h2 style="color: #002845; margin: 0 0 20px 0; font-size: 24px;">إعادة تعيين كلمة المرور</h2>
-              <p style="color: #666; line-height: 1.8; margin: 0 0 20px 0;">
-                مرحباً ${userName || 'عزيزنا العميل'}،
-              </p>
-              <p style="color: #666; line-height: 1.8; margin: 0 0 30px 0;">
-                تلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك. انقر على الزر أدناه لإنشاء كلمة مرور جديدة:
-              </p>
+              <p style="color: #666; line-height: 1.8; margin: 0 0 20px 0;">مرحباً ${userName || 'عزيزنا العميل'}،</p>
+              <p style="color: #666; line-height: 1.8; margin: 0 0 30px 0;">تلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك. انقر على الزر أدناه لإنشاء كلمة مرور جديدة:</p>
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="center">
-                    <a href="${resetLink}" style="display: inline-block; background: linear-gradient(135deg, #D4AF37 0%, #B8860B 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 12px; font-size: 18px; font-weight: bold; box-shadow: 0 4px 15px rgba(212, 175, 55, 0.4);">
-                      إعادة تعيين كلمة المرور
-                    </a>
+                    <a href="${resetLink}" style="display: inline-block; background: linear-gradient(135deg, #D4AF37 0%, #B8860B 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 12px; font-size: 18px; font-weight: bold; box-shadow: 0 4px 15px rgba(212, 175, 55, 0.4);">إعادة تعيين كلمة المرور</a>
                   </td>
                 </tr>
               </table>
-              <p style="color: #999; font-size: 14px; line-height: 1.8; margin: 30px 0 0 0;">
-                ⚠️ هذا الرابط صالح لمدة <strong>ساعة واحدة</strong> فقط.
-              </p>
-              <p style="color: #999; font-size: 14px; line-height: 1.8; margin: 10px 0 0 0;">
-                إذا لم تطلب إعادة تعيين كلمة المرور، يمكنك تجاهل هذا البريد بأمان.
-              </p>
+              <p style="color: #999; font-size: 14px; line-height: 1.8; margin: 30px 0 0 0;">⚠️ هذا الرابط صالح لمدة <strong>ساعة واحدة</strong> فقط.</p>
+              <p style="color: #999; font-size: 14px; line-height: 1.8; margin: 10px 0 0 0;">إذا لم تطلب إعادة تعيين كلمة المرور، يمكنك تجاهل هذا البريد بأمان.</p>
               <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
-              <p style="color: #999; font-size: 12px; line-height: 1.6; margin: 0;">
-                إذا لم يعمل الزر، انسخ الرابط التالي والصقه في متصفحك:<br>
-                <a href="${resetLink}" style="color: #D4AF37; word-break: break-all;">${resetLink}</a>
-              </p>
+              <p style="color: #999; font-size: 12px; line-height: 1.6; margin: 0;">إذا لم يعمل الزر، انسخ الرابط التالي والصقه في متصفحك:<br><a href="${resetLink}" style="color: #D4AF37; word-break: break-all;">${resetLink}</a></p>
             </td>
           </tr>
           <tr>
             <td style="background-color: #f8f8f8; padding: 20px; text-align: center; border-top: 1px solid #eee;">
-              <p style="color: #999; font-size: 12px; margin: 0;">
-                © ${new Date().getFullYear()} بيت الجزيرة - جميع الحقوق محفوظة
-              </p>
+              <p style="color: #999; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} بيت الجزيرة - جميع الحقوق محفوظة</p>
             </td>
           </tr>
         </table>
@@ -252,39 +274,24 @@ function getEmailVerificationTemplate(verifyLink, userName) {
           <tr>
             <td style="padding: 40px;">
               <h2 style="color: #002845; margin: 0 0 20px 0; font-size: 24px;">تأكيد البريد الإلكتروني</h2>
-              <p style="color: #666; line-height: 1.8; margin: 0 0 20px 0;">
-                مرحباً ${userName || 'عزيزنا العميل'}،
-              </p>
-              <p style="color: #666; line-height: 1.8; margin: 0 0 30px 0;">
-                شكراً لتسجيلك في بيت الجزيرة! يرجى النقر على الزر أدناه لتأكيد بريدك الإلكتروني وتفعيل حسابك:
-              </p>
+              <p style="color: #666; line-height: 1.8; margin: 0 0 20px 0;">مرحباً ${userName || 'عزيزنا العميل'}،</p>
+              <p style="color: #666; line-height: 1.8; margin: 0 0 30px 0;">شكراً لتسجيلك في بيت الجزيرة! يرجى النقر على الزر أدناه لتأكيد بريدك الإلكتروني وتفعيل حسابك:</p>
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="center">
-                    <a href="${verifyLink}" style="display: inline-block; background: linear-gradient(135deg, #0B6B4C 0%, #0a5a40 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 12px; font-size: 18px; font-weight: bold; box-shadow: 0 4px 15px rgba(11, 107, 76, 0.4);">
-                      تأكيد البريد الإلكتروني
-                    </a>
+                    <a href="${verifyLink}" style="display: inline-block; background: linear-gradient(135deg, #0B6B4C 0%, #0a5a40 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 12px; font-size: 18px; font-weight: bold; box-shadow: 0 4px 15px rgba(11, 107, 76, 0.4);">تأكيد البريد الإلكتروني</a>
                   </td>
                 </tr>
               </table>
-              <p style="color: #999; font-size: 14px; line-height: 1.8; margin: 30px 0 0 0;">
-                ⚠️ هذا الرابط صالح لمدة <strong>24 ساعة</strong> فقط.
-              </p>
-              <p style="color: #999; font-size: 14px; line-height: 1.8; margin: 10px 0 0 0;">
-                إذا لم تسجّل في بيت الجزيرة، يمكنك تجاهل هذا البريد بأمان.
-              </p>
+              <p style="color: #999; font-size: 14px; line-height: 1.8; margin: 30px 0 0 0;">⚠️ هذا الرابط صالح لمدة <strong>24 ساعة</strong> فقط.</p>
+              <p style="color: #999; font-size: 14px; line-height: 1.8; margin: 10px 0 0 0;">إذا لم تسجّل في بيت الجزيرة، يمكنك تجاهل هذا البريد بأمان.</p>
               <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
-              <p style="color: #999; font-size: 12px; line-height: 1.6; margin: 0;">
-                إذا لم يعمل الزر، انسخ الرابط التالي والصقه في متصفحك:<br>
-                <a href="${verifyLink}" style="color: #0B6B4C; word-break: break-all;">${verifyLink}</a>
-              </p>
+              <p style="color: #999; font-size: 12px; line-height: 1.6; margin: 0;">إذا لم يعمل الزر، انسخ الرابط التالي والصقه في متصفحك:<br><a href="${verifyLink}" style="color: #0B6B4C; word-break: break-all;">${verifyLink}</a></p>
             </td>
           </tr>
           <tr>
             <td style="background-color: #f8f8f8; padding: 20px; text-align: center; border-top: 1px solid #eee;">
-              <p style="color: #999; font-size: 12px; margin: 0;">
-                © ${new Date().getFullYear()} بيت الجزيرة - جميع الحقوق محفوظة
-              </p>
+              <p style="color: #999; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} بيت الجزيرة - جميع الحقوق محفوظة</p>
             </td>
           </tr>
         </table>
@@ -333,31 +340,21 @@ function getWelcomeEmailTemplate(userName) {
           <tr>
             <td style="padding: 40px;">
               <h2 style="color: #002845; margin: 0 0 20px 0; font-size: 24px;">🎉 مرحباً بك في بيت الجزيرة!</h2>
-              <p style="color: #666; line-height: 1.8; margin: 0 0 20px 0;">
-                مرحباً ${userName || 'عزيزنا العميل'}،
-              </p>
-              <p style="color: #666; line-height: 1.8; margin: 0 0 30px 0;">
-                تم تفعيل حسابك بنجاح! أنت الآن جزء من مجتمع بيت الجزيرة - منصة العقارات الخليجية الأولى.
-              </p>
+              <p style="color: #666; line-height: 1.8; margin: 0 0 20px 0;">مرحباً ${userName || 'عزيزنا العميل'}،</p>
+              <p style="color: #666; line-height: 1.8; margin: 0 0 30px 0;">تم تفعيل حسابك بنجاح! أنت الآن جزء من مجتمع بيت الجزيرة - منصة العقارات الخليجية الأولى.</p>
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="center">
-                    <a href="https://baytaljazeera.com/search" style="display: inline-block; background: linear-gradient(135deg, #D4AF37 0%, #B8860B 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 12px; font-size: 18px; font-weight: bold; box-shadow: 0 4px 15px rgba(212, 175, 55, 0.4);">
-                      استكشف العقارات
-                    </a>
+                    <a href="https://baytaljazeera.com/search" style="display: inline-block; background: linear-gradient(135deg, #D4AF37 0%, #B8860B 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 12px; font-size: 18px; font-weight: bold; box-shadow: 0 4px 15px rgba(212, 175, 55, 0.4);">استكشف العقارات</a>
                   </td>
                 </tr>
               </table>
-              <p style="color: #666; line-height: 1.8; margin: 30px 0 0 0; text-align: center;">
-                ابدأ رحلتك العقارية معنا اليوم!
-              </p>
+              <p style="color: #666; line-height: 1.8; margin: 30px 0 0 0; text-align: center;">ابدأ رحلتك العقارية معنا اليوم!</p>
             </td>
           </tr>
           <tr>
             <td style="background-color: #f8f8f8; padding: 20px; text-align: center; border-top: 1px solid #eee;">
-              <p style="color: #999; font-size: 12px; margin: 0;">
-                © ${new Date().getFullYear()} بيت الجزيرة - جميع الحقوق محفوظة
-              </p>
+              <p style="color: #999; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} بيت الجزيرة - جميع الحقوق محفوظة</p>
             </td>
           </tr>
         </table>
