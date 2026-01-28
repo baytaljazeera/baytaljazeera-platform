@@ -314,26 +314,27 @@ router.post("/register", asyncHandler(async (req, res) => {
       console.error('⚠️ Failed to send verification email:', emailErr.message);
     }
 
-    res
-      .cookie("token", token, getCookieOptions())
-      .json({ 
-        ok: true,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          phone: user.phone,
-          role: user.role,
-          email_verified: false
-        },
-        token,
-        message: emailSent 
-          ? "تم إنشاء الحساب بنجاح! يرجى تأكيد بريدك الإلكتروني"
-          : "تم إنشاء الحساب. فشل إرسال رسالة التأكيد - يرجى إعادة الإرسال لاحقاً",
-        requiresVerification: true,
-        emailSent,
-        emailError: emailError ? String(emailError) : null
-      });
+    // ⚠️ SECURITY: Do NOT send JWT token on registration!
+    // User must verify email before they can login
+    // Only send user info without token - no automatic login
+    res.json({ 
+      ok: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        phone: user.phone,
+        role: user.role,
+        email_verified: false
+      },
+      // NO token sent - user must verify email first
+      message: emailSent 
+        ? "تم إنشاء الحساب بنجاح! يرجى تأكيد بريدك الإلكتروني من صندوق الوارد"
+        : "تم إنشاء الحساب. فشل إرسال رسالة التأكيد - يرجى إعادة الإرسال من صفحة التحقق",
+      requiresVerification: true,
+      emailSent,
+      emailError: emailError ? String(emailError) : null
+    });
   } catch (err) {
     if (err.code === "23505") {
       // Check constraint name to determine which field caused the duplicate

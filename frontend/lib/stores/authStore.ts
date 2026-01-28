@@ -261,6 +261,21 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         return { success: false, error: errorMessage };
       }
 
+      // ⚠️ SECURITY: Do NOT auto-login if email verification is required
+      if (result.requiresVerification) {
+        set({ isLoading: false });
+        // Redirect to verification page
+        if (typeof window !== 'undefined' && result.user?.email) {
+          window.location.href = `/verify-email?email=${encodeURIComponent(result.user.email)}&registered=true`;
+        }
+        return { 
+          success: true, 
+          requiresVerification: true,
+          message: result.message || 'تم إنشاء الحساب بنجاح! يرجى تأكيد بريدك الإلكتروني'
+        };
+      }
+
+      // Only set authenticated if email is verified (OAuth users)
       set({ 
         user: result.user, 
         isAuthenticated: true,
