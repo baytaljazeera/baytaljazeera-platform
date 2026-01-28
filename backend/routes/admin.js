@@ -246,8 +246,7 @@ router.get("/users/customers", authMiddleware, requireRoles('super_admin'), vali
   const result = await paginatedQuery(db, {
     baseQuery: `
       SELECT 
-        u.id, u.name, u.email, u.phone, u.role, u.status, u.created_at, 
-        COALESCE(u.oauth_provider, 'email') as auth_provider,
+        u.id, u.name, u.email, u.phone, u.role, u.status, u.created_at,
         up.plan_id,
         p.name_ar as plan_name,
         p.color as plan_color,
@@ -267,7 +266,13 @@ router.get("/users/customers", authMiddleware, requireRoles('super_admin'), vali
     pagination: { page, limit, offset }
   });
   
-  res.json({ users: result.data, pagination: result.pagination });
+  // Add auth_provider field (default to 'email' since oauth_provider column may not exist in production)
+  const usersWithAuth = result.data.map(user => ({
+    ...user,
+    auth_provider: 'email'
+  }));
+  
+  res.json({ users: usersWithAuth, pagination: result.pagination });
 }));
 
 router.get("/users/find-by-email", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
