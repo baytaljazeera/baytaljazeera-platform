@@ -12,6 +12,7 @@ const deleteUserCascade = async (userId) => {
   };
   
   await safeDelete("DELETE FROM email_verification_tokens WHERE user_id = $1", [userId]);
+  await safeDelete("DELETE FROM email_verifications WHERE user_id = $1", [userId]);
   await safeDelete("DELETE FROM password_reset_tokens WHERE user_id = $1", [userId]);
   await safeDelete("DELETE FROM favorites WHERE user_id = $1", [userId]);
   await safeDelete("DELETE FROM notifications WHERE user_id = $1", [userId]);

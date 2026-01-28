@@ -1063,6 +1063,27 @@ router.post("/", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "يجب توفير userId لربط الإعلان بالمستخدم." });
   }
 
+  // Check if user's email is verified before allowing listing creation
+  const userResult = await db.query(
+    `SELECT email_verified, email_verified_at, role FROM users WHERE id = $1`,
+    [userId]
+  );
+  const user = userResult.rows[0];
+  if (!user) {
+    return res.status(404).json({ error: "المستخدم غير موجود" });
+  }
+  
+  const adminRoles = ['admin', 'super_admin', 'content', 'finance', 'support'];
+  const isEmailVerified = user.email_verified === true || !!user.email_verified_at;
+  
+  if (!isEmailVerified && !adminRoles.includes(user.role)) {
+    return res.status(403).json({ 
+      error: "يجب تأكيد بريدك الإلكتروني أولاً قبل إضافة إعلان",
+      errorEn: "Please verify your email before adding a listing",
+      requiresVerification: true
+    });
+  }
+
   const paidPlan = await getActivePaidPlanForUser(userId);
   let plan;
   let planSource;
