@@ -574,7 +574,7 @@ router.get("/me", asyncHandler(async (req, res) => {
   }
   
   const result = await db.query(
-    `SELECT id, email, name, phone, whatsapp, role, email_verified_at, phone_verified_at, created_at
+    `SELECT id, email, name, phone, whatsapp, role, email_verified, email_verified_at, phone_verified_at, created_at
      FROM users WHERE id = $1`,
     [payload.userId]
   );
@@ -595,7 +595,7 @@ router.get("/me", asyncHandler(async (req, res) => {
   res.json({
     user: {
       ...user,
-      emailVerified: !!user.email_verified_at,
+      emailVerified: user.email_verified === true || !!user.email_verified_at,
       phoneVerified: !!user.phone_verified_at,
     },
     plan: planResult.rows[0] || null,
