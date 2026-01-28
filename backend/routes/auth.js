@@ -7,7 +7,6 @@ const { JWT_SECRET, JWT_CONFIG, JWT_VERIFY_OPTIONS, optionalAuth } = require("..
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { validatePassword, PASSWORD_POLICY, sanitizeInput, strictAuthLimiter } = require("../config/security");
 const { sendPasswordResetEmail, sendVerificationEmail, resendVerificationEmail, sendWelcomeEmail, sendEmailVerificationEmail } = require("../services/emailService");
-const { isEmailBanned } = require("../services/userService");
 
 const router = express.Router();
 
@@ -76,16 +75,6 @@ router.post("/register", asyncHandler(async (req, res) => {
   }
 
   const sanitizedEmail = sanitizeInput(email.toLowerCase().trim());
-  
-  // Check if email is banned (deleted user trying to re-register)
-  const banned = await isEmailBanned(sanitizedEmail);
-  if (banned) {
-    return res.status(403).json({ 
-      error: "هذا البريد الإلكتروني محظور. يرجى التواصل مع الدعم الفني.",
-      errorEn: "This email is banned. Please contact support."
-    });
-  }
-  
   const sanitizedName = name ? sanitizeInput(name) : null;
   const sanitizedPhone = normalizePhone(phone);
 
