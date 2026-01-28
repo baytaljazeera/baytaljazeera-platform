@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { API_URL, getAuthHeaders } from "@/lib/api";
 
 function VerifyEmailContent() {
   const router = useRouter();
@@ -35,9 +36,9 @@ function VerifyEmailContent() {
 
   async function verifyEmail() {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/auth/verify-email`, {
+      const res = await fetch(`${API_URL}/api/auth/verify-email`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ token }),
         credentials: 'include'
       });
@@ -65,9 +66,9 @@ function VerifyEmailContent() {
     setResendSuccess(false);
     setError(null);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/auth/resend-verification`, {
+      const res = await fetch(`${API_URL}/api/auth/resend-verification`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
         body: JSON.stringify({ email }),
       });
