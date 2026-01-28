@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
 import { Settings, Globe, Bell, Shield, Database, Save, RefreshCw, Loader2, AlertCircle, CheckCircle, Link as LinkIcon, Plus, Trash2 } from "lucide-react";
+import { API_URL, getAuthHeaders } from "@/lib/api";
 
 interface FooterLink {
   href: string;
@@ -117,16 +118,7 @@ export default function SettingsPage() {
     setSettings({ ...settings, accountLinks: JSON.stringify(updated) });
   };
 
-  const getApiBase = () => {
-    if (typeof window !== "undefined") {
-      const host = window.location.hostname;
-      if (host === "localhost" || host === "127.0.0.1") {
-        return "http://localhost:8080";
-      }
-      return "";
-    }
-    return "";
-  };
+  const getApiBase = () => API_URL;
 
   useEffect(() => {
     const initializeSettings = async () => {
@@ -146,6 +138,7 @@ export default function SettingsPage() {
       const apiBase = getApiBase();
       const res = await fetch(`${apiBase}/api/settings/site-status`, {
         credentials: "include",
+        headers: getAuthHeaders(),
       });
       if (res.ok) {
         const data = await res.json();
@@ -166,7 +159,7 @@ export default function SettingsPage() {
       const apiBase = getApiBase();
       const res = await fetch(`${apiBase}/api/settings/site-status`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         credentials: "include",
         body: JSON.stringify({ status: newStatus }),
       });
@@ -198,6 +191,7 @@ export default function SettingsPage() {
       
       const statusRes = await fetch(`${getApiBase()}/api/settings/maintenance-status`, {
         credentials: "include",
+        headers: getAuthHeaders(),
       });
       let currentStatus = isMaintenanceActive;
       if (statusRes.ok) {
@@ -210,9 +204,7 @@ export default function SettingsPage() {
       const apiBase = getApiBase();
       const res = await fetch(`${apiBase}/api/settings/maintenance-toggle`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: getAuthHeaders(),
         credentials: "include",
         body: JSON.stringify({ maintenanceMode: newValue }),
       });
@@ -247,6 +239,7 @@ export default function SettingsPage() {
       const apiBase = getApiBase();
       const res = await fetch(`${apiBase}/api/settings`, {
         credentials: "include",
+        headers: getAuthHeaders(),
       });
       
       if (res.ok) {
@@ -276,9 +269,7 @@ export default function SettingsPage() {
       const apiBase = getApiBase();
       const res = await fetch(`${apiBase}/api/settings`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: getAuthHeaders(),
         credentials: "include",
         body: JSON.stringify(settings),
       });
