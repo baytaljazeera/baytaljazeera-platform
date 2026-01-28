@@ -140,7 +140,7 @@ router.get("/users", authMiddleware, requireRoles('super_admin'), validatePagina
     baseQuery: `
       SELECT 
         id, name, email, phone, role, role_level, status, created_at,
-        (SELECT p.name_ar FROM user_plans up JOIN plans p ON up.plan_id = p.id WHERE up.user_id = users.id AND up.expires_at > NOW() LIMIT 1) as plan_name
+        (SELECT p.name_ar FROM user_plans up JOIN plans p ON up.plan_id = p.id WHERE up.user_id = users.id AND (up.expires_at IS NULL OR up.expires_at > NOW()) AND up.status = 'active' ORDER BY up.created_at DESC LIMIT 1) as plan_name
       FROM users
       ${whereClause}
       ORDER BY created_at DESC`,
@@ -254,13 +254,13 @@ router.get("/users/customers", authMiddleware, requireRoles('super_admin'), vali
         up.status as subscription_status,
         up.expires_at as subscription_expires
       FROM users u
-      LEFT JOIN user_plans up ON up.user_id = u.id AND up.expires_at > NOW()
+      LEFT JOIN user_plans up ON up.user_id = u.id AND (up.expires_at IS NULL OR up.expires_at > NOW()) AND up.status = 'active'
       LEFT JOIN plans p ON up.plan_id = p.id
       ${whereClause}
       ORDER BY u.created_at DESC`,
     countQuery: `
       SELECT COUNT(*) as total FROM users u
-      LEFT JOIN user_plans up ON up.user_id = u.id AND up.expires_at > NOW()
+      LEFT JOIN user_plans up ON up.user_id = u.id AND (up.expires_at IS NULL OR up.expires_at > NOW()) AND up.status = 'active'
       ${whereClause}`,
     params,
     pagination: { page, limit, offset }
@@ -311,7 +311,7 @@ router.get("/users/stats", authMiddleware, adminMiddleware, asyncHandler(async (
       SELECT COUNT(DISTINCT u.id)::int as expired
       FROM users u
       WHERE u.role = 'user' 
-        AND NOT EXISTS (SELECT 1 FROM user_plans up WHERE up.user_id = u.id AND up.expires_at > NOW())
+        AND NOT EXISTS (SELECT 1 FROM user_plans up WHERE up.user_id = u.id AND (up.expires_at IS NULL OR up.expires_at > NOW()) AND up.status = 'active')
     ),
     plan_counts AS (
       SELECT 
@@ -320,7 +320,7 @@ router.get("/users/stats", authMiddleware, adminMiddleware, asyncHandler(async (
         p.color as plan_color,
         p.logo as plan_logo,
         p.sort_order,
-        COUNT(DISTINCT CASE WHEN u.role = 'user' AND up.expires_at > NOW() THEN u.id END)::int as count
+        COUNT(DISTINCT CASE WHEN u.role = 'user' AND (up.expires_at IS NULL OR up.expires_at > NOW()) AND up.status = 'active' THEN u.id END)::int as count
       FROM plans p
       LEFT JOIN user_plans up ON up.plan_id = p.id
       LEFT JOIN users u ON up.user_id = u.id
