@@ -36,6 +36,8 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://baytaljazeera-backend.onrender.com';
+
 type LinkItem = {
   href: string;
   label: string;
@@ -315,7 +317,10 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
   async function fetchVisibleSections() {
     try {
       setLoadingVisibility(true);
-      const res = await fetch('/api/admin/sidebar-settings/visible', { credentials: 'include' });
+      const token = localStorage.getItem("token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${API_URL}/api/admin/sidebar-settings/visible`, { credentials: 'include', headers });
       if (res.ok) {
         const data = await res.json();
         setVisibleSections(data.visible_sections || []);
@@ -329,7 +334,10 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
 
   async function fetchPendingCounts() {
     try {
-      const res = await fetch('/api/admin/pending-counts', { credentials: 'include' });
+      const token = localStorage.getItem("token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${API_URL}/api/admin/pending-counts`, { credentials: 'include', headers });
       if (res.ok) {
         const data = await res.json();
         setPendingCounts(data);
@@ -353,7 +361,10 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
 
   async function fetchCurrentUser() {
     try {
-      const res = await fetch('/api/auth/me', { credentials: 'include' });
+      const token = localStorage.getItem("token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${API_URL}/api/auth/me`, { credentials: 'include', headers });
       if (res.ok) {
         const data = await res.json();
         const user = data.user || data;
@@ -368,7 +379,10 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
   async function fetchUserPermissions() {
     try {
       setLoadingPermissions(true);
-      const res = await fetch('/api/permissions/my-permissions', { credentials: 'include' });
+      const token = localStorage.getItem("token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${API_URL}/api/permissions/my-permissions`, { credentials: 'include', headers });
       if (res.ok) {
         const data = await res.json();
         setUserPermissions(data.permissions || []);
