@@ -48,7 +48,7 @@ const JWT_VERIFY_OPTIONS = {
   algorithms: ['HS256']
 };
 
-function authMiddleware(req, res, next) {
+async function authMiddleware(req, res, next) {
   const token = req.cookies?.token || req.headers.authorization?.replace("Bearer ", "");
   
   if (!token) {
@@ -64,10 +64,38 @@ function authMiddleware(req, res, next) {
       return res.status(401).json({ error: "رمز غير صالح", errorEn: "Invalid token claims" });
     }
     
+    // 🔒 Security: Verify user still exists in database (handles deleted users)
+    const db = require('../db');
+    const userCheck = await db.query(
+      'SELECT id, role, status FROM users WHERE id = $1',
+      [payload.userId]
+    );
+    
+    if (userCheck.rows.length === 0) {
+      // User was deleted - clear their cookie and reject
+      res.clearCookie('token');
+      return res.status(401).json({ 
+        error: "الحساب غير موجود، يرجى تسجيل الدخول من جديد", 
+        errorEn: "Account not found, please login again",
+        accountDeleted: true
+      });
+    }
+    
+    const dbUser = userCheck.rows[0];
+    
+    // Check if user is suspended/banned
+    if (dbUser.status === 'suspended' || dbUser.status === 'banned') {
+      res.clearCookie('token');
+      return res.status(403).json({ 
+        error: "تم إيقاف حسابك. يرجى التواصل مع الدعم الفني.", 
+        errorEn: "Your account has been suspended"
+      });
+    }
+    
     req.user = { 
       id: payload.userId, 
-      role: payload.role,
-      role_level: ROLES[payload.role]?.level || 0
+      role: dbUser.role, // Use role from DB in case it was updated
+      role_level: ROLES[dbUser.role]?.level || 0
     };
     next();
   } catch (err) {
