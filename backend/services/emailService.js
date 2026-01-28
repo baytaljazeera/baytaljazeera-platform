@@ -1,102 +1,100 @@
 const { google } = require('googleapis');
 
-// Initialize Gmail API
-console.log('📧 [EmailService] Starting Gmail API initialization...');
+console.log('📧 [EmailService] Initializing with Replit Gmail Integration...');
 
-const GMAIL_CLIENT_ID = process.env.GMAIL_CLIENT_ID;
-const GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET;
-const GMAIL_REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN;
 const GMAIL_USER_EMAIL = process.env.GMAIL_USER_EMAIL || 'info@baytaljazeera.com';
 const GMAIL_FROM_NAME = process.env.GMAIL_FROM_NAME || 'بيت الجزيرة';
 
-// Debug: Check which variables are set
-console.log('📋 [EmailService] Environment variables check:');
-console.log(`   - GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID ? '✅ Set' : '❌ Missing'}`);
-console.log(`   - GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET ? '✅ Set' : '❌ Missing'}`);
-console.log(`   - GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN ? '✅ Set' : '❌ Missing'}`);
-console.log(`   - GMAIL_USER_EMAIL: ${GMAIL_USER_EMAIL}`);
-console.log(`   - GMAIL_FROM_NAME: ${GMAIL_FROM_NAME}`);
+let connectionSettings = null;
 
-let gmail = null;
-let oauth2Client = null;
-
-if (GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN) {
-  try {
-    console.log('🔧 [EmailService] Creating OAuth2 client...');
-    oauth2Client = new google.auth.OAuth2(
-      GMAIL_CLIENT_ID,
-      GMAIL_CLIENT_SECRET,
-      'urn:ietf:wg:oauth:2.0:oob'
-    );
-
-    console.log('🔧 [EmailService] Setting credentials...');
-    oauth2Client.setCredentials({
-      refresh_token: GMAIL_REFRESH_TOKEN
-    });
-
-    console.log('🔧 [EmailService] Initializing Gmail API...');
-    gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-    console.log('✅ [EmailService] Gmail API initialized successfully!');
-  } catch (error) {
-    console.error('❌ [EmailService] Failed to initialize Gmail API:', error.message);
-    console.error('❌ [EmailService] Error details:', error);
+async function getAccessToken() {
+  if (connectionSettings && connectionSettings.settings?.expires_at && 
+      new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
+    return connectionSettings.settings.access_token;
   }
-} else {
-  console.warn('⚠️ [EmailService] Gmail credentials not set. Email sending will be disabled.');
-  console.warn('⚠️ [EmailService] Missing variables:', {
-    CLIENT_ID: !GMAIL_CLIENT_ID,
-    CLIENT_SECRET: !GMAIL_CLIENT_SECRET,
-    REFRESH_TOKEN: !GMAIL_REFRESH_TOKEN
-  });
+  
+  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
+  
+  const xReplitToken = process.env.REPL_IDENTITY 
+    ? 'repl ' + process.env.REPL_IDENTITY 
+    : process.env.WEB_REPL_RENEWAL 
+    ? 'depl ' + process.env.WEB_REPL_RENEWAL 
+    : null;
+
+  if (!hostname) {
+    console.warn('⚠️ [EmailService] REPLIT_CONNECTORS_HOSTNAME not found - email disabled');
+    return null;
+  }
+
+  if (!xReplitToken) {
+    console.warn('⚠️ [EmailService] Replit token not found - email disabled');
+    return null;
+  }
+
+  try {
+    const response = await fetch(
+      'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=google-mail',
+      {
+        headers: {
+          'Accept': 'application/json',
+          'X_REPLIT_TOKEN': xReplitToken
+        }
+      }
+    );
+    
+    if (!response.ok) {
+      console.error('❌ [EmailService] Failed to fetch Gmail connection:', response.status);
+      return null;
+    }
+    
+    const data = await response.json();
+    connectionSettings = data.items?.[0];
+
+    const accessToken = connectionSettings?.settings?.access_token || 
+                       connectionSettings?.settings?.oauth?.credentials?.access_token;
+
+    if (!connectionSettings || !accessToken) {
+      console.error('❌ [EmailService] Gmail not connected or no access token');
+      return null;
+    }
+    
+    console.log('✅ [EmailService] Gmail access token obtained');
+    return accessToken;
+  } catch (error) {
+    console.error('❌ [EmailService] Error getting access token:', error.message);
+    return null;
+  }
 }
 
-function getGmailClient() {
-  return gmail;
+async function getGmailClient() {
+  const accessToken = await getAccessToken();
+  
+  if (!accessToken) {
+    return null;
+  }
+
+  const oauth2Client = new google.auth.OAuth2();
+  oauth2Client.setCredentials({
+    access_token: accessToken
+  });
+
+  return google.gmail({ version: 'v1', auth: oauth2Client });
 }
 
 async function sendEmail(to, subject, htmlBody, textBody = null) {
   console.log(`📧 [EmailService] sendEmail called - To: ${to}, Subject: ${subject}`);
-  console.log(`📧 [EmailService] Gmail API status: ${gmail ? '✅ Initialized' : '❌ Not initialized'}`);
   
-  if (!gmail || !oauth2Client) {
-    console.error('❌ [EmailService] Gmail API not configured. Cannot send email.');
-    return { success: false, error: 'Gmail API not configured' };
-  }
-
   try {
-    console.log('🔄 [EmailService] Refreshing access token...');
-    try {
-      const { credentials } = await oauth2Client.refreshAccessToken();
-      oauth2Client.setCredentials(credentials);
-      console.log('✅ [EmailService] Access token refreshed successfully');
-    } catch (refreshError) {
-      console.error('❌ [EmailService] Failed to refresh access token:', refreshError.message);
-      
-      if (refreshError.code === 'invalid_grant' || 
-          refreshError.message?.includes('invalid_grant') || 
-          refreshError.message?.includes('Token has been expired') ||
-          refreshError.message?.includes('revoked')) {
-        return {
-          success: false,
-          error: 'Gmail refresh token expired or revoked. Please update GMAIL_REFRESH_TOKEN.'
-        };
-      }
-      
-      if (refreshError.code === 401 || refreshError.response?.status === 401) {
-        return {
-          success: false,
-          error: 'Gmail authentication failed (401). Please check GMAIL_REFRESH_TOKEN.'
-        };
-      }
-      
-      console.warn('⚠️ [EmailService] Continuing despite refresh error...');
+    const gmail = await getGmailClient();
+    
+    if (!gmail) {
+      console.error('❌ [EmailService] Gmail client not available');
+      return { success: false, error: 'Gmail API not configured' };
     }
     
     console.log(`📧 [EmailService] Creating email message for ${to}...`);
     
-    // Encode subject for proper Arabic display (RFC 2047 MIME Encoded-Word)
     const encodedSubject = `=?UTF-8?B?${Buffer.from(subject, 'utf-8').toString('base64')}?=`;
-    // Encode From name for proper Arabic display
     const encodedFromName = `=?UTF-8?B?${Buffer.from(GMAIL_FROM_NAME, 'utf-8').toString('base64')}?=`;
     
     const messageParts = [
@@ -119,7 +117,7 @@ async function sendEmail(to, subject, htmlBody, textBody = null) {
       .replace(/\//g, '_')
       .replace(/=+$/, '');
 
-    console.log(`📧 [EmailService] Message encoded, calling Gmail API...`);
+    console.log(`📧 [EmailService] Calling Gmail API...`);
     const response = await gmail.users.messages.send({
       userId: 'me',
       requestBody: { raw: encodedMessage }
@@ -253,17 +251,17 @@ function getEmailVerificationTemplate(verifyLink, userName) {
           </tr>
           <tr>
             <td style="padding: 40px;">
-              <h2 style="color: #002845; margin: 0 0 20px 0; font-size: 24px;">🎉 مرحباً بك في بيت الجزيرة!</h2>
+              <h2 style="color: #002845; margin: 0 0 20px 0; font-size: 24px;">تأكيد البريد الإلكتروني</h2>
               <p style="color: #666; line-height: 1.8; margin: 0 0 20px 0;">
-                أهلاً ${userName || 'عزيزنا العميل'}،
+                مرحباً ${userName || 'عزيزنا العميل'}،
               </p>
               <p style="color: #666; line-height: 1.8; margin: 0 0 30px 0;">
-                شكراً لتسجيلك معنا! يرجى تأكيد بريدك الإلكتروني بالنقر على الزر أدناه لتفعيل حسابك:
+                شكراً لتسجيلك في بيت الجزيرة! يرجى النقر على الزر أدناه لتأكيد بريدك الإلكتروني وتفعيل حسابك:
               </p>
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="center">
-                    <a href="${verifyLink}" style="display: inline-block; background: linear-gradient(135deg, #0B6B4C 0%, #085239 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 12px; font-size: 18px; font-weight: bold; box-shadow: 0 4px 15px rgba(11, 107, 76, 0.4);">
+                    <a href="${verifyLink}" style="display: inline-block; background: linear-gradient(135deg, #0B6B4C 0%, #0a5a40 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 12px; font-size: 18px; font-weight: bold; box-shadow: 0 4px 15px rgba(11, 107, 76, 0.4);">
                       تأكيد البريد الإلكتروني
                     </a>
                   </td>
@@ -271,6 +269,9 @@ function getEmailVerificationTemplate(verifyLink, userName) {
               </table>
               <p style="color: #999; font-size: 14px; line-height: 1.8; margin: 30px 0 0 0;">
                 ⚠️ هذا الرابط صالح لمدة <strong>24 ساعة</strong> فقط.
+              </p>
+              <p style="color: #999; font-size: 14px; line-height: 1.8; margin: 10px 0 0 0;">
+                إذا لم تسجّل في بيت الجزيرة، يمكنك تجاهل هذا البريد بأمان.
               </p>
               <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
               <p style="color: #999; font-size: 12px; line-height: 1.6; margin: 0;">
@@ -305,18 +306,8 @@ async function sendVerificationEmail(email, verificationToken, userName) {
   return await sendEmail(email, subject, htmlBody);
 }
 
-async function sendEmailVerificationEmail(email, verificationToken, userName) {
-  return await sendVerificationEmail(email, verificationToken, userName);
-}
-
-async function resendVerificationEmail(email, verificationToken, userName) {
-  return await sendVerificationEmail(email, verificationToken, userName);
-}
-
-async function sendWelcomeEmail(email, userName) {
-  const frontendUrl = process.env.FRONTEND_URL || 'https://baytaljazeera.com';
-  
-  const htmlBody = `
+function getWelcomeEmailTemplate(userName) {
+  return `
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -341,22 +332,25 @@ async function sendWelcomeEmail(email, userName) {
           </tr>
           <tr>
             <td style="padding: 40px;">
-              <h2 style="color: #002845; margin: 0 0 20px 0; font-size: 24px;">مرحباً بك في بيت الجزيرة!</h2>
+              <h2 style="color: #002845; margin: 0 0 20px 0; font-size: 24px;">🎉 مرحباً بك في بيت الجزيرة!</h2>
               <p style="color: #666; line-height: 1.8; margin: 0 0 20px 0;">
                 مرحباً ${userName || 'عزيزنا العميل'}،
               </p>
               <p style="color: #666; line-height: 1.8; margin: 0 0 30px 0;">
-                نشكرك على انضمامك إلى منصة بيت الجزيرة. يمكنك الآن استكشاف آلاف العقارات في جميع أنحاء الخليج العربي.
+                تم تفعيل حسابك بنجاح! أنت الآن جزء من مجتمع بيت الجزيرة - منصة العقارات الخليجية الأولى.
               </p>
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="center">
-                    <a href="${frontendUrl}" style="display: inline-block; background: linear-gradient(135deg, #D4AF37 0%, #B8860B 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 12px; font-size: 18px; font-weight: bold; box-shadow: 0 4px 15px rgba(212, 175, 55, 0.4);">
-                      ابدأ الاستكشاف
+                    <a href="https://baytaljazeera.com/search" style="display: inline-block; background: linear-gradient(135deg, #D4AF37 0%, #B8860B 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 12px; font-size: 18px; font-weight: bold; box-shadow: 0 4px 15px rgba(212, 175, 55, 0.4);">
+                      استكشف العقارات
                     </a>
                   </td>
                 </tr>
               </table>
+              <p style="color: #666; line-height: 1.8; margin: 30px 0 0 0; text-align: center;">
+                ابدأ رحلتك العقارية معنا اليوم!
+              </p>
             </td>
           </tr>
           <tr>
@@ -373,17 +367,21 @@ async function sendWelcomeEmail(email, userName) {
 </body>
 </html>
   `;
+}
+
+async function sendWelcomeEmail(email, userName) {
+  const htmlBody = getWelcomeEmailTemplate(userName);
+  const subject = 'مرحباً بك في بيت الجزيرة! 🏠';
   
-  const subject = 'مرحباً بك في بيت الجزيرة!';
   return await sendEmail(email, subject, htmlBody);
 }
 
 module.exports = {
+  getGmailClient,
   sendEmail,
   sendPasswordResetEmail,
   sendVerificationEmail,
-  sendEmailVerificationEmail,
-  resendVerificationEmail,
   sendWelcomeEmail,
-  getGmailClient
+  getEmailVerificationTemplate,
+  getPasswordResetEmailTemplate
 };
