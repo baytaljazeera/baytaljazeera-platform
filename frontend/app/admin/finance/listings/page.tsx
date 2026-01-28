@@ -121,11 +121,10 @@ export default function ListingsPage() {
   const fetchListings = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const url = statusFilter === "all" ? "/api/admin/listings" : `/api/admin/listings?status=${statusFilter}`;
+      const url = statusFilter === "all" ? `${API_URL}/api/admin/listings` : `${API_URL}/api/admin/listings?status=${statusFilter}`;
       const res = await fetch(url, {
         credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: getAuthHeaders(),
       });
       if (res.ok) {
         const data = await res.json();
@@ -140,10 +139,9 @@ export default function ListingsPage() {
 
   const fetchStats = async () => {
     try {
-      const token = localStorage.getItem("token");
       const res = await fetch(`${API_URL}/api/admin/listings/stats`, {
         credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: getAuthHeaders(),
       });
       if (res.ok) {
         const data = await res.json();
@@ -169,10 +167,9 @@ export default function ListingsPage() {
   const openReviewModal = async (listingId: string) => {
     setReviewLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/listings/${listingId}`, {
+      const res = await fetch(`${API_URL}/api/admin/listings/${listingId}`, {
         credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: getAuthHeaders(),
       });
       if (res.ok) {
         const data = await res.json();
@@ -201,7 +198,7 @@ export default function ListingsPage() {
     setDeleteMediaModal(null);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/listings/${listingId}/media/${mediaId}`, {
+      const res = await fetch(`${API_URL}/api/admin/listings/${listingId}/media/${mediaId}`, {
         method: "DELETE",
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -252,7 +249,7 @@ export default function ListingsPage() {
     setActionLoading(id);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/listings/${id}/approve`, {
+      const res = await fetch(`${API_URL}/api/admin/listings/${id}/approve`, {
         method: "PATCH",
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -280,7 +277,7 @@ export default function ListingsPage() {
     setActionLoading(id);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/listings/${id}/reject`, {
+      const res = await fetch(`${API_URL}/api/admin/listings/${id}/reject`, {
         method: "PATCH",
         credentials: "include",
         headers: {
@@ -313,7 +310,7 @@ export default function ListingsPage() {
     setActionLoading(id);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/listings/${id}/hide`, {
+      const res = await fetch(`${API_URL}/api/admin/listings/${id}/hide`, {
         method: "PATCH",
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -338,7 +335,7 @@ export default function ListingsPage() {
     setActionLoading(id);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/listings/${id}/show`, {
+      const res = await fetch(`${API_URL}/api/admin/listings/${id}/show`, {
         method: "PATCH",
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -362,7 +359,7 @@ export default function ListingsPage() {
     setActionLoading(id);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/listings/${id}/in-review`, {
+      const res = await fetch(`${API_URL}/api/admin/listings/${id}/in-review`, {
         method: "PATCH",
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -388,11 +385,10 @@ export default function ListingsPage() {
   const handleDelete = async (id: string) => {
     setActionLoading(id);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`/api/admin/listings/${id}`, {
+      const res = await fetch(`${API_URL}/api/admin/listings/${id}`, {
         method: "DELETE",
         credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: getAuthHeaders(),
       });
       const data = await res.json();
       if (data.ok) {
