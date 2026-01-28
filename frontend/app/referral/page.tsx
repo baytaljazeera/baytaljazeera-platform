@@ -2492,17 +2492,17 @@ export default function ReferralPage() {
           </div>
         )}
 
-        {stats && (
+        {stats && stats.ambassador_code && (
           <div className="grid lg:grid-cols-5 gap-6">
             <div className="lg:col-span-3 space-y-6">
               <InfoGuideStrip 
-                code={stats.ambassador_code} 
+                code={stats.ambassador_code || ''} 
                 requirements={stats.requirements}
                 pendingListingCount={stats.pending_listing_count}
               />
               
               <AmbassadorCodeCard 
-                code={stats.ambassador_code}
+                code={stats.ambassador_code || ''}
                 onCopy={() => setCopied(true)}
                 onShare={() => setShowShareModal(true)}
                 termsAccepted={termsAccepted}
@@ -3039,12 +3039,12 @@ export default function ReferralPage() {
         )}
       </div>
 
-      {stats && (
+      {stats && stats.ambassador_code && (
         <>
           <SocialShareModal
             isOpen={showShareModal}
             onClose={() => setShowShareModal(false)}
-            code={stats.ambassador_code}
+            code={stats.ambassador_code || ''}
             shareUrl={shareUrl}
             shareTextConfig={shareTextConfig}
           />
