@@ -19,7 +19,6 @@ import ShareButton from "@/components/shared/ShareButton";
 import AdvertiserReputation from "@/components/ratings/AdvertiserReputation";
 import RatingModal from "@/components/ratings/RatingModal";
 import { getImageUrl } from "@/lib/imageUrl";
-import { getApiBase, getAuthHeaders } from "@/lib/api";
 
 type ListingDetail = {
   id: string;

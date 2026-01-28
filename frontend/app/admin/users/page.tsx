@@ -27,6 +27,7 @@ interface UserData {
   role: string;
   status: string;
   created_at: string;
+  auth_provider?: string;
   plan_id?: number;
   plan_name?: string;
   plan_color?: string;
@@ -34,6 +35,15 @@ interface UserData {
   subscription_status?: string;
   subscription_expires?: string;
 }
+
+const AUTH_PROVIDER_LABELS: Record<string, { label: string; icon: string; color: string }> = {
+  local: { label: "بريد إلكتروني", icon: "📧", color: "bg-slate-100 text-slate-700" },
+  google: { label: "Google", icon: "🔵", color: "bg-blue-100 text-blue-700" },
+  apple: { label: "Apple", icon: "🍎", color: "bg-gray-100 text-gray-700" },
+  github: { label: "GitHub", icon: "⚫", color: "bg-purple-100 text-purple-700" },
+  x: { label: "X (Twitter)", icon: "✖", color: "bg-black/10 text-black" },
+  replit: { label: "Replit", icon: "🔸", color: "bg-orange-100 text-orange-700" },
+};
 
 interface UserStats {
   total: number;
@@ -101,9 +111,9 @@ export default function UsersPage() {
     try {
       const headers = getAuthHeaders();
       const [usersRes, plansRes, statsRes] = await Promise.all([
-        fetch(`${API_URL}/api/admin/users/customers`, { credentials: `include", headers }),
-        fetch(`${API_URL}/api/plans`, { credentials: `include", headers }),
-        fetch(`${API_URL}/api/admin/users/stats`, { credentials: `include", headers }),
+        fetch(`${API_URL}/api/admin/users/customers`, { credentials: "include", headers }),
+        fetch(`${API_URL}/api/plans`, { credentials: "include", headers }),
+        fetch(`${API_URL}/api/admin/users/stats`, { credentials: "include", headers }),
       ]);
 
       if (usersRes.ok) {
@@ -597,6 +607,7 @@ export default function UsersPage() {
                   <th className="px-4 py-3 text-xs font-semibold text-slate-600">#</th>
                   <th className="px-4 py-3 text-xs font-semibold text-slate-600">العميل</th>
                   <th className="px-4 py-3 text-xs font-semibold text-slate-600">البريد</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-slate-600">طريقة التسجيل</th>
                   <th className="px-4 py-3 text-xs font-semibold text-slate-600">الهاتف</th>
                   <th className="px-4 py-3 text-xs font-semibold text-slate-600">الباقة</th>
                   <th className="px-4 py-3 text-xs font-semibold text-slate-600">الحالة</th>
@@ -627,6 +638,18 @@ export default function UsersPage() {
                         <Mail className="w-3 h-3" />
                         {user.email}
                       </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {(() => {
+                        const provider = user.auth_provider || "local";
+                        const info = AUTH_PROVIDER_LABELS[provider] || AUTH_PROVIDER_LABELS.local;
+                        return (
+                          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${info.color}`}>
+                            <span>{info.icon}</span>
+                            {info.label}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 text-sm text-slate-600">

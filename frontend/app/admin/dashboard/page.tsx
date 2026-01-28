@@ -136,13 +136,13 @@ export default function AdminDashboard() {
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
       const [listingsRes, usersRes, complaintsRes, notificationsRes, advancedRes, ambassadorRes, ambassadorChartRes] = await Promise.all([
-        fetch(`${API_URL}/api/admin/listings/stats`, { credentials: `include", headers }),
-        fetch(`${API_URL}/api/admin/users/stats`, { credentials: `include", headers }),
-        fetch(`${API_URL}/api/admin/complaints/stats`, { credentials: `include", headers }),
-        fetch(`${API_URL}/api/notifications/recent`, { credentials: `include", headers }),
-        fetch(`${API_URL}/api/admin/dashboard/advanced-stats`, { credentials: `include", headers }),
-        fetch(`${API_URL}/api/ambassador/admin/stats`, { credentials: `include", headers }),
-        fetch(`${API_URL}/api/ambassador/admin/chart-data?days=14`, { credentials: `include", headers })
+        fetch(`${API_URL}/api/admin/listings/stats`, { credentials: "include", headers }),
+        fetch(`${API_URL}/api/admin/users/stats`, { credentials: "include", headers }),
+        fetch(`${API_URL}/api/admin/complaints/stats`, { credentials: "include", headers }),
+        fetch(`${API_URL}/api/notifications/recent`, { credentials: "include", headers }),
+        fetch(`${API_URL}/api/admin/dashboard/advanced-stats`, { credentials: "include", headers }),
+        fetch(`${API_URL}/api/ambassador/admin/stats`, { credentials: "include", headers }),
+        fetch(`${API_URL}/api/ambassador/admin/chart-data?days=14`, { credentials: "include", headers })
       ]);
 
       let totalListings = 0, pendingListings = 0;

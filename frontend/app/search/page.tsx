@@ -9,7 +9,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import dynamicImport from "next/dynamic";
-import { getAuthHeaders } from "@/lib/api";
 
 const MapClient = dynamicImport(() => import("../../components/MapClient"), {
   ssr: false,

@@ -246,7 +246,7 @@ router.get("/users/customers", authMiddleware, requireRoles('super_admin'), vali
   const result = await paginatedQuery(db, {
     baseQuery: `
       SELECT 
-        u.id, u.name, u.email, u.phone, u.role, u.status, u.created_at,
+        u.id, u.name, u.email, u.phone, u.role, u.status, u.created_at, u.auth_provider,
         up.plan_id,
         p.name_ar as plan_name,
         p.color as plan_color,
