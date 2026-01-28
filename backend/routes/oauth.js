@@ -5,7 +5,7 @@ const db = require("../db");
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET, JWT_CONFIG } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
-const { sendWelcomeEmail } = require("../services/emailService");
+const { sendVerificationEmail } = require("../services/emailService");
 const crypto = require("crypto");
 
 const router = express.Router();
@@ -104,11 +104,23 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         );
       }
 
-      // Send welcome email
+      // Send verification email with activation link
       try {
-        await sendWelcomeEmail(newUser.email, newUser.name);
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        const tokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+        
+        await db.query(
+          `INSERT INTO email_verifications (user_id, token_hash, expires_at, created_at)
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (user_id) DO UPDATE SET token_hash = $2, expires_at = $3, created_at = NOW()`,
+          [newUser.id, tokenHash, expiresAt]
+        );
+        
+        await sendVerificationEmail(newUser.email, verificationToken, newUser.name);
+        console.log(`✅ [OAuth] Verification email sent to ${newUser.email}`);
       } catch (emailErr) {
-        console.error('Failed to send welcome email:', emailErr);
+        console.error('Failed to send verification email:', emailErr);
       }
 
       return done(null, newUser);
