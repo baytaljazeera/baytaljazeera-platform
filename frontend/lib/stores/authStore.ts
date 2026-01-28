@@ -283,6 +283,14 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       console.error('Logout error:', error);
     } finally {
       Cookies.remove('token');
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.removeItem('token');
+          localStorage.removeItem('oauth_token');
+        } catch (e) {
+          // Ignore localStorage errors
+        }
+      }
       set({ user: null, token: null, isAuthenticated: false });
     }
   },
