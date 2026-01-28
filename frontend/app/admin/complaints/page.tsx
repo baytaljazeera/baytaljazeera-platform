@@ -9,6 +9,7 @@ import {
   AlertTriangle, Mail, Building2
 } from "lucide-react";
 import Link from "next/link";
+import { API_URL, getAuthHeaders } from "@/lib/api";
 
 interface AccountComplaint {
   id: number;
@@ -56,7 +57,7 @@ export default function ComplaintsPage() {
   const fetchComplaints = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/account-complaints", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/account-complaints`, { credentials: "include", headers: getAuthHeaders() });
       
       if (res.ok) {
         const data = await res.json();
@@ -95,9 +96,9 @@ export default function ComplaintsPage() {
     setSubmitting(true);
 
     try {
-      const res = await fetch(`/api/account-complaints/${selectedComplaint.id}`, {
+      const res = await fetch(`${API_URL}/api/account-complaints/${selectedComplaint.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         credentials: "include",
         body: JSON.stringify({ status: actionType, adminNote }),
       });

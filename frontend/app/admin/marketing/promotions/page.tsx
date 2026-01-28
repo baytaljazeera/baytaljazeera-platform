@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
@@ -258,8 +260,8 @@ export default function PromotionsPage() {
   const fetchData = async () => {
     try {
       const [promosRes, plansRes] = await Promise.all([
-        fetch("/api/promotions", { credentials: "include" }),
-        fetch("/api/plans", { credentials: "include" })
+        fetch(`${API_URL}/api/promotions", { credentials: "include", headers: getAuthHeaders() }),
+        fetch(`${API_URL}/api/plans", { credentials: "include", headers: getAuthHeaders() })
       ]);
       
       const promosData = await promosRes.json();
@@ -321,7 +323,7 @@ export default function PromotionsPage() {
     
     setAiGenerating(true);
     try {
-      const res = await fetch("/api/ai/generate-promotion", {
+      const res = await fetch(`${API_URL}/api/ai/generate-promotion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

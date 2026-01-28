@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect, useRef } from "react";
@@ -61,7 +63,7 @@ export default function FeaturedCitiesPage() {
   const fetchCities = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/featured-cities");
+      const res = await fetch(`${API_URL}/api/featured-cities");
       if (res.ok) {
         const data = await res.json();
         setCities(data.cities || []);

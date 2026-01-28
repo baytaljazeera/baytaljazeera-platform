@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
@@ -179,7 +181,7 @@ export default function FinancePage() {
 
   async function fetchPlans() {
     try {
-      const res = await fetch("/api/plans", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/plans", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setPlans(data.plans || []);
@@ -203,7 +205,7 @@ export default function FinancePage() {
   async function fetchWithdrawalRequests() {
     try {
       const status = withdrawalFilter === "all" ? "all" : withdrawalFilter;
-      const res = await fetch(`/api/ambassador/admin/financial-requests?status=${status}`, { credentials: "include" });
+      const res = await fetch(`/api/ambassador/admin/financial-requests?status=${status}`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setWithdrawalRequests(data.requests || []);
@@ -323,7 +325,7 @@ export default function FinancePage() {
 
   async function fetchAllRefunds() {
     try {
-      const res = await fetch("/api/finance/refunds", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/finance/refunds", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setAllRefunds(data.refunds || []);
@@ -335,7 +337,7 @@ export default function FinancePage() {
 
   async function fetchPayments() {
     try {
-      const res = await fetch("/api/finance/payments", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/finance/payments", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setPayments(data.payments || []);
@@ -347,7 +349,7 @@ export default function FinancePage() {
 
   async function fetchInvoices() {
     try {
-      const res = await fetch("/api/finance/invoices", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/finance/invoices", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setInvoices(data.invoices || []);
@@ -359,7 +361,7 @@ export default function FinancePage() {
 
   async function fetchPaymentStats() {
     try {
-      const res = await fetch("/api/finance/payment-stats", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/finance/payment-stats", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setPaymentStats(data);
@@ -371,7 +373,7 @@ export default function FinancePage() {
 
   async function fetchStats() {
     try {
-      const res = await fetch("/api/finance/stats", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/finance/stats", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setStats(data);
@@ -388,7 +390,7 @@ export default function FinancePage() {
       const url = status && status !== "all" 
         ? `/api/finance/subscribers?status=${status}` 
         : "/api/finance/subscribers";
-      const res = await fetch(url, { credentials: "include" });
+      const res = await fetch(url, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setSubscribers(data.subscribers);
@@ -401,7 +403,7 @@ export default function FinancePage() {
   async function fetchRefunds(status?: string) {
     try {
       const url = status ? `/api/finance/refunds?status=${status}` : "/api/finance/refunds";
-      const res = await fetch(url, { credentials: "include" });
+      const res = await fetch(url, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setRefunds(data.refunds);
@@ -619,7 +621,7 @@ export default function FinancePage() {
     setRefundModal(prev => ({ ...prev, loading: true }));
     
     try {
-      const res = await fetch("/api/finance/refunds", {
+      const res = await fetch(`${API_URL}/api/finance/refunds", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

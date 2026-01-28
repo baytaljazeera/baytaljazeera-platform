@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState, useRef } from "react";
@@ -142,7 +144,7 @@ export default function AdminMessagesPage() {
 
   async function fetchDepartments() {
     try {
-      const res = await fetch("/api/admin-messages/departments", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/admin-messages/departments", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setDepartments(data);
@@ -154,7 +156,7 @@ export default function AdminMessagesPage() {
 
   async function fetchAdmins(department: string) {
     try {
-      const res = await fetch(`/api/admin-messages/admins?department=${department}`, { credentials: "include" });
+      const res = await fetch(`/api/admin-messages/admins?department=${department}`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setAdmins(data);
@@ -167,7 +169,7 @@ export default function AdminMessagesPage() {
   async function fetchConversations() {
     try {
       setIsLoading(true);
-      const res = await fetch("/api/admin-messages/conversations", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/admin-messages/conversations", { credentials: "include", headers: getAuthHeaders() });
       if (res.status === 401 || res.status === 403) {
         router.push("/admin-login");
         return;
@@ -185,7 +187,7 @@ export default function AdminMessagesPage() {
 
   async function fetchConversation(id: number) {
     try {
-      const res = await fetch(`/api/admin-messages/conversations/${id}`, { credentials: "include" });
+      const res = await fetch(`/api/admin-messages/conversations/${id}`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setSelectedConversation(data);
@@ -203,7 +205,7 @@ export default function AdminMessagesPage() {
 
     try {
       setSending(true);
-      const res = await fetch("/api/admin-messages/conversations", {
+      const res = await fetch(`${API_URL}/api/admin-messages/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

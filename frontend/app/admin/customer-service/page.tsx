@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect, useCallback } from "react";
@@ -133,7 +135,7 @@ export default function CustomerServicePage() {
 
   const fetchTickets = useCallback(async () => {
     try {
-      const res = await fetch("/api/support", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/support", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setTickets(data.tickets || []);
@@ -145,7 +147,7 @@ export default function CustomerServicePage() {
 
   const fetchSupportStats = useCallback(async () => {
     try {
-      const res = await fetch("/api/support/stats", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/support/stats", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setSupportStats(data);
@@ -157,7 +159,7 @@ export default function CustomerServicePage() {
 
   const fetchTicketDetails = useCallback(async (ticketId: number) => {
     try {
-      const res = await fetch(`/api/support/${ticketId}`, { credentials: "include" });
+      const res = await fetch(`/api/support/${ticketId}`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setReplies(data.replies || []);
@@ -169,7 +171,7 @@ export default function CustomerServicePage() {
 
   const fetchComplaints = async () => {
     try {
-      const res = await fetch("/api/account-complaints", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/account-complaints", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setComplaints(data.complaints || []);

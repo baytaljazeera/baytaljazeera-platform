@@ -9,6 +9,7 @@ import {
   Crown, Eye, MoreVertical, UserX, PauseCircle, PlayCircle,
   TrendingUp, BarChart3, Shield
 } from "lucide-react";
+import { API_URL, getAuthHeaders } from "@/lib/api";
 
 interface Plan {
   id: number;
@@ -98,10 +99,11 @@ export default function UsersPage() {
   async function fetchData() {
     setLoading(true);
     try {
+      const headers = getAuthHeaders();
       const [usersRes, plansRes, statsRes] = await Promise.all([
-        fetch("/api/admin/users/customers", { credentials: "include" }),
-        fetch("/api/plans", { credentials: "include" }),
-        fetch("/api/admin/users/stats", { credentials: "include" }),
+        fetch(`${API_URL}/api/admin/users/customers`, { credentials: "include", headers }),
+        fetch(`${API_URL}/api/plans`, { credentials: "include", headers }),
+        fetch(`${API_URL}/api/admin/users/stats`, { credentials: "include", headers }),
       ]);
 
       if (usersRes.ok) {
@@ -131,8 +133,9 @@ export default function UsersPage() {
     setDirectSearchLoading(true);
     setDirectSearchResult(null);
     try {
-      const res = await fetch(`/api/admin/users/find-by-email?email=${encodeURIComponent(email)}`, {
+      const res = await fetch(`${API_URL}/api/admin/users/find-by-email?email=${encodeURIComponent(email)}`, {
         credentials: "include",
+        headers: getAuthHeaders(),
       });
       const data = await res.json();
       setDirectSearchResult(data);
@@ -147,10 +150,10 @@ export default function UsersPage() {
     setActionLoading(userId);
     setOpenDropdown(null);
     try {
-      const res = await fetch(`/api/admin/users/${userId}/status`, {
+      const res = await fetch(`${API_URL}/api/admin/users/${userId}/status`, {
         method: "PATCH",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ status: newStatus }),
       });
       const data = await res.json();
@@ -171,9 +174,10 @@ export default function UsersPage() {
   async function handleDeleteAccount(userId: string) {
     setActionLoading(userId);
     try {
-      const res = await fetch(`/api/admin/users/${userId}`, {
+      const res = await fetch(`${API_URL}/api/admin/users/${userId}`, {
         method: "DELETE",
         credentials: "include",
+        headers: getAuthHeaders(),
       });
       const data = await res.json();
       if (data.ok) {

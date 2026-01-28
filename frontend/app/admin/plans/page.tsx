@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
@@ -207,7 +209,7 @@ export default function PlansManagement() {
 
   const fetchIcons = async () => {
     try {
-      const res = await fetch("/api/plans/icons/list");
+      const res = await fetch(`${API_URL}/api/plans/icons/list");
       const data = await res.json();
       setAvailableIcons(data.icons || []);
     } catch (err) {
@@ -223,7 +225,7 @@ export default function PlansManagement() {
     try {
       const reader = new FileReader();
       reader.onloadend = async () => {
-        const res = await fetch("/api/plans/icons/upload", {
+        const res = await fetch(`${API_URL}/api/plans/icons/upload", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -255,7 +257,7 @@ export default function PlansManagement() {
 
   const fetchPlans = async () => {
     try {
-      const res = await fetch("/api/plans?all=true", {
+      const res = await fetch(`${API_URL}/api/plans?all=true", {
         credentials: "include",
       });
       const data = await res.json();

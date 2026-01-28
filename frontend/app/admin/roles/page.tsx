@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, Suspense } from "react";
@@ -242,7 +244,7 @@ function AdminRolesPageContent() {
   async function fetchUsers() {
     try {
       setIsLoading(true);
-      const res = await fetch("/api/admin/users?admin_only=true&limit=100", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/admin/users?admin_only=true&limit=100", { credentials: "include", headers: getAuthHeaders() });
       if (res.status === 401 || res.status === 403) {
         router.push("/admin-login");
         return;
@@ -260,7 +262,7 @@ function AdminRolesPageContent() {
 
   async function fetchPermissionsList() {
     try {
-      const res = await fetch("/api/permissions/list", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/permissions/list", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setPermissions(data.permissions || []);
@@ -277,7 +279,7 @@ function AdminRolesPageContent() {
   async function fetchRolePermissions(role: string) {
     try {
       setLoadingPermissions(true);
-      const res = await fetch(`/api/permissions/role/${role}`, { credentials: "include" });
+      const res = await fetch(`/api/permissions/role/${role}`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setRolePermissions(data.permissions || []);
@@ -292,7 +294,7 @@ function AdminRolesPageContent() {
   async function fetchAuditLogs() {
     try {
       setLoadingAudit(true);
-      const res = await fetch(`/api/permissions/audit-log?page=${auditPage}&limit=10`, { credentials: "include" });
+      const res = await fetch(`/api/permissions/audit-log?page=${auditPage}&limit=10`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setAuditLogs(data.logs || []);
@@ -307,7 +309,7 @@ function AdminRolesPageContent() {
 
   async function fetchCustomRoles() {
     try {
-      const res = await fetch("/api/permissions/custom-roles", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/permissions/custom-roles", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setCustomRoles(data.roles || []);
@@ -434,8 +436,8 @@ function AdminRolesPageContent() {
     try {
       setLoadingApplications(true);
       const [pendingRes, rejectedRes] = await Promise.all([
-        fetch("/api/membership/admin/requests?status=pending", { credentials: "include" }),
-        fetch("/api/membership/admin/requests?status=rejected", { credentials: "include" })
+        fetch(`${API_URL}/api/membership/admin/requests?status=pending", { credentials: "include", headers: getAuthHeaders() }),
+        fetch(`${API_URL}/api/membership/admin/requests?status=rejected", { credentials: "include", headers: getAuthHeaders() })
       ]);
       
       if (pendingRes.ok) {

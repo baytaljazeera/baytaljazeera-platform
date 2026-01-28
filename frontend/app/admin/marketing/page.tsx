@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
@@ -133,14 +135,14 @@ export default function MarketingPage() {
 
   async function fetchStats() {
     try {
-      const res = await fetch("/api/marketing/stats", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/marketing/stats", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) setStats(await res.json());
     } catch (err) { console.error(err); }
   }
 
   async function fetchSegments() {
     try {
-      const res = await fetch("/api/marketing/segments", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/marketing/segments", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setSegments(data.segments || []);
@@ -157,7 +159,7 @@ export default function MarketingPage() {
         url = "/api/marketing/users-for-campaign?limit=100";
       }
       if (searchQuery) url += `&search=${searchQuery}`;
-      const res = await fetch(url, { credentials: "include" });
+      const res = await fetch(url, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setUsers(data.users || []);
@@ -167,7 +169,7 @@ export default function MarketingPage() {
 
   async function fetchEmailCampaigns() {
     try {
-      const res = await fetch("/api/marketing/email-campaigns", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/marketing/email-campaigns", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setEmailCampaigns(data.campaigns || []);
@@ -177,7 +179,7 @@ export default function MarketingPage() {
 
   async function fetchWhatsappCampaigns() {
     try {
-      const res = await fetch("/api/whatsapp/campaigns", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/whatsapp/campaigns", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setWhatsappCampaigns(data.campaigns || []);
@@ -187,14 +189,14 @@ export default function MarketingPage() {
 
   async function fetchRetargeting() {
     try {
-      const res = await fetch("/api/marketing/retargeting", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/marketing/retargeting", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) setRetargeting(await res.json());
     } catch (err) { console.error(err); }
   }
 
   async function fetchGoogleSettings() {
     try {
-      const res = await fetch("/api/marketing/google-review/settings", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/marketing/google-review/settings", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setGoogleSettings(data.settings || { google_review_link: "", google_place_id: "" });
@@ -204,7 +206,7 @@ export default function MarketingPage() {
 
   async function autoAssignSegments() {
     try {
-      const res = await fetch("/api/marketing/segments/auto-assign", {
+      const res = await fetch(`${API_URL}/api/marketing/segments/auto-assign", {
         method: "POST",
         credentials: "include",
       });
@@ -220,7 +222,7 @@ export default function MarketingPage() {
 
   async function updateGoogleSettings() {
     try {
-      const res = await fetch("/api/marketing/google-review/settings", {
+      const res = await fetch(`${API_URL}/api/marketing/google-review/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -240,7 +242,7 @@ export default function MarketingPage() {
       return;
     }
     try {
-      const res = await fetch("/api/marketing/google-review/send", {
+      const res = await fetch(`${API_URL}/api/marketing/google-review/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -940,7 +942,7 @@ function QuickWhatsappForm({ segments, onSuccess }: { segments: Segment[]; onSuc
     if (!selectedSegment || !message) return;
     setLoading(true);
     try {
-      const usersRes = await fetch(`/api/marketing/segments/${selectedSegment}/users?limit=100`, { credentials: "include" });
+      const usersRes = await fetch(`/api/marketing/segments/${selectedSegment}/users?limit=100`, { credentials: "include", headers: getAuthHeaders() });
       const usersData = await usersRes.json();
       const recipients = usersData.users?.filter((u: any) => u.phone || u.whatsapp).map((u: any) => ({ userId: u.id, phone: u.whatsapp || u.phone })) || [];
       
@@ -950,7 +952,7 @@ function QuickWhatsappForm({ segments, onSuccess }: { segments: Segment[]; onSuc
         return;
       }
 
-      const res = await fetch("/api/whatsapp/send-bulk", {
+      const res = await fetch(`${API_URL}/api/whatsapp/send-bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -1026,7 +1028,7 @@ function EmailModal({ selectedUsers, onClose, onSuccess }: { selectedUsers: stri
     if (!name || !subject || !content) return;
     setLoading(true);
     try {
-      const campaignRes = await fetch("/api/marketing/email-campaigns", {
+      const campaignRes = await fetch(`${API_URL}/api/marketing/email-campaigns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -1102,7 +1104,7 @@ function WhatsappModal({ selectedUsers, users, onClose, onSuccess }: { selectedU
         return;
       }
 
-      const res = await fetch("/api/whatsapp/send-bulk", {
+      const res = await fetch(`${API_URL}/api/whatsapp/send-bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
