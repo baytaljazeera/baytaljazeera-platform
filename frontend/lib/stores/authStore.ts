@@ -140,6 +140,21 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           if (data.attemptsRemaining !== undefined) {
             errorMessage += ` (محاولات متبقية: ${data.attemptsRemaining})`;
           }
+        } else if (response.status === 403) {
+          // Email not verified - redirect to verification page
+          if (data.requiresVerification && data.email) {
+            // Use window.location for redirect since we're not in a React component
+            if (typeof window !== 'undefined') {
+              window.location.href = `/verify-email?email=${encodeURIComponent(data.email)}`;
+            }
+            return { 
+              success: false, 
+              error: data.error || 'يرجى تأكيد بريدك الإلكتروني أولاً',
+              requiresVerification: true,
+              email: data.email
+            };
+          }
+          errorMessage = data.error || 'يرجى تأكيد بريدك الإلكتروني أولاً';
         } else if (response.status === 423) {
           errorMessage = data.error || 'الحساب مقفل، حاول لاحقاً';
         } else if (response.status === 500) {

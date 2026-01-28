@@ -141,8 +141,8 @@ router.post("/register", asyncHandler(async (req, res) => {
 
   try {
     const result = await db.query(
-      `INSERT INTO users (email, password_hash, name, phone, referral_code, referred_by, email_verification_token, email_verification_expires)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO users (email, password_hash, name, phone, referral_code, referred_by, email_verification_token, email_verification_expires, email_verified, email_verified_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, NULL)
        RETURNING id, email, name, phone, role, created_at, referral_code`,
       [sanitizedEmail, hashed, sanitizedName, sanitizedPhone, newReferralCode, referrerId, emailVerificationToken, emailVerificationExpires]
     );
