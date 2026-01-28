@@ -86,7 +86,7 @@ export default function UsersPage() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [searchTerm, statusFilter, planFilter]);
 
   useEffect(() => {
     if (message) {
@@ -110,8 +110,16 @@ export default function UsersPage() {
     setLoading(true);
     try {
       const headers = getAuthHeaders();
+      
+      const params = new URLSearchParams();
+      params.append("page", "1");
+      params.append("limit", "100");
+      if (searchTerm) params.append("search", searchTerm);
+      if (statusFilter && statusFilter !== "all") params.append("status", statusFilter);
+      if (planFilter && planFilter !== "all") params.append("plan_id", planFilter);
+      
       const [usersRes, plansRes, statsRes] = await Promise.all([
-        fetch(`${API_URL}/api/admin/users/customers`, { credentials: "include", headers }),
+        fetch(`${API_URL}/api/admin/users/customers?${params.toString()}`, { credentials: "include", headers }),
         fetch(`${API_URL}/api/plans`, { credentials: "include", headers }),
         fetch(`${API_URL}/api/admin/users/stats`, { credentials: "include", headers }),
       ]);
@@ -119,6 +127,8 @@ export default function UsersPage() {
       if (usersRes.ok) {
         const data = await usersRes.json();
         setUsers(data.users || []);
+      } else {
+        console.error("Failed to fetch customers:", await usersRes.text());
       }
 
       if (plansRes.ok) {
