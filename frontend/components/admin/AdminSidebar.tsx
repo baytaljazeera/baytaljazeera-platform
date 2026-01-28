@@ -475,7 +475,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
 
   const sidebarClasses = isMobile
     ? "flex w-full h-full flex-col bg-transparent text-white pt-12"
-    : "hidden w-72 flex-col bg-gradient-to-b from-[#001a2e] via-[#002845] to-[#003d5c] text-white md:flex shadow-xl";
+    : "hidden w-72 flex-col bg-gradient-to-b from-[#001a2e] via-[#002845] to-[#003d5c] text-white md:flex shadow-xl sticky top-0 h-screen overflow-y-auto";
 
   const filteredSections = getFilteredSections();
 
