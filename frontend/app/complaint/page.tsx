@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, Suspense } from "react";
@@ -45,7 +47,7 @@ function ComplaintPageContent() {
 
   async function fetchUser() {
     try {
-      const res = await fetch("/api/auth/me", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/auth/me`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         const userData = data.user || data;
@@ -70,7 +72,7 @@ function ComplaintPageContent() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/account-complaints", {
+      const res = await fetch(`${API_URL}/api/account-complaints`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

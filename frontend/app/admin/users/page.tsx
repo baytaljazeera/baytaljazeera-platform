@@ -101,9 +101,9 @@ export default function UsersPage() {
     try {
       const headers = getAuthHeaders();
       const [usersRes, plansRes, statsRes] = await Promise.all([
-        fetch(`${API_URL}/api/admin/users/customers`, { credentials: "include", headers }),
-        fetch(`${API_URL}/api/plans`, { credentials: "include", headers }),
-        fetch(`${API_URL}/api/admin/users/stats`, { credentials: "include", headers }),
+        fetch(`${API_URL}/api/admin/users/customers`, { credentials: `include", headers }),
+        fetch(`${API_URL}/api/plans`, { credentials: `include", headers }),
+        fetch(`${API_URL}/api/admin/users/stats`, { credentials: `include", headers }),
       ]);
 
       if (usersRes.ok) {

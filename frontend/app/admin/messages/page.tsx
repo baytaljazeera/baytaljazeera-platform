@@ -144,7 +144,7 @@ export default function AdminMessagesPage() {
 
   async function fetchDepartments() {
     try {
-      const res = await fetch(`${API_URL}/api/admin-messages/departments", { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/admin-messages/departments`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setDepartments(data);
@@ -169,7 +169,7 @@ export default function AdminMessagesPage() {
   async function fetchConversations() {
     try {
       setIsLoading(true);
-      const res = await fetch(`${API_URL}/api/admin-messages/conversations", { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/admin-messages/conversations`, { credentials: "include", headers: getAuthHeaders() });
       if (res.status === 401 || res.status === 403) {
         router.push("/admin-login");
         return;
@@ -205,7 +205,7 @@ export default function AdminMessagesPage() {
 
     try {
       setSending(true);
-      const res = await fetch(`${API_URL}/api/admin-messages/conversations", {
+      const res = await fetch(`${API_URL}/api/admin-messages/conversations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

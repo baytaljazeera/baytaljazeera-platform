@@ -63,7 +63,7 @@ export default function FeaturedCitiesPage() {
   const fetchCities = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/featured-cities");
+      const res = await fetch(`${API_URL}/api/featured-cities`);
       if (res.ok) {
         const data = await res.json();
         setCities(data.cities || []);

@@ -159,7 +159,7 @@ export default function NewsPage() {
   const fetchNews = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/news");
+      const res = await fetch(`${API_URL}/api/news`);
       if (res.ok) {
         const data = await res.json();
         setNews(data.news || []);
@@ -173,7 +173,7 @@ export default function NewsPage() {
 
   const fetchCountries = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/news/countries");
+      const res = await fetch(`${API_URL}/api/news/countries`);
       if (res.ok) {
         const data = await res.json();
         setCountries(data.countries || []);
@@ -260,7 +260,7 @@ export default function NewsPage() {
     
     setGenerating(true);
     try {
-      const res = await fetch(`${API_URL}/api/news/generate-ai", {
+      const res = await fetch(`${API_URL}/api/news/generate-ai`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(aiFormData),

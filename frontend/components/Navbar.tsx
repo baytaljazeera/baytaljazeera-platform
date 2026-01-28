@@ -75,7 +75,7 @@ function NavbarContent() {
   useEffect(() => {
     async function checkAmbassadorStatus() {
       try {
-        const res = await fetch("/api/ambassador/status");
+        const res = await fetch(`${API_URL}/api/ambassador/status`);
         if (res.ok) {
           const data = await res.json();
           setAmbassadorEnabled(data.enabled);
@@ -187,7 +187,7 @@ function NavbarContent() {
 
   const markNotificationAsRead = async (id: number) => {
     try {
-      const res = await fetch(`/api/notifications/${id}/read`, {
+      const res = await fetch(`${API_URL}/api/notifications/${id}/read`, {
         method: "PATCH",
         credentials: "include"
       });

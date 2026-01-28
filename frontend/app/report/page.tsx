@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, Suspense } from "react";
@@ -65,7 +67,7 @@ function ReportContent() {
       const reporterName = form.get("reporterName");
       const reporterPhone = form.get("reporterPhone");
 
-      const res = await fetch("/api/report-listing", {
+      const res = await fetch(`${API_URL}/api/report-listing`, {
         method: "POST",
         body: JSON.stringify({
           listingId,

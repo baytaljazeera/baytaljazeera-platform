@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -128,7 +130,7 @@ export default function GlobalPromotions() {
   useEffect(() => {
     const fetchPromos = async () => {
       try {
-        const res = await fetch("/api/promotions/active");
+        const res = await fetch(`${API_URL}/api/promotions/active`);
         const data = await res.json();
         if (data.ok && data.promotions) {
           setActivePromos(data.promotions);

@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 import React, { useState, useEffect, useCallback } from "react";
 import { Filters } from "../types";
 import { useSearchMapStore } from "@/lib/stores/searchMapStore";
@@ -44,7 +46,7 @@ export function CityPanel({ filters, onChange, onClose }: CityPanelProps) {
   const { flyToCountry, flyToCity, flyToCoords, resetToDefault } = useSearchMapStore();
 
   useEffect(() => {
-    fetch("/api/locations/countries")
+    fetch(`${API_URL}/api/locations/countries`)
       .then(res => res.json())
       .then(data => setCountries(data.countries || []))
       .catch(console.error);
@@ -61,7 +63,7 @@ export function CityPanel({ filters, onChange, onClose }: CityPanelProps) {
         })
         .catch(() => setIsLoading(false));
     } else {
-      fetch("/api/locations/cities?popular_only=true")
+      fetch(`${API_URL}/api/locations/cities?popular_only=true`)
         .then(res => res.json())
         .then(data => setCities(data.cities || []))
         .catch(console.error);

@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import React, { useEffect, useState } from "react";
@@ -227,7 +229,7 @@ export default function PlansPage() {
   useEffect(() => {
     const detectLocation = async () => {
       try {
-        const geoRes = await fetch("/api/geolocation/detect");
+        const geoRes = await fetch(`${API_URL}/api/geolocation/detect`);
         const geoData = await geoRes.json();
         if (geoData.country) {
           setDetectedCountry(geoData.country);
@@ -284,7 +286,7 @@ export default function PlansPage() {
     try {
       const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-      const res = await fetch("/api/plans/subscribe", {
+      const res = await fetch(`${API_URL}/api/plans/subscribe`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

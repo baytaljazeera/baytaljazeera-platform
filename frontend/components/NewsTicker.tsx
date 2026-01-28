@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 import { useState, useEffect, useRef, useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { Newspaper, AlertCircle, Star, Megaphone, ChevronLeft, ChevronRight, Gift, Tag, Flame, Sparkles } from "lucide-react";
@@ -51,7 +53,7 @@ export default function NewsTicker() {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
         
-        const res = await fetch("/api/news?active=true", {
+        const res = await fetch(`${API_URL}/api/news?active=true`, {
           signal: controller.signal
         });
         clearTimeout(timeoutId);

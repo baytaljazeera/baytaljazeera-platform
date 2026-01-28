@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
@@ -46,7 +48,7 @@ export default function ReferralsPage() {
   async function fetchReferralData() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/referrals/my-referrals", {
+      const res = await fetch(`${API_URL}/api/referrals/my-referrals`, {
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });

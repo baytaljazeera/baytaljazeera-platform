@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
@@ -97,11 +99,11 @@ export default function MyListingsPage() {
       const token = localStorage.getItem("token");
       
       const [listingsRes, eliteRes] = await Promise.all([
-        fetch("/api/account/my-listings", {
+        fetch(`${API_URL}/api/account/my-listings`, {
           credentials: "include",
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         }),
-        fetch("/api/elite-slots/my-reservations", {
+        fetch(`${API_URL}/api/elite-slots/my-reservations`, {
           credentials: "include",
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         }).catch(() => null)

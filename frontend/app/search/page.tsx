@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = 'force-dynamic';
 
 import React, { JSX, useEffect, useMemo, useState, useRef, useCallback, Suspense } from "react";
@@ -2571,8 +2573,8 @@ function CityPanel({
     const fetchCountriesAndDetectLocation = async () => {
       try {
         const [countriesRes, geoRes] = await Promise.all([
-          fetch("/api/locations/countries"),
-          fetch("/api/geolocation/detect")
+          fetch(`${API_URL}/api/locations/countries`),
+          fetch(`${API_URL}/api/geolocation/detect`)
         ]);
         
         const data = await countriesRes.json();

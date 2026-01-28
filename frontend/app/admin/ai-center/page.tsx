@@ -51,7 +51,7 @@ export default function AICenterPage() {
 
   const fetchSettings = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/ai/support-settings", { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/ai/support-settings`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setAiSupportEnabled(data.ai_support_enabled === "true");
@@ -64,7 +64,7 @@ export default function AICenterPage() {
   const toggleAiSupport = async () => {
     setSettingsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/ai/support-settings", {
+      const res = await fetch(`${API_URL}/api/ai/support-settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -90,7 +90,7 @@ export default function AICenterPage() {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/ai/chat", {
+      const response = await fetch(`${API_URL}/api/ai/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -117,7 +117,7 @@ export default function AICenterPage() {
     setGeneratedDescription("");
 
     try {
-      const response = await fetch(`${API_URL}/api/ai/generate-description", {
+      const response = await fetch(`${API_URL}/api/ai/generate-description`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -156,7 +156,7 @@ export default function AICenterPage() {
     setDraftedResponse("");
 
     try {
-      const response = await fetch(`${API_URL}/api/ai/draft-response", {
+      const response = await fetch(`${API_URL}/api/ai/draft-response`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

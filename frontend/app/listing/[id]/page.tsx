@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
@@ -266,7 +268,7 @@ export default function ListingDetailPage() {
       const token = localStorage.getItem("token");
       if (!token) return;
       
-      const res = await fetch("/api/auth/me", {
+      const res = await fetch(`${API_URL}/api/auth/me`, {
         credentials: "include",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -287,12 +289,12 @@ export default function ListingDetailPage() {
           hasSubscription = true;
           supportLevel = 3;
         } else {
-          const limitsRes = await fetch("/api/account/limits", { credentials: "include" });
+          const limitsRes = await fetch(`${API_URL}/api/account/limits`, { credentials: "include", headers: getAuthHeaders() });
           if (limitsRes.ok) {
             const limitsData = await limitsRes.json();
             hasSubscription = limitsData.planId !== null && !limitsData.isFreeUser;
           }
-          const aiLevelRes = await fetch("/api/user/ai-level", { credentials: "include" });
+          const aiLevelRes = await fetch(`${API_URL}/api/user/ai-level`, { credentials: "include", headers: getAuthHeaders() });
           if (aiLevelRes.ok) {
             const aiData = await aiLevelRes.json();
             supportLevel = aiData.supportLevel || 0;
@@ -356,7 +358,7 @@ export default function ListingDetailPage() {
     setMessageError(null);
     
     try {
-      const res = await fetch("/api/messages/to-advertiser", {
+      const res = await fetch(`${API_URL}/api/messages/to-advertiser`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -436,7 +438,7 @@ export default function ListingDetailPage() {
           const token = localStorage.getItem("token");
           if (!token) return;
           
-          const res = await fetch("/api/auth/me", {
+          const res = await fetch(`${API_URL}/api/auth/me`, {
             credentials: "include",
             headers: { Authorization: `Bearer ${token}` },
           });

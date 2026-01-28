@@ -260,8 +260,8 @@ export default function PromotionsPage() {
   const fetchData = async () => {
     try {
       const [promosRes, plansRes] = await Promise.all([
-        fetch(`${API_URL}/api/promotions", { credentials: "include", headers: getAuthHeaders() }),
-        fetch(`${API_URL}/api/plans", { credentials: "include", headers: getAuthHeaders() })
+        fetch(`${API_URL}/api/promotions`, { credentials: "include", headers: getAuthHeaders() }),
+        fetch(`${API_URL}/api/plans`, { credentials: "include", headers: getAuthHeaders() })
       ]);
       
       const promosData = await promosRes.json();
@@ -323,7 +323,7 @@ export default function PromotionsPage() {
     
     setAiGenerating(true);
     try {
-      const res = await fetch(`${API_URL}/api/ai/generate-promotion", {
+      const res = await fetch(`${API_URL}/api/ai/generate-promotion`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 import { useState, useRef, useEffect } from "react";
 import { MessageCircle, X, Send, Loader2, Bot, User, AlertTriangle, Headphones, Crown, Lock, Sparkles } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
@@ -172,7 +174,7 @@ export default function AIChatbot() {
       }
       
       try {
-        const response = await fetch("/api/user/ai-level", {
+        const response = await fetch(`${API_URL}/api/user/ai-level`, {
           credentials: "include",
         });
         if (response.ok) {
@@ -202,7 +204,7 @@ export default function AIChatbot() {
     setShowEscalateOption(false);
 
     try {
-      const response = await fetch("/api/ai/customer-chat", {
+      const response = await fetch(`${API_URL}/api/ai/customer-chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -243,7 +245,7 @@ export default function AIChatbot() {
     try {
       const lastUserMessage = messages.filter(m => m.role === "user").pop()?.content || "";
       
-      const response = await fetch("/api/ai/escalate", {
+      const response = await fetch(`${API_URL}/api/ai/escalate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

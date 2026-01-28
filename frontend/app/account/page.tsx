@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
@@ -70,7 +72,7 @@ export default function AccountPage() {
   async function fetchAlertsCount() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/account/alerts/unread-count", { 
+      const res = await fetch(`${API_URL}/api/account/alerts/unread-count`, { 
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
@@ -86,7 +88,7 @@ export default function AccountPage() {
   async function fetchProfile() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/account/profile", {
+      const res = await fetch(`${API_URL}/api/account/profile`, {
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -113,7 +115,7 @@ export default function AccountPage() {
 
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/account/profile", {
+      const res = await fetch(`${API_URL}/api/account/profile`, {
         method: "PATCH",
         credentials: "include",
         headers: {
@@ -166,7 +168,7 @@ export default function AccountPage() {
 
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/account/change-password", {
+      const res = await fetch(`${API_URL}/api/account/change-password`, {
         method: "POST",
         credentials: "include",
         headers: {

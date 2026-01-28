@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
@@ -55,7 +57,7 @@ export default function MyListingsPage() {
   async function fetchListings() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/account/my-listings", {
+      const res = await fetch(`${API_URL}/api/account/my-listings`, {
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });

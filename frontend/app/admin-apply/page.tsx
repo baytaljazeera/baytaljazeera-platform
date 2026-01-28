@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
@@ -46,7 +48,7 @@ export default function AdminApplyPage() {
 
   async function fetchJobTitles() {
     try {
-      const res = await fetch("/api/membership/job-titles");
+      const res = await fetch(`${API_URL}/api/membership/job-titles`);
       if (res.ok) {
         const data = await res.json();
         setJobTitles(data.titles || []);
@@ -105,7 +107,7 @@ export default function AdminApplyPage() {
         submitData.append("cv", cvFile);
       }
 
-      const res = await fetch("/api/membership/apply", {
+      const res = await fetch(`${API_URL}/api/membership/apply`, {
         method: "POST",
         body: submitData
       });

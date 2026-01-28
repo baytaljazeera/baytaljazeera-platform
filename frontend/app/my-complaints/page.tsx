@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
@@ -95,7 +97,7 @@ export default function MyComplaintsPage() {
   async function fetchComplaints() {
     setLoading(true);
     try {
-      const res = await fetch("/api/account-complaints/mine", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/account-complaints/mine`, { credentials: "include", headers: getAuthHeaders() });
       if (res.status === 401) {
         router.push("/login?redirect=/my-complaints");
         return;

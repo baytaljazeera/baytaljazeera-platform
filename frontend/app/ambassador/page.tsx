@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
@@ -118,7 +120,7 @@ export default function AmbassadorPage() {
   async function fetchData() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/ambassador/my-stats", {
+      const res = await fetch(`${API_URL}/api/ambassador/my-stats`, {
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -173,7 +175,7 @@ export default function AmbassadorPage() {
     setConsuming(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/ambassador/consume", {
+      const res = await fetch(`${API_URL}/api/ambassador/consume`, {
         method: "POST",
         credentials: "include",
         headers: { 
@@ -203,7 +205,7 @@ export default function AmbassadorPage() {
     setRequesting(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/ambassador/request-reward", {
+      const res = await fetch(`${API_URL}/api/ambassador/request-reward`, {
         method: "POST",
         credentials: "include",
         headers: { 

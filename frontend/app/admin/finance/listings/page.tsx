@@ -141,7 +141,7 @@ export default function ListingsPage() {
   const fetchStats = async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`${API_URL}/api/admin/listings/stats", {
+      const res = await fetch(`${API_URL}/api/admin/listings/stats`, {
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -156,7 +156,7 @@ export default function ListingsPage() {
 
   const fetchElitePendingCount = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/elite-slots/pending-count");
+      const res = await fetch(`${API_URL}/api/elite-slots/pending-count`);
       if (res.ok) {
         const data = await res.json();
         setElitePendingCount(data.count || 0);

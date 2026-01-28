@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState, FormEvent, useCallback, useMemo } from "react";
@@ -303,7 +305,7 @@ export default function NewListingPage() {
       try {
         setIsLoading(true);
 
-        const meRes = await fetch("/api/auth/me", { credentials: "include" });
+        const meRes = await fetch(`${API_URL}/api/auth/me`, { credentials: "include", headers: getAuthHeaders() });
         const meData = await meRes.json();
         if (!meData.user) {
           setUser(null);
@@ -320,17 +322,17 @@ export default function NewListingPage() {
         setUser(meData.user);
 
         // IMPORTANT: Sync quota buckets first to ensure old users have their buckets created
-        await fetch("/api/quota/sync", { method: "POST", credentials: "include" });
+        await fetch(`${API_URL}/api/quota/sync`, { method: "POST", credentials: "include", headers: getAuthHeaders() });
 
         // Now fetch limits (which uses quota_buckets)
-        const planRes = await fetch("/api/account/limits", { credentials: "include" });
+        const planRes = await fetch(`${API_URL}/api/account/limits`, { credentials: "include", headers: getAuthHeaders() });
         if (planRes.ok) {
           const planJson = await planRes.json();
           setPlan(planJson);
         }
 
         // Fetch quota options for bucket selection in listing creation
-        const quotaRes = await fetch("/api/quota/options-for-listing", { credentials: "include" });
+        const quotaRes = await fetch(`${API_URL}/api/quota/options-for-listing`, { credentials: "include", headers: getAuthHeaders() });
         const quotaJson = quotaRes.ok ? await quotaRes.json() : { options: [] };
         
         setQuotaOptions(quotaJson.options || []);
@@ -351,7 +353,7 @@ export default function NewListingPage() {
 
   // Fetch countries on mount
   useEffect(() => {
-    fetch("/api/locations/countries")
+    fetch(`${API_URL}/api/locations/countries`)
       .then(res => res.json())
       .then(data => setCountries(data?.countries || []))
       .catch(() => setCountries([]));
@@ -423,7 +425,7 @@ export default function NewListingPage() {
       setAiLevel(selectedBucket.benefits.aiSupportLevel);
     } else {
       // Fallback: fetch from API
-      fetch("/api/user/ai-level", { credentials: "include" })
+      fetch(`${API_URL}/api/user/ai-level`, { credentials: "include", headers: getAuthHeaders() })
         .then(res => res.json())
         .then(data => setAiLevel(data.level || 0))
         .catch(() => setAiLevel(0));
@@ -449,7 +451,7 @@ export default function NewListingPage() {
     setAiError(null);
 
     try {
-      const res = await fetch("/api/ai/user/generate-description", {
+      const res = await fetch(`${API_URL}/api/ai/user/generate-description`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -504,7 +506,7 @@ export default function NewListingPage() {
     setTitleError(null);
 
     try {
-      const res = await fetch("/api/ai/user/generate-title", {
+      const res = await fetch(`${API_URL}/api/ai/user/generate-title`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -556,7 +558,7 @@ export default function NewListingPage() {
     setPricingResult(null);
 
     try {
-      const res = await fetch("/api/ai/user/smart-pricing", {
+      const res = await fetch(`${API_URL}/api/ai/user/smart-pricing`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -611,7 +613,7 @@ export default function NewListingPage() {
     setTipsResult(null);
 
     try {
-      const res = await fetch("/api/ai/user/marketing-tips", {
+      const res = await fetch(`${API_URL}/api/ai/user/marketing-tips`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -665,7 +667,7 @@ export default function NewListingPage() {
       return;
 
       // This would work with already-uploaded listings:
-      // const res = await fetch("/api/ai/user/generate-slideshow-video", {...})
+      // const res = await fetch(`${API_URL}/api/ai/user/generate-slideshow-video`, {...})
     } catch (err: any) {
       setVideoError(err.message || "حدث خطأ أثناء إنشاء الفيديو");
     } finally {
@@ -726,7 +728,7 @@ export default function NewListingPage() {
         formData.append('images', img);
       });
 
-      const uploadRes = await fetch("/api/listings/temp-images", {
+      const uploadRes = await fetch(`${API_URL}/api/listings/temp-images`, {
         method: "POST",
         credentials: "include",
         body: formData
@@ -745,7 +747,7 @@ export default function NewListingPage() {
       }
 
       // Step 2: Generate video using FFmpeg
-      const res = await fetch("/api/ai/user/generate-video", {
+      const res = await fetch(`${API_URL}/api/ai/user/generate-video`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -1384,7 +1386,7 @@ export default function NewListingPage() {
         formData.append("aiVideoUrl", videoResult);
       }
 
-      const res = await fetch("/api/listings/create", {
+      const res = await fetch(`${API_URL}/api/listings/create`, {
         method: "POST",
         credentials: "include",
         body: formData,

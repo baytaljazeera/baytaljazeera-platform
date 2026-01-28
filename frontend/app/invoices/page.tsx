@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
@@ -83,7 +85,7 @@ export default function InvoicesPage() {
   async function fetchInvoices() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/account/invoices", {
+      const res = await fetch(`${API_URL}/api/account/invoices`, {
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -121,7 +123,7 @@ export default function InvoicesPage() {
     setSubmittingRefund(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/account/refunds", {
+      const res = await fetch(`${API_URL}/api/account/refunds`, {
         method: "POST",
         credentials: "include",
         headers: {

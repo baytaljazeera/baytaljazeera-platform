@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 import { Bell, UserCircle2, Search, Menu, X, Check, ExternalLink, Eye, EyeOff, Trash2, AlertTriangle, Headset, Banknote } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
@@ -71,7 +73,7 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
   async function fetchUnreadCount() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/notifications/count", {
+      const res = await fetch(`${API_URL}/api/notifications/count`, {
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -87,7 +89,7 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
   async function fetchComplaintsCount() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/account-complaints/count", {
+      const res = await fetch(`${API_URL}/api/account-complaints/count`, {
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -103,7 +105,7 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
   async function fetchTicketsCount() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/support-tickets/count", {
+      const res = await fetch(`${API_URL}/api/support-tickets/count`, {
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -119,7 +121,7 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
   async function fetchPendingBankCount() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/refunds/pending-bank-count", {
+      const res = await fetch(`${API_URL}/api/refunds/pending-bank-count`, {
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -136,7 +138,7 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
     setLoading(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/notifications?limit=10", {
+      const res = await fetch(`${API_URL}/api/notifications?limit=10`, {
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -154,7 +156,7 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
   async function markAsRead(id: number) {
     try {
       const token = localStorage.getItem("token");
-      await fetch("/api/notifications/read", {
+      await fetch(`${API_URL}/api/notifications/read`, {
         method: "PATCH",
         credentials: "include",
         headers: {
@@ -175,7 +177,7 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
   async function markAllAsRead() {
     try {
       const token = localStorage.getItem("token");
-      await fetch("/api/notifications/read-all", {
+      await fetch(`${API_URL}/api/notifications/read-all`, {
         method: "PATCH",
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},

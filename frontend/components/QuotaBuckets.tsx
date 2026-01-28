@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 import { useEffect, useState } from "react";
 import { Package, Calendar, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 
@@ -54,7 +56,7 @@ export function QuotaBuckets() {
   async function fetchQuotas() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/quota/my-quotas", {
+      const res = await fetch(`${API_URL}/api/quota/my-quotas`, {
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -266,7 +268,7 @@ export function QuotaSummaryBadge() {
   async function fetchSummary() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/quota/summary-by-plan", {
+      const res = await fetch(`${API_URL}/api/quota/summary-by-plan`, {
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });

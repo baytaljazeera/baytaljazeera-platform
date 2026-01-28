@@ -57,7 +57,7 @@ export default function ComplaintsPage() {
   const fetchComplaints = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/account-complaints`, { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/account-complaints`, { credentials: `include", headers: getAuthHeaders() });
       
       if (res.ok) {
         const data = await res.json();

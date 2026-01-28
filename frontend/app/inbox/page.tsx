@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
@@ -29,7 +31,7 @@ export default function InboxPage() {
   async function fetchNotifications() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/notifications", {
+      const res = await fetch(`${API_URL}/api/notifications`, {
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -54,7 +56,7 @@ export default function InboxPage() {
   async function markAsRead(ids: number[]) {
     try {
       const token = localStorage.getItem("token");
-      await fetch("/api/notifications/read", {
+      await fetch(`${API_URL}/api/notifications/read`, {
         method: "PATCH",
         credentials: "include",
         headers: {
@@ -79,7 +81,7 @@ export default function InboxPage() {
   async function markAllAsRead() {
     try {
       const token = localStorage.getItem("token");
-      await fetch("/api/notifications/read-all", {
+      await fetch(`${API_URL}/api/notifications/read-all`, {
         method: "PATCH",
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},

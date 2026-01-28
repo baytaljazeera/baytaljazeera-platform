@@ -34,7 +34,7 @@ export default function PromoBannerPage() {
 
   const fetchSettings = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/settings/promo-banner");
+      const res = await fetch(`${API_URL}/api/settings/promo-banner`);
       const data = await res.json();
       if (data.ok && data.settings) {
         setSettings(data.settings);
@@ -50,7 +50,7 @@ export default function PromoBannerPage() {
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch(`${API_URL}/api/settings/promo-banner", {
+      const res = await fetch(`${API_URL}/api/settings/promo-banner`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

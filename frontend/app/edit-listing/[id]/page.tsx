@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
@@ -184,7 +186,7 @@ export default function EditListingPage() {
 
   // Fetch countries on mount
   useEffect(() => {
-    fetch("/api/locations/countries")
+    fetch(`${API_URL}/api/locations/countries`)
       .then(res => res.json())
       .then(data => setCountries(data?.countries || []))
       .catch(() => setCountries([]));

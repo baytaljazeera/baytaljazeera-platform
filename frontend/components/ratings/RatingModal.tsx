@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 import { useState } from "react";
 import { X, Star, ThumbsUp, Minus, ThumbsDown, Loader2, Gift, CheckCircle } from "lucide-react";
 
@@ -33,7 +35,7 @@ export default function RatingModal({ isOpen, onClose, advertiserId, listingId, 
     setError(null);
 
     try {
-      const res = await fetch("/api/ratings/submit", {
+      const res = await fetch(`${API_URL}/api/ratings/submit`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

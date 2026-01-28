@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = 'force-dynamic';
 
 import React, { useEffect, useState, Suspense } from "react";
@@ -133,7 +135,7 @@ function UpgradePageContent() {
     const detectAndFetch = async () => {
       // Check email verification first
       try {
-        const meRes = await fetch("/api/auth/me", { credentials: "include" });
+        const meRes = await fetch(`${API_URL}/api/auth/me`, { credentials: "include", headers: getAuthHeaders() });
         const meData = await meRes.json();
         if (meData.user && !meData.user.emailVerified) {
           router.push(`/verify-email?email=${encodeURIComponent(meData.user.email)}`);
@@ -145,7 +147,7 @@ function UpgradePageContent() {
       
       if (!countryParam) {
         try {
-          const geoRes = await fetch("/api/geolocation/detect");
+          const geoRes = await fetch(`${API_URL}/api/geolocation/detect`);
           const geoData = await geoRes.json();
           if (geoData.country?.code) {
             setCountryCode(geoData.country.code);
@@ -198,7 +200,7 @@ function UpgradePageContent() {
   async function fetchUpgradeDetails(planId: number) {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/payments/initiate-upgrade", {
+      const res = await fetch(`${API_URL}/api/payments/initiate-upgrade`, {
         method: "POST",
         credentials: "include",
         headers: {
@@ -233,7 +235,7 @@ function UpgradePageContent() {
     setProcessing(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/payments/process-payment", {
+      const res = await fetch(`${API_URL}/api/payments/process-payment`, {
         method: "POST",
         credentials: "include",
         headers: {

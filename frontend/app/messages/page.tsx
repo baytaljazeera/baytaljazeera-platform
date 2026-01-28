@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState, useRef } from "react";
@@ -74,7 +76,7 @@ export default function MessagesPage() {
   async function refreshCurrentConversation() {
     if (!selectedConversation?.id) return;
     try {
-      const res = await fetch(`/api/messages/customer-conversations/${selectedConversation.id}`, { credentials: "include" });
+      const res = await fetch(`/api/messages/customer-conversations/${selectedConversation.id}`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setSelectedConversation(prev => {
@@ -118,7 +120,7 @@ export default function MessagesPage() {
   async function fetchConversations() {
     try {
       setIsLoading(true);
-      const res = await fetch("/api/messages/customer-conversations", { credentials: "include" });
+      const res = await fetch(`${API_URL}/api/messages/customer-conversations`, { credentials: "include", headers: getAuthHeaders() });
       if (res.status === 401) {
         router.push("/login");
         return;
@@ -143,7 +145,7 @@ export default function MessagesPage() {
 
   async function fetchConversation(convId: string) {
     try {
-      const res = await fetch(`/api/messages/customer-conversations/${convId}`, { credentials: "include" });
+      const res = await fetch(`/api/messages/customer-conversations/${convId}`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setSelectedConversation(data);

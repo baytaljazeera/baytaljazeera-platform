@@ -1,5 +1,7 @@
 "use client";
 
+import { API_URL, getAuthHeaders } from "@/lib/api";
+
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, Suspense } from "react";
@@ -23,7 +25,7 @@ function RatePageContent() {
 
   async function fetchGoogleReviewLink() {
     try {
-      const res = await fetch("/api/marketing/google-review/link");
+      const res = await fetch(`${API_URL}/api/marketing/google-review/link`);
       if (res.ok) {
         const data = await res.json();
         setGoogleReviewLink(data.link || "");
@@ -44,7 +46,7 @@ function RatePageContent() {
     setError("");
 
     try {
-      const res = await fetch("/api/marketing/ratings", {
+      const res = await fetch(`${API_URL}/api/marketing/ratings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

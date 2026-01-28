@@ -181,7 +181,7 @@ export default function FinancePage() {
 
   async function fetchPlans() {
     try {
-      const res = await fetch(`${API_URL}/api/plans", { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/plans`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setPlans(data.plans || []);
@@ -325,7 +325,7 @@ export default function FinancePage() {
 
   async function fetchAllRefunds() {
     try {
-      const res = await fetch(`${API_URL}/api/finance/refunds", { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/finance/refunds`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setAllRefunds(data.refunds || []);
@@ -337,7 +337,7 @@ export default function FinancePage() {
 
   async function fetchPayments() {
     try {
-      const res = await fetch(`${API_URL}/api/finance/payments", { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/finance/payments`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setPayments(data.payments || []);
@@ -349,7 +349,7 @@ export default function FinancePage() {
 
   async function fetchInvoices() {
     try {
-      const res = await fetch(`${API_URL}/api/finance/invoices", { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/finance/invoices`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setInvoices(data.invoices || []);
@@ -361,7 +361,7 @@ export default function FinancePage() {
 
   async function fetchPaymentStats() {
     try {
-      const res = await fetch(`${API_URL}/api/finance/payment-stats", { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/finance/payment-stats`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setPaymentStats(data);
@@ -373,7 +373,7 @@ export default function FinancePage() {
 
   async function fetchStats() {
     try {
-      const res = await fetch(`${API_URL}/api/finance/stats", { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/finance/stats`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setStats(data);
@@ -621,7 +621,7 @@ export default function FinancePage() {
     setRefundModal(prev => ({ ...prev, loading: true }));
     
     try {
-      const res = await fetch(`${API_URL}/api/finance/refunds", {
+      const res = await fetch(`${API_URL}/api/finance/refunds`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
