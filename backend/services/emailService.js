@@ -378,6 +378,8 @@ module.exports = {
   sendEmail,
   sendPasswordResetEmail,
   sendVerificationEmail,
+  resendVerificationEmail: sendVerificationEmail,
+  sendEmailVerificationEmail: sendVerificationEmail,
   sendWelcomeEmail,
   getEmailVerificationTemplate,
   getPasswordResetEmailTemplate
