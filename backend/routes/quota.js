@@ -128,13 +128,14 @@ router.get("/options-for-listing", authMiddleware, asyncHandler(async (req, res)
       p.highlights_allowed,
       p.support_level,
       p.header_bg_color,
-      p.body_bg_color
+      p.body_bg_color,
+      p.sort_order
     FROM quota_buckets qb
     JOIN plans p ON qb.plan_id = p.id
     LEFT JOIN user_plans up ON qb.user_plan_id = up.id
     WHERE qb.user_id = $1 AND qb.active = true
       AND (up.id IS NULL OR up.status = 'active')
-    ORDER BY qb.expires_at ASC NULLS LAST
+    ORDER BY p.sort_order ASC, qb.expires_at ASC NULLS LAST
   `, [userId]);
 
   const options = result.rows
