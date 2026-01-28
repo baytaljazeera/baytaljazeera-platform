@@ -2008,6 +2008,7 @@ export default function ReferralPage() {
         credentials: 'include',
         cache: 'no-store',
         headers: {
+          ...getAuthHeaders(),
           'Cache-Control': 'no-cache'
         }
       });
