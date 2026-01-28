@@ -78,6 +78,18 @@ router.post("/register", asyncHandler(async (req, res) => {
   const sanitizedName = name ? sanitizeInput(name) : null;
   const sanitizedPhone = normalizePhone(phone);
 
+  // 🔒 Security: Check if email is banned (deleted by admin)
+  const bannedCheck = await db.query(
+    `SELECT email FROM banned_emails WHERE email = $1 LIMIT 1`,
+    [sanitizedEmail]
+  );
+  if (bannedCheck.rows.length > 0) {
+    return res.status(403).json({ 
+      error: "تم حظر هذا البريد الإلكتروني. يرجى التواصل مع الدعم الفني.", 
+      errorEn: "This email has been banned" 
+    });
+  }
+
   // Pre-check for existing email
   const existingEmail = await db.query(
     `SELECT id FROM users WHERE LOWER(email) = LOWER($1)`,
