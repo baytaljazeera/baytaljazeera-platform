@@ -6,6 +6,7 @@ const jwt = require("jsonwebtoken");
 const { JWT_SECRET, JWT_CONFIG } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { sendVerificationEmail } = require("../services/emailService");
+const { isEmailBanned } = require("../services/userService");
 const crypto = require("crypto");
 
 const router = express.Router();
@@ -56,6 +57,13 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 
       if (!email) {
         return done(new Error('No email provided by Google'));
+      }
+
+      // Check if email is banned (deleted user trying to re-register)
+      const banned = await isEmailBanned(email);
+      if (banned) {
+        console.log(`🚫 [OAuth] Banned email attempted login: ${email}`);
+        return done(new Error('EMAIL_BANNED'));
       }
 
       // Check if user exists by email or google_id
@@ -136,11 +144,31 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 
 // Google OAuth Routes
 router.get('/google',
-  passport.authenticate('google', { session: false, scope: ['profile', 'email'] })
+  passport.authenticate('google', { 
+    session: false, 
+    scope: ['profile', 'email'],
+    prompt: 'select_account'
+  })
 );
 
 router.get('/google/callback',
-  passport.authenticate('google', { session: false, failureRedirect: '/register?error=oauth_failed' }),
+  (req, res, next) => {
+    passport.authenticate('google', { session: false }, (err, user, info) => {
+      if (err) {
+        const frontendUrl = process.env.FRONTEND_URL || 'https://baytaljazeera.com';
+        if (err.message === 'EMAIL_BANNED') {
+          return res.redirect(`${frontendUrl}/login?error=email_banned`);
+        }
+        return res.redirect(`${frontendUrl}/login?error=oauth_failed`);
+      }
+      if (!user) {
+        const frontendUrl = process.env.FRONTEND_URL || 'https://baytaljazeera.com';
+        return res.redirect(`${frontendUrl}/login?error=oauth_failed`);
+      }
+      req.user = user;
+      next();
+    })(req, res, next);
+  },
   asyncHandler(async (req, res) => {
     const user = req.user;
     
