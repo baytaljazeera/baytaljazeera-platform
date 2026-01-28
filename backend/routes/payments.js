@@ -374,7 +374,7 @@ router.post('/process-payment', paymentLimiter, authMiddlewareWithEmailCheck, as
       SELECT p.*, cpp.price as local_price
       FROM plans p
       LEFT JOIN country_plan_prices cpp ON p.id = cpp.plan_id AND cpp.country_code = $2 AND cpp.is_active = true
-      WHERE p.id = $1 FOR SHARE
+      WHERE p.id = $1
     `, [planId, countryCode]);
     
     if (newPlan.rows.length === 0) {
