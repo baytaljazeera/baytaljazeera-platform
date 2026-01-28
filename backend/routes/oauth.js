@@ -58,17 +58,6 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         return done(new Error('No email provided by Google'));
       }
 
-      // 🔒 Security: Check if email or google_id is banned (deleted by admin)
-      const bannedCheck = await db.query(
-        `SELECT email, reason FROM banned_emails WHERE email = $1 OR google_id = $2 LIMIT 1`,
-        [email.toLowerCase(), googleId]
-      );
-      
-      if (bannedCheck.rows.length > 0) {
-        console.log(`🚫 [OAuth] Blocked banned email/google_id: ${email}`);
-        return done(new Error('تم حظر هذا الحساب. يرجى التواصل مع الدعم الفني.'));
-      }
-
       // Check if user exists by email or google_id
       let user = await db.query(
         `SELECT * FROM users WHERE email = $1 OR google_id = $2 LIMIT 1`,

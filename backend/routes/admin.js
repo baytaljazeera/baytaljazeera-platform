@@ -406,7 +406,7 @@ router.delete("/users/:id", authMiddleware, requireRoles('super_admin'), asyncHa
     return res.status(400).json({ error: "لا يمكن حذف مدير" });
   }
   
-  await userService.deleteUserCascade(id, req.user.id);
+  await userService.deleteUserCascade(id);
   
   await logAdminAction(req, AUDIT_ACTIONS.USER_DELETE, 'user', id, { 
     userName: user.name,
