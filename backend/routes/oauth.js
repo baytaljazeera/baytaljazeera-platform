@@ -85,7 +85,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 
       const result = await db.query(
         `INSERT INTO users (email, name, google_id, profile_image, email_verified, referral_code, email_verification_token, email_verification_expires, password_hash)
-         VALUES ($1, $2, $3, $4, true, $5, $6, $7, $8)
+         VALUES ($1, $2, $3, $4, false, $5, $6, $7, $8)
          RETURNING id, email, name, phone, role, created_at, referral_code`,
         [email.toLowerCase(), name, googleId, photo, referralCode, emailVerificationToken, emailVerificationExpires, oauthPasswordPlaceholder]
       );
@@ -148,6 +148,13 @@ router.get('/google/callback',
   asyncHandler(async (req, res) => {
     const user = req.user;
     
+    // Check if email is verified
+    const userCheck = await db.query(
+      'SELECT email_verified FROM users WHERE id = $1',
+      [user.id]
+    );
+    const emailVerified = userCheck.rows[0]?.email_verified;
+    
     // Generate JWT token
     const token = jwt.sign(
       { userId: user.id, role: user.role },
@@ -160,8 +167,13 @@ router.get('/google/callback',
     );
 
     const frontendUrl = process.env.FRONTEND_URL || 'https://baytaljazeera.com';
-    // Redirect to frontend with token - frontend will set the cookie
-    res.redirect(`${frontendUrl}/oauth-callback?token=${encodeURIComponent(token)}&provider=google`);
+    
+    // If email not verified, redirect to verification pending page
+    if (!emailVerified) {
+      res.redirect(`${frontendUrl}/oauth-callback?token=${encodeURIComponent(token)}&provider=google&needsVerification=true`);
+    } else {
+      res.redirect(`${frontendUrl}/oauth-callback?token=${encodeURIComponent(token)}&provider=google`);
+    }
   })
 );
 

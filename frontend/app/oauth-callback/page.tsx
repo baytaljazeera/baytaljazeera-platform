@@ -113,6 +113,13 @@ export default function OAuthCallbackPage() {
         // Check auth to load user data
         await checkAuth();
         
+        // Check if email verification is needed
+        const needsVerification = searchParams.get('needsVerification');
+        if (needsVerification === 'true') {
+          router.replace('/verify-email-pending');
+          return;
+        }
+        
         // Redirect to home
         router.replace(`/?oauth=success&provider=${provider || 'google'}`);
       } else {
