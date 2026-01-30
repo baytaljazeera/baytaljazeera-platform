@@ -8,12 +8,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     imagemagick \
     libmagickwand-dev \
+    libsm6 \
+    libxext6 \
     fonts-noto-color-emoji \
     fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure ImageMagick policy for video processing
-RUN sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml || true
+RUN sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml || true
 
 # Set working directory
 WORKDIR /app
