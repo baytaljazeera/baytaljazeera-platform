@@ -88,6 +88,11 @@ interface Plan {
     elite: number;
     seo: number;
   } | string | null;
+  video_config: {
+    enabled: boolean;
+    tier: 'tier1_safwa' | 'tier2_business';
+    ambience: 'none' | 'birds' | 'sea';
+  } | null;
 }
 
 interface IconFile {
@@ -145,6 +150,7 @@ const defaultPlan: Partial<Plan> = {
   seo_feature_title: "تحسين محركات البحث SEO",
   seo_feature_description: "تحسين ظهور عقاراتك في نتائج البحث",
   feature_display_order: { listings: 1, photos: 2, map: 3, ai: 4, video: 5, elite: 6, seo: 7 },
+  video_config: { enabled: false, tier: 'tier1_safwa' as const, ambience: 'none' as const },
 };
 
 const FEATURE_ORDER_LABELS: Record<string, string> = {
@@ -1593,6 +1599,86 @@ export default function PlansManagement() {
                       القسم السفلي
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* قسم إعدادات فيديو الذكاء الاصطناعي */}
+              <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-2xl">🎥</span>
+                  <h4 className="text-lg font-bold text-[#002845]">إعدادات فيديو الذكاء الاصطناعي</h4>
+                </div>
+                
+                <div className="space-y-4">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        checked={editingPlan.video_config?.enabled || false}
+                        onChange={(e) => setEditingPlan({
+                          ...editingPlan,
+                          video_config: {
+                            ...(editingPlan.video_config || { tier: 'tier1_safwa', ambience: 'none' }),
+                            enabled: e.target.checked
+                          }
+                        })}
+                        className="sr-only"
+                      />
+                      <div className={`w-12 h-6 rounded-full transition-colors ${editingPlan.video_config?.enabled ? 'bg-purple-600' : 'bg-gray-300'}`}>
+                        <div className={`w-5 h-5 rounded-full bg-white shadow transform transition-transform ${editingPlan.video_config?.enabled ? 'translate-x-6' : 'translate-x-0.5'} mt-0.5`}></div>
+                      </div>
+                    </div>
+                    <span className="text-sm font-medium text-gray-700">تفعيل الفيديو لهذه الباقة</span>
+                  </label>
+
+                  {editingPlan.video_config?.enabled && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-purple-200">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">جودة الفيديو</label>
+                        <select
+                          value={editingPlan.video_config?.tier || 'tier1_safwa'}
+                          onChange={(e) => setEditingPlan({
+                            ...editingPlan,
+                            video_config: {
+                              ...(editingPlan.video_config || { enabled: true, ambience: 'none' }),
+                              tier: e.target.value as 'tier1_safwa' | 'tier2_business'
+                            }
+                          })}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
+                        >
+                          <option value="tier1_safwa">باقة الصفوة (تحريك بسيط)</option>
+                          <option value="tier2_business">رجال الأعمال (سينمائي فاخر)</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {editingPlan.video_config?.tier === 'tier2_business' 
+                            ? 'تأثيرات Ken Burns سينمائية مع انتقالات فاخرة' 
+                            : 'تكبير بسيط (1.0 → 1.05) للصور'}
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">الخلفية الصوتية</label>
+                        <select
+                          value={editingPlan.video_config?.ambience || 'none'}
+                          onChange={(e) => setEditingPlan({
+                            ...editingPlan,
+                            video_config: {
+                              ...(editingPlan.video_config || { enabled: true, tier: 'tier1_safwa' }),
+                              ambience: e.target.value as 'none' | 'birds' | 'sea'
+                            }
+                          })}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
+                        >
+                          <option value="none">بدون خلفية (صامت)</option>
+                          <option value="birds">🐦 طبيعة: زقزقة عصافير</option>
+                          <option value="sea">🌊 طبيعة: أمواج البحر</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          أصوات طبيعية هادئة مع التعليق الصوتي (بدون موسيقى)
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 

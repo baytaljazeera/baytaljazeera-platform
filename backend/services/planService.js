@@ -88,6 +88,23 @@ function validatePlanInput(data, isUpdate = false) {
   return { valid: errors.length === 0, errors, sanitized };
 }
 
+const VALID_VIDEO_TIERS = ['tier1_safwa', 'tier2_business'];
+const VALID_AMBIENCE_OPTIONS = ['none', 'birds', 'sea'];
+
+function validateVideoConfig(config) {
+  const defaultConfig = { enabled: false, tier: 'tier1_safwa', ambience: 'none' };
+  
+  if (!config || typeof config !== 'object') {
+    return defaultConfig;
+  }
+
+  return {
+    enabled: typeof config.enabled === 'boolean' ? config.enabled : false,
+    tier: VALID_VIDEO_TIERS.includes(config.tier) ? config.tier : 'tier1_safwa',
+    ambience: VALID_AMBIENCE_OPTIONS.includes(config.ambience) ? config.ambience : 'none'
+  };
+}
+
 async function getPlanById(planId, client = null) {
   const queryFn = client || db;
   const result = await queryFn.query("SELECT * FROM plans WHERE id = $1", [planId]);
@@ -159,8 +176,11 @@ async function createPlan(planData, adminUserId) {
       badge_font_size = 16, header_bg_opacity = 100, body_bg_opacity = 100,
       badge_bg_opacity = 100, seo_level = 0, seo_feature_title, seo_feature_description,
       elite_feature_title, elite_feature_description, ai_feature_title, ai_feature_description,
-      feature_display_order = { listings: 1, photos: 2, map: 3, ai: 4, video: 5, elite: 6, seo: 7 }
+      feature_display_order = { listings: 1, photos: 2, map: 3, ai: 4, video: 5, elite: 6, seo: 7 },
+      video_config = { enabled: false, tier: 'tier1_safwa', ambience: 'none' }
     } = planData;
+
+    const sanitizedVideoConfig = validateVideoConfig(video_config);
 
     const result = await client.query(
       `INSERT INTO plans (
@@ -176,8 +196,8 @@ async function createPlan(planData, adminUserId) {
         badge_font_size, header_bg_opacity, body_bg_opacity, badge_bg_opacity,
         seo_level, seo_feature_title, seo_feature_description,
         elite_feature_title, elite_feature_description, ai_feature_title, ai_feature_description,
-        feature_display_order
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48::jsonb)
+        feature_display_order, video_config
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48::jsonb, $49::jsonb)
       RETURNING *`,
       [
         name_ar, name_en, slug || null, price, duration_days,
@@ -193,7 +213,8 @@ async function createPlan(planData, adminUserId) {
         seo_level, seo_feature_title || null, seo_feature_description || null,
         elite_feature_title || null, elite_feature_description || null,
         ai_feature_title || null, ai_feature_description || null,
-        JSON.stringify(typeof feature_display_order === 'string' ? JSON.parse(feature_display_order) : feature_display_order)
+        JSON.stringify(typeof feature_display_order === 'string' ? JSON.parse(feature_display_order) : feature_display_order),
+        JSON.stringify(sanitizedVideoConfig)
       ]
     );
 
@@ -249,7 +270,8 @@ async function updatePlan(planId, planData, adminUserId) {
       header_bg_color, header_text_color, body_bg_color, body_text_color,
       badge_font_size, header_bg_opacity, body_bg_opacity, badge_bg_opacity,
       elite_feature_title, elite_feature_description, ai_feature_title, ai_feature_description,
-      seo_level, seo_feature_title, seo_feature_description, feature_display_order
+      seo_level, seo_feature_title, seo_feature_description, feature_display_order,
+      video_config
     } = planData;
 
     const result = await client.query(
@@ -301,8 +323,9 @@ async function updatePlan(planId, planData, adminUserId) {
         seo_feature_title = COALESCE(NULLIF($45, ''), seo_feature_title),
         seo_feature_description = COALESCE(NULLIF($46, ''), seo_feature_description),
         feature_display_order = COALESCE($47::jsonb, feature_display_order),
+        video_config = COALESCE($48::jsonb, video_config),
         updated_at = NOW()
-      WHERE id = $48
+      WHERE id = $49
       RETURNING *`,
       [
         name_ar, name_en, price, duration_days,
@@ -321,6 +344,7 @@ async function updatePlan(planId, planData, adminUserId) {
         ai_feature_title, ai_feature_description,
         seo_level, seo_feature_title, seo_feature_description,
         feature_display_order ? JSON.stringify(typeof feature_display_order === 'string' ? JSON.parse(feature_display_order) : feature_display_order) : null,
+        video_config ? JSON.stringify(validateVideoConfig(video_config)) : null,
         planId
       ]
     );
