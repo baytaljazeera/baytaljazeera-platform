@@ -23,7 +23,12 @@ WORKDIR /app
 
 # Copy requirements first for better caching
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Python dependencies with verbose output
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip list && \
+    python -c "from moviepy.editor import ImageClip; print('MoviePy OK')"
 
 # Copy application code
 COPY . .
