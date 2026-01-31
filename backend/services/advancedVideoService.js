@@ -316,37 +316,78 @@ Dialogue: 1,${toAssTime(t3)},${toAssTime(totalDuration)},PriceMain,,0,0,0,,{\\po
   return outPath;
 }
 
+async function generateVoiceover(text, outputPath) {
+  try {
+    const cleanText = text
+      .replace(/\*\*/g, '')
+      .replace(/[#\-_]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    if (!cleanText || cleanText.length < 10) {
+      console.log("[AdvancedVideo] Text too short for voiceover");
+      return null;
+    }
+
+    console.log("[AdvancedVideo] 🎙️ Generating voiceover with OpenAI TTS...");
+    
+    const mp3 = await openai.audio.speech.create({
+      model: "tts-1-hd",
+      voice: "onyx",
+      input: cleanText,
+      speed: 0.9
+    });
+
+    const buffer = Buffer.from(await mp3.arrayBuffer());
+    const mp3Path = outputPath.replace('.aac', '_vo.mp3');
+    await fs.writeFile(mp3Path, buffer);
+    
+    await new Promise((resolve, reject) => {
+      const ff = spawn("ffmpeg", ["-y", "-i", mp3Path, "-c:a", "aac", "-b:a", "192k", outputPath]);
+      ff.on("close", code => code === 0 ? resolve() : reject(new Error("FFmpeg voiceover conversion failed")));
+      ff.on("error", reject);
+    });
+    
+    await fs.unlink(mp3Path).catch(() => {});
+    console.log("[AdvancedVideo] ✅ Voiceover generated successfully");
+    return outputPath;
+  } catch (err) {
+    console.error("[AdvancedVideo] ❌ Voiceover generation failed:", err.message);
+    return null;
+  }
+}
+
 async function generateAmbientAudio(outputPath, duration, mood = "elegant") {
   const moodSettings = {
     elegant: { 
       freq: 220, 
       modFreq: 0.5, 
-      volume: 0.15,
-      harmonics: "0.5*sin(f*2*PI*t)*sin(m*PI*t)+0.3*sin(f*1.5*2*PI*t)*sin(m*0.7*PI*t)+0.15*sin(f*2*2*PI*t)*sin(m*1.3*PI*t)+0.05*sin(f*3*2*PI*t)"
+      volume: 0.40,
+      harmonics: "0.5*sin(f*2*PI*t)*sin(m*PI*t)+0.3*sin(f*1.5*2*PI*t)*sin(m*0.7*PI*t)+0.15*sin(f*2*2*PI*t)*sin(m*1.3*PI*t)+0.05*sin(f*3*2*PI*t)+0.2*sin(f*0.5*2*PI*t)*sin(m*0.3*PI*t)"
     },
     upbeat: { 
       freq: 330, 
       modFreq: 1.2, 
-      volume: 0.18,
-      harmonics: "0.4*sin(f*2*PI*t)*sin(m*PI*t)+0.3*sin(f*1.5*2*PI*t)*sin(m*0.8*PI*t)+0.2*sin(f*2*2*PI*t)*sin(m*1.2*PI*t)+0.1*sin(f*2.5*2*PI*t)"
+      volume: 0.45,
+      harmonics: "0.4*sin(f*2*PI*t)*sin(m*PI*t)+0.3*sin(f*1.5*2*PI*t)*sin(m*0.8*PI*t)+0.2*sin(f*2*2*PI*t)*sin(m*1.2*PI*t)+0.1*sin(f*2.5*2*PI*t)+0.15*sin(f*0.75*2*PI*t)"
     },
     warm: { 
       freq: 196, 
       modFreq: 0.3, 
-      volume: 0.12,
-      harmonics: "0.5*sin(f*2*PI*t)*sin(m*PI*t)+0.3*sin(f*1.2*2*PI*t)*sin(m*0.5*PI*t)+0.2*sin(f*1.8*2*PI*t)"
+      volume: 0.38,
+      harmonics: "0.5*sin(f*2*PI*t)*sin(m*PI*t)+0.3*sin(f*1.2*2*PI*t)*sin(m*0.5*PI*t)+0.2*sin(f*1.8*2*PI*t)+0.15*sin(f*0.6*2*PI*t)*sin(m*0.4*PI*t)"
     },
     calm: { 
       freq: 174, 
       modFreq: 0.2, 
-      volume: 0.10,
-      harmonics: "0.6*sin(f*2*PI*t)*sin(m*PI*t)+0.3*sin(f*1.3*2*PI*t)*sin(m*0.4*PI*t)+0.1*sin(f*2*2*PI*t)"
+      volume: 0.35,
+      harmonics: "0.6*sin(f*2*PI*t)*sin(m*PI*t)+0.3*sin(f*1.3*2*PI*t)*sin(m*0.4*PI*t)+0.1*sin(f*2*2*PI*t)+0.2*sin(f*0.5*2*PI*t)*sin(m*0.2*PI*t)"
     },
     cinematic: {
       freq: 250,
       modFreq: 0.4,
-      volume: 0.16,
-      harmonics: "0.4*sin(f*2*PI*t)*sin(m*PI*t)+0.3*sin(f*1.4*2*PI*t)*sin(m*0.6*PI*t)+0.2*sin(f*2*2*PI*t)*sin(m*1.1*PI*t)+0.1*sin(f*2.7*2*PI*t)"
+      volume: 0.42,
+      harmonics: "0.4*sin(f*2*PI*t)*sin(m*PI*t)+0.3*sin(f*1.4*2*PI*t)*sin(m*0.6*PI*t)+0.2*sin(f*2*2*PI*t)*sin(m*1.1*PI*t)+0.1*sin(f*2.7*2*PI*t)+0.2*sin(f*0.8*2*PI*t)*sin(m*0.5*PI*t)"
     }
   };
 
@@ -357,9 +398,9 @@ async function generateAmbientAudio(outputPath, duration, mood = "elegant") {
     "-y",
     "-f", "lavfi",
     "-i", `aevalsrc=${harmonics}:d=${duration}:s=44100`,
-    "-af", `volume=${settings.volume},afade=t=in:st=0:d=2.5,afade=t=out:st=${duration-2.5}:d=2.5,lowpass=f=2500,highpass=f=60,equalizer=f=200:width_type=h:width=100:g=2,equalizer=f=2000:width_type=h:width=200:g=1.5`,
+    "-af", `volume=${settings.volume},afade=t=in:st=0:d=1.5,afade=t=out:st=${Math.max(0, duration-2)}:d=2,lowpass=f=3000,highpass=f=80,equalizer=f=200:width_type=h:width=100:g=3,equalizer=f=1000:width_type=h:width=200:g=2,equalizer=f=2500:width_type=h:width=150:g=1.5,aecho=0.6:0.3:500:0.3`,
     "-c:a", "aac",
-    "-b:a", "160k",
+    "-b:a", "192k",
     "-ar", "44100",
     outputPath
   ];
@@ -370,7 +411,7 @@ async function generateAmbientAudio(outputPath, duration, mood = "elegant") {
     ff.stderr.on("data", d => stderr += d.toString());
     ff.on("close", code => {
       if (code === 0) {
-        console.log("[AdvancedVideo] Generated enhanced ambient audio:", mood);
+        console.log("[AdvancedVideo] 🎵 Generated enhanced ambient audio:", mood);
         resolve(outputPath);
       } else {
         console.error("[AdvancedVideo] Audio generation failed:", stderr.slice(-500));
@@ -379,6 +420,42 @@ async function generateAmbientAudio(outputPath, duration, mood = "elegant") {
     });
     ff.on("error", () => resolve(null));
   });
+}
+
+async function mixAudioTracks(voiceoverPath, musicPath, outputPath, duration) {
+  try {
+    const args = [
+      "-y",
+      "-i", voiceoverPath,
+      "-i", musicPath,
+      "-filter_complex", 
+      `[0:a]adelay=1500|1500,volume=1.2[voice];[1:a]volume=0.25[music];[voice][music]amix=inputs=2:duration=longest:dropout_transition=2,afade=t=out:st=${Math.max(0, duration-2)}:d=2[out]`,
+      "-map", "[out]",
+      "-c:a", "aac",
+      "-b:a", "256k",
+      "-ar", "44100",
+      outputPath
+    ];
+
+    return new Promise((resolve) => {
+      const ff = spawn("ffmpeg", args);
+      let stderr = "";
+      ff.stderr.on("data", d => stderr += d.toString());
+      ff.on("close", code => {
+        if (code === 0) {
+          console.log("[AdvancedVideo] ✅ Mixed voiceover with background music");
+          resolve(outputPath);
+        } else {
+          console.error("[AdvancedVideo] Audio mixing failed:", stderr.slice(-300));
+          resolve(null);
+        }
+      });
+      ff.on("error", () => resolve(null));
+    });
+  } catch (err) {
+    console.error("[AdvancedVideo] Audio mixing error:", err.message);
+    return null;
+  }
 }
 
 function isPathSafe(inputPath, allowedBase) {
@@ -533,6 +610,8 @@ async function createAdvancedSlideshow(imagePaths, outputPath, promoText, option
   const assPath = path.join(tempDir, `captions_${Date.now()}.ass`);
   const fontsDir = path.join(__dirname, "../public/fonts");
   const audioPath = path.join(tempDir, `audio_${Date.now()}.aac`);
+  const voiceoverPath = path.join(tempDir, `voiceover_${Date.now()}.aac`);
+  const musicPath = path.join(tempDir, `music_${Date.now()}.aac`);
 
   try {
     buildAdvancedAssFile(promoText, totalDuration, assPath, template);
@@ -542,8 +621,28 @@ async function createAdvancedSlideshow(imagePaths, outputPath, promoText, option
 
   let hasAudio = false;
   if (includeAudio) {
-    const audioResult = await generateAmbientAudio(audioPath, Math.ceil(totalDuration), templateConfig.musicMood);
-    hasAudio = audioResult !== null;
+    const voiceText = promoText ? 
+      `${promoText.topLine || ''} ${promoText.midLine || ''} ${promoText.bottomLine || ''}`.trim() : '';
+    
+    const [voiceResult, musicResult] = await Promise.all([
+      voiceText.length > 20 ? generateVoiceover(voiceText, voiceoverPath) : Promise.resolve(null),
+      generateAmbientAudio(musicPath, Math.ceil(totalDuration), templateConfig.musicMood)
+    ]);
+
+    if (voiceResult && musicResult) {
+      const mixedResult = await mixAudioTracks(voiceoverPath, musicPath, audioPath, Math.ceil(totalDuration));
+      hasAudio = mixedResult !== null;
+      await fs.unlink(voiceoverPath).catch(() => {});
+      await fs.unlink(musicPath).catch(() => {});
+    } else if (musicResult) {
+      await fs.rename(musicPath, audioPath).catch(async () => {
+        await fs.copyFile(musicPath, audioPath);
+        await fs.unlink(musicPath).catch(() => {});
+      });
+      hasAudio = true;
+    }
+    
+    console.log(`[AdvancedVideo] Audio setup: voiceover=${!!voiceResult}, music=${!!musicResult}, final=${hasAudio}`);
   }
 
   const fps = 30;
