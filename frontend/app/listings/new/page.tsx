@@ -728,9 +728,17 @@ export default function NewListingPage() {
         formData.append('images', img);
       });
 
+      // Get token for authorization (can't use getAuthHeaders with FormData)
+      const token = typeof localStorage !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('oauth_token')) : null;
+      const uploadHeaders: HeadersInit = {};
+      if (token) {
+        uploadHeaders['Authorization'] = `Bearer ${token}`;
+      }
+
       const uploadRes = await fetch(`${API_URL}/api/listings/temp-images`, {
         method: "POST",
         credentials: "include",
+        headers: uploadHeaders,
         body: formData
       });
 
