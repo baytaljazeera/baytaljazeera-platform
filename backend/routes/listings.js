@@ -40,8 +40,15 @@ router.post("/temp-images", authMiddlewareWithEmailCheck, upload.array('images',
     // If Cloudinary is configured, upload there
     if (isCloudinaryConfigured()) {
       try {
-        const cloudinaryUrl = await uploadImage(file.path);
-        paths.push(cloudinaryUrl);
+        const result = await uploadImage(file.path);
+        // Extract URL from result object
+        const cloudinaryUrl = result.url || result;
+        if (typeof cloudinaryUrl === 'string') {
+          paths.push(cloudinaryUrl);
+        } else {
+          console.error("[TempImages] Invalid Cloudinary response:", result);
+          paths.push(`/uploads/listings/${file.filename}`);
+        }
         // Clean up local file after Cloudinary upload
         try { fs.unlinkSync(file.path); } catch (e) {}
       } catch (err) {
