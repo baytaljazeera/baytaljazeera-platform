@@ -1659,12 +1659,17 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
     return res.status(400).json({ error: "يرجى تحديد نوع العقار والمدينة" });
   }
 
-  // Clean Image Paths (Extract URLs only)
+  // Clean Image Paths (Sanitize URLs - remove trailing indices like :1)
   let cleanImages = [];
   if (Array.isArray(imagePaths)) {
     cleanImages = imagePaths.map(img => {
-      if (typeof img === 'string') return img;
-      if (typeof img === 'object' && img.url) return img.url;
+      // Handle both string and object formats
+      let url = (typeof img === 'string') ? img : (img?.url || null);
+      
+      // 🔥 Fix: Remove trailing index (e.g., .jpg:1)
+      if (url && typeof url === 'string') {
+        return url.replace(/:\d+$/, '').trim();
+      }
       return null;
     }).filter(Boolean);
   }
