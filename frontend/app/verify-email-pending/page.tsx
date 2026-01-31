@@ -24,13 +24,13 @@ export default function VerifyEmailPendingPage() {
   }, [user, router]);
 
   const handleResend = async () => {
-    if (resending) return;
+    if (resending || !user?.email) return;
     
     setResending(true);
     setResendStatus('idle');
     
     try {
-      const response = await api.post('/auth/resend-verification');
+      const response = await api.post('/auth/resend-verification', { email: user.email });
       if (response.ok) {
         setResendStatus('success');
         setMessage('تم إرسال رابط التفعيل إلى بريدك الإلكتروني');
