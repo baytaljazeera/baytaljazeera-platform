@@ -66,7 +66,7 @@ export default function AICenterPage() {
     try {
       const res = await fetch(`${API_URL}/api/ai/support-settings`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         credentials: "include",
         body: JSON.stringify({ ai_support_enabled: !aiSupportEnabled }),
       });
@@ -92,7 +92,7 @@ export default function AICenterPage() {
     try {
       const response = await fetch(`${API_URL}/api/ai/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         credentials: "include",
         body: JSON.stringify({ messages: newMessages }),
       });
@@ -119,7 +119,7 @@ export default function AICenterPage() {
     try {
       const response = await fetch(`${API_URL}/api/ai/generate-description`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         credentials: "include",
         body: JSON.stringify({
           propertyType,
@@ -158,7 +158,7 @@ export default function AICenterPage() {
     try {
       const response = await fetch(`${API_URL}/api/ai/draft-response`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         credentials: "include",
         body: JSON.stringify({
           customerName,

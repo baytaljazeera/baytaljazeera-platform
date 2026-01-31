@@ -453,7 +453,7 @@ export default function NewListingPage() {
     try {
       const res = await fetch(`${API_URL}/api/ai/user/generate-description`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         credentials: "include",
         body: JSON.stringify({
           propertyType: form.propertyType,
@@ -508,7 +508,7 @@ export default function NewListingPage() {
     try {
       const res = await fetch(`${API_URL}/api/ai/user/generate-title`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         credentials: "include",
         body: JSON.stringify({
           propertyType: form.propertyType,
@@ -560,7 +560,7 @@ export default function NewListingPage() {
     try {
       const res = await fetch(`${API_URL}/api/ai/user/smart-pricing`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         credentials: "include",
         body: JSON.stringify({
           propertyType: form.propertyType,
@@ -615,7 +615,7 @@ export default function NewListingPage() {
     try {
       const res = await fetch(`${API_URL}/api/ai/user/marketing-tips`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         credentials: "include",
         body: JSON.stringify({
           propertyType: form.propertyType,
@@ -749,7 +749,7 @@ export default function NewListingPage() {
       // Step 2: Generate video using FFmpeg
       const res = await fetch(`${API_URL}/api/ai/user/generate-video`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         credentials: "include",
         body: JSON.stringify({
           propertyType: form.propertyType,
