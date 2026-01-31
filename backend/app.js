@@ -115,6 +115,19 @@ function createApp() {
     app.use("/api/auth/forgot-password", strictAuthLimiter);
   }
 
+  // Handle preflight OPTIONS requests explicitly
+  app.options('*', (req, res) => {
+    const origin = req.headers.origin;
+    if (origin) {
+      res.header('Access-Control-Allow-Origin', origin);
+    }
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-CSRF-Token');
+    res.header('Access-Control-Max-Age', '86400');
+    return res.sendStatus(204);
+  });
+
   // CORS
   app.use(cors({
     origin: (origin, callback) => {
@@ -140,7 +153,7 @@ function createApp() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-CSRF-Token'],
   }));
 
   app.use(cookieParser());
