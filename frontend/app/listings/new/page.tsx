@@ -254,6 +254,10 @@ export default function NewListingPage() {
 
   // Scroll to top button state
   const [showScrollTop, setShowScrollTop] = useState(false);
+  
+  // Video confirmation modal state
+  const [showVideoConfirmModal, setShowVideoConfirmModal] = useState(false);
+  const [pendingVideoImages, setPendingVideoImages] = useState<File[]>([]);
 
   // Currency state based on selected country
   const [localCurrency, setLocalCurrency] = useState<{
@@ -710,12 +714,19 @@ export default function NewListingPage() {
       return;
     }
     
-    // تحذير إذا كانت الصور كثيرة
+    // تحذير إذا كانت الصور كثيرة - نستخدم modal فاخر بدلاً من confirm العادي
     if (imagesToUse.length > 10) {
-      const proceed = window.confirm(`تم اختيار ${imagesToUse.length} صورة. عدد أقل من الصور يعني سرعة أكبر في التوليد. هل تريد المتابعة؟`);
-      if (!proceed) return;
+      setPendingVideoImages(imagesToUse);
+      setShowVideoConfirmModal(true);
+      return;
     }
-
+    
+    // متابعة التوليد مباشرة
+    await executeVideoGeneration(imagesToUse);
+  }
+  
+  // دالة تنفيذ توليد الفيديو
+  const executeVideoGeneration = async (imagesToUse: File[]) => {
     setVideoLoading(true);
     setVideoError(null);
     setVideoResult(null);
@@ -4314,6 +4325,94 @@ export default function NewListingPage() {
             </div>
           </div>
         )}
+
+        {/* Video Confirmation Modal - تصميم فاخر */}
+        <AnimatePresence>
+          {showVideoConfirmModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowVideoConfirmModal(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                onClick={(e) => e.stopPropagation()}
+                className="relative w-full max-w-md overflow-hidden rounded-3xl shadow-2xl"
+              >
+                {/* خلفية متدرجة فاخرة */}
+                <div className="absolute inset-0 bg-gradient-to-br from-[#01273C] via-[#0B6B4C] to-[#01273C]" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(212,175,55,0.15),transparent_50%)]" />
+                
+                {/* المحتوى */}
+                <div className="relative p-6">
+                  {/* الأيقونة */}
+                  <div className="flex justify-center mb-4">
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/30">
+                      <Film className="w-8 h-8 text-white" />
+                    </div>
+                  </div>
+                  
+                  {/* العنوان */}
+                  <h3 className="text-xl font-bold text-center text-white mb-2">
+                    تأكيد توليد الفيديو
+                  </h3>
+                  
+                  {/* الرسالة */}
+                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 mb-6 border border-white/20">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
+                        <ImageIcon className="w-5 h-5 text-amber-400" />
+                      </div>
+                      <div>
+                        <p className="text-white/90 font-semibold">
+                          تم اختيار {pendingVideoImages.length} صورة
+                        </p>
+                        <p className="text-white/60 text-sm">
+                          عدد كبير من الصور
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-white/80 text-sm leading-relaxed">
+                      عدد أقل من الصور يعني سرعة أكبر في التوليد وجودة أفضل للفيديو. 
+                      هل تريد المتابعة بهذا العدد؟
+                    </p>
+                  </div>
+                  
+                  {/* نصيحة */}
+                  <div className="flex items-start gap-2 mb-6 text-amber-300/80 text-xs">
+                    <Sparkles className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>ننصح باختيار 5-10 صور للحصول على أفضل نتيجة</span>
+                  </div>
+                  
+                  {/* الأزرار */}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowVideoConfirmModal(false)}
+                      className="flex-1 py-3 px-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium transition-all duration-200 border border-white/20"
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      onClick={async () => {
+                        setShowVideoConfirmModal(false);
+                        await executeVideoGeneration(pendingVideoImages);
+                      }}
+                      className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] hover:from-[#E5C048] hover:to-[#C9971C] text-white font-bold transition-all duration-200 shadow-lg shadow-amber-500/30 flex items-center justify-center gap-2"
+                    >
+                      <Rocket className="w-4 h-4" />
+                      <span>متابعة التوليد</span>
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Scroll to Top Button */}
         {showScrollTop && (
