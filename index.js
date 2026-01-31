@@ -86,6 +86,25 @@ const app = express();
 // 🔒 Trust proxy for Replit (required for rate limiting)
 app.set('trust proxy', 1);
 
+// 🔒 CORS - MUST BE FIRST (before any other middleware)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-CSRF-Token, Accept, Origin');
+  res.header('Access-Control-Max-Age', '86400');
+  
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 // 🔧 Hostname Fix Middleware - Fix "base" hostname from Next.js proxy
 // This MUST run before session middleware to prevent ENOTFOUND errors
 app.use((req, res, next) => {
