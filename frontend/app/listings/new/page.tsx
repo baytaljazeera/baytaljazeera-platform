@@ -3579,22 +3579,34 @@ export default function NewListingPage() {
                         </div>
                       </div>
                     ) : videoError ? (
-                      <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl">
-                        <div className="flex items-center gap-2 mb-2">
-                          <AlertTriangle className="w-5 h-5 text-red-600" />
-                          <span className="font-semibold text-red-700">خطأ في توليد الفيديو</span>
+                      <div className="relative overflow-hidden p-5 rounded-2xl bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 border border-amber-200/60 shadow-lg">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-amber-200/30 to-transparent rounded-full -translate-y-1/2 translate-x-1/2" />
+                        <div className="absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr from-rose-200/30 to-transparent rounded-full translate-y-1/2 -translate-x-1/2" />
+                        <div className="relative z-10">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center shadow-md">
+                              <AlertTriangle className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                              <span className="font-bold text-amber-800 text-base">نحتاج لحظة إضافية</span>
+                              <p className="text-xs text-amber-600/80">جاري تحسين تجربة الفيديو</p>
+                            </div>
+                          </div>
+                          <div className="p-3 bg-white/60 backdrop-blur-sm rounded-xl border border-amber-100 mb-4">
+                            <p className="text-sm text-amber-700 leading-relaxed">{videoError}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVideoError(null);
+                              handleGenerateVideo();
+                            }}
+                            className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white rounded-xl hover:from-amber-600 hover:via-orange-600 hover:to-amber-700 transition-all font-semibold shadow-md hover:shadow-lg active:scale-[0.98]"
+                          >
+                            <RefreshCw className="w-4 h-4" />
+                            <span>إعادة المحاولة</span>
+                          </button>
                         </div>
-                        <p className="text-sm text-red-600 mb-3">{videoError}</p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setVideoError(null);
-                            handleGenerateVideo();
-                          }}
-                          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm font-medium"
-                        >
-                          إعادة المحاولة
-                        </button>
                       </div>
                     ) : (
                       <div className="space-y-3">
