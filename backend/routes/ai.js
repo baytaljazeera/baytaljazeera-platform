@@ -1622,179 +1622,87 @@ router.post("/user/generate-advanced-video", authMiddleware, asyncHandler(async 
   }
 }));
 
-// 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي - باستخدام FFmpeg (مجاني)
+// 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي - Python Engine
 router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { propertyType, purpose, city, district, price, landArea, buildingArea, bedrooms, bathrooms, title, hasPool, hasElevator, hasGarden, selectedImageUrl, customPromoText, description, imagePaths, template = "luxury" } = req.body;
-
-  // Initialize variables outside try block for error handling
-  let imagePathsToUse = [];
-  let selectedTemplate = "luxury";
+  const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description } = req.body;
 
   // Check user's support level - متاح للباقات المميزة فقط
-    const planResult = await db.query(
-      `SELECT COALESCE(MAX(support_level), 0) as support_level
-       FROM (
-         SELECT p.support_level
-         FROM user_plans up
-         JOIN plans p ON up.plan_id = p.id
-         WHERE up.user_id = $1 AND up.status = 'active' AND (up.expires_at IS NULL OR up.expires_at > NOW())
-         UNION ALL
-         SELECT p.support_level
-         FROM quota_buckets qb
-         JOIN plans p ON qb.plan_id = p.id
-         WHERE qb.user_id = $1 AND qb.active = true 
-           AND (qb.expires_at IS NULL OR qb.expires_at > NOW())
-           AND (qb.total_slots - qb.used_slots) > 0
-       ) AS combined`,
-      [userId]
-    );
-    
-    const supportLevel = parseInt(planResult.rows[0]?.support_level) || 0;
-    
+  const planResult = await db.query(
+    `SELECT COALESCE(MAX(support_level), 0) as support_level
+     FROM (
+       SELECT p.support_level
+       FROM user_plans up
+       JOIN plans p ON up.plan_id = p.id
+       WHERE up.user_id = $1 AND up.status = 'active' AND (up.expires_at IS NULL OR up.expires_at > NOW())
+       UNION ALL
+       SELECT p.support_level
+       FROM quota_buckets qb
+       JOIN plans p ON qb.plan_id = p.id
+       WHERE qb.user_id = $1 AND qb.active = true 
+         AND (qb.expires_at IS NULL OR qb.expires_at > NOW())
+         AND (qb.total_slots - qb.used_slots) > 0
+     ) AS combined`,
+    [userId]
+  );
+  
+  const supportLevel = parseInt(planResult.rows[0]?.support_level) || 0;
+  
   if (supportLevel < 2) {
-      return res.status(403).json({ 
+    return res.status(403).json({ 
       error: "ميزة توليد الفيديو الترويجي متاحة لمشتركي الباقات المميزة (النخبة وأعلى)",
-        upgradeRequired: true 
-      });
-    }
-
-    if (!propertyType || !city) {
-      return res.status(400).json({ error: "يرجى تحديد نوع العقار والمدينة" });
-    }
-
-  // Check if FFmpeg is available
-  const { execSync } = require('child_process');
-  let ffmpegAvailable = false;
-  try {
-    execSync('ffmpeg -version', { stdio: 'ignore' });
-    ffmpegAvailable = true;
-  } catch (err) {
-    console.error("[Video] FFmpeg is not available");
-  }
-
-  if (!ffmpegAvailable) {
-    return res.status(503).json({ 
-      error: "خدمة توليد الفيديو غير متاحة حالياً. يرجى التواصل مع الدعم الفني.",
-      errorEn: "FFmpeg is not available on this server"
+      upgradeRequired: true 
     });
   }
 
-  try {
-    const { VIDEO_TEMPLATES, generateEnhancedPromoText, createAdvancedSlideshow } = require("../services/advancedVideoService");
+  if (!propertyType || !city) {
+    return res.status(400).json({ error: "يرجى تحديد نوع العقار والمدينة" });
+  }
 
-    // Validate template
-    const validTemplates = Object.keys(VIDEO_TEMPLATES);
-    selectedTemplate = validTemplates.includes(template) ? template : "luxury";
+  // Clean Image Paths (Extract URLs only)
+  let cleanImages = [];
+  if (Array.isArray(imagePaths)) {
+    cleanImages = imagePaths.map(img => {
+      if (typeof img === 'string') return img;
+      if (typeof img === 'object' && img.url) return img.url;
+      return null;
+    }).filter(Boolean);
+  }
 
-    // Generate promotional text
-    let promoText;
-    if (customPromoText && customPromoText.trim()) {
-      promoText = {
-        topLine: customPromoText.trim(),
-        midLine: `${propertyType} في ${city}`,
-        bottomLine: purpose === "بيع" ? "تملّك الآن" : "استأجر اليوم"
-      };
-      console.log("[Video] Using custom promo text:", customPromoText);
-    } else {
-      // Generate dynamic promotional text using AI
-      const listingData = {
-        propertyType, purpose, city, district, price, landArea, buildingArea, 
-        bedrooms, bathrooms, title, description, hasPool, hasElevator, hasGarden
-      };
-      promoText = await generateEnhancedPromoText(listingData, selectedTemplate);
-    }
-
-    console.log("[Video] Starting FFmpeg video generation for user:", userId);
-    console.log("[Video] Template:", selectedTemplate);
-    console.log("[Video] Promotional text:", JSON.stringify(promoText, null, 2));
-
-    // Prepare image paths - use provided imagePaths or selectedImageUrl
-    imagePathsToUse = [];
-    if (imagePaths && imagePaths.length > 0) {
-      // imagePaths can be Cloudinary URLs or local paths
-      imagePathsToUse = imagePaths;
-      console.log("[Video] Using provided imagePaths:", imagePathsToUse.length, "images");
-    } else if (selectedImageUrl && !selectedImageUrl.startsWith('blob:')) {
-      // Handle single image URL
-      if (selectedImageUrl.startsWith('/uploads/')) {
-        const localPath = path.join(__dirname, "../../public", selectedImageUrl);
-        if (await fs.access(localPath).then(() => true).catch(() => false)) {
-          imagePathsToUse = [localPath];
-        }
-      } else if (selectedImageUrl.startsWith('http')) {
-        imagePathsToUse = [selectedImageUrl];
-      }
-    }
-
-    if (imagePathsToUse.length === 0) {
-      return res.status(400).json({ 
-        error: "يرجى رفع صور العقار أولاً لتوليد الفيديو",
-        errorEn: "Please upload property images first"
-      });
-    }
-
-    console.log("[Video] Image paths to use:", imagePathsToUse.map(p => 
-      typeof p === 'string' && p.length > 50 ? p.substring(0, 50) + '...' : p
-    ));
-    console.log("[Video] Image paths types:", imagePathsToUse.map(p => {
-      if (typeof p === 'string') {
-        if (p.startsWith('http')) return 'cloudinary/remote';
-        if (p.startsWith('/uploads/')) return 'local';
-        return 'unknown';
-      }
-      return 'invalid';
-    }));
-
-    // Create video output directory
-    const videoDir = path.join(__dirname, "../../public/uploads/videos");
-    await fs.mkdir(videoDir, { recursive: true });
-    
-    const videoFilename = `promo_${userId}_${selectedTemplate}_${Date.now()}.mp4`;
-    const videoPath = path.join(videoDir, videoFilename);
-    const videoUrl = `/uploads/videos/${videoFilename}`;
-
-    // Generate video using FFmpeg
-    await createAdvancedSlideshow(imagePathsToUse, videoPath, promoText, {
-      duration: 20,
-      template: selectedTemplate,
-      includeAudio: true
-    });
-
-    console.log("[Video] ✅ Video generated successfully:", videoUrl);
-
-    res.json({ 
-      success: true,
-      videoUrl,
-      promoText,
-      template: selectedTemplate,
-      templateName: VIDEO_TEMPLATES[selectedTemplate]?.name || selectedTemplate,
-      message: `تم إنشاء الفيديو الترويجي بنجاح بقالب ${VIDEO_TEMPLATES[selectedTemplate]?.name || "مميز"}`
-    });
-
-  } catch (error) {
-    console.error("[Video] FFmpeg video generation error:", error);
-    console.error("[Video] Error stack:", error.stack);
-    console.error("[Video] Request body:", {
-      hasImagePaths: !!imagePaths,
-      imagePathsLength: imagePaths?.length || 0,
-      hasSelectedImageUrl: !!selectedImageUrl,
-      propertyType,
-      city
-    });
-    console.error("[Video] Error details:", {
-      message: error.message,
-      name: error.name,
-      userId,
-      imagePathsCount: imagePathsToUse?.length || 0,
-      template: selectedTemplate || "unknown"
-    });
-    return res.status(500).json({ 
-      error: "حدث خطأ في توليد الفيديو. يرجى المحاولة مرة أخرى.",
-      errorEn: error.message || "Video generation error",
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+  if (cleanImages.length === 0) {
+    return res.status(400).json({ 
+      success: false, 
+      error: "يرجى رفع صور العقار أولاً لتوليد الفيديو" 
     });
   }
+
+  console.log("🚀 [AI Route] Python Engine Request for user:", userId);
+  console.log("[Video] Image count:", cleanImages.length);
+
+  // Immediate Response
+  res.json({ 
+    success: true, 
+    message: "جاري إعداد الفيديو السينمائي...", 
+    status: "processing" 
+  });
+
+  // Background Processing
+  const { generateListingSlideshow } = require('../services/videoService');
+  
+  const listingData = { 
+    title: title || 'عقار مميز', 
+    city, 
+    district, 
+    price, 
+    userId, 
+    description: description || `${propertyType} لل${purpose}` 
+  };
+  
+  const targetId = listingId || `temp_${Date.now()}`; 
+
+  generateListingSlideshow(targetId, cleanImages, listingData)
+    .then(result => console.log("[Video] ✅ Background job success:", result.url))
+    .catch(err => console.error("[Video] ❌ Background job failed:", err.message));
 }));
 
 // Background polling function for video generation

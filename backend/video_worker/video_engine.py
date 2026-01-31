@@ -28,35 +28,15 @@ ASSETS_DIR = Path(__file__).parent / "assets"
 OUTPUT_DIR = Path(tempfile.gettempdir()) / "bayt_videos"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-client = None
-if OpenAI and os.environ.get("OPENAI_API_KEY"):
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-
-VIDEO_CONFIG = {
-    "tier1_safwa": {
-        "name": "باقة الصفوة",
-        "zoom_speed": 0.02,
-        "voice_model": "alloy",
-        "style": "عملي، مباشر، وموجز",
-        "crossfade": 0.5
-    },
-    "tier2_business": {
-        "name": "رجال الأعمال",
-        "zoom_speed": 0.04,
-        "crossfade": 1.0,
-        "voice_model": "onyx",
-        "style": "فخم، شاعري، وراقي"
-    }
-}
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY")) if OpenAI and os.environ.get("OPENAI_API_KEY") else None
 
 
 class BaytVideoEngine:
     def __init__(self, property_data, image_paths, settings):
         self.data = property_data
         self.images = image_paths
-        self.tier = settings.get('tier', 'tier1_safwa')
+        self.tier = settings.get('tier', 'tier2_business')
         self.ambience = settings.get('ambience', 'none')
-        self.tier_config = VIDEO_CONFIG.get(self.tier, VIDEO_CONFIG['tier1_safwa'])
         self.output_filename = f"video_{property_data.get('id', 'temp')}.mp4"
 
     def generate_voiceover(self):
@@ -65,14 +45,16 @@ class BaytVideoEngine:
             print("[VideoEngine] Warning: OpenAI not configured, skipping voiceover")
             return None
             
-        voice = self.tier_config.get('voice_model', 'alloy')
+        voice = "onyx"
         
         prompt = f"""
-        اكتب نصاً إعلانياً للعقار: {self.data.get('title', 'عقار مميز')} في {self.data.get('location', 'موقع متميز')}.
-        السعر: {self.data.get('price', 'غير محدد')}.
-        التفاصيل: {self.data.get('details', '')}.
-        الأسلوب: {self.tier_config['style']}.
-        اجعله قصيراً وجذاباً جداً (أقل من 30 ثانية). بدون موسيقى.
+        اكتب نصاً إعلانياً قصيراً جداً وجذاباً للعقار التالي:
+        العنوان: {self.data.get('title')}
+        الموقع: {self.data.get('location')}
+        السعر: {self.data.get('price')}
+        الوصف: {self.data.get('details')}
+        المطلوب: جمل تسويقية قصيرة وراقية. باللهجة السعودية البيضاء الراقية.
+        تحذير: لا تذكر أرقام هواتف. ركز على الفخامة والموقع.
         """
         
         try:
@@ -83,10 +65,9 @@ class BaytVideoEngine:
             script = gpt.choices[0].message.content
             
             res = client.audio.speech.create(
-                model="tts-1-hd", 
+                model="tts-1", 
                 voice=voice, 
-                input=script,
-                speed=0.9
+                input=script
             )
             
             voice_path = OUTPUT_DIR / f"voice_{self.data.get('id', 'temp')}.mp3"
@@ -95,7 +76,7 @@ class BaytVideoEngine:
             return str(voice_path)
             
         except Exception as e:
-            print(f"[VideoEngine] ❌ Voiceover failed: {e}")
+            print(f"[VideoEngine] ❌ Voice generation error: {e}")
             return None
 
     def smart_crop_to_16_9(self, clip):
@@ -136,15 +117,13 @@ class BaytVideoEngine:
             sound_file = ASSETS_DIR / f"{self.ambience}.mp3"
             if sound_file.exists():
                 bg = AudioFileClip(str(sound_file))
-                bg = audio_loop(bg, duration=voice_duration + 2)
+                bg = audio_loop(bg, duration=voice_duration + 3)
                 bg = bg.fx(volumex, 0.15)
                 audio_clips.append(bg)
                 print(f"[VideoEngine] Added ambience: {self.ambience}")
 
         clips = []
-        crossfade_duration = self.tier_config.get('crossfade', 0.5)
-        duration_per_img = (voice_duration / len(self.images)) + crossfade_duration
-        zoom_speed = self.tier_config.get('zoom_speed', 0.02)
+        duration_per_img = (voice_duration / len(self.images)) + 1.5
         
         for i, img_path in enumerate(self.images):
             try:
@@ -157,24 +136,22 @@ class BaytVideoEngine:
                 
                 clip = self.smart_crop_to_16_9(clip)
                 
-                clip = clip.resize(lambda t: 1 + zoom_speed * t)
+                clip = clip.resize(lambda t: 1 + 0.04 * t)
                 clip = clip.set_duration(duration_per_img)
                 
-                if crossfade_duration > 0 and i > 0:
-                    clip = clip.crossfadein(crossfade_duration)
+                clip = clip.crossfadein(1.0)
                 
                 clips.append(clip)
                 
             except Exception as e:
-                print(f"[VideoEngine] ❌ Error processing image: {e}")
+                print(f"[VideoEngine] ❌ Skipping image {img_path}: {e}")
 
         if not clips:
             raise ValueError("No valid images found to create video")
 
         print(f"[VideoEngine] Concatenating {len(clips)} clips...")
         
-        padding = -crossfade_duration if self.tier == 'tier2_business' else 0
-        final_video = concatenate_videoclips(clips, method="compose", padding=padding)
+        final_video = concatenate_videoclips(clips, method="compose", padding=-1)
         
         if final_video.duration > voice_duration:
             final_video = final_video.subclip(0, voice_duration)
@@ -210,20 +187,12 @@ class BaytVideoEngine:
 def generate_property_video(images, tier="tier1_safwa", ambience="none", property_data=None):
     """
     Convenience function for generating property videos.
-    
-    Args:
-        images: List of image file paths
-        tier: 'tier1_safwa' or 'tier2_business'
-        ambience: 'none', 'birds', or 'sea'
-        property_data: Dict with property details (id, title, location, price, details)
-    
-    Returns:
-        Path to generated video file
+    Forces high quality tier for best results.
     """
     if property_data is None:
         property_data = {"id": "temp", "title": "عقار مميز", "location": "موقع متميز"}
     
-    settings = {"tier": tier, "ambience": ambience}
+    settings = {"tier": "tier2_business", "ambience": ambience}
     engine = BaytVideoEngine(property_data, images, settings)
     return engine.create_video()
 
@@ -233,13 +202,6 @@ if __name__ == "__main__":
     
     if len(sys.argv) < 2:
         print("Usage: python video_engine.py <config.json>")
-        print("Config JSON format:")
-        print(json.dumps({
-            "images": ["image1.jpg", "image2.jpg"],
-            "tier": "tier1_safwa",
-            "ambience": "birds",
-            "property": {"id": "123", "title": "فيلا فاخرة", "location": "الرياض"}
-        }, indent=2, ensure_ascii=False))
         sys.exit(1)
     
     config_file = sys.argv[1]
@@ -248,7 +210,7 @@ if __name__ == "__main__":
     
     output = generate_property_video(
         images=config.get("images", []),
-        tier=config.get("tier", "tier1_safwa"),
+        tier=config.get("tier", "tier2_business"),
         ambience=config.get("ambience", "none"),
         property_data=config.get("property")
     )
