@@ -85,7 +85,7 @@ class BaytVideoEngine:
             return None
 
     def smart_crop_to_16_9(self, clip):
-        """Smart center crop to fill 1920x1080 without black bars."""
+        """Smart center crop to fill 1280x720 (HD) without black bars."""
         w, h = clip.size
         target_ratio = 16 / 9
         current_ratio = w / h
@@ -99,7 +99,7 @@ class BaytVideoEngine:
             y1 = (h - new_h) // 2
             clip = clip.crop(x1=0, y1=y1, width=w, height=new_h)
         
-        return clip.resize((1920, 1080))
+        return clip.resize((1280, 720))
 
     def create_video(self):
         """Generate the complete property video with cinematic quality."""
@@ -150,6 +150,13 @@ class BaytVideoEngine:
                 
             except Exception as e:
                 print(f"[VideoEngine] ❌ Skipping image {img_path}: {e}")
+            finally:
+                # Free memory after processing each image
+                if 'clip' in dir() and hasattr(clip, 'close'):
+                    try:
+                        clip.close()
+                    except:
+                        pass
 
         if not clips:
             raise ValueError("No valid images found to create video")
@@ -170,10 +177,10 @@ class BaytVideoEngine:
         final_video.write_videofile(
             str(output_path), 
             fps=24, 
-            preset='medium', 
+            preset='ultrafast', 
             codec='libx264', 
             audio_codec='aac', 
-            threads=4,
+            threads=1,
             logger=None
         )
         
