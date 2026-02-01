@@ -20,24 +20,42 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
       await db.query(`UPDATE properties SET video_status = 'processing' WHERE id = $1`, [listingId]);
     }
 
-    const response = await axios({
-      method: 'post',
-      url: `${PYTHON_WORKER_URL}/generate`,
-      data: {
-        images: imageUrls, 
-        tier: 'tier2_business',
-        ambience: 'birds',
-        property: {
-          id: listingId,
-          title: listingData.title,
-          location: `${listingData.city || ''} - ${listingData.district || ''}`,
-          price: listingData.price,
-          details: listingData.description
+    const requestPayload = {
+      images: imageUrls, 
+      tier: 'tier2_business',
+      ambience: 'birds',
+      property: {
+        id: listingId,
+        title: listingData.title,
+        location: `${listingData.city || ''} - ${listingData.district || ''}`,
+        price: listingData.price,
+        details: listingData.description
+      }
+    };
+
+    let response;
+    const maxRetries = 2;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        response = await axios({
+          method: 'post',
+          url: `${PYTHON_WORKER_URL}/generate`,
+          data: requestPayload,
+          responseType: 'stream',
+          timeout: 300000
+        });
+        break;
+      } catch (err) {
+        const isTimeout = err.code === 'ECONNABORTED' || err.message?.includes('timeout');
+        const isConnRefused = err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT';
+        if ((isTimeout || isConnRefused) && attempt < maxRetries) {
+          console.warn(`[VideoService] Attempt ${attempt} failed (${err.message}), retrying in 15s (cold start?)...`);
+          await new Promise(r => setTimeout(r, 15000));
+        } else {
+          throw err;
         }
-      },
-      responseType: 'stream',
-      timeout: 300000
-    });
+      }
+    }
 
     const tempDir = path.join(__dirname, '../temp');
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
@@ -48,10 +66,10 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     console.log(`☁️ [VideoService] Uploading to Cloudinary...`);
     const uploadResult = await cloudinaryService.uploadVideo(tempFilePath, `listings/${listingId}/promo`);
 
-    if (!uploadResult.success || !uploadResult.url) {
+    const videoUrl = uploadResult.url || uploadResult.secure_url;
+    if (!uploadResult.success || !videoUrl) {
       throw new Error(uploadResult.error || 'فشل رفع الفيديو إلى Cloudinary');
     }
-    const videoUrl = uploadResult.url;
 
     if (!listingId.toString().startsWith('temp_')) {
       await db.query(
