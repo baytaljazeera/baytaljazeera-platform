@@ -1622,6 +1622,45 @@ router.post("/user/generate-advanced-video", authMiddleware, asyncHandler(async 
   }
 }));
 
+// 🎬 توليد عبارات للعرض فوق الصور - Gemini (كلمات جذابة ومعبرة)
+async function generateOverlayPhrases(listingData) {
+  const { title, city, district, price, description } = listingData;
+  const prompt = `أنت كاتب إعلانات عقارية. اكتب 6-8 عبارات قصيرة جداً (2-4 كلمات) للعرض فوق صور فيديو عقاري.
+
+البيانات: العنوان: ${title || 'عقار'} | الموقع: ${city || ''} - ${district || ''} | السعر: ${price || ''}
+
+المطلوب - عبارات جذابة ومعبرة مثل:
+- فرصة لا تعوض
+- موقع ذهبي
+- السعر الآن
+- تشطيبات فاخرة
+- تواصل فوراً
+- استثمار مضمون
+- عقار مميز
+- لا تفوت الفرصة
+
+أرجع قائمة JSON فقط بصيغة: ["عبارة1", "عبارة2", "عبارة3", ...]
+بدون ترقيم أو شرح. عربي فصيح.`;
+
+  if (genAI) {
+    try {
+      const result = await genAI.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: prompt,
+        config: { temperature: 0.8, maxOutputTokens: 200 }
+      });
+      const content = (result.text || "").trim();
+      const match = content.match(/\[[\s\S]*?\]/);
+      if (match) {
+        const arr = JSON.parse(match[0]);
+        const phrases = arr.filter(p => typeof p === 'string' && p.trim().length >= 2).slice(0, 8);
+        if (phrases.length > 0) return phrases;
+      }
+    } catch (e) { console.warn("[Gemini] Overlay phrases failed:", e.message); }
+  }
+  return ["فرصة لا تعوض", "موقع ذهبي", "السعر الآن", "تواصل فوراً", "عقار مميز"];
+}
+
 // 🎬 توليد نص صوتي جذاب للفيديو - Gemini (عبارات راقية مناسبة للنطق الآلي)
 async function generateVoiceoverScript(listingData) {
   const { title, city, district, price, description } = listingData;
@@ -1739,11 +1778,12 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
     };
     const targetId = listingId || `temp_${Date.now()}`;
 
-    // توليد نص ترويجي جذاب بـ Gemini (أو استخدام النص المخصص)
+    // توليد نص ترويجي جذاب وعبارات للعرض فوق الصور بـ Gemini
     const voiceoverScript = customPromoText?.trim() || await generateVoiceoverScript(listingData);
     const voiceOption = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer'].includes(voice) ? voice : 'onyx';
+    const overlayPhrases = await generateOverlayPhrases(listingData);
 
-    return generateListingSlideshow(targetId, cleanImages, listingData, { script: voiceoverScript, voice: voiceOption });
+    return generateListingSlideshow(targetId, cleanImages, listingData, { script: voiceoverScript, voice: voiceOption, overlayPhrases });
   })()
     .then(async (result) => {
       const op = await cache.get(`video_op:${operationId}`) || opData;

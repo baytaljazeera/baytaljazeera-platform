@@ -12,6 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     fonts-noto-color-emoji \
     fonts-noto-cjk \
+    fonts-amiri \
+    fonts-dejavu-core \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

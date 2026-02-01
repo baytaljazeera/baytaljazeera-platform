@@ -11,7 +11,7 @@ const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || 'http://127.0.0.1:808
 
 async function generateListingSlideshow(listingId, imageUrls, listingData, options = {}) {
   try {
-    const { script, voice } = options;
+    const { script, voice, overlayPhrases } = options;
     if (!process.env.PYTHON_WORKER_URL) {
       console.warn('[VideoService] ⚠️ PYTHON_WORKER_URL not set - using localhost. Set to https://bayt-video-worker.onrender.com on Render.');
     }
@@ -36,6 +36,9 @@ async function generateListingSlideshow(listingId, imageUrls, listingData, optio
     };
     if (script && typeof script === 'string' && script.trim()) {
       requestPayload.script = script.trim();
+    }
+    if (Array.isArray(overlayPhrases) && overlayPhrases.length > 0) {
+      requestPayload.overlay_phrases = overlayPhrases.filter(p => typeof p === 'string' && p.trim()).slice(0, 8);
     }
 
     let response;

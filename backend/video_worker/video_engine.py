@@ -22,18 +22,38 @@ except ImportError:
 try:
     from moviepy.editor import (
         ImageClip, AudioFileClip, CompositeAudioClip,
-        concatenate_videoclips
+        CompositeVideoClip, TextClip, concatenate_videoclips
     )
     from moviepy.audio.fx.all import volumex, audio_loop
 except ImportError:
     print("Error: moviepy not installed. Run: pip install moviepy")
     sys.exit(1)
 
+try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+    HAS_ARABIC_SUPPORT = True
+except ImportError:
+    HAS_ARABIC_SUPPORT = False
+
 ASSETS_DIR = Path(__file__).parent / "assets"
 OUTPUT_DIR = Path(tempfile.gettempdir()) / "bayt_videos"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY")) if OpenAI and os.environ.get("OPENAI_API_KEY") else None
+
+
+def format_arabic_for_display(text):
+    """Format Arabic text for correct RTL display in MoviePy."""
+    if not text or not text.strip():
+        return ""
+    if HAS_ARABIC_SUPPORT:
+        try:
+            reshaped = arabic_reshaper.reshape(text.strip())
+            return get_display(reshaped)
+        except Exception:
+            return text.strip()
+    return text.strip()
 
 
 class BaytVideoEngine:
@@ -44,6 +64,7 @@ class BaytVideoEngine:
         self.ambience = settings.get('ambience', 'none')
         self.script = settings.get('script')
         self.voice = settings.get('voice', 'onyx')
+        self.overlay_phrases = settings.get('overlay_phrases') or []
         self.output_filename = f"video_{property_data.get('id', 'temp')}.mp4"
 
     def generate_voiceover(self):
@@ -87,6 +108,26 @@ class BaytVideoEngine:
             
         except Exception as e:
             print(f"[VideoEngine] ❌ Voice generation error: {e}")
+            return None
+
+    def create_text_overlay(self, text, duration, w=1280, h=720):
+        """Create TextClip overlay for Arabic text. Position: bottom-center."""
+        if not text or not text.strip():
+            return None
+        try:
+            display_text = format_arabic_for_display(text.strip())
+            amiri_path = '/usr/share/fonts/truetype/amiri/Amiri-Regular.ttf'
+            dejavu_path = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+            font_path = amiri_path if os.path.exists(amiri_path) else (dejavu_path if os.path.exists(dejavu_path) else None)
+            txt_kw = dict(text=display_text, font_size=48, color='white', stroke_color='black', stroke_width=2)
+            if font_path:
+                txt_kw['font'] = font_path
+            txt_clip = TextClip(**txt_kw)
+            txt_clip = txt_clip.set_duration(duration)
+            txt_clip = txt_clip.set_position(('center', h - 120))
+            return txt_clip
+        except Exception as e:
+            print(f"[VideoEngine] Text overlay skipped ({text[:20]}...): {e}")
             return None
 
     def smart_crop_to_16_9(self, clip):
@@ -134,8 +175,11 @@ class BaytVideoEngine:
 
         clips = []
         duration_per_img = (voice_duration / len(self.images)) + 1.5
+        phrases = self.overlay_phrases if isinstance(self.overlay_phrases, list) else []
         
         for i, img_path in enumerate(self.images):
+            clip = None
+            txt_clip = None
             try:
                 if not os.path.exists(img_path):
                     print(f"[VideoEngine] ⚠️ Image not found: {img_path}")
@@ -151,17 +195,17 @@ class BaytVideoEngine:
                 
                 clip = clip.crossfadein(1.0)
                 
+                # Add text overlay (كلمات جذابة فوق الصورة)
+                if phrases:
+                    phrase = phrases[i % len(phrases)]
+                    txt_clip = self.create_text_overlay(phrase, duration_per_img)
+                    if txt_clip:
+                        clip = CompositeVideoClip([clip, txt_clip])
+                
                 clips.append(clip)
                 
             except Exception as e:
                 print(f"[VideoEngine] ❌ Skipping image {img_path}: {e}")
-            finally:
-                # Free memory after processing each image
-                if 'clip' in dir() and hasattr(clip, 'close'):
-                    try:
-                        clip.close()
-                    except:
-                        pass
 
         if not clips:
             raise ValueError("No valid images found to create video")
@@ -201,17 +245,18 @@ class BaytVideoEngine:
         return str(output_path)
 
 
-def generate_property_video(images, tier="tier1_safwa", ambience="none", property_data=None, script=None, voice="onyx"):
+def generate_property_video(images, tier="tier1_safwa", ambience="none", property_data=None, script=None, voice="onyx", overlay_phrases=None):
     """
     Convenience function for generating property videos.
     Forces high quality tier for best results.
     script: pre-generated voiceover text (from Gemini). If None, generates via GPT.
     voice: OpenAI TTS voice (alloy, ash, coral, echo, fable, onyx, nova, sage, shimmer).
+    overlay_phrases: list of short phrases to display over images (e.g. ["فرصة لا تعوض", "موقع ذهبي"]).
     """
     if property_data is None:
         property_data = {"id": "temp", "title": "عقار مميز", "location": "موقع متميز"}
 
-    settings = {"tier": "tier2_business", "ambience": ambience, "script": script, "voice": voice}
+    settings = {"tier": "tier2_business", "ambience": ambience, "script": script, "voice": voice, "overlay_phrases": overlay_phrases or []}
     engine = BaytVideoEngine(property_data, images, settings)
     return engine.create_video()
 

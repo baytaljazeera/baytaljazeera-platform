@@ -66,7 +66,8 @@ def generate():
             ambience=data.get('ambience', 'none'),
             property_data=data.get('property', {}),
             script=data.get('script'),
-            voice=data.get('voice', 'onyx')
+            voice=data.get('voice', 'onyx'),
+            overlay_phrases=data.get('overlay_phrases', [])
         )
         
         for img in local_images:
