@@ -27,7 +27,6 @@ const {
   FREE_PLAN_ID, getPlanById, getFreePlan, 
   getActivePaidPlanForUser, scheduleListingExpiryReminder 
 } = require("./backend/services/planService");
-const { generateListingSlideshow } = require("./backend/services/videoService");
 const { cache, isRedisConnected } = require("./backend/config/redis");
 const { initializeWorkers, closeAllQueues } = require("./backend/queues");
 const { setupAuth, registerAuthRoutes } = require("./backend/replit_auth");
@@ -344,7 +343,7 @@ process.on("unhandledRejection", (err) =>
 );
 
 // 📦 Plan functions imported from backend/services/planService.js
-// 📦 Video generation imported from backend/services/videoService.js
+// 📦 Video generation via backend/queues (videoQueue) → videoService
 
 // 🔐 Setup Replit OAuth (Google, Apple, GitHub, etc.)
 (async () => {

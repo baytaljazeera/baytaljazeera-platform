@@ -1566,7 +1566,7 @@ export default function NewListingPage() {
         <div 
           className="absolute inset-0 bg-cover bg-center"
           style={{ 
-            backgroundImage: `url('/uploads/listings/1764807083106-931124547.jpeg')`,
+            backgroundImage: imagePreviews[0] ? `url(${imagePreviews[0]})` : "linear-gradient(135deg, #002845 0%, #003356 50%, #002845 100%)",
             filter: 'blur(1px)',
           }}
         />

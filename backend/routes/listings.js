@@ -11,7 +11,7 @@ const {
   getActivePaidPlanForUser, 
   scheduleListingExpiryReminder 
 } = require('../services/planService');
-const { generateListingSlideshow } = require('../services/videoService');
+const { videoQueue } = require('../queues');
 const { uploadImage, uploadVideo, isCloudinaryConfigured } = require('../services/cloudinaryService');
 
 const PROPERTY_IMAGES = {
@@ -1040,8 +1040,8 @@ router.post("/:id/regenerate-video", authMiddlewareWithEmailCheck, asyncHandler(
     status: "processing"
   });
   
-  // Generate video asynchronously (don't block response)
-  generateListingSlideshow(id, imageUrls, {
+  // Add to video queue (or process immediately if queue disabled)
+  const listingData = {
     propertyType: listing.type,
     purpose: listing.purpose,
     city: listing.city,
@@ -1053,10 +1053,10 @@ router.post("/:id/regenerate-video", authMiddlewareWithEmailCheck, asyncHandler(
     bathrooms: listing.bathrooms,
     landArea: listing.land_area,
     buildingArea: listing.building_area
-  }).catch(err => {
-    console.error(`[Regenerate] ❌ Failed for listing ${id}:`, err.message);
-    console.error(`[Regenerate] Stack:`, err.stack);
-    // Status already set to 'failed' in generateListingSlideshow
+  };
+  videoQueue.add('listing-slideshow', { listingId: id, imageUrls, listingData }).catch(err => {
+    console.error(`[Regenerate] ❌ Failed to queue video for listing ${id}:`, err.message);
+    db.query(`UPDATE properties SET video_status = 'failed' WHERE id = $1`, [id]).catch(() => {});
   });
 }));
 
