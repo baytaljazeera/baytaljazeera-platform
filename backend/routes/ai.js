@@ -1684,14 +1684,6 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
   console.log("🚀 [AI Route] Python Engine Request for user:", userId);
   console.log("[Video] Image count:", cleanImages.length);
 
-  // Immediate Response
-  res.json({ 
-    success: true, 
-    message: "جاري إعداد الفيديو السينمائي...", 
-    status: "processing" 
-  });
-
-  // Background Processing
   const { generateListingSlideshow } = require('../services/videoService');
   
   const listingData = { 
@@ -1705,9 +1697,26 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
   
   const targetId = listingId || `temp_${Date.now()}`; 
 
-  generateListingSlideshow(targetId, cleanImages, listingData)
-    .then(result => console.log("[Video] ✅ Background job success:", result.url))
-    .catch(err => console.error("[Video] ❌ Background job failed:", err.message));
+  try {
+    const result = await generateListingSlideshow(targetId, cleanImages, listingData);
+    if (result?.url) {
+      return res.json({ 
+        success: true, 
+        videoUrl: result.url,
+        message: "تم توليد الفيديو بنجاح! 🎬"
+      });
+    }
+    return res.status(500).json({ 
+      success: false, 
+      error: "فشل في توليد الفيديو - لم يتم إرجاع رابط" 
+    });
+  } catch (err) {
+    console.error("[Video] ❌ Generation failed:", err.message);
+    return res.status(500).json({ 
+      success: false, 
+      error: err.message || "فشل في توليد الفيديو. يرجى المحاولة مرة أخرى."
+    });
+  }
 }));
 
 // Background polling function for video generation

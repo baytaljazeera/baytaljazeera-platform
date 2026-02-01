@@ -3548,6 +3548,7 @@ export default function NewListingPage() {
                           <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
                           <span className="font-semibold text-purple-700">جاري توليد الفيديو...</span>
                         </div>
+                        <p className="text-sm text-purple-600/80 mb-2">قد يستغرق دقيقة أو دقيقتين، يرجى الانتظار</p>
                         <div className="w-full bg-purple-200 rounded-full h-2 mb-2">
                           <div className="bg-purple-600 h-2 rounded-full animate-pulse" style={{width: '60%'}}></div>
                         </div>
