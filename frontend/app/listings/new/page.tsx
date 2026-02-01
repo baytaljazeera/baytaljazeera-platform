@@ -252,6 +252,7 @@ export default function NewListingPage() {
   const [videoError, setVideoError] = useState<string | null>(null);
   const [videoPromoText, setVideoPromoText] = useState<{headline: string; subheadline: string; callToAction: string; tagline?: string; priceTag: string | null} | null>(null);
   const [selectedVideoImageIndex, setSelectedVideoImageIndex] = useState<number | null>(null);
+  const [selectedVoice, setSelectedVoice] = useState<string>("onyx");
 
   // Scroll to top button state
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -788,6 +789,7 @@ export default function NewListingPage() {
           hasElevator: form.hasElevator,
           hasGarden: form.hasGarden,
           customPromoText: customPromoText.trim() || undefined,
+          voice: selectedVoice,
           imagePaths: uploadedPaths,
           template: "luxury"
         })
@@ -3679,11 +3681,43 @@ export default function NewListingPage() {
                               <ul className="text-xs text-slate-600 space-y-1 list-disc list-inside">
                                 <li>فيديو سينمائي احترافي بتقنية Veo 2.0</li>
                                 <li>مدة 8 ثوانٍ بتنسيق 16:9</li>
-                                <li>نص ترويجي ذكي مُنشأ تلقائياً</li>
+                                <li>عبارات جاذبة مُنشأة بـ Gemini</li>
+                                <li>اختيار الصوت المناسب لك</li>
                                 <li>مُحسّن للعقارات السكنية والتجارية</li>
                               </ul>
                             </div>
                           </div>
+                        </div>
+                        {/* اختيار الصوت */}
+                        <div className="p-4 bg-white/80 rounded-xl border border-purple-200">
+                          <label className="block text-sm font-semibold text-slate-800 mb-2">اختر صوت التعليق:</label>
+                          <select
+                            value={selectedVoice}
+                            onChange={(e) => setSelectedVoice(e.target.value)}
+                            className="w-full px-4 py-2.5 rounded-lg border border-purple-200 bg-white text-slate-800 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                          >
+                            <option value="onyx">صوت رجالي عميق (Onyx) - الافتراضي</option>
+                            <option value="alloy">صوت محايد (Alloy)</option>
+                            <option value="echo">صوت رجالي هادئ (Echo)</option>
+                            <option value="fable">صوت بريطاني (Fable)</option>
+                            <option value="nova">صوت نسائي ناعم (Nova)</option>
+                            <option value="shimmer">صوت نسائي واضح (Shimmer)</option>
+                            <option value="coral">صوت نسائي دافئ (Coral)</option>
+                            <option value="sage">صوت هادئ (Sage)</option>
+                            <option value="ash">صوت عصري (Ash)</option>
+                          </select>
+                          <p className="text-xs text-slate-500 mt-1.5">يمكنك اختيار الصوت الذي يناسب إعلانك</p>
+                        </div>
+                        {/* نص ترويجي مخصص (اختياري) */}
+                        <div className="p-4 bg-white/80 rounded-xl border border-purple-200">
+                          <label className="block text-sm font-semibold text-slate-800 mb-2">نص ترويجي مخصص (اختياري):</label>
+                          <textarea
+                            value={customPromoText}
+                            onChange={(e) => setCustomPromoText(e.target.value)}
+                            placeholder="اتركه فارغاً لاستخدام عبارات ذكية مُنشأة تلقائياً بـ Gemini. أو اكتب نصك الخاص للتعليق الصوتي."
+                            rows={2}
+                            className="w-full px-4 py-2.5 rounded-lg border border-purple-200 bg-white text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-none"
+                          />
                         </div>
                         <button
                           type="button"

@@ -1622,10 +1622,40 @@ router.post("/user/generate-advanced-video", authMiddleware, asyncHandler(async 
   }
 }));
 
+// 🎬 توليد نص صوتي جذاب للفيديو - Gemini (عبارات راقية مناسبة للنطق الآلي)
+async function generateVoiceoverScript(listingData) {
+  const { title, city, district, price, description } = listingData;
+  const prompt = `أنت كاتب إعلانات عقارية محترف. اكتب نصاً صوتياً قصيراً (20-40 كلمة) للتعليق الصوتي على فيديو عقاري.
+
+البيانات: العنوان: ${title || 'عقار مميز'} | الموقع: ${city || ''} - ${district || ''} | السعر: ${price || ''} | الوصف: ${description || ''}
+
+المطلوب:
+- عبارات جاذبة ومشوقة تلفت الانتباه (مثل: فرصة استثنائية، موقع ذهبي، تشطيبات فاخرة)
+- لغة عربية فصحى واضحة ومناسبة للنطق الآلي - تجنب الكلمات الغريبة
+- جمل قصيرة متدفقة - لا قوائم ولا نقاط
+- بدون أرقام هواتف أو روابط
+- أسلوب راقي يحاكي المذيعين المحترفين
+
+أرجع النص فقط بدون علامات اقتباس أو تشكيل زائد. مثال: "فيلا فاخرة في أرقى أحياء الرياض. تصميم استثنائي وموقع ذهبي. لا تفوت الفرصة."`;
+
+  if (genAI) {
+    try {
+      const result = await genAI.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: prompt,
+        config: { temperature: 0.85, maxOutputTokens: 150 }
+      });
+      const text = (result.text || "").trim().replace(/^["']|["']$/g, "");
+      if (text.length > 10) return text;
+    } catch (e) { console.warn("[Gemini] Voiceover script failed:", e.message); }
+  }
+  return null;
+}
+
 // 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي - Python Engine
 router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description } = req.body;
+  const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description, voice, customPromoText } = req.body;
 
   // Check user's support level - متاح للباقات المميزة فقط
   const planResult = await db.query(
@@ -1697,22 +1727,29 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
   });
 
   // Background processing - avoids request timeout
-  const { generateListingSlideshow } = require('../services/videoService');
-  const listingData = { 
-    title: title || 'عقار مميز', 
-    city, 
-    district, 
-    price, 
-    userId, 
-    description: description || `${propertyType} لل${purpose}` 
-  };
-  const targetId = listingId || `temp_${Date.now()}`;
+  (async () => {
+    const { generateListingSlideshow } = require('../services/videoService');
+    const listingData = { 
+      title: title || 'عقار مميز', 
+      city, 
+      district, 
+      price, 
+      userId, 
+      description: description || `${propertyType} لل${purpose}` 
+    };
+    const targetId = listingId || `temp_${Date.now()}`;
 
-  generateListingSlideshow(targetId, cleanImages, listingData)
+    // توليد نص ترويجي جذاب بـ Gemini (أو استخدام النص المخصص)
+    const voiceoverScript = customPromoText?.trim() || await generateVoiceoverScript(listingData);
+    const voiceOption = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer'].includes(voice) ? voice : 'onyx';
+
+    return generateListingSlideshow(targetId, cleanImages, listingData, { script: voiceoverScript, voice: voiceOption });
+  })()
     .then(async (result) => {
       const op = await cache.get(`video_op:${operationId}`) || opData;
       if (result?.url) {
-        await cache.set(`video_op:${operationId}`, { ...op, status: "completed", videoUrl: result.url }, 600);
+        const promoText = result.promoText || undefined;
+        await cache.set(`video_op:${operationId}`, { ...op, status: "completed", videoUrl: result.url, promoText }, 600);
         console.log("[Video] ✅ Background job success:", result.url);
       } else {
         await cache.set(`video_op:${operationId}`, { ...op, status: "error", error: "لم يتم إرجاع رابط" }, 600);

@@ -68,10 +68,13 @@ function isRedisConnected() {
 
 const memoryCache = new Map();
 
+// Use Redis when client exists - ioredis queues commands before connect.
+// Don't gate on isConnected: on cold start, isConnected is false until 'connect'
+// fires, so we'd always use memory and lose data on restart. Try Redis first.
 const cache = {
   async get(key) {
     const client = getRedisClient();
-    if (client && isConnected) {
+    if (client) {
       try {
         const value = await client.get(key);
         return value ? JSON.parse(value) : null;
@@ -89,7 +92,7 @@ const cache = {
 
   async set(key, value, ttlSeconds = 60) {
     const client = getRedisClient();
-    if (client && isConnected) {
+    if (client) {
       try {
         await client.setex(key, ttlSeconds, JSON.stringify(value));
         return true;
@@ -106,7 +109,7 @@ const cache = {
 
   async del(key) {
     const client = getRedisClient();
-    if (client && isConnected) {
+    if (client) {
       try {
         await client.del(key);
       } catch (err) {
@@ -118,7 +121,7 @@ const cache = {
 
   async invalidatePattern(pattern) {
     const client = getRedisClient();
-    if (client && isConnected) {
+    if (client) {
       try {
         const keys = await client.keys(pattern);
         if (keys.length > 0) {
@@ -137,7 +140,7 @@ const cache = {
 
   async flush() {
     const client = getRedisClient();
-    if (client && isConnected) {
+    if (client) {
       try {
         await client.flushdb();
       } catch (err) {

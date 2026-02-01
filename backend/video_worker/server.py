@@ -64,7 +64,9 @@ def generate():
             images=local_images,
             tier=data.get('tier', 'tier1_safwa'),
             ambience=data.get('ambience', 'none'),
-            property_data=data.get('property', {})
+            property_data=data.get('property', {}),
+            script=data.get('script'),
+            voice=data.get('voice', 'onyx')
         )
         
         for img in local_images:

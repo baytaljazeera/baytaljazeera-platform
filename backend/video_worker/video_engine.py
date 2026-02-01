@@ -42,37 +42,42 @@ class BaytVideoEngine:
         self.images = image_paths
         self.tier = settings.get('tier', 'tier2_business')
         self.ambience = settings.get('ambience', 'none')
+        self.script = settings.get('script')
+        self.voice = settings.get('voice', 'onyx')
         self.output_filename = f"video_{property_data.get('id', 'temp')}.mp4"
 
     def generate_voiceover(self):
-        """Generate AI voiceover using OpenAI TTS."""
+        """Generate AI voiceover using OpenAI TTS. Uses pre-generated script if provided."""
         if not client:
             print("[VideoEngine] Warning: OpenAI not configured, skipping voiceover")
             return None
-            
-        voice = "onyx"
-        
-        prompt = f"""
-        اكتب نصاً إعلانياً قصيراً جداً وجذاباً للعقار التالي:
-        العنوان: {self.data.get('title')}
-        الموقع: {self.data.get('location')}
-        السعر: {self.data.get('price')}
-        الوصف: {self.data.get('details')}
-        المطلوب: جمل تسويقية قصيرة وراقية. باللهجة السعودية البيضاء الراقية.
-        تحذير: لا تذكر أرقام هواتف. ركز على الفخامة والموقع.
-        """
-        
+
+        valid_voices = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer']
+        voice = self.voice if self.voice in valid_voices else 'onyx'
+
+        script = self.script
+        if not script or not script.strip():
+            prompt = f"""
+اكتب نصاً إعلانياً قصيراً (20-40 كلمة) للتعليق الصوتي على فيديو عقاري.
+العنوان: {self.data.get('title')} | الموقع: {self.data.get('location')} | السعر: {self.data.get('price')} | الوصف: {self.data.get('details')}
+المطلوب: عبارات جاذبة ومشوقة. لغة عربية فصحى واضحة ومناسبة للنطق الآلي. جمل قصيرة متدفقة. بدون أرقام هواتف.
+أرجع النص فقط بدون علامات اقتباس.
+"""
+            try:
+                gpt = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                script = gpt.choices[0].message.content
+            except Exception as e:
+                print(f"[VideoEngine] Script generation failed: {e}")
+                script = f"عقار مميز في {self.data.get('location', 'موقع متميز')}. فرصة استثنائية. تواصل الآن."
+
         try:
-            gpt = client.chat.completions.create(
-                model="gpt-4o-mini", 
-                messages=[{"role": "user", "content": prompt}]
-            )
-            script = gpt.choices[0].message.content
-            
             res = client.audio.speech.create(
-                model="tts-1", 
-                voice=voice, 
-                input=script
+                model="tts-1-hd",
+                voice=voice,
+                input=script.strip()
             )
             
             voice_path = OUTPUT_DIR / f"voice_{self.data.get('id', 'temp')}.mp3"
@@ -196,15 +201,17 @@ class BaytVideoEngine:
         return str(output_path)
 
 
-def generate_property_video(images, tier="tier1_safwa", ambience="none", property_data=None):
+def generate_property_video(images, tier="tier1_safwa", ambience="none", property_data=None, script=None, voice="onyx"):
     """
     Convenience function for generating property videos.
     Forces high quality tier for best results.
+    script: pre-generated voiceover text (from Gemini). If None, generates via GPT.
+    voice: OpenAI TTS voice (alloy, ash, coral, echo, fable, onyx, nova, sage, shimmer).
     """
     if property_data is None:
         property_data = {"id": "temp", "title": "عقار مميز", "location": "موقع متميز"}
-    
-    settings = {"tier": "tier2_business", "ambience": ambience}
+
+    settings = {"tier": "tier2_business", "ambience": ambience, "script": script, "voice": voice}
     engine = BaytVideoEngine(property_data, images, settings)
     return engine.create_video()
 

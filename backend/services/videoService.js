@@ -9,8 +9,9 @@ const db = require('../db');
 
 const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || 'http://127.0.0.1:8080';
 
-async function generateListingSlideshow(listingId, imageUrls, listingData) {
+async function generateListingSlideshow(listingId, imageUrls, listingData, options = {}) {
   try {
+    const { script, voice } = options;
     if (!process.env.PYTHON_WORKER_URL) {
       console.warn('[VideoService] ⚠️ PYTHON_WORKER_URL not set - using localhost. Set to https://bayt-video-worker.onrender.com on Render.');
     }
@@ -24,6 +25,7 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
       images: imageUrls, 
       tier: 'tier2_business',
       ambience: 'birds',
+      voice: voice || 'onyx',
       property: {
         id: listingId,
         title: listingData.title,
@@ -32,6 +34,9 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
         details: listingData.description
       }
     };
+    if (script && typeof script === 'string' && script.trim()) {
+      requestPayload.script = script.trim();
+    }
 
     let response;
     const maxRetries = 2;
@@ -84,7 +89,7 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
     
     console.log(`✅ [VideoService] Success! Video URL: ${videoUrl}`);
-    return { success: true, url: videoUrl };
+    return { success: true, url: videoUrl, promoText: script ? { headline: script } : undefined };
 
   } catch (error) {
     const errMsg = error.response?.data?.error || error.message;
