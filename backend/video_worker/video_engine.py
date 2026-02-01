@@ -9,6 +9,11 @@ import sys
 import tempfile
 from pathlib import Path
 
+# Fix for Pillow 10+ (ANTIALIAS removed)
+import PIL.Image
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.Resampling.LANCZOS
+
 try:
     from openai import OpenAI
 except ImportError:
