@@ -243,6 +243,7 @@ export default function NewListingPage() {
   const [tipsResult, setTipsResult] = useState<string | null>(null);
   const [tipsError, setTipsError] = useState<string | null>(null);
   const [videoLoading, setVideoLoading] = useState(false);
+  const [videoElapsedSeconds, setVideoElapsedSeconds] = useState(0);
   const [videoResult, setVideoResult] = useState<string | null>(null);
   const [slideshowLoading, setSlideshowLoading] = useState(false);
   const [slideshowResult, setSlideshowResult] = useState<string | null>(null);
@@ -728,6 +729,7 @@ export default function NewListingPage() {
   // دالة تنفيذ توليد الفيديو
   const executeVideoGeneration = async (imagesToUse: File[]) => {
     setVideoLoading(true);
+    setVideoElapsedSeconds(0);
     setVideoError(null);
     setVideoResult(null);
     setVideoPromoText(null);
@@ -845,6 +847,9 @@ export default function NewListingPage() {
         }
         if (statusData.status === "error") {
           throw new Error(statusData.error || "فشل في توليد الفيديو");
+        }
+        if (statusData.elapsedSeconds != null) {
+          setVideoElapsedSeconds(statusData.elapsedSeconds);
         }
       } catch (err: any) {
         if (err.message?.includes("فشل") || err.message?.includes("غير موجودة")) throw err;
@@ -3587,12 +3592,15 @@ export default function NewListingPage() {
                           <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
                           <span className="font-semibold text-purple-700">جاري توليد الفيديو...</span>
                         </div>
-                        <p className="text-sm text-purple-600/80 mb-2">قد يستغرق 2-8 دقائق (تشغيل الخدمة + التوليد)، يرجى الانتظار</p>
+                        <p className="text-sm text-purple-600/80 mb-2">قد يستغرق حتى 10 دقائق (تشغيل الخدمة + التوليد)، يرجى الانتظار</p>
                         <div className="w-full bg-purple-200 rounded-full h-2 mb-2">
-                          <div className="bg-purple-600 h-2 rounded-full animate-pulse" style={{width: '60%'}}></div>
+                          <div 
+                            className="bg-purple-600 h-2 rounded-full transition-all duration-500" 
+                            style={{width: `${Math.max(5, Math.min((videoElapsedSeconds / 600) * 100, 95))}%`}}
+                          />
                         </div>
                         <p className="text-xs text-purple-600">
-                          قد يستغرق هذا 1-3 دقائق حسب الطلب
+                          الوقت المنقضي: {Math.floor(videoElapsedSeconds / 60)}:{String(videoElapsedSeconds % 60).padStart(2, '0')}
                         </p>
                       </div>
                     ) : videoResult ? (
