@@ -37,6 +37,19 @@ GMAIL_FROM_NAME=بيت الجزيرة
 
 ---
 
+## 🎬 Video Worker (توليد الفيديو)
+
+**مطلوب** لتوليد الفيديو الترويجي بالذكاء الاصطناعي:
+
+```bash
+PYTHON_WORKER_URL=https://bayt-video-worker.onrender.com
+```
+
+- يجب إضافته في **baytaljazeera-backend** (وليس bayt-video-worker)
+- بدون هذا المتغير، الـ backend يحاول الاتصال بـ localhost (يفشل على Render)
+
+---
+
 ## 📋 خطوات الإضافة في Render:
 
 1. اذهب إلى [Render Dashboard](https://dashboard.render.com)

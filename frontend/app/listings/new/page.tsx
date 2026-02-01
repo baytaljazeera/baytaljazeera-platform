@@ -832,6 +832,9 @@ export default function NewListingPage() {
           headers: getAuthHeaders(),
           credentials: "include"
         });
+        if (statusRes.status === 404) {
+          throw new Error("عملية التوليد غير موجودة أو انتهت صلاحيتها");
+        }
         if (!statusRes.ok) continue;
         const statusData = await statusRes.json();
 

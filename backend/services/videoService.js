@@ -11,6 +11,9 @@ const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || 'http://127.0.0.1:808
 
 async function generateListingSlideshow(listingId, imageUrls, listingData) {
   try {
+    if (!process.env.PYTHON_WORKER_URL) {
+      console.warn('[VideoService] ⚠️ PYTHON_WORKER_URL not set - using localhost. Set to https://bayt-video-worker.onrender.com on Render.');
+    }
     console.log(`🎬 [VideoService] Connecting to Python Engine at: ${PYTHON_WORKER_URL}`);
     
     if (!listingId.toString().startsWith('temp_')) {
@@ -45,23 +48,31 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     console.log(`☁️ [VideoService] Uploading to Cloudinary...`);
     const uploadResult = await cloudinaryService.uploadVideo(tempFilePath, `listings/${listingId}/promo`);
 
+    if (!uploadResult.success || !uploadResult.url) {
+      throw new Error(uploadResult.error || 'فشل رفع الفيديو إلى Cloudinary');
+    }
+    const videoUrl = uploadResult.url;
+
     if (!listingId.toString().startsWith('temp_')) {
       await db.query(
         `UPDATE properties SET video_status = 'ready', video_url = $1 WHERE id = $2`,
-        [uploadResult.secure_url, listingId]
+        [videoUrl, listingId]
       );
       try {
-        await db.query(`INSERT INTO listing_media (listing_id, url, type, created_at) VALUES ($1, $2, 'video', NOW())`, [listingId, uploadResult.secure_url]);
+        await db.query(`INSERT INTO listing_media (listing_id, url, type, created_at) VALUES ($1, $2, 'video', NOW())`, [listingId, videoUrl]);
       } catch (e) {}
     }
 
     if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
     
-    console.log(`✅ [VideoService] Success! Video URL: ${uploadResult.secure_url}`);
-    return { success: true, url: uploadResult.secure_url };
+    console.log(`✅ [VideoService] Success! Video URL: ${videoUrl}`);
+    return { success: true, url: videoUrl };
 
   } catch (error) {
-    console.error(`❌ [VideoService] Error connecting to Python Worker:`, error.message);
+    const errMsg = error.response?.data?.error || error.message;
+    const errCode = error.response?.status;
+    console.error(`❌ [VideoService] Python Worker error:`, errMsg, errCode ? `(HTTP ${errCode})` : '');
+    if (error.response?.data) console.error('[VideoService] Response:', JSON.stringify(error.response.data));
     if (!listingId.toString().startsWith('temp_')) {
       await db.query(`UPDATE properties SET video_status = 'failed' WHERE id = $1`, [listingId]);
     }
