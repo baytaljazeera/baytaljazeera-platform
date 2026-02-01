@@ -800,18 +800,54 @@ export default function NewListingPage() {
 
       if (data.success && data.videoUrl) {
         setVideoResult(data.videoUrl);
-        if (data.promoText) {
-          setVideoPromoText(data.promoText);
-        }
-      } else {
-        throw new Error(data.error || "فشل في توليد الفيديو");
+        if (data.promoText) setVideoPromoText(data.promoText);
+        setVideoLoading(false);
+        return;
       }
+
+      // Async: backend returns operationId - poll for status (avoids 502 timeout)
+      if (data.success && data.operationId) {
+        await pollVideoStatus(data.operationId);
+        return;
+      }
+
+      throw new Error(data.error || "فشل في توليد الفيديو");
 
     } catch (err: any) {
       setVideoError(err.message || "حدث خطأ أثناء توليد الفيديو");
     } finally {
       setVideoLoading(false);
     }
+  }
+
+  // Poll for video status when backend returns operationId (async flow)
+  async function pollVideoStatus(operationId: string) {
+    const maxAttempts = 60; // 5 min at 5s interval
+    const pollInterval = 5000;
+
+    for (let i = 0; i < maxAttempts; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, pollInterval));
+      try {
+        const statusRes = await fetch(`${API_URL}/api/ai/user/video-status/${operationId}`, {
+          headers: getAuthHeaders(),
+          credentials: "include"
+        });
+        if (!statusRes.ok) continue;
+        const statusData = await statusRes.json();
+
+        if (statusData.status === "completed" && statusData.videoUrl) {
+          setVideoResult(statusData.videoUrl);
+          if (statusData.promoText) setVideoPromoText(statusData.promoText);
+          return;
+        }
+        if (statusData.status === "error") {
+          throw new Error(statusData.error || "فشل في توليد الفيديو");
+        }
+      } catch (err: any) {
+        if (err.message?.includes("فشل")) throw err;
+      }
+    }
+    throw new Error("استغرق التوليد وقتاً طويلاً. يرجى المحاولة مرة أخرى.");
   }
 
   const propertyTypesForUI = form.usageType === "تجاري"

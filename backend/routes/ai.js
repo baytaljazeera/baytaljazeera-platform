@@ -93,6 +93,8 @@ if (geminiApiKey) {
 
 // In-memory storage for video generation operations with automatic cleanup
 const videoOperations = new Map();
+// Python worker (long-running) - avoids 502 timeout by returning immediately
+const pythonVideoOperations = new Map();
 
 // 🔒 Security: Automatic cleanup of old video operations to prevent memory leaks
 // TTL set to 5 hours to allow long video generation jobs to complete
@@ -113,8 +115,17 @@ function cleanupVideoOperations() {
     }
   }
   
+  for (const [operationId, opData] of pythonVideoOperations.entries()) {
+    const age = now - opData.startedAt;
+    if (age > VIDEO_OPERATION_TTL || 
+        (opData.status !== 'processing' && age > 10 * 60 * 1000)) {
+      pythonVideoOperations.delete(operationId);
+      cleanedCount++;
+    }
+  }
+  
   if (cleanedCount > 0) {
-    console.log(`[AI] Cleaned up ${cleanedCount} old video operations. Active: ${videoOperations.size}`);
+    console.log(`[AI] Cleaned up ${cleanedCount} old video operations. Active: ${videoOperations.size + pythonVideoOperations.size}`);
   }
 }
 
@@ -1684,8 +1695,23 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
   console.log("🚀 [AI Route] Python Engine Request for user:", userId);
   console.log("[Video] Image count:", cleanImages.length);
 
+  // Return immediately to avoid 502 timeout (Render ~60s limit) - frontend polls for status
+  const operationId = `py_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  pythonVideoOperations.set(operationId, {
+    userId,
+    status: "processing",
+    startedAt: Date.now()
+  });
+
+  res.json({ 
+    success: true, 
+    operationId,
+    message: "جاري إعداد الفيديو السينمائي...",
+    status: "processing"
+  });
+
+  // Background processing - avoids request timeout
   const { generateListingSlideshow } = require('../services/videoService');
-  
   const listingData = { 
     title: title || 'عقار مميز', 
     city, 
@@ -1694,29 +1720,24 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
     userId, 
     description: description || `${propertyType} لل${purpose}` 
   };
-  
-  const targetId = listingId || `temp_${Date.now()}`; 
+  const targetId = listingId || `temp_${Date.now()}`;
 
-  try {
-    const result = await generateListingSlideshow(targetId, cleanImages, listingData);
-    if (result?.url) {
-      return res.json({ 
-        success: true, 
-        videoUrl: result.url,
-        message: "تم توليد الفيديو بنجاح! 🎬"
-      });
-    }
-    return res.status(500).json({ 
-      success: false, 
-      error: "فشل في توليد الفيديو - لم يتم إرجاع رابط" 
+  generateListingSlideshow(targetId, cleanImages, listingData)
+    .then(result => {
+      if (result?.url) {
+        const op = pythonVideoOperations.get(operationId);
+        if (op) pythonVideoOperations.set(operationId, { ...op, status: "completed", videoUrl: result.url });
+        console.log("[Video] ✅ Background job success:", result.url);
+      } else {
+        const op = pythonVideoOperations.get(operationId);
+        if (op) pythonVideoOperations.set(operationId, { ...op, status: "error", error: "لم يتم إرجاع رابط" });
+      }
+    })
+    .catch(err => {
+      console.error("[Video] ❌ Background job failed:", err.message);
+      const op = pythonVideoOperations.get(operationId);
+      if (op) pythonVideoOperations.set(operationId, { ...op, status: "error", error: err.message || "فشل في توليد الفيديو" });
     });
-  } catch (err) {
-    console.error("[Video] ❌ Generation failed:", err.message);
-    return res.status(500).json({ 
-      success: false, 
-      error: err.message || "فشل في توليد الفيديو. يرجى المحاولة مرة أخرى."
-    });
-  }
 }));
 
 // Background polling function for video generation
@@ -1820,7 +1841,9 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
   const { operationId } = req.params;
   const userId = req.user.id;
 
-  const opData = videoOperations.get(operationId);
+  // Check Python worker operations first (py_xxx)
+  let opData = operationId.startsWith('py_') ? pythonVideoOperations.get(operationId) : null;
+  if (!opData) opData = videoOperations.get(operationId);
   
   if (!opData) {
     return res.status(404).json({ 
@@ -1836,7 +1859,8 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
 
   if (opData.status === "completed") {
     // Clean up from memory after successful retrieval
-    videoOperations.delete(operationId);
+    if (operationId.startsWith('py_')) pythonVideoOperations.delete(operationId);
+    else videoOperations.delete(operationId);
     return res.json({
       status: "completed",
       success: true,
@@ -1851,7 +1875,8 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
   }
 
   if (opData.status === "error" || opData.status === "timeout") {
-    videoOperations.delete(operationId);
+    if (operationId.startsWith('py_')) pythonVideoOperations.delete(operationId);
+    else videoOperations.delete(operationId);
     return res.json({
       status: "error",
       error: opData.error || "فشل توليد الفيديو"
