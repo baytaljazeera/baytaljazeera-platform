@@ -42,7 +42,7 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
           url: `${PYTHON_WORKER_URL}/generate`,
           data: requestPayload,
           responseType: 'stream',
-          timeout: 300000
+          timeout: 600000
         });
         break;
       } catch (err) {
