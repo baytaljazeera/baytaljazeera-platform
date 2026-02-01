@@ -3,6 +3,7 @@ const router = express.Router();
 const OpenAI = require("openai");
 const { GoogleGenAI } = require("@google/genai");
 const db = require("../db");
+const { cache } = require("../config/redis");
 const { authMiddleware, adminMiddleware } = require("../middleware/auth");
 const { asyncHandler } = require("../middleware/asyncHandler");
 const path = require("path");
@@ -93,11 +94,9 @@ if (geminiApiKey) {
 
 // In-memory storage for video generation operations with automatic cleanup
 const videoOperations = new Map();
-// Python worker (long-running) - avoids 502 timeout by returning immediately
-const pythonVideoOperations = new Map();
+// Python worker ops use Redis/cache (survives backend restart) - TTL 10 min
 
 // 🔒 Security: Automatic cleanup of old video operations to prevent memory leaks
-// TTL set to 5 hours to allow long video generation jobs to complete
 const VIDEO_OPERATION_TTL = 5 * 60 * 60 * 1000; // 5 hours TTL
 const CLEANUP_INTERVAL = 5 * 60 * 1000; // Cleanup every 5 minutes
 
@@ -107,7 +106,6 @@ function cleanupVideoOperations() {
   
   for (const [operationId, opData] of videoOperations.entries()) {
     const age = now - opData.startedAt;
-    // Remove operations older than TTL or completed/failed operations after 10 minutes
     if (age > VIDEO_OPERATION_TTL || 
         (opData.status !== 'processing' && age > 10 * 60 * 1000)) {
       videoOperations.delete(operationId);
@@ -115,17 +113,8 @@ function cleanupVideoOperations() {
     }
   }
   
-  for (const [operationId, opData] of pythonVideoOperations.entries()) {
-    const age = now - opData.startedAt;
-    if (age > VIDEO_OPERATION_TTL || 
-        (opData.status !== 'processing' && age > 10 * 60 * 1000)) {
-      pythonVideoOperations.delete(operationId);
-      cleanedCount++;
-    }
-  }
-  
   if (cleanedCount > 0) {
-    console.log(`[AI] Cleaned up ${cleanedCount} old video operations. Active: ${videoOperations.size + pythonVideoOperations.size}`);
+    console.log(`[AI] Cleaned up ${cleanedCount} old video operations. Active: ${videoOperations.size}`);
   }
 }
 
@@ -1697,11 +1686,8 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
 
   // Return immediately to avoid 502 timeout (Render ~60s limit) - frontend polls for status
   const operationId = `py_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-  pythonVideoOperations.set(operationId, {
-    userId,
-    status: "processing",
-    startedAt: Date.now()
-  });
+  const opData = { userId, status: "processing", startedAt: Date.now() };
+  await cache.set(`video_op:${operationId}`, opData, 600);
 
   res.json({ 
     success: true, 
@@ -1723,20 +1709,19 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
   const targetId = listingId || `temp_${Date.now()}`;
 
   generateListingSlideshow(targetId, cleanImages, listingData)
-    .then(result => {
+    .then(async (result) => {
+      const op = await cache.get(`video_op:${operationId}`) || opData;
       if (result?.url) {
-        const op = pythonVideoOperations.get(operationId);
-        if (op) pythonVideoOperations.set(operationId, { ...op, status: "completed", videoUrl: result.url });
+        await cache.set(`video_op:${operationId}`, { ...op, status: "completed", videoUrl: result.url }, 600);
         console.log("[Video] ✅ Background job success:", result.url);
       } else {
-        const op = pythonVideoOperations.get(operationId);
-        if (op) pythonVideoOperations.set(operationId, { ...op, status: "error", error: "لم يتم إرجاع رابط" });
+        await cache.set(`video_op:${operationId}`, { ...op, status: "error", error: "لم يتم إرجاع رابط" }, 600);
       }
     })
-    .catch(err => {
+    .catch(async (err) => {
       console.error("[Video] ❌ Background job failed:", err.message);
-      const op = pythonVideoOperations.get(operationId);
-      if (op) pythonVideoOperations.set(operationId, { ...op, status: "error", error: err.message || "فشل في توليد الفيديو" });
+      const op = await cache.get(`video_op:${operationId}`) || opData;
+      await cache.set(`video_op:${operationId}`, { ...op, status: "error", error: err.message || "فشل في توليد الفيديو" }, 600);
     });
 }));
 
@@ -1841,13 +1826,13 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
   const { operationId } = req.params;
   const userId = req.user.id;
 
-  // Check Python worker operations first (py_xxx)
-  let opData = operationId.startsWith('py_') ? pythonVideoOperations.get(operationId) : null;
+  // Check Python worker operations (py_xxx) - stored in Redis/cache (survives restart)
+  let opData = operationId.startsWith('py_') ? await cache.get(`video_op:${operationId}`) : null;
   if (!opData) opData = videoOperations.get(operationId);
   
   if (!opData) {
     return res.status(404).json({ 
-      error: "عملية التوليد غير موجودة",
+      error: "عملية التوليد غير موجودة أو انتهت صلاحيتها. يرجى المحاولة مرة أخرى.",
       status: "not_found"
     });
   }
@@ -1858,8 +1843,7 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
   }
 
   if (opData.status === "completed") {
-    // Clean up from memory after successful retrieval
-    if (operationId.startsWith('py_')) pythonVideoOperations.delete(operationId);
+    if (operationId.startsWith('py_')) await cache.del(`video_op:${operationId}`);
     else videoOperations.delete(operationId);
     return res.json({
       status: "completed",
@@ -1875,7 +1859,7 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
   }
 
   if (opData.status === "error" || opData.status === "timeout") {
-    if (operationId.startsWith('py_')) pythonVideoOperations.delete(operationId);
+    if (operationId.startsWith('py_')) await cache.del(`video_op:${operationId}`);
     else videoOperations.delete(operationId);
     return res.json({
       status: "error",

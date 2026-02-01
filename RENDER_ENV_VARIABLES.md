@@ -48,6 +48,16 @@ PYTHON_WORKER_URL=https://bayt-video-worker.onrender.com
 - يجب إضافته في **baytaljazeera-backend** (وليس bayt-video-worker)
 - بدون هذا المتغير، الـ backend يحاول الاتصال بـ localhost (يفشل على Render)
 
+### Redis (لتجنب خطأ 404 عند إعادة تشغيل الـ backend)
+
+```bash
+UPSTASH_REDIS_URL=rediss://default:xxx@xxx.upstash.io:6379
+```
+
+- **مهم لتوليد الفيديو:** بدون Redis، حالة الفيديو تُخزّن في الذاكرة وتُفقد عند إعادة تشغيل الـ backend → خطأ 404
+- مع Redis، الحالة تُخزّن وتستمر حتى بعد إعادة التشغيل
+- يمكن الحصول على Redis مجاني من [Upstash](https://upstash.com)
+
 ---
 
 ## 📋 خطوات الإضافة في Render:
