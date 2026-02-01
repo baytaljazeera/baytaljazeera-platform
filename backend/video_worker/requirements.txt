@@ -2,8 +2,8 @@ flask>=3.0.0
 gunicorn>=21.2.0
 openai>=1.0.0
 moviepy==1.0.3
-pillow>=10.0.0
-numpy<2.0.0
+pillow<10.0.0
+numpy<1.24.0
 imageio>=2.31.0
 imageio-ffmpeg>=0.4.8
 requests>=2.31.0
