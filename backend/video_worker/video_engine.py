@@ -79,10 +79,10 @@ class BaytVideoEngine:
         script = self.script
         if not script or not script.strip():
             prompt = f"""
-اكتب نصاً إعلانياً قصيراً (20-40 كلمة) للتعليق الصوتي على فيديو عقاري.
+اكتب نصاً إعلانياً للتعليق الصوتي على فيديو عقاري. المدة المستهدفة: 35-45 ثانية (70-100 كلمة).
 العنوان: {self.data.get('title')} | الموقع: {self.data.get('location')} | السعر: {self.data.get('price')} | الوصف: {self.data.get('details')}
-المطلوب: عبارات جاذبة ومشوقة. لغة عربية فصحى واضحة ومناسبة للنطق الآلي. جمل قصيرة متدفقة. بدون أرقام هواتف.
-أرجع النص فقط بدون علامات اقتباس.
+المطلوب: نص طويل يكفي 35-45 ثانية. عبارات جاذبة ومشوقة. لغة عربية فصحى واضحة. جمل متدفقة. بدون أرقام هواتف.
+أرجع النص فقط بدون علامات اقتباس. اجعله طويلاً.
 """
             try:
                 gpt = client.chat.completions.create(
@@ -155,26 +155,33 @@ class BaytVideoEngine:
         audio_clips = []
         voice_duration = 0
         
+        MIN_VIDEO_DURATION = 35  # حد أدنى 35 ثانية
+        MIN_SEC_PER_IMAGE = 5    # كل صورة على الأقل 5 ثوانٍ
+
         if voice_path and os.path.exists(voice_path):
             vc = AudioFileClip(voice_path)
             voice_duration = vc.duration
             audio_clips.append(vc)
             print(f"[VideoEngine] Voice duration: {voice_duration:.1f}s")
         else:
-            voice_duration = max(len(self.images) * 4, 15)
+            voice_duration = max(len(self.images) * MIN_SEC_PER_IMAGE, MIN_VIDEO_DURATION)
             print(f"[VideoEngine] No voice, using default duration: {voice_duration}s")
+
+        # مدة الفيديو: الأطول بين الصوت و 35 ثانية، مع ضمان عرض كل الصور
+        total_duration = max(voice_duration, MIN_VIDEO_DURATION, len(self.images) * MIN_SEC_PER_IMAGE)
+        duration_per_img = total_duration / len(self.images)
+        print(f"[VideoEngine] Total duration: {total_duration:.1f}s, {duration_per_img:.1f}s per image")
 
         if self.ambience != 'none':
             sound_file = ASSETS_DIR / f"{self.ambience}.mp3"
             if sound_file.exists():
                 bg = AudioFileClip(str(sound_file))
-                bg = audio_loop(bg, duration=voice_duration + 3)
+                bg = audio_loop(bg, duration=total_duration + 5)
                 bg = bg.fx(volumex, 0.15)
                 audio_clips.append(bg)
                 print(f"[VideoEngine] Added ambience: {self.ambience}")
 
         clips = []
-        duration_per_img = (voice_duration / len(self.images)) + 1.5
         phrases = self.overlay_phrases if isinstance(self.overlay_phrases, list) else []
         
         for i, img_path in enumerate(self.images):
@@ -214,8 +221,8 @@ class BaytVideoEngine:
         
         final_video = concatenate_videoclips(clips, method="compose", padding=-1)
         
-        if final_video.duration > voice_duration:
-            final_video = final_video.subclip(0, voice_duration)
+        if final_video.duration > total_duration:
+            final_video = final_video.subclip(0, total_duration)
         
         if audio_clips:
             final_video = final_video.set_audio(CompositeAudioClip(audio_clips))

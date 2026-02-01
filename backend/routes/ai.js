@@ -1664,25 +1664,26 @@ async function generateOverlayPhrases(listingData) {
 // 🎬 توليد نص صوتي جذاب للفيديو - Gemini (عبارات راقية مناسبة للنطق الآلي)
 async function generateVoiceoverScript(listingData) {
   const { title, city, district, price, description } = listingData;
-  const prompt = `أنت كاتب إعلانات عقارية محترف. اكتب نصاً صوتياً قصيراً (20-40 كلمة) للتعليق الصوتي على فيديو عقاري.
+  const prompt = `أنت كاتب إعلانات عقارية محترف. اكتب نصاً صوتياً للتعليق الصوتي على فيديو عقاري. المدة المستهدفة: 35-45 ثانية نطق (حوالي 70-100 كلمة).
 
 البيانات: العنوان: ${title || 'عقار مميز'} | الموقع: ${city || ''} - ${district || ''} | السعر: ${price || ''} | الوصف: ${description || ''}
 
 المطلوب:
-- عبارات جاذبة ومشوقة تلفت الانتباه (مثل: فرصة استثنائية، موقع ذهبي، تشطيبات فاخرة)
-- لغة عربية فصحى واضحة ومناسبة للنطق الآلي - تجنب الكلمات الغريبة
-- جمل قصيرة متدفقة - لا قوائم ولا نقاط
+- نص طويل يكفي ليملأ 35-45 ثانية (70-100 كلمة تقريباً)
+- عبارات جاذبة ومشوقة (فرصة استثنائية، موقع ذهبي، تشطيبات فاخرة، استثمار مضمون...)
+- لغة عربية فصحى واضحة ومناسبة للنطق الآلي
+- جمل متدفقة - فقرات قصيرة وليست قوائم
 - بدون أرقام هواتف أو روابط
 - أسلوب راقي يحاكي المذيعين المحترفين
 
-أرجع النص فقط بدون علامات اقتباس أو تشكيل زائد. مثال: "فيلا فاخرة في أرقى أحياء الرياض. تصميم استثنائي وموقع ذهبي. لا تفوت الفرصة."`;
+أرجع النص فقط بدون علامات اقتباس. اجعله طويلاً ليملأ 35-45 ثانية.`;
 
   if (genAI) {
     try {
       const result = await genAI.models.generateContent({
         model: "gemini-2.0-flash",
         contents: prompt,
-        config: { temperature: 0.85, maxOutputTokens: 150 }
+        config: { temperature: 0.85, maxOutputTokens: 400 }
       });
       const text = (result.text || "").trim().replace(/^["']|["']$/g, "");
       if (text.length > 10) return text;
@@ -1931,7 +1932,7 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
       message: opData.useImageToVideo 
         ? "تم تحويل صورتك إلى فيديو سينمائي بنجاح! 🎬" 
         : "تم توليد الفيديو الدعائي بنجاح!",
-      duration: "8 ثواني"
+      duration: "35-45 ثانية"
     });
   }
 

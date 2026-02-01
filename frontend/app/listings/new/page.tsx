@@ -3680,7 +3680,7 @@ export default function NewListingPage() {
                               <p className="text-sm font-semibold text-slate-800 mb-1">مميزات الفيديو بالذكاء الاصطناعي:</p>
                               <ul className="text-xs text-slate-600 space-y-1 list-disc list-inside">
                                 <li>فيديو سينمائي احترافي بتقنية Veo 2.0</li>
-                                <li>مدة 8 ثوانٍ بتنسيق 16:9</li>
+                                <li>مدة 35-45 ثانية بتنسيق 16:9</li>
                                 <li>عبارات جاذبة مُنشأة بـ Gemini</li>
                                 <li>اختيار الصوت المناسب لك</li>
                                 <li>مُحسّن للعقارات السكنية والتجارية</li>
