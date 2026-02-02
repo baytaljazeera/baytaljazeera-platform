@@ -22,7 +22,6 @@ const DEFAULT_CITIES = [
   { title: "الطائف", img: "/taif.jpg" },
   { title: "الرياض", img: "/riyadh.jpg" },
 ];
-];
 
 // ربط أسماء المدن بالصور الافتراضية (للصور المرفوعة من لوحة الإدارة)
 const CITY_IMG_MAP: Record<string, string> = {
