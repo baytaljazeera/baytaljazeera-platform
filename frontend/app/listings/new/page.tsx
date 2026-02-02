@@ -1,6 +1,7 @@
 "use client";
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { useAuthStore } from "@/lib/stores/authStore";
 
 export const dynamic = "force-dynamic";
 
@@ -162,6 +163,7 @@ const STEPS = [
 
 export default function NewListingPage() {
   const router = useRouter();
+  const { token: authToken } = useAuthStore();
 
   const [user, setUser] = useState<User | null>(null);
   const [plan, setPlan] = useState<PlanInfo | null>(null);
@@ -742,8 +744,8 @@ export default function NewListingPage() {
         formData.append('images', img);
       });
 
-      // Get token for authorization (can't use getAuthHeaders with FormData)
-      const token = typeof localStorage !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('oauth_token')) : null;
+      // توكن من authStore أو localStorage (لتفادي 403)
+      const token = authToken || (typeof localStorage !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('oauth_token')) : null);
       const uploadHeaders: HeadersInit = {};
       if (token) {
         uploadHeaders['Authorization'] = `Bearer ${token}`;
@@ -768,10 +770,14 @@ export default function NewListingPage() {
         throw new Error("لم يتم رفع أي صور");
       }
 
-      // Step 2: Generate video using FFmpeg
+      // Step 2: Generate video - توكن من authStore كـ fallback
+      const videoHeaders = getAuthHeaders() as Record<string, string>;
+      if (!videoHeaders['Authorization'] && token) {
+        videoHeaders['Authorization'] = `Bearer ${token}`;
+      }
       const res = await fetch(`${API_URL}/api/ai/user/generate-video`, {
         method: "POST",
-        headers: getAuthHeaders(),
+        headers: videoHeaders,
         credentials: "include",
         body: JSON.stringify({
           propertyType: form.propertyType,
@@ -828,12 +834,15 @@ export default function NewListingPage() {
   async function pollVideoStatus(operationId: string) {
     const maxAttempts = 120; // 10 min at 5s interval (cold start + render can take 6-8 min)
     const pollInterval = 5000;
+    const pollToken = authToken || (typeof localStorage !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('oauth_token')) : null);
+    const pollHeaders = getAuthHeaders() as Record<string, string>;
+    if (!pollHeaders['Authorization'] && pollToken) pollHeaders['Authorization'] = `Bearer ${pollToken}`;
 
     for (let i = 0; i < maxAttempts; i++) {
       if (i > 0) await new Promise(r => setTimeout(r, pollInterval));
       try {
         const statusRes = await fetch(`${API_URL}/api/ai/user/video-status/${operationId}`, {
-          headers: getAuthHeaders(),
+          headers: pollHeaders,
           credentials: "include"
         });
         if (statusRes.status === 404) {
