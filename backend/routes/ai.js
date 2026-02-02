@@ -1661,23 +1661,26 @@ async function generateOverlayPhrases(listingData) {
   return ["فرصة لا تعوض", "موقع ذهبي", "السعر الآن", "تواصل فوراً", "عقار مميز"];
 }
 
-// 🎬 توليد نص صوتي جذاب للفيديو - Gemini (عبارات راقية مناسبة للنطق الآلي)
+// 🎬 توليد نص صوتي جذاب للفيديو - Gemini (عبارات راقية مُشكّلة للنطق الآلي)
 async function generateVoiceoverScript(listingData) {
   const { title, city, district, price, description } = listingData;
   const prompt = `أنت كاتب إعلانات عقارية محترف. اكتب نصاً صوتياً للتعليق الصوتي على فيديو عقاري. المدة المستهدفة: 35-45 ثانية نطق (حوالي 70-100 كلمة).
 
 البيانات: العنوان: ${title || 'عقار مميز'} | الموقع: ${city || ''} - ${district || ''} | السعر: ${price || ''} | الوصف: ${description || ''}
 
-المطلوب:
+المطلوب (مهم جداً للنطق الآلي):
+- اكتب النص بالتشكيل الكامل (الحركات: الضمة، الكسرة، الفتحة، السكون، الشدة، التنوين) على كل كلمة
+- التشكيل يساعد محرك النطق الآلي على قراءة الكلمات بشكل صحيح ويقلل الأخطاء والكلمات الغريبة
+- مثال: "فُرْصَةٌ اسْتِثْنَائِيَّةٌ" بدلاً من "فرصة استثنائية"
 - نص طويل يكفي ليملأ 35-45 ثانية (70-100 كلمة تقريباً)
 - عبارات جاذبة ومشوقة (فرصة استثنائية، موقع ذهبي، تشطيبات فاخرة، استثمار مضمون...)
 - لغة عربية فصحى واضحة - استخدم فواصل وترقيم واضح (، .) لتسهيل النطق الآلي
-- جمل قصيرة متقطعة بفواصل - هذا يحسّن النطق الآلي للعربية
-- تجنب الكلمات المعقدة - اختر كلمات بسيطة وواضحة
+- جمل قصيرة متقطعة بفواصل
+- تجنب الكلمات المعقدة أو النادرة - اختر كلمات بسيطة ومألوفة لتقليل النطق الغريب
 - بدون أرقام هواتف أو روابط
 - أسلوب راقي
 
-أرجع النص فقط بدون علامات اقتباس. اجعله طويلاً. استخدم الفواصل بين الجمل.`;
+أرجع النص مُشكّلاً بالكامل بدون علامات اقتباس. اجعله طويلاً. استخدم الفواصل بين الجمل.`;
 
   if (genAI) {
     try {
@@ -1691,6 +1694,25 @@ async function generateVoiceoverScript(listingData) {
     } catch (e) { console.warn("[Gemini] Voiceover script failed:", e.message); }
   }
   return null;
+}
+
+// 🎬 إضافة التشكيل للنص المخصص - يحسّن النطق الآلي ويقلل الكلمات الغريبة
+async function addTashkeelToText(text) {
+  if (!text || !text.trim() || !genAI) return text;
+  try {
+    const prompt = `أضف التشكيل الكامل (الحركات: الضمة، الكسرة، الفتحة، السكون، الشدة، التنوين) لهذا النص العربي. أرجع النص مُشكّلاً فقط بدون أي شرح أو علامات اقتباس.
+
+النص:
+${text.trim()}`;
+    const result = await genAI.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: prompt,
+      config: { temperature: 0.3, maxOutputTokens: 500 }
+    });
+    const diacritized = (result.text || "").trim().replace(/^["']|["']$/g, "");
+    if (diacritized.length > 5) return diacritized;
+  } catch (e) { console.warn("[Gemini] Tashkeel failed:", e.message); }
+  return text;
 }
 
 // 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي - Python Engine
@@ -1781,7 +1803,11 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
     const targetId = listingId || `temp_${Date.now()}`;
 
     // توليد نص ترويجي جذاب وعبارات للعرض فوق الصور بـ Gemini
-    const voiceoverScript = customPromoText?.trim() || await generateVoiceoverScript(listingData);
+    let voiceoverScript = customPromoText?.trim() || await generateVoiceoverScript(listingData);
+    // إضافة التشكيل للنص المخصص لتحسين النطق الآلي وتقليل الكلمات الغريبة
+    if (voiceoverScript && customPromoText?.trim()) {
+      voiceoverScript = await addTashkeelToText(voiceoverScript);
+    }
     const voiceOption = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer'].includes(voice) ? voice : 'onyx';
     const overlayPhrases = await generateOverlayPhrases(listingData);
 
