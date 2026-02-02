@@ -3,22 +3,20 @@
 
 FROM python:3.11-slim
 
-# Install system dependencies
+# Install system dependencies (fonts-dejavu-core supports Arabic)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     imagemagick \
     libmagickwand-dev \
     libsm6 \
     libxext6 \
-    fonts-noto-color-emoji \
-    fonts-noto-cjk \
-    fonts-amiri \
     fonts-dejavu-core \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure ImageMagick policy for video processing
-RUN sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml || true
+RUN sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml 2>/dev/null || \
+    sed -i 's/none/read,write/g' /etc/ImageMagick-7/policy.xml 2>/dev/null || true
 
 # Set working directory
 WORKDIR /app

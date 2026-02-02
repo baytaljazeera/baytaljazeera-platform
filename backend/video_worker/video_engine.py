@@ -120,9 +120,8 @@ class BaytVideoEngine:
             return None
         try:
             display_text = format_arabic_for_display(text.strip())
-            amiri_path = '/usr/share/fonts/truetype/amiri/Amiri-Regular.ttf'
             dejavu_path = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
-            font_path = amiri_path if os.path.exists(amiri_path) else (dejavu_path if os.path.exists(dejavu_path) else None)
+            font_path = dejavu_path if os.path.exists(dejavu_path) else None
             txt_kw = dict(text=display_text, font_size=48, color='white', stroke_color='black', stroke_width=2)
             if font_path:
                 txt_kw['font'] = font_path

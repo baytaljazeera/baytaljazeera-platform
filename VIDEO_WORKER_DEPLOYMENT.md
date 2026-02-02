@@ -1,19 +1,20 @@
 # التحقق من نشر bayt-video-worker على Render
 
 ## المشكلة
-إذا كان الفيديو ما زال قصيراً وسريعاً رغم التحديثات، قد يكون **bayt-video-worker** لم يُحدَّث على Render.
+إذا كان النشر يفشل مع "Exited with status 1 while building"، تحقق من الإعدادات التالية.
 
-## خطوات التحقق
+## ⚠️ إعداد مهم جداً: Root Directory
 
-### 1. التحقق من إعدادات bayt-video-worker في Render
+**bayt-video-worker** يجب أن يستخدم مجلد مختلف عن الـ backend!
 
 1. اذهب إلى [dashboard.render.com](https://dashboard.render.com)
-2. اختر **bayt-video-worker** (خدمة الفيديو)
-3. اذهب إلى **Settings**
-4. تحقق من:
-   - **Root Directory**: يجب أن يكون `backend/video_worker` (أو فارغ إذا كان Dockerfile في الجذر)
-   - **Branch**: `main`
-   - **Auto-Deploy**: مفعّل
+2. اختر **bayt-video-worker**
+3. اذهب إلى **Settings** → **Build & Deploy**
+4. **Root Directory**: ضع `backend/video_worker` بالضبط
+   - بدون هذا، Render سيستخدم Dockerfile الخاص بالـ backend (Node.js) وسيفشل البناء!
+5. **Dockerfile Path**: اتركه فارغاً أو `Dockerfile` (سيستخدم backend/video_worker/Dockerfile)
+6. **Branch**: `main`
+7. **Auto-Deploy**: مفعّل
 
 ### 2. إعادة النشر يدوياً
 
