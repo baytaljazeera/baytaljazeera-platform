@@ -1156,9 +1156,7 @@ function SearchPage() {
           selectedCity={filters.city}
           selectedListingId={activeListingId}
           onSelectListing={(id) => setActiveListingId(id)}
-          onToggleFavorite={(listingId, isFavorite) => {
-            toggleFavorite(listingId, isFavorite);
-          }}
+          onToggleFavorite={(listingId, isFavorite) => toggleFavorite(listingId, isFavorite)}
           showFavoriteButton={true}
         />
 
@@ -1264,14 +1262,14 @@ function SearchPage() {
           </div>
         )}
 
-        {/* زر العودة للقائمة */}
-        <button
-          onClick={() => window.location.href = '/search?view=list'}
-          className="absolute top-4 right-4 z-50 flex items-center gap-2 px-4 py-2.5 bg-white/95 backdrop-blur text-[#002845] rounded-full shadow-lg active:scale-95 transition font-bold text-sm border border-slate-200"
+        {/* زر العودة للقائمة - أسفل يسار لتجنب التداخل مع البرفيو */}
+        <Link
+          href="/search?view=list"
+          className="absolute bottom-4 left-4 z-40 flex items-center gap-1.5 px-3 py-2 bg-white/90 backdrop-blur text-[#002845] rounded-xl shadow-md hover:bg-white active:scale-95 transition text-xs font-semibold border border-slate-200/80"
         >
           <List className="w-4 h-4" />
-          <span className="lg:inline hidden">القائمة</span>
-        </button>
+          <span>القائمة</span>
+        </Link>
       </div>
     );
   } else {

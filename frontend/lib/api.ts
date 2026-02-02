@@ -1,7 +1,15 @@
 import Cookies from 'js-cookie';
 
 // Production fallback for Vercel deployment
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://baytaljazeera-backend.onrender.com';
+// ⚠️ تأكد أن NEXT_PUBLIC_API_URL على Vercel = https://baytaljazeera-backend.onrender.com (مع d في backend)
+const CORRECT_API = 'https://baytaljazeera-backend.onrender.com';
+let _url = (process.env.NEXT_PUBLIC_API_URL || '').trim() || CORRECT_API;
+// إصلاح خطأ شائع: baytaljazeera-backen (بدون d) يسبب ERR_NAME_NOT_RESOLVED
+if (_url.includes('baytaljazeera-backen') && !_url.includes('baytaljazeera-backend')) {
+  _url = CORRECT_API;
+  if (typeof console !== 'undefined') console.warn('[API] تصحيح عنوان خاطئ: baytaljazeera-backen → baytaljazeera-backend');
+}
+export const API_URL = _url;
 
 // Helper function to get API base URL
 export const getApiBase = (): string => API_URL;
