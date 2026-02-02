@@ -177,14 +177,10 @@ router.get('/google/callback',
   })
 );
 
-// Apple OAuth (simplified - requires Apple Developer account)
-// Note: Apple Sign In requires more complex setup with private keys
-// For now, we'll add a placeholder route
+// Apple OAuth - إعادة توجيه لصفحة تسجيل الدخول بدلاً من JSON
 router.get('/apple', (req, res) => {
-  res.status(501).json({ 
-    error: 'Apple Sign In غير متاح حالياً. قريباً إن شاء الله.',
-    errorEn: 'Apple Sign In is not available yet. Coming soon.'
-  });
+  const frontendUrl = process.env.FRONTEND_URL || 'https://baytaljazeera.com';
+  res.redirect(`${frontendUrl}/login?apple=coming-soon`);
 });
 
 // OAuth status endpoint
