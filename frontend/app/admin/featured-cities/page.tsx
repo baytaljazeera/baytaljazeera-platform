@@ -1,9 +1,10 @@
 "use client";
 
-import { getAuthHeaders, getAuthHeadersForFormData } from "@/lib/api";
+import { API_URL, getAuthHeaders, getAuthHeadersForFormData } from "@/lib/api";
+import { useAuthStore } from "@/lib/stores/authStore";
 
-// مسار نسبي في المتصفح → نفس النطاق → الكوكيز والتوكن يُرسلان عبر Next.js rewrites
-const getApiPath = () => (typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "https://baytaljazeera-backend.onrender.com"));
+// استخدام الـ backend مباشرة مع التوكن من authStore (لتفادي مشاكل الـ proxy)
+const getApiBase = () => API_URL;
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,7 @@ const defaultFormData = {
 };
 
 export default function FeaturedCitiesPage() {
+  const { token: authToken } = useAuthStore();
   const [cities, setCities] = useState<FeaturedCity[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -63,10 +65,22 @@ export default function FeaturedCitiesPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // توكن من authStore أو getAuthHeaders (لطلبات cross-origin)
+  const getHeadersForFormData = () => {
+    const h = getAuthHeadersForFormData() as Record<string, string>;
+    if (!h.Authorization && authToken) h.Authorization = `Bearer ${authToken}`;
+    return h;
+  };
+  const getHeadersWithAuth = () => {
+    const h = getAuthHeaders() as Record<string, string>;
+    if (!h.Authorization && authToken) h.Authorization = `Bearer ${authToken}`;
+    return h;
+  };
+
   const fetchCities = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${getApiPath()}/api/featured-cities`, {
+      const res = await fetch(`${getApiBase()}/api/featured-cities`, {
         credentials: "include",
         headers: getAuthHeaders(),
       });
@@ -87,10 +101,10 @@ export default function FeaturedCitiesPage() {
 
   const toggleActive = async (id: number) => {
     try {
-      const res = await fetch(`${getApiPath()}/api/featured-cities/${id}/toggle`, {
+      const res = await fetch(`${getApiBase()}/api/featured-cities/${id}/toggle`, {
         method: "PATCH",
         credentials: "include",
-        headers: getAuthHeaders(),
+        headers: getHeadersWithAuth(),
       });
       if (res.ok) {
         fetchCities();
@@ -104,10 +118,10 @@ export default function FeaturedCitiesPage() {
     if (!confirm("هل أنت متأكد من حذف هذه المدينة؟")) return;
     
     try {
-      const res = await fetch(`${getApiPath()}/api/featured-cities/${id}`, {
+      const res = await fetch(`${getApiBase()}/api/featured-cities/${id}`, {
         method: "DELETE",
         credentials: "include",
-        headers: getAuthHeaders(),
+        headers: getHeadersWithAuth(),
       });
       if (res.ok) {
         fetchCities();
@@ -159,13 +173,13 @@ export default function FeaturedCitiesPage() {
       }
 
       const url = editingId 
-        ? `${getApiPath()}/api/featured-cities/${editingId}`
-        : `${getApiPath()}/api/featured-cities`;
+        ? `${getApiBase()}/api/featured-cities/${editingId}`
+        : `${getApiBase()}/api/featured-cities`;
       
       const res = await fetch(url, {
         method: editingId ? "PUT" : "POST",
         credentials: "include",
-        headers: getAuthHeadersForFormData(),
+        headers: getHeadersForFormData(),
         body: formDataToSend,
       });
 
