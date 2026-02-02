@@ -1932,7 +1932,7 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
       message: opData.useImageToVideo 
         ? "تم تحويل صورتك إلى فيديو سينمائي بنجاح! 🎬" 
         : "تم توليد الفيديو الدعائي بنجاح!",
-      duration: "35-45 ثانية"
+      duration: "40-90 ثانية"
     });
   }
 

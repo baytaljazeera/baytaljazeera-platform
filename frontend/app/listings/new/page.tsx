@@ -3553,7 +3553,7 @@ export default function NewListingPage() {
                             <p className="text-xs text-emerald-800 flex items-start gap-2">
                               <span className="text-emerald-600 font-bold">💡 ملاحظة:</span>
                               <span>
-                                عدد صور أقل يعني سرعة في الإنجاز. ننصح باختيار 3-8 صور للحصول على أفضل نتيجة.
+                                حتى 15 صورة. كل صورة تُعرض 6 ثوانٍ. عدد أقل = إنجاز أسرع.
                               </span>
                             </p>
                           </div>
@@ -3680,7 +3680,7 @@ export default function NewListingPage() {
                               <p className="text-sm font-semibold text-slate-800 mb-1">مميزات الفيديو بالذكاء الاصطناعي:</p>
                               <ul className="text-xs text-slate-600 space-y-1 list-disc list-inside">
                                 <li>فيديو سينمائي احترافي بتقنية Veo 2.0</li>
-                                <li>مدة 35-45 ثانية بتنسيق 16:9</li>
+                                <li>مدة 40-90 ثانية بتنسيق 16:9 (6 ثوانٍ لكل صورة)</li>
                                 <li>عبارات جاذبة مُنشأة بـ Gemini</li>
                                 <li>اختيار الصوت المناسب لك</li>
                                 <li>مُحسّن للعقارات السكنية والتجارية</li>
@@ -4468,7 +4468,7 @@ export default function NewListingPage() {
                   {/* نصيحة */}
                   <div className="flex items-start gap-2 mb-6 text-amber-300/80 text-xs">
                     <Sparkles className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                    <span>ننصح باختيار 5-10 صور للحصول على أفضل نتيجة</span>
+                    <span>حتى 15 صورة. كل صورة 6 ثوانٍ. ننصح 5-10 صور للإنجاز الأسرع.</span>
                   </div>
                   
                   {/* الأزرار */}

@@ -155,8 +155,8 @@ class BaytVideoEngine:
         audio_clips = []
         voice_duration = 0
         
-        MIN_VIDEO_DURATION = 35  # حد أدنى 35 ثانية
-        MIN_SEC_PER_IMAGE = 5    # كل صورة على الأقل 5 ثوانٍ
+        MIN_VIDEO_DURATION = 40   # حد أدنى 40 ثانية
+        MIN_SEC_PER_IMAGE = 6    # كل صورة على الأقل 6 ثوانٍ (كريم)
 
         if voice_path and os.path.exists(voice_path):
             vc = AudioFileClip(voice_path)
