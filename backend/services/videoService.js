@@ -9,21 +9,40 @@ const db = require('../db');
 
 const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || 'http://127.0.0.1:8080';
 
+// تحويل المسارات النسبية (/uploads/...) إلى روابط كاملة — Python Worker يعمل على سيرفر منفصل
+function toAbsoluteImageUrls(paths) {
+  const base = (process.env.BACKEND_URL || process.env.API_URL || 'https://baytaljazeera-backend.onrender.com').replace(/\/$/, '');
+  return paths.map(p => {
+    const url = typeof p === 'string' ? p.trim() : '';
+    if (!url) return url;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    if (url.startsWith('/') && !url.startsWith('//')) {
+      return `${base}${url}`;
+    }
+    return url;
+  }).filter(Boolean);
+}
+
 async function generateListingSlideshow(listingId, imageUrls, listingData, options = {}) {
   try {
     const { script, voice, overlayPhrases } = options;
     if (!process.env.PYTHON_WORKER_URL) {
       console.warn('[VideoService] ⚠️ PYTHON_WORKER_URL not set - using localhost. Set to https://bayt-video-worker.onrender.com on Render.');
     }
+    // تحويل المسارات النسبية إلى روابط كاملة (Python Worker لا يستطيع الوصول لـ /uploads/ على الباكند)
+    const absoluteUrls = toAbsoluteImageUrls(imageUrls);
+    if (absoluteUrls.length === 0) {
+      throw new Error('لا توجد صور صالحة للاستخدام (تحقق من روابط الصور)');
+    }
     console.log(`🎬 [VideoService] Connecting to Python Engine at: ${PYTHON_WORKER_URL}`);
-    console.log(`[VideoService] Sending ${imageUrls.length} images, script: ${script ? 'yes' : 'no'}, overlay_phrases: ${overlayPhrases?.length || 0}`);
+    console.log(`[VideoService] Sending ${absoluteUrls.length} images, script: ${script ? 'yes' : 'no'}, overlay_phrases: ${overlayPhrases?.length || 0}`);
     
     if (!listingId.toString().startsWith('temp_')) {
       await db.query(`UPDATE properties SET video_status = 'processing' WHERE id = $1`, [listingId]);
     }
 
     const requestPayload = {
-      images: imageUrls, 
+      images: absoluteUrls, 
       tier: 'tier2_business',
       ambience: 'birds',
       voice: voice || 'onyx',
