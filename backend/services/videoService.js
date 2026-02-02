@@ -16,6 +16,7 @@ async function generateListingSlideshow(listingId, imageUrls, listingData, optio
       console.warn('[VideoService] ⚠️ PYTHON_WORKER_URL not set - using localhost. Set to https://bayt-video-worker.onrender.com on Render.');
     }
     console.log(`🎬 [VideoService] Connecting to Python Engine at: ${PYTHON_WORKER_URL}`);
+    console.log(`[VideoService] Sending ${imageUrls.length} images, script: ${script ? 'yes' : 'no'}, overlay_phrases: ${overlayPhrases?.length || 0}`);
     
     if (!listingId.toString().startsWith('temp_')) {
       await db.query(`UPDATE properties SET video_status = 'processing' WHERE id = $1`, [listingId]);

@@ -94,11 +94,15 @@ class BaytVideoEngine:
                 print(f"[VideoEngine] Script generation failed: {e}")
                 script = f"عقار مميز في {self.data.get('location', 'موقع متميز')}. فرصة استثنائية. تواصل الآن."
 
+        # إضافة فواصل للنص لتحسين النطق العربي (التوقف بين الجمل يساعد TTS)
+        script_clean = script.strip()
+        if script_clean and not script_clean.endswith('.'):
+            script_clean = script_clean.rstrip('،.') + '.'
         try:
             res = client.audio.speech.create(
                 model="tts-1-hd",
                 voice=voice,
-                input=script.strip()
+                input=script_clean
             )
             
             voice_path = OUTPUT_DIR / f"voice_{self.data.get('id', 'temp')}.mp3"
@@ -217,11 +221,14 @@ class BaytVideoEngine:
         if not clips:
             raise ValueError("No valid images found to create video")
 
-        print(f"[VideoEngine] Concatenating {len(clips)} clips...")
+        print(f"[VideoEngine] Concatenating {len(clips)} clips (padding=0 للحفاظ على المدة الكاملة)...")
+        # padding=0: بدون تداخل - padding=-1 كان يختصر الفيديو بـ 1 ثانية لكل انتقال
+        final_video = concatenate_videoclips(clips, method="compose", padding=0)
         
-        final_video = concatenate_videoclips(clips, method="compose", padding=-1)
+        actual_duration = final_video.duration
+        print(f"[VideoEngine] Actual video duration: {actual_duration:.1f}s (target: {total_duration:.1f}s)")
         
-        if final_video.duration > total_duration:
+        if actual_duration > total_duration:
             final_video = final_video.subclip(0, total_duration)
         
         if audio_clips:
