@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { getCsrfToken, API_URL } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -15,9 +16,12 @@ export default function ForgotPasswordPage() {
     setError(null);
     
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/auth/forgot-password`, {
+      const csrf = await getCsrfToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (csrf) headers['x-csrf-token'] = csrf;
+      const res = await fetch(`${API_URL}/api/auth/forgot-password`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ email: email.trim() }),
         credentials: 'include'
       });

@@ -1,5 +1,6 @@
 "use client";
 
+import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import Navbar from "@/components/Navbar";
 import NewsTicker from "@/components/NewsTicker";
@@ -10,8 +11,9 @@ import { Footer } from "@/components/sections/Footer";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <SiteStatusWrapper>
-      <Toaster position="top-center" richColors />
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+      <SiteStatusWrapper>
+        <Toaster position="top-center" richColors closeButton duration={4000} dir="rtl" />
       <Navbar />
       <NewsTicker />
       <GlobalPromotions />
@@ -19,5 +21,6 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       <Footer />
       <ChatbotWrapper />
     </SiteStatusWrapper>
+    </ThemeProvider>
   );
 }

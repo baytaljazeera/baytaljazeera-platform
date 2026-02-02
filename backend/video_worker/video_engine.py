@@ -186,6 +186,15 @@ class BaytVideoEngine:
                 audio_clips.append(bg)
                 print(f"[VideoEngine] Added ambience: {self.ambience}")
 
+        # Ken Burns presets: (zoom_start, zoom_end) - تنويع اسقاطات الكاميرا لكل صورة
+        KEN_BURNS_PRESETS = [
+            (1.0, 1.05),   # zoom خفيف
+            (1.0, 1.08),   # zoom متوسط
+            (1.0, 1.06),   # zoom معتدل
+            (1.0, 1.07),   # zoom متوسط+
+            (1.0, 1.04),   # zoom خفيف جداً
+            (1.0, 1.09),   # zoom قوي
+        ]
         clips = []
         phrases = self.overlay_phrases if isinstance(self.overlay_phrases, list) else []
         
@@ -202,9 +211,18 @@ class BaytVideoEngine:
                 
                 clip = self.smart_crop_to_16_9(clip)
                 
-                clip = clip.resize(lambda t: 1 + 0.04 * t)
+                # Ken Burns: تنويع الزوم لكل صورة (اسقاطات كاميرا مختلفة)
+                z_start, z_end = KEN_BURNS_PRESETS[i % len(KEN_BURNS_PRESETS)]
+                def make_zoom(s, e, d):
+                    def _zoom(t):
+                        frac = min(1.0, t / d) if d > 0 else 1.0
+                        return s + (e - s) * frac
+                    return _zoom
+                zoom_fn = make_zoom(z_start, z_end, duration_per_img)
+                clip = clip.resize(zoom_fn)
                 clip = clip.set_duration(duration_per_img)
                 
+                # انتقال سلس بين الصور (crossfadein للفوكس الناعم)
                 clip = clip.crossfadein(1.0)
                 
                 # Add text overlay (كلمات جذابة فوق الصورة)
@@ -222,9 +240,10 @@ class BaytVideoEngine:
         if not clips:
             raise ValueError("No valid images found to create video")
 
-        print(f"[VideoEngine] Concatenating {len(clips)} clips (padding=0 للحفاظ على المدة الكاملة)...")
-        # padding=0: بدون تداخل - padding=-1 كان يختصر الفيديو بـ 1 ثانية لكل انتقال
-        final_video = concatenate_videoclips(clips, method="compose", padding=0)
+        # انتقال fade بين الصور: padding سالب = تداخل للـ crossfade
+        FADE_DURATION = 0.8
+        print(f"[VideoEngine] Concatenating {len(clips)} clips (fade={FADE_DURATION}s بين الصور)...")
+        final_video = concatenate_videoclips(clips, method="compose", padding=-FADE_DURATION)
         
         actual_duration = final_video.duration
         print(f"[VideoEngine] Actual video duration: {actual_duration:.1f}s (target: {total_duration:.1f}s)")
@@ -241,10 +260,10 @@ class BaytVideoEngine:
         final_video.write_videofile(
             str(output_path), 
             fps=24, 
-            preset='ultrafast', 
+            preset='medium',  # جودة أفضل من ultrafast (عالمي)
             codec='libx264', 
             audio_codec='aac', 
-            threads=1,
+            threads=2,
             logger=None
         )
         

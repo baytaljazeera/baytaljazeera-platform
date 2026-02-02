@@ -12,7 +12,7 @@ const jwt = require("jsonwebtoken");
 const db = require("./backend/db");
 const { authMiddleware, requireRoles, adminMiddleware } = require("./backend/middleware/auth");
 const { sanitizeInput, validatePagination } = require("./backend/middleware/validation");
-const { setCsrfToken, getCsrfToken, csrfProtection } = require("./backend/middleware/csrf");
+const { setCsrfToken, getCsrfToken, csrfProtectionLite } = require("./backend/middleware/csrf");
 const { asyncHandler } = require("./backend/middleware/asyncHandler");
 
 // 📦 Modular imports - security, multer, scheduler, services
@@ -170,9 +170,15 @@ app.use(express.urlencoded({ limit: '100mb', extended: true }));
 // 🔒 Input Sanitization - حماية من XSS
 app.use(sanitizeInput);
 
-// 🔒 CSRF Protection - إعداد token للمتصفح
+// 🔒 CSRF Protection - إعداد token للمتصفح (التحقق عبر csrfProtectionLite للطلبات بدون Bearer)
 app.use(setCsrfToken);
 app.get('/api/csrf-token', getCsrfToken);
+// تطبيق CSRF على POST/PUT/DELETE بدون Bearer (login, register) - الطلبات مع Bearer تتخطى
+app.use((req, res, next) => {
+  const safe = ['GET', 'HEAD', 'OPTIONS'];
+  if (safe.includes(req.method)) return next();
+  return csrfProtectionLite(req, res, next);
+});
 
 // 🔧 Site Status Note:
 // The frontend handles site status display (normal, maintenance, coming_soon)
@@ -561,7 +567,7 @@ app.get("/api/user/ai-level", async (req, res) => {
 
   try {
     const jwt = require("jsonwebtoken");
-    const JWT_SECRET = process.env.SESSION_SECRET;
+    const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET;
     if (!JWT_SECRET) {
       console.error('[AI-Level] SESSION_SECRET is not set');
       return res.status(500).json({ error: 'Server configuration error' });

@@ -30,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <meta name="google" content="notranslate" />
       </head>
-      <body className="font-tajawal bg-beige text-royalblue min-h-screen flex flex-col" suppressHydrationWarning>
+      <body className="font-tajawal bg-beige dark:bg-slate-900 text-royalblue dark:text-slate-100 min-h-screen flex flex-col" suppressHydrationWarning>
         <ClientProviders>
           {children}
         </ClientProviders>

@@ -9,8 +9,10 @@ import {
   PlusCircle, Package, Map, List, 
   User, LogOut, Heart, Bell, FileText, Menu, X,
   ChevronDown, Settings, Crown, MessageCircle, Receipt, Check, CheckCheck,
-  Mail, CreditCard, AlertCircle, Home, Loader2, AlertTriangle, Building2
+  Mail, CreditCard, AlertCircle, Home, Loader2, AlertTriangle, Building2,
+  Sun, Moon
 } from "lucide-react";
+import { useTheme } from "next-themes";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { useSiteSettingsStore } from "@/lib/stores/siteSettingsStore";
 import { apiGet, API_URL } from "@/lib/api";
@@ -35,6 +37,7 @@ function NavbarContent() {
   const currentView = searchParams.get("view") || "map";
   
   const { user, isAuthenticated, logout, checkAuth, hydrate, isHydrated } = useAuthStore();
+  const { theme, setTheme } = useTheme();
   const { settings: siteSettings, fetchSettings } = useSiteSettingsStore();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -311,6 +314,13 @@ function NavbarContent() {
     if (isAuthenticated && user) {
       return (
         <div className="flex items-center gap-2 mr-2">
+          <button
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            aria-label={theme === 'dark' ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الداكن'}
+          >
+            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          </button>
           {/* Notification Bell with Dropdown */}
           <div className="relative" ref={notificationRef}>
             <button
@@ -538,6 +548,13 @@ function NavbarContent() {
 
     return (
       <div className="flex items-center gap-2 mr-2">
+        <button
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          aria-label={theme === 'dark' ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الداكن'}
+        >
+          {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+        </button>
         <Link
           href="/login"
           className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#003366] to-[#01375e] text-white hover:from-[#01375e] hover:to-[#003366] transition-all font-semibold shadow-md"

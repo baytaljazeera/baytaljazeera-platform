@@ -6,6 +6,20 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://baytaljazeera
 // Helper function to get API base URL
 export const getApiBase = (): string => API_URL;
 
+// CSRF token for requests without Bearer (login, register)
+let csrfTokenCache: string | null = null;
+export async function getCsrfToken(): Promise<string | null> {
+  if (csrfTokenCache) return csrfTokenCache;
+  try {
+    const res = await fetch(`${API_URL}/api/csrf-token`, { credentials: 'include' });
+    const data = await res.json();
+    csrfTokenCache = data.csrfToken || null;
+    return csrfTokenCache;
+  } catch {
+    return null;
+  }
+}
+
 // Helper to get token from multiple sources (essential for incognito mode)
 const getToken = (): string | null => {
   // Try js-cookie first
@@ -41,26 +55,23 @@ const getToken = (): string | null => {
 
 export const getAuthHeaders = (): HeadersInit => {
   const token = getToken();
-  const headers: HeadersInit = { 'Content-Type': 'application/json' };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   return headers;
 };
 
-export const getAuthHeadersWithJson = (): HeadersInit => {
-  return {
-    'Content-Type': 'application/json',
-    ...getAuthHeaders(),
-  };
-};
+export const getAuthHeadersWithJson = (): HeadersInit => ({
+  'Content-Type': 'application/json',
+  ...getAuthHeaders(),
+});
 
 export const apiFetch = async (path: string, options: RequestInit = {}): Promise<Response> => {
   const url = `${API_URL}${path}`;
-  const headers = {
-    ...getAuthHeaders(),
-    ...options.headers,
-  };
+  let headers: HeadersInit = { ...getAuthHeaders(), ...options.headers };
+  if (!getToken()) {
+    const csrf = await getCsrfToken();
+    if (csrf) headers = { ...headers, 'x-csrf-token': csrf };
+  }
   
   return fetch(url, {
     ...options,

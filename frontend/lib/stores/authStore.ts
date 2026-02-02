@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import Cookies from 'js-cookie';
+import { getCsrfToken } from '@/lib/api';
 
 // Production fallback for Vercel deployment
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://baytaljazeera-backend.onrender.com';
@@ -105,10 +106,13 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   login: async (email: string, password: string) => {
     try {
       set({ isLoading: true });
+      const csrf = await getCsrfToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (csrf) headers['x-csrf-token'] = csrf;
       
       const response = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         credentials: 'include',
         body: JSON.stringify({ email, password }),
       });
@@ -209,10 +213,13 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   register: async (data) => {
     try {
       set({ isLoading: true });
+      const csrf = await getCsrfToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (csrf) headers['x-csrf-token'] = csrf;
       
       const response = await fetch(`${API_URL}/api/auth/register`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         credentials: 'include',
         body: JSON.stringify(data),
       });
