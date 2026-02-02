@@ -1,6 +1,6 @@
 "use client";
 
-import { API_URL, getAuthHeaders } from "@/lib/api";
+import { getApiBase, getAuthHeaders } from "@/lib/api";
 
 export const dynamic = 'force-dynamic';
 
@@ -116,11 +116,6 @@ type SortOption =
   | "beds_desc";
 
 type ViewMode = "list" | "map";
-
-// دالة بناء رابط الـ API
-function getApiBase(): string {
-  return process.env.NEXT_PUBLIC_API_URL || "";
-}
 
 // استيراد دالة تنسيق السعر الموحدة من currencyStore
 import { formatListingPriceByCountry as formatListingPrice } from "@/lib/stores/currencyStore";

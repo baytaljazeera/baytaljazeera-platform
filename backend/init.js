@@ -2745,6 +2745,27 @@ async function initializeDatabase() {
       console.log("⚠️ Skipping is_active index (column may not exist):", idxErr.message);
     }
 
+    // 🏙️ featured_cities - المدن الأكثر طلبًا (يُستخدم في صفحة البحث)
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS featured_cities (
+        id SERIAL PRIMARY KEY,
+        name_ar VARCHAR(100) NOT NULL,
+        name_en VARCHAR(100),
+        country_code VARCHAR(2) NOT NULL,
+        country_name_ar VARCHAR(100),
+        image_url VARCHAR(500),
+        properties_count INTEGER DEFAULT 0,
+        sort_order INTEGER DEFAULT 0,
+        is_active BOOLEAN DEFAULT true,
+        is_capital BOOLEAN DEFAULT false,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_featured_cities_active_sort ON featured_cities(is_active, sort_order);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_featured_cities_country ON featured_cities(country_code);`);
+    console.log("✅ featured_cities table ready");
+
     // Ensure all required columns exist in countries table (for existing tables)
     try {
       await db.query(`

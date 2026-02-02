@@ -1069,111 +1069,105 @@ function ListingPopupCard({
         </div>
       </div>
 
-      {/* Overlay تفاصيل العقار (تصميم Zillow) - صورة رئيسية + مصغرات */}
+      {/* Overlay تفاصيل العقار - كل المحتوى يظهر بوضوح */}
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal} dir="rtl">
-        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto p-0 gap-0" showCloseButton>
-          {/* معرض الصور بأسلوب Zillow - صورة كبيرة + مصغرات جانبية */}
-          <div className="flex flex-col sm:flex-row gap-0">
-            {/* الصورة الرئيسية */}
-            <div className="relative flex-1 min-h-[220px] sm:min-h-[280px] bg-slate-100 overflow-hidden">
-              {hasImages && allImages.length > 0 ? (
-                <>
-                  <img
-                    src={allImages[modalImgIndex]}
-                    alt={listing.title || "صورة العقار"}
-                    className="w-full h-full object-cover"
-                  />
-                  {/* زر عرض كل الصور */}
-                  {allImages.length > 1 && (
-                    <div className="absolute bottom-3 right-3 flex items-center gap-2">
-                      <Link
-                        href={`/listing/${listing.id}`}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-white/95 backdrop-blur rounded-lg shadow-md text-[#002845] text-xs font-bold hover:bg-white transition"
-                      >
-                        <span>عرض كل الصور</span>
-                        <span className="bg-[#D4AF37]/20 text-[#002845] px-1.5 py-0.5 rounded text-[10px]">
-                          {allImages.length}
-                        </span>
-                      </Link>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-2">
-                  <span className="text-5xl">🏠</span>
-                  <span>لا توجد صور</span>
-                </div>
-              )}
-            </div>
-            {/* مصغرات الصور (جانب الصورة الرئيسية) */}
-            {hasImages && allImages.length > 1 && (
-              <div className="flex sm:flex-col gap-1 p-2 sm:p-2 sm:w-24 bg-slate-50 border-t sm:border-t-0 sm:border-r border-slate-200 overflow-x-auto sm:overflow-y-auto">
-                {allImages.slice(0, 5).map((img, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setModalImgIndex(i)}
-                    className={`flex-shrink-0 w-16 h-12 sm:w-full sm:h-14 rounded-lg overflow-hidden border-2 transition ${
-                      i === modalImgIndex ? "border-[#D4AF37] ring-1 ring-[#D4AF37]" : "border-transparent hover:border-slate-300"
-                    }`}
-                  >
-                    <img src={img} alt="" className="w-full h-full object-cover" />
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+        <DialogContent 
+          className="!flex !flex-col !max-w-2xl !max-h-[90vh] overflow-y-auto !p-0 !gap-0 !grid-none bg-white"
+          showCloseButton
+          aria-describedby="listing-detail-desc"
+        >
+          <DialogTitle className="sr-only">
+            {listing.title || "تفاصيل العقار"} - {priceText}
+          </DialogTitle>
+          <DialogDescription id="listing-detail-desc" className="sr-only">
+            {locationLine || "عقار"}
+          </DialogDescription>
 
-          {/* التفاصيل - مثل Zillow */}
-          <div className="p-5 space-y-4">
-            <div>
-              <div className="text-2xl sm:text-3xl font-black text-[#002845]">{priceText}</div>
-              {listing.price && listing.price > 0 && (
-                <div className="text-sm text-slate-500 mt-0.5">
-                  ≈ ${(listing.price / 3.75).toLocaleString("en-US", { maximumFractionDigits: 0 })} USD
-                </div>
-              )}
-            </div>
-            {locationLine && (
-              <div className="flex items-center gap-2 text-slate-600">
-                <MapPin size={16} className="flex-shrink-0 text-[#D4AF37]" />
-                <span className="font-medium">{locationLine}</span>
+          {/* السعر والموقع والمواصفات - أعلى النافذة */}
+          <div className="p-4 sm:p-5 border-b border-slate-200 bg-white text-[#002845]">
+            <div className="text-2xl font-black">{priceText}</div>
+            {listing.price && listing.price > 0 && (
+              <div className="text-sm text-slate-600 mt-0.5">
+                ≈ ${(listing.price / 3.75).toLocaleString("en-US", { maximumFractionDigits: 0 })} USD
               </div>
             )}
-            {/* المواصفات: غرف، حمامات، مساحة */}
-            <div className="flex flex-wrap gap-4 text-base font-semibold text-[#002845]">
+            {locationLine && (
+              <div className="flex items-center gap-2 text-slate-600 mt-2">
+                <MapPin size={16} className="flex-shrink-0 text-[#D4AF37]" />
+                <span>{locationLine}</span>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-3 mt-3 text-sm font-semibold">
               {listing.bedrooms != null && (
-                <span className="flex items-center gap-1.5">
-                  <BedDouble size={18} className="text-[#D4AF37]" />
+                <span className="flex items-center gap-1">
+                  <BedDouble size={16} className="text-[#D4AF37]" />
                   {listing.bedrooms} غرف
                 </span>
               )}
               {listing.bathrooms != null && (
-                <span className="flex items-center gap-1.5">
-                  <Bath size={18} className="text-[#D4AF37]" />
+                <span className="flex items-center gap-1">
+                  <Bath size={16} className="text-[#D4AF37]" />
                   {listing.bathrooms} حمام
                 </span>
               )}
               {listing.area != null && (
-                <span className="flex items-center gap-1.5">
-                  <Square size={18} className="text-[#D4AF37]" />
+                <span className="flex items-center gap-1">
+                  <Square size={16} className="text-[#D4AF37]" />
                   {listing.area} م²
                 </span>
               )}
             </div>
+          </div>
+
+          {/* الصورة */}
+          <div className="relative w-full h-[200px] sm:h-[220px] bg-slate-100 flex-shrink-0">
+            {hasImages && allImages.length > 0 ? (
+              <>
+                <img
+                  src={allImages[modalImgIndex]}
+                  alt={listing.title || "صورة العقار"}
+                  className="w-full h-full object-cover"
+                />
+                {allImages.length > 1 && (
+                  <div className="absolute bottom-2 right-2 flex gap-1">
+                    {allImages.slice(0, 5).map((img, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setModalImgIndex(i)}
+                        className={`w-8 h-8 rounded overflow-hidden border-2 ${
+                          i === modalImgIndex ? "border-[#D4AF37]" : "border-white"
+                        }`}
+                      >
+                        <img src={img} alt="" className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
+                <span className="text-4xl">🏠</span>
+                <span>لا توجد صور</span>
+              </div>
+            )}
+          </div>
+
+          {/* العنوان والوصف والزر */}
+          <div className="p-4 sm:p-5 bg-white text-[#002845] flex-shrink-0">
             {listing.title && (
-              <h3 className="text-lg font-bold text-[#002845] leading-snug">{listing.title}</h3>
+              <h3 className="text-base font-bold leading-snug mb-2">{listing.title}</h3>
             )}
             {listing.description && (
-              <p className="text-sm text-slate-600 line-clamp-3 text-right leading-relaxed">
+              <p className="text-sm text-slate-600 line-clamp-2 mb-4 leading-relaxed">
                 {listing.description}
               </p>
             )}
             <Link
               href={`/listing/${listing.id}`}
-              className="flex items-center justify-center gap-2 w-full py-4 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] font-bold hover:opacity-95 hover:shadow-lg transition text-base"
+              className="flex items-center justify-center gap-2 w-full py-3.5 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] font-bold hover:opacity-95 transition"
             >
-              <ExternalLink size={20} />
+              <ExternalLink size={18} />
               عرض التفاصيل الكاملة
             </Link>
           </div>

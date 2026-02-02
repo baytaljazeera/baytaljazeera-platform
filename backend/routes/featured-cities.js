@@ -93,7 +93,7 @@ router.put('/reorder', authMiddleware, adminMiddleware, asyncHandler(async (req,
 
 router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const result = await pool.query('SELECT * FROM featured_cities WHERE id = $1', [id]);
+  const result = await db.query('SELECT * FROM featured_cities WHERE id = $1', [id]);
   
   if (result.rows.length === 0) {
     return res.status(404).json({ error: 'المدينة غير موجودة' });
@@ -128,7 +128,7 @@ router.put('/:id', authMiddleware, adminMiddleware, upload.single('image'), asyn
   const { id } = req.params;
   const { name_ar, name_en, country_code, country_name_ar, is_capital, sort_order, is_active } = req.body;
   
-  const existing = await pool.query('SELECT * FROM featured_cities WHERE id = $1', [id]);
+  const existing = await db.query('SELECT * FROM featured_cities WHERE id = $1', [id]);
   if (existing.rows.length === 0) {
     return res.status(404).json({ error: 'المدينة غير موجودة' });
   }
