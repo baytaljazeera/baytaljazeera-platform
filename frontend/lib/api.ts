@@ -68,6 +68,13 @@ export const getAuthHeaders = (): HeadersInit => {
   return headers;
 };
 
+/** For FormData requests - only Authorization, no Content-Type (browser sets multipart boundary) */
+export const getAuthHeadersForFormData = (): HeadersInit => {
+  const token = getToken();
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+};
+
 export const getAuthHeadersWithJson = (): HeadersInit => ({
   'Content-Type': 'application/json',
   ...getAuthHeaders(),

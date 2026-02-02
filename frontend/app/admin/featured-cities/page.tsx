@@ -1,6 +1,6 @@
 "use client";
 
-import { API_URL, getAuthHeaders } from "@/lib/api";
+import { API_URL, getAuthHeaders, getAuthHeadersForFormData } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +63,10 @@ export default function FeaturedCitiesPage() {
   const fetchCities = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/featured-cities`);
+      const res = await fetch(`${API_URL}/api/featured-cities`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
       if (res.ok) {
         const data = await res.json();
         setCities(data.cities || []);
@@ -81,8 +84,10 @@ export default function FeaturedCitiesPage() {
 
   const toggleActive = async (id: number) => {
     try {
-      const res = await fetch(`/api/featured-cities/${id}/toggle`, {
+      const res = await fetch(`${API_URL}/api/featured-cities/${id}/toggle`, {
         method: "PATCH",
+        credentials: "include",
+        headers: getAuthHeaders(),
       });
       if (res.ok) {
         fetchCities();
@@ -96,8 +101,10 @@ export default function FeaturedCitiesPage() {
     if (!confirm("هل أنت متأكد من حذف هذه المدينة؟")) return;
     
     try {
-      const res = await fetch(`/api/featured-cities/${id}`, {
+      const res = await fetch(`${API_URL}/api/featured-cities/${id}`, {
         method: "DELETE",
+        credentials: "include",
+        headers: getAuthHeaders(),
       });
       if (res.ok) {
         fetchCities();
@@ -149,11 +156,13 @@ export default function FeaturedCitiesPage() {
       }
 
       const url = editingId 
-        ? `/api/featured-cities/${editingId}`
-        : "/api/featured-cities";
+        ? `${API_URL}/api/featured-cities/${editingId}`
+        : `${API_URL}/api/featured-cities`;
       
       const res = await fetch(url, {
         method: editingId ? "PUT" : "POST",
+        credentials: "include",
+        headers: getAuthHeadersForFormData(),
         body: formDataToSend,
       });
 

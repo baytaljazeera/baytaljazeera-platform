@@ -42,21 +42,42 @@ router.get('/', asyncHandler(async (req, res) => {
   
   query += ' ORDER BY sort_order ASC, name_ar ASC';
   
-  const result = await db.query(query, params);
-  res.json({ cities: result.rows });
+  try {
+    const result = await db.query(query, params);
+    res.json({ cities: result.rows });
+  } catch (err) {
+    // إذا الجدول غير موجود أو خطأ في DB، نرجع قائمة فارغة بدل 500
+    const isTableMissing = err.code === '42P01' || (err.message && /does not exist|relation.*not found/i.test(err.message));
+    if (isTableMissing) {
+      console.warn('[featured-cities] Table missing - returning empty. Run DB init. Error:', err.message);
+      return res.json({ cities: [] });
+    }
+    console.error('[featured-cities] GET error:', err);
+    throw err;
+  }
 }));
 
 router.get('/active', asyncHandler(async (req, res) => {
   const CACHE_KEY = 'cities:featured';
   const CACHE_TTL = 60000; // 60 seconds
   
-  const result = await db.cachedQuery(
-    CACHE_KEY,
-    'SELECT * FROM featured_cities WHERE is_active = true ORDER BY sort_order ASC, name_ar ASC',
-    [],
-    CACHE_TTL
-  );
-  res.json({ cities: result.rows });
+  try {
+    const result = await db.cachedQuery(
+      CACHE_KEY,
+      'SELECT * FROM featured_cities WHERE is_active = true ORDER BY sort_order ASC, name_ar ASC',
+      [],
+      CACHE_TTL
+    );
+    res.json({ cities: result.rows });
+  } catch (err) {
+    const isTableMissing = err.code === '42P01' || (err.message && /does not exist|relation.*not found/i.test(err.message));
+    if (isTableMissing) {
+      console.warn('[featured-cities] Table missing - returning empty. Run DB init. Error:', err.message);
+      return res.json({ cities: [] });
+    }
+    console.error('[featured-cities] GET /active error:', err);
+    throw err;
+  }
 }));
 
 router.put('/reorder', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {

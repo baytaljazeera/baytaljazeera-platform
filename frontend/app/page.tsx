@@ -12,14 +12,28 @@ import { Button } from "@/components/ui/button";
 import PlansHighlightSection from "@/components/home/PlansHighlightSection";
 import { getImageUrl } from "@/lib/imageUrl";
 import { useAuthStore } from '@/lib/stores/authStore';
+import { getApiBase } from "@/lib/api";
 
-const cities = [
+// قائمة افتراضية عند عدم توفر مدن من API
+const DEFAULT_CITIES = [
   { title: "مكة المكرمة", img: "/makkah.jpg" },
   { title: "المدينة المنورة", img: "/madinah.jpg" },
   { title: "جدة", img: "/jeddah.jpg" },
   { title: "الطائف", img: "/taif.jpg" },
   { title: "الرياض", img: "/riyadh.jpg" },
 ];
+];
+
+// ربط أسماء المدن بالصور الافتراضية (للصور المرفوعة من لوحة الإدارة)
+const CITY_IMG_MAP: Record<string, string> = {
+  "مكة المكرمة": "/makkah.jpg",
+  "مكة": "/makkah.jpg",
+  "المدينة المنورة": "/madinah.jpg",
+  "المدينة": "/madinah.jpg",
+  "جدة": "/jeddah.jpg",
+  "الطائف": "/taif.jpg",
+  "الرياض": "/riyadh.jpg",
+};
 
 interface EliteProperty {
   id: string;
@@ -145,6 +159,31 @@ function HeroSection() {
 }
 
 function CityCardsSection() {
+  const [cities, setCities] = useState<{ title: string; img: string }[]>(DEFAULT_CITIES);
+
+  useEffect(() => {
+    async function fetchFeaturedCities() {
+      try {
+        const apiBase = getApiBase();
+        const res = await fetch(`${apiBase}/api/featured-cities?active_only=true`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.cities && Array.isArray(data.cities) && data.cities.length > 0) {
+            setCities(
+              data.cities.map((c: { name_ar: string; image_url?: string | null }) => ({
+                title: c.name_ar,
+                img: c.image_url ? getImageUrl(c.image_url) : (CITY_IMG_MAP[c.name_ar] || "/patterns/hero-3.png"),
+              }))
+            );
+          }
+        }
+      } catch {
+        // نبقى على القائمة الافتراضية
+      }
+    }
+    fetchFeaturedCities();
+  }, []);
+
   return (
     <section className="relative py-12 sm:py-20 px-4 sm:px-6 bg-[#F7F1E5]" dir="rtl">
       <div className="max-w-7xl mx-auto">
