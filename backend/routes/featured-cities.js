@@ -5,11 +5,19 @@ const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
+
+// مسار يوافق express.static في index.js - من جذر المشروع (يعمل مع Docker/Render)
+const projectRoot = path.resolve(__dirname, '../..');
+const UPLOADS_CITIES = path.join(projectRoot, 'public', 'uploads', 'cities');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '../public/uploads/cities'));
+    if (!fs.existsSync(UPLOADS_CITIES)) {
+      fs.mkdirSync(UPLOADS_CITIES, { recursive: true });
+    }
+    cb(null, UPLOADS_CITIES);
   },
   filename: (req, file, cb) => {
     const uniqueName = crypto.randomBytes(16).toString('hex') + path.extname(file.originalname);
