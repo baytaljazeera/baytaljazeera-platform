@@ -44,6 +44,8 @@ export type MapListing = {
   currency_code?: string;
   price?: number;
   area?: number;
+  land_area?: number;
+  building_area?: number;
   bedrooms?: number;
   bathrooms?: number;
   latitude?: number | null;
@@ -1083,11 +1085,11 @@ function ListingPopupCard({
             {locationLine || "عقار"}
           </DialogDescription>
 
-          {/* السعر والموقع والمواصفات - أعلى النافذة */}
+          {/* السعر أولاً (الأهم) + الدولار تحته + الموقع + المساحة والمواصفات */}
           <div className="p-4 sm:p-5 border-b border-slate-200 bg-white text-[#002845]">
-            <div className="text-2xl font-black">{priceText}</div>
-            {listing.price && listing.price > 0 && (
-              <div className="text-sm text-slate-600 mt-0.5">
+            <div className="text-2xl font-black text-[#002845]">{priceText}</div>
+            {listing.price != null && listing.price > 0 && (
+              <div className="text-sm text-slate-600 mt-1 font-medium">
                 ≈ ${(listing.price / 3.75).toLocaleString("en-US", { maximumFractionDigits: 0 })} USD
               </div>
             )}
@@ -1098,6 +1100,12 @@ function ListingPopupCard({
               </div>
             )}
             <div className="flex flex-wrap gap-3 mt-3 text-sm font-semibold">
+              {(listing.area ?? listing.land_area ?? listing.building_area) != null && (
+                <span className="flex items-center gap-1">
+                  <Square size={16} className="text-[#D4AF37]" />
+                  {(listing.area ?? listing.land_area ?? listing.building_area)} م²
+                </span>
+              )}
               {listing.bedrooms != null && (
                 <span className="flex items-center gap-1">
                   <BedDouble size={16} className="text-[#D4AF37]" />
@@ -1108,12 +1116,6 @@ function ListingPopupCard({
                 <span className="flex items-center gap-1">
                   <Bath size={16} className="text-[#D4AF37]" />
                   {listing.bathrooms} حمام
-                </span>
-              )}
-              {listing.area != null && (
-                <span className="flex items-center gap-1">
-                  <Square size={16} className="text-[#D4AF37]" />
-                  {listing.area} م²
                 </span>
               )}
             </div>
