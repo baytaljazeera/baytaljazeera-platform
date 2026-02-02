@@ -1,6 +1,9 @@
 "use client";
 
-import { API_URL, getAuthHeaders, getAuthHeadersForFormData } from "@/lib/api";
+import { getAuthHeaders, getAuthHeadersForFormData } from "@/lib/api";
+
+// مسار نسبي في المتصفح → نفس النطاق → الكوكيز والتوكن يُرسلان عبر Next.js rewrites
+const getApiPath = () => (typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "https://baytaljazeera-backend.onrender.com"));
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +66,7 @@ export default function FeaturedCitiesPage() {
   const fetchCities = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/featured-cities`, {
+      const res = await fetch(`${getApiPath()}/api/featured-cities`, {
         credentials: "include",
         headers: getAuthHeaders(),
       });
@@ -84,7 +87,7 @@ export default function FeaturedCitiesPage() {
 
   const toggleActive = async (id: number) => {
     try {
-      const res = await fetch(`${API_URL}/api/featured-cities/${id}/toggle`, {
+      const res = await fetch(`${getApiPath()}/api/featured-cities/${id}/toggle`, {
         method: "PATCH",
         credentials: "include",
         headers: getAuthHeaders(),
@@ -101,7 +104,7 @@ export default function FeaturedCitiesPage() {
     if (!confirm("هل أنت متأكد من حذف هذه المدينة؟")) return;
     
     try {
-      const res = await fetch(`${API_URL}/api/featured-cities/${id}`, {
+      const res = await fetch(`${getApiPath()}/api/featured-cities/${id}`, {
         method: "DELETE",
         credentials: "include",
         headers: getAuthHeaders(),
@@ -156,8 +159,8 @@ export default function FeaturedCitiesPage() {
       }
 
       const url = editingId 
-        ? `${API_URL}/api/featured-cities/${editingId}`
-        : `${API_URL}/api/featured-cities`;
+        ? `${getApiPath()}/api/featured-cities/${editingId}`
+        : `${getApiPath()}/api/featured-cities`;
       
       const res = await fetch(url, {
         method: editingId ? "PUT" : "POST",
