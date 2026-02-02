@@ -824,31 +824,64 @@ export default function NewListingPage() {
       throw new Error(data.error || "فشل في توليد الفيديو");
 
     } catch (err: any) {
-      setVideoError(err.message || "حدث خطأ أثناء توليد الفيديو");
+      const msg = err?.message || "حدث خطأ أثناء توليد الفيديو";
+      const isNet = (m: string) =>
+        /failed to fetch|network error|load failed|network request failed|err_/i.test(m) || err?.name === "TypeError";
+      setVideoError(
+        isNet(msg)
+          ? "عذراً، الخادم لا يستجيب حالياً. قد يكون قيد التشغيل. يرجى الانتظار قليلاً ثم المحاولة مرة أخرى."
+          : msg
+      );
     } finally {
       setVideoLoading(false);
     }
   }
 
+  // تمييز خطأ الشبكة (سيرفر غير متاح) عن خطأ المنطق (عملية غير موجودة)
+  function isNetworkError(err: any): boolean {
+    const msg = (err?.message || String(err)).toLowerCase();
+    return (
+      msg.includes("failed to fetch") ||
+      msg.includes("network error") ||
+      msg.includes("load failed") ||
+      msg.includes("network request failed") ||
+      msg.includes("err_") ||
+      err?.name === "TypeError"
+    );
+  }
+
+  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
   // Poll for video status when backend returns operationId (async flow)
+  // مع Exponential Backoff عند فشل الشبكة (يعطي السيرفر وقتاً للاستيقاظ - Cold Start على Render)
   async function pollVideoStatus(operationId: string) {
-    const maxAttempts = 120; // 10 min at 5s interval (cold start + render can take 6-8 min)
-    const pollInterval = 5000;
+    const maxAttempts = 120; // 10 min max
+    const basePollInterval = 5000; // 5s بين المحاولات العادية
     const pollToken = authToken || (typeof localStorage !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('oauth_token')) : null);
     const pollHeaders = getAuthHeaders() as Record<string, string>;
     if (!pollHeaders['Authorization'] && pollToken) pollHeaders['Authorization'] = `Bearer ${pollToken}`;
 
+    // انتظار أولي لإعطاء السيرفر وقت التشغيل (Cold Start ~دقيقة على Render)
+    await delay(10000);
+
+    let consecutiveNetworkErrors = 0;
+    const maxConsecutiveNetworkErrors = 6;
+
     for (let i = 0; i < maxAttempts; i++) {
-      if (i > 0) await new Promise(r => setTimeout(r, pollInterval));
+      if (i > 0) await delay(basePollInterval);
+
       try {
         const statusRes = await fetch(`${API_URL}/api/ai/user/video-status/${operationId}`, {
           headers: pollHeaders,
           credentials: "include"
         });
+        consecutiveNetworkErrors = 0; // نجح الاتصال
+
         if (statusRes.status === 404) {
           throw new Error("عملية التوليد غير موجودة أو انتهت صلاحيتها");
         }
         if (!statusRes.ok) continue;
+
         const statusData = await statusRes.json();
 
         if (statusData.status === "completed" && statusData.videoUrl) {
@@ -864,6 +897,19 @@ export default function NewListingPage() {
         }
       } catch (err: any) {
         if (err.message?.includes("فشل") || err.message?.includes("غير موجودة")) throw err;
+
+        if (isNetworkError(err)) {
+          consecutiveNetworkErrors++;
+          const backoffSec = Math.min(5 * Math.pow(2, Math.min(consecutiveNetworkErrors, 4)), 60);
+          if (consecutiveNetworkErrors >= maxConsecutiveNetworkErrors) {
+            throw new Error(
+              "عذراً، الخادم لا يستجيب حالياً. قد يكون قيد التشغيل (استيقاظ الخادم). يرجى الانتظار دقيقة ثم المحاولة مرة أخرى."
+            );
+          }
+          await delay(backoffSec * 1000);
+        } else {
+          throw err;
+        }
       }
     }
     throw new Error("استغرق التوليد وقتاً طويلاً (أكثر من 10 دقائق). يرجى المحاولة مرة أخرى.");
