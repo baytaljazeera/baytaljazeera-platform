@@ -1824,9 +1824,10 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
       }
     })
     .catch(async (err) => {
-      console.error("[Video] ❌ Background job failed:", err.message);
+      const errMsg = typeof err?.message === 'string' ? err.message : "فشل في توليد الفيديو";
+      console.error("[Video] ❌ Background job failed:", errMsg);
       const op = await cache.get(`video_op:${operationId}`) || opData;
-      await cache.set(`video_op:${operationId}`, { ...op, status: "error", error: err.message || "فشل في توليد الفيديو" }, 600);
+      await cache.set(`video_op:${operationId}`, { ...op, status: "error", error: errMsg }, 600);
     });
 }));
 

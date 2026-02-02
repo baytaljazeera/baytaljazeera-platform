@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   MapContainer,
   TileLayer,
@@ -24,6 +23,13 @@ import {
   Heart,
   Navigation,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { useSearchMapStore } from "@/lib/stores/searchMapStore";
 import { getImageUrl } from "@/lib/imageUrl";
 import { getCurrencySymbol, getCurrencyCodeByCountry } from "@/lib/stores/currencyStore";
@@ -431,8 +437,9 @@ function ListingPopupCard({
   const [lastTap, setLastTap] = useState<number>(0);
   const [imgError, setImgError] = useState(false);
   const [isFavorite, setIsFavorite] = useState(listing.isFavorite || false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [modalImgIndex, setModalImgIndex] = useState(0);
   const favoriteButtonRef = useRef<HTMLButtonElement>(null);
-  const router = useRouter();
   
   // Update isFavorite when listing.isFavorite changes
   useEffect(() => {
@@ -556,9 +563,10 @@ function ListingPopupCard({
     e.nativeEvent.stopImmediatePropagation();
   };
 
-  // Double tap/click للانتقال لصفحة التفاصيل
+  // Double tap/click لفتح overlay التفاصيل (مثل Zillow) - بدون تغيير الشاشة
   const handleImageDoubleTap = () => {
-    router.push(`/listing/${listing.id}`);
+    setModalImgIndex(imgIndex);
+    setShowDetailModal(true);
   };
 
   const handleImageClick = (e: React.MouseEvent | React.TouchEvent) => {
@@ -1059,9 +1067,100 @@ function ListingPopupCard({
             textAlign: "center",
           }}
         >
-          انقر مرتين على الصورة لعرض التفاصيل
+          انقر مرتين على الصورة لمعاينة التفاصيل
         </div>
       </div>
+
+      {/* Overlay تفاصيل العقار (مثل Zillow) - يفتح عند double-click دون تغيير الشاشة */}
+      <Dialog open={showDetailModal} onOpenChange={setShowDetailModal} dir="rtl">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto p-0 gap-0" showCloseButton>
+          <DialogHeader className="p-4 pb-0">
+            <DialogTitle className="text-xl font-bold text-[#002845] text-right">
+              {listing.title}
+            </DialogTitle>
+            <DialogDescription className="text-right pt-1">
+              {locationLine && (
+                <span className="flex items-center gap-2 text-slate-600">
+                  <MapPin size={14} />
+                  {locationLine}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* معرض الصور */}
+          <div className="relative w-full aspect-[16/10] bg-slate-100 rounded-t-lg overflow-hidden">
+            {hasImages && allImages.length > 0 ? (
+              <>
+                <img
+                  src={allImages[modalImgIndex]}
+                  alt={listing.title || "صورة العقار"}
+                  className="w-full h-full object-cover"
+                />
+                {allImages.length > 1 && (
+                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                    {allImages.map((_, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setModalImgIndex(i)}
+                        className={`w-2 h-2 rounded-full transition-all ${
+                          i === modalImgIndex ? "bg-[#D4AF37] w-6" : "bg-white/70"
+                        }`}
+                        aria-label={`صورة ${i + 1}`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-2">
+                <span className="text-4xl">🏠</span>
+                <span>لا توجد صور</span>
+              </div>
+            )}
+          </div>
+
+          {/* التفاصيل */}
+          <div className="p-4 space-y-3">
+            <div className="text-2xl font-black text-[#002845]">{priceText}</div>
+            {listing.price && listing.price > 0 && (
+              <div className="text-sm text-slate-500">
+                ≈ ${(listing.price / 3.75).toLocaleString("en-US", { maximumFractionDigits: 0 })} USD
+              </div>
+            )}
+            <div className="flex gap-4 text-sm text-slate-600">
+              {listing.bedrooms != null && (
+                <span className="flex items-center gap-1">
+                  <BedDouble size={16} /> {listing.bedrooms} غرف
+                </span>
+              )}
+              {listing.bathrooms != null && (
+                <span className="flex items-center gap-1">
+                  <Bath size={16} /> {listing.bathrooms} حمام
+                </span>
+              )}
+              {listing.area != null && (
+                <span className="flex items-center gap-1">
+                  <Square size={16} /> {listing.area} م²
+                </span>
+              )}
+            </div>
+            {listing.description && (
+              <p className="text-sm text-slate-600 line-clamp-3 text-right">
+                {listing.description}
+              </p>
+            )}
+            <Link
+              href={`/listing/${listing.id}`}
+              className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-white font-bold hover:opacity-90 transition"
+            >
+              <ExternalLink size={18} />
+              عرض التفاصيل الكاملة
+            </Link>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

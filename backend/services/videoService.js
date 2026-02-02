@@ -43,7 +43,7 @@ async function generateListingSlideshow(listingId, imageUrls, listingData, optio
     }
 
     let response;
-    const maxRetries = 2;
+    const maxRetries = 3;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         response = await axios({
@@ -55,11 +55,15 @@ async function generateListingSlideshow(listingId, imageUrls, listingData, optio
         });
         break;
       } catch (err) {
+        const status = err.response?.status;
+        const is502 = status === 502;
         const isTimeout = err.code === 'ECONNABORTED' || err.message?.includes('timeout');
         const isConnRefused = err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT';
-        if ((isTimeout || isConnRefused) && attempt < maxRetries) {
-          console.warn(`[VideoService] Attempt ${attempt} failed (${err.message}), retrying in 15s (cold start?)...`);
-          await new Promise(r => setTimeout(r, 15000));
+        const shouldRetry = (isTimeout || isConnRefused || is502) && attempt < maxRetries;
+        if (shouldRetry) {
+          const delay = is502 ? 30000 : 15000; // 502: انتظار أطول (cold start على Render)
+          console.warn(`[VideoService] Attempt ${attempt} failed (${status || err.message}), retrying in ${delay/1000}s...`);
+          await new Promise(r => setTimeout(r, delay));
         } else {
           throw err;
         }
@@ -96,14 +100,31 @@ async function generateListingSlideshow(listingId, imageUrls, listingData, optio
     return { success: true, url: videoUrl, promoText: script ? { headline: script } : undefined };
 
   } catch (error) {
-    const errMsg = error.response?.data?.error || error.message;
     const errCode = error.response?.status;
+    const rawErr = error.response?.data?.error ?? error.message;
+    let errMsg = typeof rawErr === 'string' ? rawErr : (error.message || '');
+    if (typeof error.response?.data === 'string') {
+      errMsg = errMsg || `HTTP ${errCode || 'error'}`;
+    }
     console.error(`❌ [VideoService] Python Worker error:`, errMsg, errCode ? `(HTTP ${errCode})` : '');
-    if (error.response?.data) console.error('[VideoService] Response:', JSON.stringify(error.response.data));
+    // تجنب JSON.stringify على بيانات قد تحتوي circular refs (مثل 502)
+    if (error.response?.data && typeof error.response.data === 'object') {
+      try {
+        console.error('[VideoService] Response:', JSON.stringify(error.response.data));
+      } catch (_) {
+        console.error('[VideoService] Response: (non-serializable)');
+      }
+    } else if (typeof error.response?.data === 'string') {
+      console.error('[VideoService] Response:', error.response.data.substring(0, 200));
+    }
     if (!listingId.toString().startsWith('temp_')) {
       await db.query(`UPDATE properties SET video_status = 'failed' WHERE id = $1`, [listingId]);
     }
-    throw error;
+    // رمي رسالة خطأ نظيفة قابلة للتسلسل (تجنب circular structure في cache)
+    const userMsg = errCode === 502
+      ? 'محرك الفيديو غير متاح حالياً (قد يكون قيد التشغيل). يرجى المحاولة بعد دقيقة.'
+      : (errMsg || `فشل الاتصال بمحرك الفيديو (${errCode || 'unknown'})`);
+    throw new Error(userMsg);
   }
 }
 
