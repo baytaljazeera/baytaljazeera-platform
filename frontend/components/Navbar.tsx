@@ -37,7 +37,8 @@ function NavbarContent() {
   const currentView = searchParams.get("view") || "map";
   
   const { user, isAuthenticated, logout, checkAuth, hydrate, isHydrated } = useAuthStore();
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
+  const [themeMounted, setThemeMounted] = useState(false);
   const { settings: siteSettings, fetchSettings } = useSiteSettingsStore();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -69,6 +70,10 @@ function NavbarContent() {
     hydrate();
     checkAuth();
   }, [hydrate, checkAuth]);
+
+  useEffect(() => {
+    setThemeMounted(true);
+  }, []);
 
   useEffect(() => {
     fetchSettings();
@@ -312,14 +317,15 @@ function NavbarContent() {
     }
 
     if (isAuthenticated && user) {
+      const isDark = themeMounted && resolvedTheme === 'dark';
       return (
         <div className="flex items-center gap-2 mr-2">
           <button
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            onClick={() => themeMounted && setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
             className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            aria-label={theme === 'dark' ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الداكن'}
+            aria-label={isDark ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الداكن'}
           >
-            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            {!themeMounted ? <Moon className="w-5 h-5 opacity-70" /> : (isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />)}
           </button>
           {/* Notification Bell with Dropdown */}
           <div className="relative" ref={notificationRef}>
@@ -546,14 +552,15 @@ function NavbarContent() {
       );
     }
 
+    const isDark = themeMounted && resolvedTheme === 'dark';
     return (
       <div className="flex items-center gap-2 mr-2">
         <button
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          onClick={() => themeMounted && setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
           className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          aria-label={theme === 'dark' ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الداكن'}
+          aria-label={isDark ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الداكن'}
         >
-          {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          {!themeMounted ? <Moon className="w-5 h-5 opacity-70" /> : (isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />)}
         </button>
         <Link
           href="/login"
