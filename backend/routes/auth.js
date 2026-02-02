@@ -387,7 +387,10 @@ router.post("/login", asyncHandler(async (req, res) => {
   
   if (!user) {
     console.log(`⚠️ Login attempt failed: User not found - ${email}`);
-    return res.status(401).json({ error: "بيانات الدخول غير صحيحة", errorEn: "Invalid credentials" });
+    return res.status(401).json({ 
+      error: "البريد الإلكتروني أو كلمة المرور غير صحيحة. يرجى المحاولة مرة أخرى", 
+      errorEn: "Invalid email or password. Please try again" 
+    });
   }
 
   if (user.locked_until && new Date(user.locked_until) > new Date()) {
@@ -419,8 +422,8 @@ router.post("/login", asyncHandler(async (req, res) => {
     );
     
     return res.status(401).json({ 
-      error: "بيانات الدخول غير صحيحة", 
-      errorEn: "Invalid credentials",
+      error: "البريد الإلكتروني أو كلمة المرور غير صحيحة. يرجى المحاولة مرة أخرى", 
+      errorEn: "Invalid email or password. Please try again",
       attemptsRemaining: PASSWORD_POLICY.maxLoginAttempts - failedAttempts
     });
   }

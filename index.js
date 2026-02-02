@@ -173,10 +173,12 @@ app.use(sanitizeInput);
 // 🔒 CSRF Protection - إعداد token للمتصفح (التحقق عبر csrfProtectionLite للطلبات بدون Bearer)
 app.use(setCsrfToken);
 app.get('/api/csrf-token', getCsrfToken);
-// تطبيق CSRF على POST/PUT/DELETE بدون Bearer (login, register) - الطلبات مع Bearer تتخطى
+// تطبيق CSRF على POST/PUT/DELETE بدون Bearer - استثناء مسارات المصادقة (تعمل cross-origin)
+const CSRF_SKIP_PATHS = ['/api/auth/login', '/api/auth/register', '/api/auth/forgot-password', '/api/auth/reset-password'];
 app.use((req, res, next) => {
   const safe = ['GET', 'HEAD', 'OPTIONS'];
   if (safe.includes(req.method)) return next();
+  if (CSRF_SKIP_PATHS.includes(req.path)) return next(); // مسارات الدخول والتسجيل
   return csrfProtectionLite(req, res, next);
 });
 
