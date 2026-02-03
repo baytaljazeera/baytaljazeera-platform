@@ -2745,42 +2745,6 @@ async function initializeDatabase() {
       console.log("⚠️ Skipping is_active index (column may not exist):", idxErr.message);
     }
 
-    // 🏙️ featured_cities - المدن الأكثر طلبًا (يُستخدم في صفحة البحث)
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS featured_cities (
-        id SERIAL PRIMARY KEY,
-        name_ar VARCHAR(100) NOT NULL,
-        name_en VARCHAR(100),
-        country_code VARCHAR(2) NOT NULL,
-        country_name_ar VARCHAR(100),
-        image_url VARCHAR(500),
-        properties_count INTEGER DEFAULT 0,
-        sort_order INTEGER DEFAULT 0,
-        is_active BOOLEAN DEFAULT true,
-        is_capital BOOLEAN DEFAULT false,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_featured_cities_active_sort ON featured_cities(is_active, sort_order);`);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_featured_cities_country ON featured_cities(country_code);`);
-    console.log("✅ featured_cities table ready");
-
-    // إدراج المدن الافتراضية للمدن الأكثر طلباً إذا كانت الجدول فارغاً
-    const featuredCitiesCheck = await db.query(`SELECT COUNT(*) as cnt FROM featured_cities`);
-    if (parseInt(featuredCitiesCheck.rows[0].cnt) === 0) {
-      await db.query(`
-        INSERT INTO featured_cities (name_ar, name_en, country_code, country_name_ar, image_url, is_capital, sort_order, is_active)
-        VALUES 
-          ('الرياض', 'Riyadh', 'SA', 'السعودية', NULL, true, 1, true),
-          ('جدة', 'Jeddah', 'SA', 'السعودية', NULL, false, 2, true),
-          ('الطائف', 'Taif', 'SA', 'السعودية', NULL, false, 3, true),
-          ('المدينة المنورة', 'Madinah', 'SA', 'السعودية', NULL, false, 4, true),
-          ('مكة المكرمة', 'Makkah', 'SA', 'السعودية', NULL, false, 5, true)
-      `);
-      console.log("✅ Default featured cities inserted (الرياض، جدة، الطائف، المدينة، مكة)");
-    }
-
     // Ensure all required columns exist in countries table (for existing tables)
     try {
       await db.query(`
@@ -2851,12 +2815,12 @@ async function initializeDatabase() {
         await db.query(`
           INSERT INTO cities (country_id, name_ar, name_en, region_ar, region_en, is_popular, display_order, latitude, longitude, is_active)
           VALUES 
-            ($1, 'الرياض', 'Riyadh', 'منطقة الرياض', 'Riyadh Region', true, 1, 24.7136, 46.6753, true),
-            ($1, 'جدة', 'Jeddah', 'منطقة مكة المكرمة', 'Makkah Region', true, 2, 21.4858, 39.1925, true),
-            ($1, 'الدمام', 'Dammam', 'المنطقة الشرقية', 'Eastern Province', true, 3, 26.4207, 50.0888, true),
-            ($1, 'المدينة المنورة', 'Medina', 'منطقة المدينة المنورة', 'Medina Region', true, 4, 24.5247, 39.5692, true),
-            ($1, 'مكة المكرمة', 'Makkah', 'منطقة مكة المكرمة', 'Makkah Region', true, 5, 21.3891, 39.8579, true),
-            ($1, 'الطائف', 'Taif', 'منطقة مكة المكرمة', 'Makkah Region', false, 6, 21.2703, 40.4158, true),
+            ($1, 'مكة المكرمة', 'Makkah', 'منطقة مكة المكرمة', 'Makkah Region', true, 1, 21.3891, 39.8579, true),
+            ($1, 'المدينة المنورة', 'Medina', 'منطقة المدينة المنورة', 'Medina Region', true, 2, 24.5247, 39.5692, true),
+            ($1, 'جدة', 'Jeddah', 'منطقة مكة المكرمة', 'Makkah Region', true, 3, 21.4858, 39.1925, true),
+            ($1, 'الطائف', 'Taif', 'منطقة مكة المكرمة', 'Makkah Region', false, 4, 21.2703, 40.4158, true),
+            ($1, 'الرياض', 'Riyadh', 'منطقة الرياض', 'Riyadh Region', true, 5, 24.7136, 46.6753, true),
+            ($1, 'الدمام', 'Dammam', 'المنطقة الشرقية', 'Eastern Province', true, 6, 26.4207, 50.0888, true),
             ($1, 'أبها', 'Abha', 'منطقة عسير', 'Asir Region', true, 7, 18.2164, 42.5042, true),
             ($1, 'تبوك', 'Tabuk', 'منطقة تبوك', 'Tabuk Region', false, 8, 28.3998, 36.5700, true),
             ($1, 'بريدة', 'Buraydah', 'منطقة القصيم', 'Qassim Region', false, 9, 26.3260, 43.9750, true),
@@ -2913,6 +2877,24 @@ async function initializeDatabase() {
       }
 
       console.log("✅ Default cities inserted");
+    }
+
+    // ترتيب مدن السعودية: مكة، المدينة، جدة، الطائف، الرياض (للقواعد الحالية أو بعد seed)
+    try {
+      const saIdResult = await db.query("SELECT id FROM countries WHERE code = 'SA' LIMIT 1");
+      if (saIdResult.rows.length > 0) {
+        const saId = saIdResult.rows[0].id;
+        await db.query(`
+          UPDATE cities SET display_order = CASE name_ar
+            WHEN 'مكة المكرمة' THEN 1 WHEN 'المدينة المنورة' THEN 2 WHEN 'جدة' THEN 3 WHEN 'الطائف' THEN 4
+            WHEN 'الرياض' THEN 5 WHEN 'الدمام' THEN 6 WHEN 'أبها' THEN 7 WHEN 'تبوك' THEN 8
+            WHEN 'بريدة' THEN 9 WHEN 'خميس مشيط' THEN 10
+            ELSE display_order END
+          WHERE country_id = $1
+        `, [saId]);
+      }
+    } catch (orderErr) {
+      console.warn("⚠️ Saudi cities display_order update skipped:", orderErr.message);
     }
 
     console.log("✅ All tables and indexes created successfully");
