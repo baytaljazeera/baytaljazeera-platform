@@ -3627,9 +3627,9 @@ export default function NewListingPage() {
                         <div>
                           <p className="text-xs font-semibold text-[#002845]/80 mb-2">صوت التعليق (أصحاب الأصوات)</p>
                           <select value={videoVoice} onChange={(e) => setVideoVoice(e.target.value)} className="rounded-lg border border-[#D4AF37]/40 bg-white px-3 py-2 text-sm text-[#002845] focus:ring-2 focus:ring-[#D4AF37]/50 w-full max-w-xs">
-                            <option value="onyx">فيصل — صوت عميق</option>
-                            <option value="echo">سعد — صوت واضح</option>
-                            <option value="alloy">خالد — صوت محايد</option>
+                            <option value="onyx">فيصل — صوت عميق رجالي</option>
+                            <option value="fable">سعد — صوت رجالي واضح</option>
+                            <option value="echo">خالد — صوت رجالي متوسط</option>
                           </select>
                         </div>
                       )}
