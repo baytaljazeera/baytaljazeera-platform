@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -1064,8 +1065,8 @@ function ListingPopupCard({
         </div>
       </div>
 
-      {/* Modal تفاصيل الإعلان */}
-      {showDetailsModal && (
+      {/* Modal تفاصيل الإعلان - Portal لعرضه فوق الخريطة */}
+      {showDetailsModal && typeof document !== 'undefined' && createPortal(
         <div
           style={{
             position: "fixed",
@@ -1260,7 +1261,8 @@ function ListingPopupCard({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
