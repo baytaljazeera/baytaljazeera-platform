@@ -163,7 +163,6 @@ const STEPS = [
 
 export default function NewListingPage() {
   const router = useRouter();
-  const { token: authToken } = useAuthStore();
 
   const [user, setUser] = useState<User | null>(null);
   const [plan, setPlan] = useState<PlanInfo | null>(null);
@@ -245,7 +244,6 @@ export default function NewListingPage() {
   const [tipsResult, setTipsResult] = useState<string | null>(null);
   const [tipsError, setTipsError] = useState<string | null>(null);
   const [videoLoading, setVideoLoading] = useState(false);
-  const [videoElapsedSeconds, setVideoElapsedSeconds] = useState(0);
   const [videoResult, setVideoResult] = useState<string | null>(null);
   const [slideshowLoading, setSlideshowLoading] = useState(false);
   const [slideshowResult, setSlideshowResult] = useState<string | null>(null);
@@ -254,14 +252,9 @@ export default function NewListingPage() {
   const [videoError, setVideoError] = useState<string | null>(null);
   const [videoPromoText, setVideoPromoText] = useState<{headline: string; subheadline: string; callToAction: string; tagline?: string; priceTag: string | null} | null>(null);
   const [selectedVideoImageIndex, setSelectedVideoImageIndex] = useState<number | null>(null);
-  const [selectedVoice, setSelectedVoice] = useState<string>("onyx");
 
   // Scroll to top button state
   const [showScrollTop, setShowScrollTop] = useState(false);
-  
-  // Video confirmation modal state
-  const [showVideoConfirmModal, setShowVideoConfirmModal] = useState(false);
-  const [pendingVideoImages, setPendingVideoImages] = useState<File[]>([]);
 
   // Currency state based on selected country
   const [localCurrency, setLocalCurrency] = useState<{
@@ -718,21 +711,13 @@ export default function NewListingPage() {
       return;
     }
     
-    // تحذير إذا كانت الصور كثيرة - نستخدم modal فاخر بدلاً من confirm العادي
+    // تحذير إذا كانت الصور كثيرة
     if (imagesToUse.length > 10) {
-      setPendingVideoImages(imagesToUse);
-      setShowVideoConfirmModal(true);
-      return;
+      const proceed = window.confirm(`تم اختيار ${imagesToUse.length} صورة. عدد أقل من الصور يعني سرعة أكبر في التوليد. هل تريد المتابعة؟`);
+      if (!proceed) return;
     }
-    
-    // متابعة التوليد مباشرة
-    await executeVideoGeneration(imagesToUse);
-  }
-  
-  // دالة تنفيذ توليد الفيديو
-  const executeVideoGeneration = async (imagesToUse: File[]) => {
+
     setVideoLoading(true);
-    setVideoElapsedSeconds(0);
     setVideoError(null);
     setVideoResult(null);
     setVideoPromoText(null);
@@ -744,8 +729,8 @@ export default function NewListingPage() {
         formData.append('images', img);
       });
 
-      // توكن من authStore أو localStorage (لتفادي 403)
-      const token = authToken || (typeof localStorage !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('oauth_token')) : null);
+      // Get token for authorization (can't use getAuthHeaders with FormData)
+      const token = typeof localStorage !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('oauth_token')) : null;
       const uploadHeaders: HeadersInit = {};
       if (token) {
         uploadHeaders['Authorization'] = `Bearer ${token}`;
@@ -770,14 +755,15 @@ export default function NewListingPage() {
         throw new Error("لم يتم رفع أي صور");
       }
 
-      // Step 2: Generate video - توكن من authStore كـ fallback
-      const videoHeaders = getAuthHeaders() as Record<string, string>;
-      if (!videoHeaders['Authorization'] && token) {
-        videoHeaders['Authorization'] = `Bearer ${token}`;
+      // Step 2: Generate video — ensure token is sent (fix 403: authStore token fallback)
+      const headers = getAuthHeaders();
+      const authToken = useAuthStore.getState().token ?? (typeof localStorage !== "undefined" ? (localStorage.getItem("token") || localStorage.getItem("oauth_token")) : null);
+      if (authToken && !headers["Authorization"]) {
+        (headers as Record<string, string>)["Authorization"] = `Bearer ${authToken}`;
       }
       const res = await fetch(`${API_URL}/api/ai/user/generate-video`, {
         method: "POST",
-        headers: videoHeaders,
+        headers,
         credentials: "include",
         body: JSON.stringify({
           propertyType: form.propertyType,
@@ -795,7 +781,6 @@ export default function NewListingPage() {
           hasElevator: form.hasElevator,
           hasGarden: form.hasGarden,
           customPromoText: customPromoText.trim() || undefined,
-          voice: selectedVoice,
           imagePaths: uploadedPaths,
           template: "luxury"
         })
@@ -810,109 +795,18 @@ export default function NewListingPage() {
 
       if (data.success && data.videoUrl) {
         setVideoResult(data.videoUrl);
-        if (data.promoText) setVideoPromoText(data.promoText);
-        setVideoLoading(false);
-        return;
+        if (data.promoText) {
+          setVideoPromoText(data.promoText);
+        }
+      } else {
+        throw new Error(data.error || "فشل في توليد الفيديو");
       }
-
-      // Async: backend returns operationId - poll for status (avoids 502 timeout)
-      if (data.success && data.operationId) {
-        await pollVideoStatus(data.operationId);
-        return;
-      }
-
-      throw new Error(data.error || "فشل في توليد الفيديو");
 
     } catch (err: any) {
-      const msg = err?.message || "حدث خطأ أثناء توليد الفيديو";
-      const isNet = (m: string) =>
-        /failed to fetch|network error|load failed|network request failed|err_/i.test(m) || err?.name === "TypeError";
-      setVideoError(
-        isNet(msg)
-          ? "عذراً، الخادم لا يستجيب حالياً. قد يكون قيد التشغيل. يرجى الانتظار قليلاً ثم المحاولة مرة أخرى."
-          : msg
-      );
+      setVideoError(err.message || "حدث خطأ أثناء توليد الفيديو");
     } finally {
       setVideoLoading(false);
     }
-  }
-
-  // تمييز خطأ الشبكة (سيرفر غير متاح) عن خطأ المنطق (عملية غير موجودة)
-  function isNetworkError(err: any): boolean {
-    const msg = (err?.message || String(err)).toLowerCase();
-    return (
-      msg.includes("failed to fetch") ||
-      msg.includes("network error") ||
-      msg.includes("load failed") ||
-      msg.includes("network request failed") ||
-      msg.includes("err_") ||
-      err?.name === "TypeError"
-    );
-  }
-
-  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-  // Poll for video status when backend returns operationId (async flow)
-  // مع Exponential Backoff عند فشل الشبكة (يعطي السيرفر وقتاً للاستيقاظ - Cold Start على Render)
-  async function pollVideoStatus(operationId: string) {
-    const maxAttempts = 120; // 10 min max
-    const basePollInterval = 5000; // 5s بين المحاولات العادية
-    const pollToken = authToken || (typeof localStorage !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('oauth_token')) : null);
-    const pollHeaders = getAuthHeaders() as Record<string, string>;
-    if (!pollHeaders['Authorization'] && pollToken) pollHeaders['Authorization'] = `Bearer ${pollToken}`;
-
-    // انتظار أولي لإعطاء السيرفر وقت التشغيل (Cold Start ~دقيقة على Render)
-    await delay(10000);
-
-    let consecutiveNetworkErrors = 0;
-    const maxConsecutiveNetworkErrors = 6;
-
-    for (let i = 0; i < maxAttempts; i++) {
-      if (i > 0) await delay(basePollInterval);
-
-      try {
-        const statusRes = await fetch(`${API_URL}/api/ai/user/video-status/${operationId}`, {
-          headers: pollHeaders,
-          credentials: "include"
-        });
-        consecutiveNetworkErrors = 0; // نجح الاتصال
-
-        if (statusRes.status === 404) {
-          throw new Error("عملية التوليد غير موجودة أو انتهت صلاحيتها");
-        }
-        if (!statusRes.ok) continue;
-
-        const statusData = await statusRes.json();
-
-        if (statusData.status === "completed" && statusData.videoUrl) {
-          setVideoResult(statusData.videoUrl);
-          if (statusData.promoText) setVideoPromoText(statusData.promoText);
-          return;
-        }
-        if (statusData.status === "error") {
-          throw new Error(statusData.error || "فشل في توليد الفيديو");
-        }
-        if (statusData.elapsedSeconds != null) {
-          setVideoElapsedSeconds(statusData.elapsedSeconds);
-        }
-      } catch (err: any) {
-        if (err.message?.includes("فشل") || err.message?.includes("غير موجودة")) throw err;
-
-        if (isNetworkError(err)) {
-          consecutiveNetworkErrors++;
-          const backoffSec = Math.min(5 * Math.pow(2, Math.min(consecutiveNetworkErrors, 4)), 60);
-          if (consecutiveNetworkErrors >= maxConsecutiveNetworkErrors) {
-            throw new Error(
-              "عذراً، الخادم لا يستجيب حالياً. قد يكون قيد التشغيل (استيقاظ الخادم). يرجى الانتظار دقيقة ثم المحاولة مرة أخرى."
-            );
-          }
-          await delay(backoffSec * 1000);
-        } else {
-          throw err;
-        }
-      }
-    }
-    throw new Error("استغرق التوليد وقتاً طويلاً (أكثر من 10 دقائق). يرجى المحاولة مرة أخرى.");
   }
 
   const propertyTypesForUI = form.usageType === "تجاري"
@@ -1667,7 +1561,7 @@ export default function NewListingPage() {
         <div 
           className="absolute inset-0 bg-cover bg-center"
           style={{ 
-            backgroundImage: imagePreviews[0] ? `url(${imagePreviews[0]})` : "linear-gradient(135deg, #002845 0%, #003356 50%, #002845 100%)",
+            backgroundImage: `url('/uploads/listings/1764807083106-931124547.jpeg')`,
             filter: 'blur(1px)',
           }}
         />
@@ -3608,7 +3502,7 @@ export default function NewListingPage() {
                             <p className="text-xs text-emerald-800 flex items-start gap-2">
                               <span className="text-emerald-600 font-bold">💡 ملاحظة:</span>
                               <span>
-                                حتى 15 صورة. كل صورة تُعرض 6 ثوانٍ. عدد أقل = إنجاز أسرع.
+                                عدد صور أقل يعني سرعة في الإنجاز. ننصح باختيار 3-8 صور للحصول على أفضل نتيجة.
                               </span>
                             </p>
                           </div>
@@ -3649,15 +3543,11 @@ export default function NewListingPage() {
                           <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
                           <span className="font-semibold text-purple-700">جاري توليد الفيديو...</span>
                         </div>
-                        <p className="text-sm text-purple-600/80 mb-2">قد يستغرق حتى 10 دقائق (تشغيل الخدمة + التوليد)، يرجى الانتظار</p>
                         <div className="w-full bg-purple-200 rounded-full h-2 mb-2">
-                          <div 
-                            className="bg-purple-600 h-2 rounded-full transition-all duration-500" 
-                            style={{width: `${Math.max(5, Math.min((videoElapsedSeconds / 600) * 100, 95))}%`}}
-                          />
+                          <div className="bg-purple-600 h-2 rounded-full animate-pulse" style={{width: '60%'}}></div>
                         </div>
                         <p className="text-xs text-purple-600">
-                          الوقت المنقضي: {Math.floor(videoElapsedSeconds / 60)}:{String(videoElapsedSeconds % 60).padStart(2, '0')}
+                          قد يستغرق هذا 1-3 دقائق حسب الطلب
                         </p>
                       </div>
                     ) : videoResult ? (
@@ -3695,34 +3585,22 @@ export default function NewListingPage() {
                         </div>
                       </div>
                     ) : videoError ? (
-                      <div className="relative overflow-hidden p-5 rounded-2xl bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 border border-amber-200/60 shadow-lg">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-amber-200/30 to-transparent rounded-full -translate-y-1/2 translate-x-1/2" />
-                        <div className="absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr from-rose-200/30 to-transparent rounded-full translate-y-1/2 -translate-x-1/2" />
-                        <div className="relative z-10">
-                          <div className="flex items-center gap-3 mb-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center shadow-md">
-                              <AlertTriangle className="w-5 h-5 text-white" />
-                            </div>
-                            <div>
-                              <span className="font-bold text-amber-800 text-base">نحتاج لحظة إضافية</span>
-                              <p className="text-xs text-amber-600/80">جاري تحسين تجربة الفيديو</p>
-                            </div>
-                          </div>
-                          <div className="p-3 bg-white/60 backdrop-blur-sm rounded-xl border border-amber-100 mb-4">
-                            <p className="text-sm text-amber-700 leading-relaxed">{videoError}</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setVideoError(null);
-                              handleGenerateVideo();
-                            }}
-                            className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white rounded-xl hover:from-amber-600 hover:via-orange-600 hover:to-amber-700 transition-all font-semibold shadow-md hover:shadow-lg active:scale-[0.98]"
-                          >
-                            <RefreshCw className="w-4 h-4" />
-                            <span>إعادة المحاولة</span>
-                          </button>
+                      <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertTriangle className="w-5 h-5 text-red-600" />
+                          <span className="font-semibold text-red-700">خطأ في توليد الفيديو</span>
                         </div>
+                        <p className="text-sm text-red-600 mb-3">{videoError}</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVideoError(null);
+                            handleGenerateVideo();
+                          }}
+                          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm font-medium"
+                        >
+                          إعادة المحاولة
+                        </button>
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -3735,44 +3613,12 @@ export default function NewListingPage() {
                               <p className="text-sm font-semibold text-slate-800 mb-1">مميزات الفيديو بالذكاء الاصطناعي:</p>
                               <ul className="text-xs text-slate-600 space-y-1 list-disc list-inside">
                                 <li>فيديو سينمائي احترافي بتقنية Veo 2.0</li>
-                                <li>مدة 40-90 ثانية بتنسيق 16:9 (6 ثوانٍ لكل صورة)</li>
-                                <li>عبارات جاذبة مُنشأة بـ Gemini</li>
-                                <li>اختيار الصوت المناسب لك</li>
+                                <li>مدة 8 ثوانٍ بتنسيق 16:9</li>
+                                <li>نص ترويجي ذكي مُنشأ تلقائياً</li>
                                 <li>مُحسّن للعقارات السكنية والتجارية</li>
                               </ul>
                             </div>
                           </div>
-                        </div>
-                        {/* اختيار الصوت */}
-                        <div className="p-4 bg-white/80 rounded-xl border border-purple-200">
-                          <label className="block text-sm font-semibold text-slate-800 mb-2">اختر صوت التعليق:</label>
-                          <select
-                            value={selectedVoice}
-                            onChange={(e) => setSelectedVoice(e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-lg border border-purple-200 bg-white text-slate-800 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                          >
-                            <option value="onyx">صوت رجالي عميق (Onyx) - الافتراضي</option>
-                            <option value="alloy">صوت محايد (Alloy)</option>
-                            <option value="echo">صوت رجالي هادئ (Echo)</option>
-                            <option value="fable">صوت بريطاني (Fable)</option>
-                            <option value="nova">صوت نسائي ناعم (Nova)</option>
-                            <option value="shimmer">صوت نسائي واضح (Shimmer)</option>
-                            <option value="coral">صوت نسائي دافئ (Coral)</option>
-                            <option value="sage">صوت هادئ (Sage)</option>
-                            <option value="ash">صوت عصري (Ash)</option>
-                          </select>
-                          <p className="text-xs text-slate-500 mt-1.5">يمكنك اختيار الصوت الذي يناسب إعلانك</p>
-                        </div>
-                        {/* نص ترويجي مخصص (اختياري) */}
-                        <div className="p-4 bg-white/80 rounded-xl border border-purple-200">
-                          <label className="block text-sm font-semibold text-slate-800 mb-2">نص ترويجي مخصص (اختياري):</label>
-                          <textarea
-                            value={customPromoText}
-                            onChange={(e) => setCustomPromoText(e.target.value)}
-                            placeholder="اتركه فارغاً لاستخدام عبارات ذكية مُنشأة تلقائياً بـ Gemini. أو اكتب نصك الخاص للتعليق الصوتي."
-                            rows={2}
-                            className="w-full px-4 py-2.5 rounded-lg border border-purple-200 bg-white text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-none"
-                          />
                         </div>
                         <button
                           type="button"
@@ -4462,94 +4308,6 @@ export default function NewListingPage() {
             </div>
           </div>
         )}
-
-        {/* Video Confirmation Modal - تصميم فاخر */}
-        <AnimatePresence>
-          {showVideoConfirmModal && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-              onClick={() => setShowVideoConfirmModal(false)}
-            >
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                onClick={(e) => e.stopPropagation()}
-                className="relative w-full max-w-md overflow-hidden rounded-3xl shadow-2xl"
-              >
-                {/* خلفية متدرجة فاخرة */}
-                <div className="absolute inset-0 bg-gradient-to-br from-[#01273C] via-[#0B6B4C] to-[#01273C]" />
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(212,175,55,0.15),transparent_50%)]" />
-                
-                {/* المحتوى */}
-                <div className="relative p-6">
-                  {/* الأيقونة */}
-                  <div className="flex justify-center mb-4">
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/30">
-                      <Film className="w-8 h-8 text-white" />
-                    </div>
-                  </div>
-                  
-                  {/* العنوان */}
-                  <h3 className="text-xl font-bold text-center text-white mb-2">
-                    تأكيد توليد الفيديو
-                  </h3>
-                  
-                  {/* الرسالة */}
-                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 mb-6 border border-white/20">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
-                        <ImageIcon className="w-5 h-5 text-amber-400" />
-                      </div>
-                      <div>
-                        <p className="text-white/90 font-semibold">
-                          تم اختيار {pendingVideoImages.length} صورة
-                        </p>
-                        <p className="text-white/60 text-sm">
-                          عدد كبير من الصور
-                        </p>
-                      </div>
-                    </div>
-                    <p className="text-white/80 text-sm leading-relaxed">
-                      عدد أقل من الصور يعني سرعة أكبر في التوليد وجودة أفضل للفيديو. 
-                      هل تريد المتابعة بهذا العدد؟
-                    </p>
-                  </div>
-                  
-                  {/* نصيحة */}
-                  <div className="flex items-start gap-2 mb-6 text-amber-300/80 text-xs">
-                    <Sparkles className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                    <span>حتى 15 صورة. كل صورة 6 ثوانٍ. ننصح 5-10 صور للإنجاز الأسرع.</span>
-                  </div>
-                  
-                  {/* الأزرار */}
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => setShowVideoConfirmModal(false)}
-                      className="flex-1 py-3 px-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium transition-all duration-200 border border-white/20"
-                    >
-                      إلغاء
-                    </button>
-                    <button
-                      onClick={async () => {
-                        setShowVideoConfirmModal(false);
-                        await executeVideoGeneration(pendingVideoImages);
-                      }}
-                      className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] hover:from-[#E5C048] hover:to-[#C9971C] text-white font-bold transition-all duration-200 shadow-lg shadow-amber-500/30 flex items-center justify-center gap-2"
-                    >
-                      <Rocket className="w-4 h-4" />
-                      <span>متابعة التوليد</span>
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* Scroll to Top Button */}
         {showScrollTop && (
