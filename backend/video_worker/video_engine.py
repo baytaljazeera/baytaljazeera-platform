@@ -20,6 +20,11 @@ except ImportError:
     OpenAI = None
 
 try:
+    from gtts import gTTS
+except ImportError:
+    gTTS = None
+
+try:
     from moviepy.editor import (
         ImageClip, AudioFileClip, CompositeAudioClip,
         concatenate_videoclips
@@ -60,75 +65,69 @@ class BaytVideoEngine:
             script = raw.strip()
         return script
 
-    def generate_voiceover(self):
-        """Generate AI voiceover using OpenAI TTS (male voices only). نطق عربي أوضح."""
-        if not client:
-            print("[VideoEngine] Warning: OpenAI not configured, skipping voiceover")
-            return None
-
-        voice = self.voice
+    def _get_script_for_tts(self):
+        """يولّد النص الإعلاني (باستخدام GPT إذا متوفر)."""
         title = self.data.get('title') or ''
         location = self.data.get('location') or ''
         price = self.data.get('price') or ''
         details = (self.data.get('details') or '')[:500]
+        if client:
+            prompt = f"""اكتب نصاً إعلانياً قصيراً للعقار (٣ إلى ٥ جمل). عربي فصيح بسيط، جمل قصيرة، بدون أرقام هواتف. ركّز على الفخامة والموقع.
+العنوان: {title}
+الموقع: {location}
+السعر: {price}
+الوصف: {details}
+أرجع النص فقط بدون عناوين."""
+            try:
+                gpt = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                raw = gpt.choices[0].message.content or ""
+                script = self._strip_script_prefix(raw)
+                if len(script) > 500:
+                    script = script[:500].rsplit('.', 1)[0] + '.' if '.' in script[:500] else script[:500]
+                return script
+            except Exception as e:
+                print(f"[VideoEngine] GPT script error: {e}")
+        return f"عقار مميز في {location}. {title}. للاستفسار تواصل معنا."
 
-        # 1) نَصّ مُحَسَّن لِلقِرَاءَةِ الْآلِيَّةِ: جُمَل قَصِيرَة، مُفْرَدَات وَاضِحَة، تشكيل كامل
-        prompt_script = f"""أنت تكتب نصاً إعلانياً للعقار ليقْرَأَه قارئ آلي (TTS) عربي. الهدف نطق سليم وواضح كأن إنساناً عربياً يقرأ.
+    def generate_voiceover(self):
+        """توليد التعليق: gTTS للعربي (افتراضي — أنصق) أو OpenAI إذا VOICE_ENGINE=openai."""
+        force_openai = os.environ.get("VOICE_ENGINE", "").strip().lower() == "openai"
+        use_gtts = not force_openai and gTTS
+        script = self._get_script_for_tts()
+        if not script or not script.strip():
+            return None
+        voice_path = OUTPUT_DIR / f"voice_{self.data.get('id', 'temp')}.mp3"
 
-البيانات:
-- العنوان: {title}
-- الموقع: {location}
-- السعر: {price}
-- الوصف (مختصر): {details}
+        if use_gtts and gTTS:
+            try:
+                import re
+                clean = re.sub(r'[\u064B-\u0652\u0670]', '', script)
+                if not clean.strip():
+                    clean = script
+                tts = gTTS(text=clean, lang='ar', slow=False)
+                tts.save(str(voice_path))
+                print(f"[VideoEngine] ✅ Voiceover (gTTS) generated: {voice_path}")
+                return str(voice_path)
+            except Exception as e:
+                print(f"[VideoEngine] gTTS failed, falling back to OpenAI: {e}")
 
-الشروط الصارمة:
-1) أَرْجِع ٣ إلى ٥ جمل فقط. كل جملة مستقلة وقصيرة (تقريباً ٤–١٠ كلمات).
-2) استخدم لغة عربية فصحى بسيطة، كلمات شائعة وسهلة النطق. لا لهجات عامية معقدة.
-3) شكّل كل كلمة بالكامل: ضمة ُ فتحة َ كسرة ِ شدة ّ سكون ْ (على كل حرف يحتاج حركة). هذا ضروري لنطق القارئ الآلي.
-4) لا أرقام هواتف. لا رموز معقدة. ركّز على الفخامة والموقع والفرصة.
-
-أرجع النص المشكّل فقط، بدون عناوين أو ترقيم."""
-
+        if not client:
+            print("[VideoEngine] Warning: no TTS configured, skipping voiceover")
+            return None
         try:
-            gpt = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt_script}]
-            )
-            raw = gpt.choices[0].message.content or ""
-            script = self._strip_script_prefix(raw)
-
-            # 2) اختياري: لو النص طويل جداً أو بدون تشكيل كافٍ، نطلب تشكيلاً إضافياً (مرة واحدة)
-            if len(script) > 20 and not any(c in script for c in 'َُِّْ'):
-                diac_prompt = f"""شكّل النص التالي بالكامل (حركات العربية: ضمة فتحة كسرة شدة سكون) على كل كلمة. أَرْجِع النص نفسه فقط مع التشكيل، بدون أي تعليق.
-
-النص:
-{script}"""
-                try:
-                    diac_resp = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[{"role": "user", "content": diac_prompt}]
-                    )
-                    diac_text = (diac_resp.choices[0].message.content or "").strip()
-                    script = self._strip_script_prefix(diac_text) or script
-                except Exception:
-                    pass
-
-            # تقصير النص إذا زاد عن حد معقول لتفادي تقطيع الصوت
             if len(script) > 600:
                 script = script[:600].rsplit('.', 1)[0] + '.' if '.' in script[:600] else script[:600]
-
-            # tts-1-hd لجودة أوضح
             res = client.audio.speech.create(
                 model="tts-1-hd",
-                voice=voice,
+                voice=self.voice,
                 input=script
             )
-            
-            voice_path = OUTPUT_DIR / f"voice_{self.data.get('id', 'temp')}.mp3"
             res.stream_to_file(str(voice_path))
-            print(f"[VideoEngine] ✅ Voiceover generated: {voice_path}")
+            print(f"[VideoEngine] ✅ Voiceover (OpenAI) generated: {voice_path}")
             return str(voice_path)
-            
         except Exception as e:
             print(f"[VideoEngine] ❌ Voice generation error: {e}")
             return None

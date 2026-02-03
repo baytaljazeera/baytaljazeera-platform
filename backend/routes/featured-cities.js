@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
 const db = require('../db');
 const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
@@ -7,12 +8,30 @@ const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
 
+let uploadImage, isCloudinaryConfigured;
+try {
+  const cloud = require('../services/cloudinaryService');
+  uploadImage = cloud.uploadImage;
+  isCloudinaryConfigured = cloud.isCloudinaryConfigured;
+} catch (e) {
+  uploadImage = null;
+  isCloudinaryConfigured = () => false;
+}
+
+const citiesUploadDir = path.join(__dirname, '../public/uploads/cities');
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '../public/uploads/cities'));
+    try {
+      fs.mkdirSync(citiesUploadDir, { recursive: true });
+      cb(null, citiesUploadDir);
+    } catch (err) {
+      cb(err, null);
+    }
   },
   filename: (req, file, cb) => {
-    const uniqueName = crypto.randomBytes(16).toString('hex') + path.extname(file.originalname);
+    const ext = (path.extname(file.originalname) || '').toLowerCase().replace(/[^a-z.]/g, '') || '.jpg';
+    const uniqueName = crypto.randomBytes(16).toString('hex') + ext;
     cb(null, uniqueName);
   }
 });
@@ -93,7 +112,7 @@ router.put('/reorder', authMiddleware, adminMiddleware, asyncHandler(async (req,
 
 router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const result = await pool.query('SELECT * FROM featured_cities WHERE id = $1', [id]);
+  const result = await db.query('SELECT * FROM featured_cities WHERE id = $1', [id]);
   
   if (result.rows.length === 0) {
     return res.status(404).json({ error: 'المدينة غير موجودة' });
@@ -110,8 +129,13 @@ router.post('/', authMiddleware, adminMiddleware, upload.single('image'), asyncH
   }
   
   let image_url = null;
-  if (req.file) {
-    image_url = `/uploads/cities/${req.file.filename}`;
+  if (req.file && req.file.path) {
+    if (isCloudinaryConfigured && uploadImage && isCloudinaryConfigured()) {
+      const up = await uploadImage(req.file.path, 'cities');
+      if (up && up.success && up.url) image_url = up.url;
+      try { fs.unlinkSync(req.file.path); } catch (_) {}
+    }
+    if (!image_url) image_url = `/uploads/cities/${req.file.filename}`;
   }
   
   const result = await db.mutatingQuery(
@@ -128,14 +152,19 @@ router.put('/:id', authMiddleware, adminMiddleware, upload.single('image'), asyn
   const { id } = req.params;
   const { name_ar, name_en, country_code, country_name_ar, is_capital, sort_order, is_active } = req.body;
   
-  const existing = await pool.query('SELECT * FROM featured_cities WHERE id = $1', [id]);
+  const existing = await db.query('SELECT * FROM featured_cities WHERE id = $1', [id]);
   if (existing.rows.length === 0) {
     return res.status(404).json({ error: 'المدينة غير موجودة' });
   }
   
   let image_url = existing.rows[0].image_url;
-  if (req.file) {
-    image_url = `/uploads/cities/${req.file.filename}`;
+  if (req.file && req.file.path) {
+    if (isCloudinaryConfigured && uploadImage && isCloudinaryConfigured()) {
+      const up = await uploadImage(req.file.path, 'cities');
+      if (up && up.success && up.url) image_url = up.url;
+      try { fs.unlinkSync(req.file.path); } catch (_) {}
+    }
+    if (!image_url) image_url = `/uploads/cities/${req.file.filename}`;
   }
   
   const result = await db.mutatingQuery(
