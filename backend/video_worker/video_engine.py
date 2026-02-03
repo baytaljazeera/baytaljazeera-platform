@@ -73,8 +73,8 @@ ARABIC_PRONUNCIATION_MAP = {
     "فاخرة": "فَاخِرَة",
     "فخمة": "فَخْمَة",
     "راقية": "رَاقِيَة",
-    "مميزة": "مُمَيَّزَة",
-    "مميّزة": "مُمَيْيَزَة",
+    "مميزة": "مُمَيْيِزَة",
+    "مميّزة": "مُمَيْيِزَة",
     "حصرية": "حَصْرِيَّة",
     "حصريّة": "حَصْرِيْيَة",
     "استثمارية": "اِسْتِثْمَارِيَّة",
@@ -197,12 +197,11 @@ class BaytVideoEngine:
             script = enhance_arabic_pronunciation(script)
             print(f"[VideoEngine] 📝 Enhanced script: {script[:100]}...")
 
-            # tts-1-hd لجودة أوضح + سرعة 1.1 لنطق أسرع قليلاً
+            # tts-1-hd لجودة أوضح
             res = client.audio.speech.create(
                 model="tts-1-hd",
                 voice=voice,
-                input=script,
-                speed=1.1
+                input=script
             )
             
             voice_path = OUTPUT_DIR / f"voice_{self.data.get('id', 'temp')}.mp3"
@@ -266,7 +265,11 @@ class BaytVideoEngine:
                 print(f"[VideoEngine] Added ambience: {self.ambience}")
 
         clips = []
-        duration_per_img = min((voice_duration / len(self.images)) + 1.5, 15.0)
+        # حد أدنى 3 ثواني لكل صورة حتى لو كان الصوت قصير
+        min_duration_per_img = 3.0
+        calculated_duration = (voice_duration / len(self.images)) + 1.5
+        duration_per_img = min(max(calculated_duration, min_duration_per_img), 15.0)
+        print(f"[VideoEngine] Duration per image: {duration_per_img:.1f}s ({len(self.images)} images)")
         
         for i, img_path in enumerate(self.images):
             try:
@@ -303,8 +306,11 @@ class BaytVideoEngine:
         
         final_video = concatenate_videoclips(clips, method="compose", padding=-1)
         
-        if final_video.duration > voice_duration:
-            final_video = final_video.subclip(0, voice_duration)
+        # قص الفيديو فقط إذا تجاوز 60 ثانية (لتجنب مشاكل الذاكرة)
+        MAX_VIDEO_DURATION = 60.0
+        if final_video.duration > MAX_VIDEO_DURATION:
+            final_video = final_video.subclip(0, MAX_VIDEO_DURATION)
+            print(f"[VideoEngine] Video capped to {MAX_VIDEO_DURATION}s")
         
         if audio_clips:
             final_video = final_video.set_audio(CompositeAudioClip(audio_clips))
