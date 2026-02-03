@@ -22,19 +22,12 @@ except ImportError:
 try:
     from moviepy.editor import (
         ImageClip, AudioFileClip, CompositeAudioClip,
-        CompositeVideoClip, TextClip, concatenate_videoclips
+        concatenate_videoclips
     )
     from moviepy.audio.fx.all import volumex, audio_loop
 except ImportError:
     print("Error: moviepy not installed. Run: pip install moviepy")
     sys.exit(1)
-
-try:
-    import arabic_reshaper
-    from bidi.algorithm import get_display
-    HAS_ARABIC_SUPPORT = True
-except ImportError:
-    HAS_ARABIC_SUPPORT = False
 
 ASSETS_DIR = Path(__file__).parent / "assets"
 OUTPUT_DIR = Path(tempfile.gettempdir()) / "bayt_videos"
@@ -43,68 +36,43 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY")) if OpenAI and os.environ.get("OPENAI_API_KEY") else None
 
 
-def format_arabic_for_display(text):
-    """Format Arabic text for correct RTL display in MoviePy."""
-    if not text or not text.strip():
-        return ""
-    if HAS_ARABIC_SUPPORT:
-        try:
-            reshaped = arabic_reshaper.reshape(text.strip())
-            return get_display(reshaped)
-        except Exception:
-            return text.strip()
-    return text.strip()
-
-
 class BaytVideoEngine:
     def __init__(self, property_data, image_paths, settings):
         self.data = property_data
         self.images = image_paths
         self.tier = settings.get('tier', 'tier2_business')
         self.ambience = settings.get('ambience', 'none')
-        self.script = settings.get('script')
-        self.voice = settings.get('voice', 'onyx')
-        self.overlay_phrases = settings.get('overlay_phrases') or []
         self.output_filename = f"video_{property_data.get('id', 'temp')}.mp4"
 
     def generate_voiceover(self):
-        """Generate AI voiceover using OpenAI TTS. Uses pre-generated script if provided."""
+        """Generate AI voiceover using OpenAI TTS."""
         if not client:
             print("[VideoEngine] Warning: OpenAI not configured, skipping voiceover")
             return None
-
-        valid_voices = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer']
-        voice = self.voice if self.voice in valid_voices else 'onyx'
-
-        script = self.script
-        if not script or not script.strip():
-            prompt = f"""
-اكتب نصاً إعلانياً للتعليق الصوتي على فيديو عقاري. المدة المستهدفة: 35-45 ثانية (70-100 كلمة).
-العنوان: {self.data.get('title')} | الموقع: {self.data.get('location')} | السعر: {self.data.get('price')} | الوصف: {self.data.get('details')}
-المطلوب: اكتب النص بالتشكيل الكامل (الحركات: الضمة، الكسرة، الفتحة، السكون، الشدة، التنوين) على كل كلمة.
-التشكيل يساعد محرك النطق الآلي على قراءة الكلمات بشكل صحيح ويقلل الأخطاء. مثال: "فُرْصَةٌ اسْتِثْنَائِيَّةٌ".
-نص طويل يكفي 35-45 ثانية. عبارات جاذبة ومشوقة. لغة عربية فصحى واضحة. كلمات بسيطة ومألوفة. بدون أرقام هواتف.
-أرجع النص مُشكّلاً بالكامل بدون علامات اقتباس. اجعله طويلاً.
-"""
-            try:
-                gpt = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                script = gpt.choices[0].message.content
-            except Exception as e:
-                print(f"[VideoEngine] Script generation failed: {e}")
-                script = f"عقار مميز في {self.data.get('location', 'موقع متميز')}. فرصة استثنائية. تواصل الآن."
-
-        # إضافة فواصل للنص لتحسين النطق العربي (التوقف بين الجمل يساعد TTS)
-        script_clean = script.strip()
-        if script_clean and not script_clean.endswith('.'):
-            script_clean = script_clean.rstrip('،.') + '.'
+            
+        voice = "onyx"
+        
+        prompt = f"""
+        اكتب نصاً إعلانياً قصيراً جداً وجذاباً للعقار التالي:
+        العنوان: {self.data.get('title')}
+        الموقع: {self.data.get('location')}
+        السعر: {self.data.get('price')}
+        الوصف: {self.data.get('details')}
+        المطلوب: جمل تسويقية قصيرة وراقية. باللهجة السعودية البيضاء الراقية.
+        تحذير: لا تذكر أرقام هواتف. ركز على الفخامة والموقع.
+        """
+        
         try:
+            gpt = client.chat.completions.create(
+                model="gpt-4o-mini", 
+                messages=[{"role": "user", "content": prompt}]
+            )
+            script = gpt.choices[0].message.content
+            
             res = client.audio.speech.create(
-                model="tts-1-hd",
-                voice=voice,
-                input=script_clean
+                model="tts-1", 
+                voice=voice, 
+                input=script
             )
             
             voice_path = OUTPUT_DIR / f"voice_{self.data.get('id', 'temp')}.mp3"
@@ -114,25 +82,6 @@ class BaytVideoEngine:
             
         except Exception as e:
             print(f"[VideoEngine] ❌ Voice generation error: {e}")
-            return None
-
-    def create_text_overlay(self, text, duration, w=1280, h=720):
-        """Create TextClip overlay for Arabic text. Position: bottom-center."""
-        if not text or not text.strip():
-            return None
-        try:
-            display_text = format_arabic_for_display(text.strip())
-            dejavu_path = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
-            font_path = dejavu_path if os.path.exists(dejavu_path) else None
-            txt_kw = dict(text=display_text, font_size=48, color='white', stroke_color='black', stroke_width=2)
-            if font_path:
-                txt_kw['font'] = font_path
-            txt_clip = TextClip(**txt_kw)
-            txt_clip = txt_clip.set_duration(duration)
-            txt_clip = txt_clip.set_position(('center', h - 120))
-            return txt_clip
-        except Exception as e:
-            print(f"[VideoEngine] Text overlay skipped ({text[:20]}...): {e}")
             return None
 
     def smart_crop_to_16_9(self, clip):
@@ -160,47 +109,36 @@ class BaytVideoEngine:
         audio_clips = []
         voice_duration = 0
         
-        MIN_VIDEO_DURATION = 40   # حد أدنى 40 ثانية
-        MIN_SEC_PER_IMAGE = 6    # كل صورة على الأقل 6 ثوانٍ (كريم)
-
         if voice_path and os.path.exists(voice_path):
             vc = AudioFileClip(voice_path)
             voice_duration = vc.duration
-            audio_clips.append(vc)
+            # Cap duration to avoid Render timeout/OOM (max ~60s)
+            MAX_VIDEO_DURATION = 60.0
+            if voice_duration > MAX_VIDEO_DURATION:
+                vc = vc.subclip(0, MAX_VIDEO_DURATION)
+                voice_duration = MAX_VIDEO_DURATION
+                audio_clips.append(vc)
+                print(f"[VideoEngine] Voice capped to {voice_duration}s to avoid OOM")
+            else:
+                audio_clips.append(vc)
             print(f"[VideoEngine] Voice duration: {voice_duration:.1f}s")
         else:
-            voice_duration = max(len(self.images) * MIN_SEC_PER_IMAGE, MIN_VIDEO_DURATION)
+            voice_duration = min(max(len(self.images) * 4, 15), 60)
             print(f"[VideoEngine] No voice, using default duration: {voice_duration}s")
-
-        # مدة الفيديو: الأطول بين الصوت و 35 ثانية، مع ضمان عرض كل الصور
-        total_duration = max(voice_duration, MIN_VIDEO_DURATION, len(self.images) * MIN_SEC_PER_IMAGE)
-        duration_per_img = total_duration / len(self.images)
-        print(f"[VideoEngine] Total duration: {total_duration:.1f}s, {duration_per_img:.1f}s per image")
 
         if self.ambience != 'none':
             sound_file = ASSETS_DIR / f"{self.ambience}.mp3"
             if sound_file.exists():
                 bg = AudioFileClip(str(sound_file))
-                bg = audio_loop(bg, duration=total_duration + 5)
+                bg = audio_loop(bg, duration=voice_duration + 3)
                 bg = bg.fx(volumex, 0.15)
                 audio_clips.append(bg)
                 print(f"[VideoEngine] Added ambience: {self.ambience}")
 
-        # Ken Burns presets: (zoom_start, zoom_end) - تنويع اسقاطات الكاميرا لكل صورة
-        KEN_BURNS_PRESETS = [
-            (1.0, 1.05),   # zoom خفيف
-            (1.0, 1.08),   # zoom متوسط
-            (1.0, 1.06),   # zoom معتدل
-            (1.0, 1.07),   # zoom متوسط+
-            (1.0, 1.04),   # zoom خفيف جداً
-            (1.0, 1.09),   # zoom قوي
-        ]
         clips = []
-        phrases = self.overlay_phrases if isinstance(self.overlay_phrases, list) else []
+        duration_per_img = min((voice_duration / len(self.images)) + 1.5, 15.0)
         
         for i, img_path in enumerate(self.images):
-            clip = None
-            txt_clip = None
             try:
                 if not os.path.exists(img_path):
                     print(f"[VideoEngine] ⚠️ Image not found: {img_path}")
@@ -211,45 +149,32 @@ class BaytVideoEngine:
                 
                 clip = self.smart_crop_to_16_9(clip)
                 
-                # Ken Burns: تنويع الزوم لكل صورة (اسقاطات كاميرا مختلفة)
-                z_start, z_end = KEN_BURNS_PRESETS[i % len(KEN_BURNS_PRESETS)]
-                def make_zoom(s, e, d):
-                    def _zoom(t):
-                        frac = min(1.0, t / d) if d > 0 else 1.0
-                        return s + (e - s) * frac
-                    return _zoom
-                zoom_fn = make_zoom(z_start, z_end, duration_per_img)
-                clip = clip.resize(zoom_fn)
+                clip = clip.resize(lambda t: 1 + 0.04 * t)
                 clip = clip.set_duration(duration_per_img)
                 
-                # انتقال سلس بين الصور (crossfadein للفوكس الناعم)
                 clip = clip.crossfadein(1.0)
-                
-                # Add text overlay (كلمات جذابة فوق الصورة)
-                if phrases:
-                    phrase = phrases[i % len(phrases)]
-                    txt_clip = self.create_text_overlay(phrase, duration_per_img)
-                    if txt_clip:
-                        clip = CompositeVideoClip([clip, txt_clip])
                 
                 clips.append(clip)
                 
             except Exception as e:
                 print(f"[VideoEngine] ❌ Skipping image {img_path}: {e}")
+            finally:
+                # Free memory after processing each image
+                if 'clip' in dir() and hasattr(clip, 'close'):
+                    try:
+                        clip.close()
+                    except:
+                        pass
 
         if not clips:
             raise ValueError("No valid images found to create video")
 
-        # انتقال fade بين الصور: padding سالب = تداخل للـ crossfade
-        FADE_DURATION = 0.8
-        print(f"[VideoEngine] Concatenating {len(clips)} clips (fade={FADE_DURATION}s بين الصور)...")
-        final_video = concatenate_videoclips(clips, method="compose", padding=-FADE_DURATION)
+        print(f"[VideoEngine] Concatenating {len(clips)} clips...")
         
-        actual_duration = final_video.duration
-        print(f"[VideoEngine] Actual video duration: {actual_duration:.1f}s (target: {total_duration:.1f}s)")
+        final_video = concatenate_videoclips(clips, method="compose", padding=-1)
         
-        if actual_duration > total_duration:
-            final_video = final_video.subclip(0, total_duration)
+        if final_video.duration > voice_duration:
+            final_video = final_video.subclip(0, voice_duration)
         
         if audio_clips:
             final_video = final_video.set_audio(CompositeAudioClip(audio_clips))
@@ -260,10 +185,10 @@ class BaytVideoEngine:
         final_video.write_videofile(
             str(output_path), 
             fps=24, 
-            preset='medium',  # جودة أفضل من ultrafast (عالمي)
+            preset='ultrafast', 
             codec='libx264', 
             audio_codec='aac', 
-            threads=2,
+            threads=1,
             logger=None
         )
         
@@ -279,18 +204,15 @@ class BaytVideoEngine:
         return str(output_path)
 
 
-def generate_property_video(images, tier="tier1_safwa", ambience="none", property_data=None, script=None, voice="onyx", overlay_phrases=None):
+def generate_property_video(images, tier="tier1_safwa", ambience="none", property_data=None):
     """
     Convenience function for generating property videos.
     Forces high quality tier for best results.
-    script: pre-generated voiceover text (from Gemini). If None, generates via GPT.
-    voice: OpenAI TTS voice (alloy, ash, coral, echo, fable, onyx, nova, sage, shimmer).
-    overlay_phrases: list of short phrases to display over images (e.g. ["فرصة لا تعوض", "موقع ذهبي"]).
     """
     if property_data is None:
         property_data = {"id": "temp", "title": "عقار مميز", "location": "موقع متميز"}
-
-    settings = {"tier": "tier2_business", "ambience": ambience, "script": script, "voice": voice, "overlay_phrases": overlay_phrases or []}
+    
+    settings = {"tier": "tier2_business", "ambience": ambience}
     engine = BaytVideoEngine(property_data, images, settings)
     return engine.create_video()
 

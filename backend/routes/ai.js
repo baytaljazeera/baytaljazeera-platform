@@ -3,7 +3,6 @@ const router = express.Router();
 const OpenAI = require("openai");
 const { GoogleGenAI } = require("@google/genai");
 const db = require("../db");
-const { cache } = require("../config/redis");
 const { authMiddleware, adminMiddleware } = require("../middleware/auth");
 const { asyncHandler } = require("../middleware/asyncHandler");
 const path = require("path");
@@ -94,9 +93,9 @@ if (geminiApiKey) {
 
 // In-memory storage for video generation operations with automatic cleanup
 const videoOperations = new Map();
-// Python worker ops use Redis/cache (survives backend restart) - TTL 10 min
 
 // 🔒 Security: Automatic cleanup of old video operations to prevent memory leaks
+// TTL set to 5 hours to allow long video generation jobs to complete
 const VIDEO_OPERATION_TTL = 5 * 60 * 60 * 1000; // 5 hours TTL
 const CLEANUP_INTERVAL = 5 * 60 * 1000; // Cleanup every 5 minutes
 
@@ -106,6 +105,7 @@ function cleanupVideoOperations() {
   
   for (const [operationId, opData] of videoOperations.entries()) {
     const age = now - opData.startedAt;
+    // Remove operations older than TTL or completed/failed operations after 10 minutes
     if (age > VIDEO_OPERATION_TTL || 
         (opData.status !== 'processing' && age > 10 * 60 * 1000)) {
       videoOperations.delete(operationId);
@@ -1622,103 +1622,10 @@ router.post("/user/generate-advanced-video", authMiddleware, asyncHandler(async 
   }
 }));
 
-// 🎬 توليد عبارات للعرض فوق الصور - Gemini (كلمات جذابة ومعبرة)
-async function generateOverlayPhrases(listingData) {
-  const { title, city, district, price, description } = listingData;
-  const prompt = `أنت كاتب إعلانات عقارية. اكتب 6-8 عبارات قصيرة جداً (2-4 كلمات) للعرض فوق صور فيديو عقاري.
-
-البيانات: العنوان: ${title || 'عقار'} | الموقع: ${city || ''} - ${district || ''} | السعر: ${price || ''}
-
-المطلوب - عبارات جذابة ومعبرة مثل:
-- فرصة لا تعوض
-- موقع ذهبي
-- السعر الآن
-- تشطيبات فاخرة
-- تواصل فوراً
-- استثمار مضمون
-- عقار مميز
-- لا تفوت الفرصة
-
-أرجع قائمة JSON فقط بصيغة: ["عبارة1", "عبارة2", "عبارة3", ...]
-بدون ترقيم أو شرح. عربي فصيح.`;
-
-  if (genAI) {
-    try {
-      const result = await genAI.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: prompt,
-        config: { temperature: 0.8, maxOutputTokens: 200 }
-      });
-      const content = (result.text || "").trim();
-      const match = content.match(/\[[\s\S]*?\]/);
-      if (match) {
-        const arr = JSON.parse(match[0]);
-        const phrases = arr.filter(p => typeof p === 'string' && p.trim().length >= 2).slice(0, 8);
-        if (phrases.length > 0) return phrases;
-      }
-    } catch (e) { console.warn("[Gemini] Overlay phrases failed:", e.message); }
-  }
-  return ["فرصة لا تعوض", "موقع ذهبي", "السعر الآن", "تواصل فوراً", "عقار مميز"];
-}
-
-// 🎬 توليد نص صوتي جذاب للفيديو - Gemini (عبارات راقية مُشكّلة للنطق الآلي)
-async function generateVoiceoverScript(listingData) {
-  const { title, city, district, price, description } = listingData;
-  const prompt = `أنت كاتب إعلانات عقارية محترف. اكتب نصاً صوتياً للتعليق الصوتي على فيديو عقاري. المدة المستهدفة: 35-45 ثانية نطق (حوالي 70-100 كلمة).
-
-البيانات: العنوان: ${title || 'عقار مميز'} | الموقع: ${city || ''} - ${district || ''} | السعر: ${price || ''} | الوصف: ${description || ''}
-
-المطلوب (مهم جداً للنطق الآلي):
-- اكتب النص بالتشكيل الكامل (الحركات: الضمة، الكسرة، الفتحة، السكون، الشدة، التنوين) على كل كلمة
-- التشكيل يساعد محرك النطق الآلي على قراءة الكلمات بشكل صحيح ويقلل الأخطاء والكلمات الغريبة
-- مثال: "فُرْصَةٌ اسْتِثْنَائِيَّةٌ" بدلاً من "فرصة استثنائية"
-- نص طويل يكفي ليملأ 35-45 ثانية (70-100 كلمة تقريباً)
-- عبارات جاذبة ومشوقة (فرصة استثنائية، موقع ذهبي، تشطيبات فاخرة، استثمار مضمون...)
-- لغة عربية فصحى واضحة - استخدم فواصل وترقيم واضح (، .) لتسهيل النطق الآلي
-- جمل قصيرة متقطعة بفواصل
-- تجنب الكلمات المعقدة أو النادرة - اختر كلمات بسيطة ومألوفة لتقليل النطق الغريب
-- بدون أرقام هواتف أو روابط
-- أسلوب راقي
-
-أرجع النص مُشكّلاً بالكامل بدون علامات اقتباس. اجعله طويلاً. استخدم الفواصل بين الجمل.`;
-
-  if (genAI) {
-    try {
-      const result = await genAI.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: prompt,
-        config: { temperature: 0.85, maxOutputTokens: 400 }
-      });
-      const text = (result.text || "").trim().replace(/^["']|["']$/g, "");
-      if (text.length > 10) return text;
-    } catch (e) { console.warn("[Gemini] Voiceover script failed:", e.message); }
-  }
-  return null;
-}
-
-// 🎬 إضافة التشكيل للنص المخصص - يحسّن النطق الآلي ويقلل الكلمات الغريبة
-async function addTashkeelToText(text) {
-  if (!text || !text.trim() || !genAI) return text;
-  try {
-    const prompt = `أضف التشكيل الكامل (الحركات: الضمة، الكسرة، الفتحة، السكون، الشدة، التنوين) لهذا النص العربي. أرجع النص مُشكّلاً فقط بدون أي شرح أو علامات اقتباس.
-
-النص:
-${text.trim()}`;
-    const result = await genAI.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: prompt,
-      config: { temperature: 0.3, maxOutputTokens: 500 }
-    });
-    const diacritized = (result.text || "").trim().replace(/^["']|["']$/g, "");
-    if (diacritized.length > 5) return diacritized;
-  } catch (e) { console.warn("[Gemini] Tashkeel failed:", e.message); }
-  return text;
-}
-
 // 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي - Python Engine
 router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description, voice, customPromoText } = req.body;
+  const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description } = req.body;
 
   // Check user's support level - متاح للباقات المميزة فقط
   const planResult = await db.query(
@@ -1777,58 +1684,30 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
   console.log("🚀 [AI Route] Python Engine Request for user:", userId);
   console.log("[Video] Image count:", cleanImages.length);
 
-  // Return immediately to avoid 502 timeout (Render ~60s limit) - frontend polls for status
-  const operationId = `py_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-  const opData = { userId, status: "processing", startedAt: Date.now() };
-  await cache.set(`video_op:${operationId}`, opData, 600);
-
+  // Immediate Response
   res.json({ 
     success: true, 
-    operationId,
-    message: "جاري إعداد الفيديو السينمائي...",
-    status: "processing"
+    message: "جاري إعداد الفيديو السينمائي...", 
+    status: "processing" 
   });
 
-  // Background processing - avoids request timeout
-  (async () => {
-    const { generateListingSlideshow } = require('../services/videoService');
-    const listingData = { 
-      title: title || 'عقار مميز', 
-      city, 
-      district, 
-      price, 
-      userId, 
-      description: description || `${propertyType} لل${purpose}` 
-    };
-    const targetId = listingId || `temp_${Date.now()}`;
+  // Background Processing
+  const { generateListingSlideshow } = require('../services/videoService');
+  
+  const listingData = { 
+    title: title || 'عقار مميز', 
+    city, 
+    district, 
+    price, 
+    userId, 
+    description: description || `${propertyType} لل${purpose}` 
+  };
+  
+  const targetId = listingId || `temp_${Date.now()}`; 
 
-    // توليد نص ترويجي جذاب وعبارات للعرض فوق الصور بـ Gemini
-    let voiceoverScript = customPromoText?.trim() || await generateVoiceoverScript(listingData);
-    // إضافة التشكيل للنص المخصص لتحسين النطق الآلي وتقليل الكلمات الغريبة
-    if (voiceoverScript && customPromoText?.trim()) {
-      voiceoverScript = await addTashkeelToText(voiceoverScript);
-    }
-    const voiceOption = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer'].includes(voice) ? voice : 'onyx';
-    const overlayPhrases = await generateOverlayPhrases(listingData);
-
-    return generateListingSlideshow(targetId, cleanImages, listingData, { script: voiceoverScript, voice: voiceOption, overlayPhrases });
-  })()
-    .then(async (result) => {
-      const op = await cache.get(`video_op:${operationId}`) || opData;
-      if (result?.url) {
-        const promoText = result.promoText || undefined;
-        await cache.set(`video_op:${operationId}`, { ...op, status: "completed", videoUrl: result.url, promoText }, 600);
-        console.log("[Video] ✅ Background job success:", result.url);
-      } else {
-        await cache.set(`video_op:${operationId}`, { ...op, status: "error", error: "لم يتم إرجاع رابط" }, 600);
-      }
-    })
-    .catch(async (err) => {
-      const errMsg = typeof err?.message === 'string' ? err.message : "فشل في توليد الفيديو";
-      console.error("[Video] ❌ Background job failed:", errMsg);
-      const op = await cache.get(`video_op:${operationId}`) || opData;
-      await cache.set(`video_op:${operationId}`, { ...op, status: "error", error: errMsg }, 600);
-    });
+  generateListingSlideshow(targetId, cleanImages, listingData)
+    .then(result => console.log("[Video] ✅ Background job success:", result?.url ?? result))
+    .catch(err => console.error("[Video] ❌ Background job failed:", err.message));
 }));
 
 // Background polling function for video generation
@@ -1932,13 +1811,11 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
   const { operationId } = req.params;
   const userId = req.user.id;
 
-  // Check Python worker operations (py_xxx) - stored in Redis/cache (survives restart)
-  let opData = operationId.startsWith('py_') ? await cache.get(`video_op:${operationId}`) : null;
-  if (!opData) opData = videoOperations.get(operationId);
+  const opData = videoOperations.get(operationId);
   
   if (!opData) {
     return res.status(404).json({ 
-      error: "عملية التوليد غير موجودة أو انتهت صلاحيتها. يرجى المحاولة مرة أخرى.",
+      error: "عملية التوليد غير موجودة",
       status: "not_found"
     });
   }
@@ -1949,8 +1826,8 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
   }
 
   if (opData.status === "completed") {
-    if (operationId.startsWith('py_')) await cache.del(`video_op:${operationId}`);
-    else videoOperations.delete(operationId);
+    // Clean up from memory after successful retrieval
+    videoOperations.delete(operationId);
     return res.json({
       status: "completed",
       success: true,
@@ -1960,13 +1837,12 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
       message: opData.useImageToVideo 
         ? "تم تحويل صورتك إلى فيديو سينمائي بنجاح! 🎬" 
         : "تم توليد الفيديو الدعائي بنجاح!",
-      duration: "40-90 ثانية"
+      duration: "8 ثواني"
     });
   }
 
   if (opData.status === "error" || opData.status === "timeout") {
-    if (operationId.startsWith('py_')) await cache.del(`video_op:${operationId}`);
-    else videoOperations.delete(operationId);
+    videoOperations.delete(operationId);
     return res.json({
       status: "error",
       error: opData.error || "فشل توليد الفيديو"
