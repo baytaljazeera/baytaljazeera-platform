@@ -40,7 +40,7 @@ def generate():
         "images": ["https://cloudinary.com/img1.jpg", ...],
         "tier": "tier1_safwa" | "tier2_business",
         "ambience": "none" | "birds" | "sea",
-        "voice": "onyx" | "echo" | "alloy" (ذكوري فقط),
+        "voice": "onyx" | "ash" | "fable" | "echo" | "alloy" (رجالي فقط),
         "property": {"id": "123", "title": "فيلا فاخرة", "location": "الرياض"}
     }
     

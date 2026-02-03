@@ -9,6 +9,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import requests
+
 # Fix for Pillow 10+ (ANTIALIAS removed)
 import PIL.Image
 if not hasattr(PIL.Image, 'ANTIALIAS'):
@@ -40,10 +42,14 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY")) if OpenAI and os.environ.get("OPENAI_API_KEY") else None
 
+# ElevenLabs — أصوات عربية رجالية واضحة (أولوية عند ضبط المفتاح)
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+# صوت عربي رجالي افتراضي: Wahab (من مكتبة ElevenLabs) — أو غيّره عبر ELEVENLABS_VOICE_ID
+ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "ldeGOUQJqLGjlVgYn7YL")
+ELEVENLABS_URL = "https://api.elevenlabs.io/v1/text-to-speech"
 
-# أصوات ذكورية فقط - onyx (الأعمق), fable (بريطاني), echo (متوسط)
-# ملاحظة: alloy و nova و shimmer أصوات أنثوية تم استبعادها
-ALLOWED_VOICES = {"onyx", "fable", "echo"}
+# أصوات OpenAI رجالية فقط (tts-1-hd)
+ALLOWED_VOICES = {"onyx", "echo", "alloy", "ash", "fable"}
 
 # قاموس تحسين النطق العربي - تكرار الحرف بدل الشدة + تشكيل واضح
 ARABIC_PRONUNCIATION_MAP = {
@@ -264,54 +270,11 @@ class BaytVideoEngine:
                 print(f"[VideoEngine] GPT script error: {e}")
         return f"عقار مميز في {location}. {title}. للاستفسار تواصل معنا."
 
-    def generate_voiceover(self):
-        """توليد التعليق: gTTS للعربي (افتراضي) أو OpenAI مع تحسين النطق."""
-        force_openai = os.environ.get("VOICE_ENGINE", "").strip().lower() == "openai"
-        use_gtts = not force_openai and gTTS
-        script = self._get_script_for_tts()
-        if not script or not script.strip():
-            return None
-        voice_path = OUTPUT_DIR / f"voice_{self.data.get('id', 'temp')}.mp3"
-
-        if use_gtts and gTTS:
-            try:
-                import re
-                clean = re.sub(r'[\u064B-\u0652\u0670]', '', script)
-                if not clean.strip():
-                    clean = script
-                tts = gTTS(text=clean, lang='ar', slow=False)
-                tts.save(str(voice_path))
-                print(f"[VideoEngine] ✅ Voiceover (gTTS) generated: {voice_path}")
-                return str(voice_path)
-            except Exception as e:
-                print(f"[VideoEngine] gTTS failed, falling back to OpenAI: {e}")
-
-        if not client:
-            print("[VideoEngine] Warning: no TTS configured, skipping voiceover")
-            return None
-        try:
-            if len(script) > 600:
-                script = script[:600].rsplit('.', 1)[0] + '.' if '.' in script[:600] else script[:600]
-            script = enhance_arabic_pronunciation(script)
-            res = client.audio.speech.create(
-                model="tts-1-hd",
-                voice=self.voice,
-                input=script,
-                speed=1.1
-            )
-            res.stream_to_file(str(voice_path))
-            print(f"[VideoEngine] ✅ Voiceover (OpenAI) generated: {voice_path}")
-            return str(voice_path)
-        except Exception as e:
-            print(f"[VideoEngine] ❌ Voice generation error: {e}")
-            return None
-
     def smart_crop_to_16_9(self, clip):
         """Smart center crop to fill 1280x720 (HD) without black bars."""
         w, h = clip.size
         target_ratio = 16 / 9
         current_ratio = w / h
-        
         if current_ratio > target_ratio:
             new_w = int(h * target_ratio)
             x1 = (w - new_w) // 2
@@ -320,8 +283,83 @@ class BaytVideoEngine:
             new_h = int(w / target_ratio)
             y1 = (h - new_h) // 2
             clip = clip.crop(x1=0, y1=y1, width=w, height=new_h)
-        
         return clip.resize((1280, 720))
+
+    def _generate_voiceover_elevenlabs(self, script: str, voice_path: Path) -> str | None:
+        """ElevenLabs TTS — أصوات عربية رجالية واضحة (مثل وهاب)."""
+        if not ELEVENLABS_API_KEY or not script.strip():
+            return None
+        try:
+            if len(script) > 600:
+                script = script[:600].rsplit(".", 1)[0] + "." if "." in script[:600] else script[:600]
+            script = enhance_arabic_pronunciation(script)
+            url = f"{ELEVENLABS_URL}/{ELEVENLABS_VOICE_ID}"
+            headers = {
+                "xi-api-key": ELEVENLABS_API_KEY,
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "text": script,
+                "model_id": "eleven_multilingual_v2",
+                "language_code": "ar",
+            }
+            r = requests.post(url, json=payload, headers=headers, timeout=60)
+            r.raise_for_status()
+            with open(voice_path, "wb") as f:
+                f.write(r.content)
+            print(f"[VideoEngine] ✅ Voiceover (ElevenLabs — رجالي) generated: {voice_path}")
+            return str(voice_path)
+        except Exception as e:
+            print(f"[VideoEngine] ❌ ElevenLabs TTS error: {e}")
+            return None
+
+    def generate_voiceover(self):
+        """ترتيب الأولوية: 1) OpenAI (أصوات رجالية: onyx, echo, alloy, ash, fable) 2) ElevenLabs فقط إن طُلِب 3) gTTS."""
+        use_gtts = os.environ.get("VOICE_ENGINE", "").strip().lower() == "gtts"
+        use_elevenlabs = os.environ.get("VOICE_ENGINE", "").strip().lower() == "elevenlabs"
+        script = self._get_script_for_tts()
+        if not script or not script.strip():
+            return None
+        voice_path = OUTPUT_DIR / f"voice_{self.data.get('id', 'temp')}.mp3"
+
+        # 1) OpenAI TTS — الافتراضي: أصوات رجالية فقط (onyx, echo, alloy, ash, fable) — لا نستخدم ElevenLabs إلا إذا طُلِب صراحة
+        if client and not use_gtts and not use_elevenlabs:
+            try:
+                s = script
+                if len(s) > 600:
+                    s = s[:600].rsplit(".", 1)[0] + "." if "." in s[:600] else s[:600]
+                s = enhance_arabic_pronunciation(s)
+                res = client.audio.speech.create(
+                    model="tts-1-hd",
+                    voice=self.voice,
+                    input=s,
+                    speed=0.95,
+                )
+                res.stream_to_file(str(voice_path))
+                print(f"[VideoEngine] ✅ Voiceover (OpenAI) generated: {voice_path}")
+                return str(voice_path)
+            except Exception as e:
+                print(f"[VideoEngine] ❌ OpenAI TTS error: {e}")
+
+        # 2) ElevenLabs — فقط عند ضبط VOICE_ENGINE=elevenlabs (أصوات عربية رجالية)
+        if use_elevenlabs and ELEVENLABS_API_KEY and not use_gtts:
+            out = self._generate_voiceover_elevenlabs(script, voice_path)
+            if out:
+                return out
+
+        # 3) احتياطي: gTTS
+        if gTTS:
+            try:
+                s = script
+                if len(s) > 600:
+                    s = s[:600].rsplit(".", 1)[0] + "." if "." in s[:600] else s[:600]
+                tts = gTTS(text=s, lang="ar")
+                tts.save(str(voice_path))
+                print(f"[VideoEngine] ✅ Voiceover (gTTS) generated: {voice_path}")
+                return str(voice_path)
+            except Exception as e:
+                print(f"[VideoEngine] ❌ gTTS error: {e}")
+        return None
 
     def create_video(self):
         """Generate the complete property video with cinematic quality."""
@@ -434,7 +472,7 @@ def generate_property_video(images, tier="tier1_safwa", ambience="none", propert
     """
     Convenience function for generating property videos.
     Forces high quality tier for best results.
-    voice: male only — onyx, echo, alloy.
+    voice: male only — onyx, ash, fable, echo, alloy.
     """
     if property_data is None:
         property_data = {"id": "temp", "title": "عقار مميز", "location": "موقع متميز"}

@@ -184,7 +184,7 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     const workerUrl = PYTHON_WORKER_URL.replace(/\/$/, '') + '/generate';
     console.log('[Video] 🎙️ Trying Python Worker (high quality: voice + effects)');
     try {
-      const voice = ['onyx', 'echo', 'fable'].includes(String(listingData.voice || '').toLowerCase())
+      const voice = ['onyx', 'ash', 'fable', 'echo', 'alloy'].includes(String(listingData.voice || '').toLowerCase())
         ? String(listingData.voice).toLowerCase()
         : 'onyx';
       const res = await axios.post(workerUrl, {

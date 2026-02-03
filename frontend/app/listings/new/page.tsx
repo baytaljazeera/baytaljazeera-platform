@@ -254,7 +254,7 @@ export default function NewListingPage() {
   const [videoPromoText, setVideoPromoText] = useState<{headline: string; subheadline: string; callToAction: string; tagline?: string; priceTag: string | null} | null>(null);
   const [selectedVideoImageIndex, setSelectedVideoImageIndex] = useState<number | null>(null);
   const [videoQuality, setVideoQuality] = useState<"fast" | "full">("full");
-  const [videoVoice, setVideoVoice] = useState<string>("onyx"); // أصوات ذكورية فقط: onyx, echo, alloy
+  const [videoVoice, setVideoVoice] = useState<string>("onyx"); // أصوات رجالية: onyx أجهر، ash، fable، echo، alloy
   const [showVideoConfirmModal, setShowVideoConfirmModal] = useState(false);
   const [videoConfirmImageCount, setVideoConfirmImageCount] = useState(0);
   const pendingVideoImagesRef = useRef<File[]>([]);
@@ -3625,11 +3625,13 @@ export default function NewListingPage() {
                       </div>
                       {videoQuality === "full" && (
                         <div>
-                          <p className="text-xs font-semibold text-[#002845]/80 mb-2">صوت التعليق (أصحاب الأصوات)</p>
+                          <p className="text-xs font-semibold text-[#002845]/80 mb-2">صوت التعليق (رجالي — مناسب لمكة)</p>
                           <select value={videoVoice} onChange={(e) => setVideoVoice(e.target.value)} className="rounded-lg border border-[#D4AF37]/40 bg-white px-3 py-2 text-sm text-[#002845] focus:ring-2 focus:ring-[#D4AF37]/50 w-full max-w-xs">
-                            <option value="onyx">فيصل — صوت عميق رجالي</option>
-                            <option value="fable">سعد — صوت رجالي واضح</option>
-                            <option value="echo">خالد — صوت رجالي متوسط</option>
+                            <option value="onyx">فيصل — أجهر (عميق)</option>
+                            <option value="ash">عاصم — رجالي قوي</option>
+                            <option value="fable">فابل — واثق</option>
+                            <option value="echo">سعد — واضح</option>
+                            <option value="alloy">خالد — محايد</option>
                           </select>
                         </div>
                       )}

@@ -142,6 +142,29 @@ generateDynamicPromoText(listingData)
 
 ---
 
+## 🎙️ صوت التعليق (TTS) — أصوات رجالية للعربية
+
+الفيديو الترويجي يُولَّد من **Python Worker** (`video_worker`) مع تعليق صوتي. ترتيب الأولوية:
+
+1. **OpenAI TTS (الافتراضي)** — أصوات رجالية فقط: **onyx، echo، alloy، ash، fable** — يعمل بدون إعداد إضافي.
+2. **ElevenLabs** — فقط عند ضبط `VOICE_ENGINE=elevenlabs` (أصوات عربية رجالية واضحة).
+3. **gTTS** — عند ضبط `VOICE_ENGINE=gtts` (احتياط مجاني).
+
+لا يُستخدم ElevenLabs إلا إذا ضبطت صراحة `VOICE_ENGINE=elevenlabs`؛ الافتراضي دائماً OpenAI (أصوات رجالية).
+
+### تفعيل ElevenLabs (اختياري)
+
+لاستخدام **أصوات ElevenLabs العربية** بدل OpenAI:
+
+1. إنشاء حساب في [ElevenLabs](https://elevenlabs.io) والحصول على **API Key**.
+2. في الـ **Video Worker** ضبط:
+   - `VOICE_ENGINE=elevenlabs`
+   - `ELEVENLABS_API_KEY` = مفتاحك
+   - (اختياري) `ELEVENLABS_VOICE_ID` = معرف صوت عربي رجالي — الافتراضي: وهاب.
+3. إعادة تشغيل الـ Worker.
+
+---
+
 ## 🚀 Performance Optimization
 
 ### Current Settings
