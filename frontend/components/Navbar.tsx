@@ -9,10 +9,8 @@ import {
   PlusCircle, Package, Map, List, 
   User, LogOut, Heart, Bell, FileText, Menu, X,
   ChevronDown, Settings, Crown, MessageCircle, Receipt, Check, CheckCheck,
-  Mail, CreditCard, AlertCircle, Home, Loader2, AlertTriangle, Building2,
-  Sun, Moon
+  Mail, CreditCard, AlertCircle, Home, Loader2, AlertTriangle, Building2
 } from "lucide-react";
-import { useTheme } from "next-themes";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { useSiteSettingsStore } from "@/lib/stores/siteSettingsStore";
 import { apiGet, API_URL } from "@/lib/api";
@@ -37,8 +35,6 @@ function NavbarContent() {
   const currentView = searchParams.get("view") || "map";
   
   const { user, isAuthenticated, logout, checkAuth, hydrate, isHydrated } = useAuthStore();
-  const { resolvedTheme, setTheme } = useTheme();
-  const [themeMounted, setThemeMounted] = useState(false);
   const { settings: siteSettings, fetchSettings } = useSiteSettingsStore();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -70,10 +66,6 @@ function NavbarContent() {
     hydrate();
     checkAuth();
   }, [hydrate, checkAuth]);
-
-  useEffect(() => {
-    setThemeMounted(true);
-  }, []);
 
   useEffect(() => {
     fetchSettings();
@@ -317,16 +309,8 @@ function NavbarContent() {
     }
 
     if (isAuthenticated && user) {
-      const isDark = themeMounted && resolvedTheme === 'dark';
       return (
         <div className="flex items-center gap-2 mr-2">
-          <button
-            onClick={() => themeMounted && setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            aria-label={isDark ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الداكن'}
-          >
-            {!themeMounted ? <Moon className="w-5 h-5 opacity-70" /> : (isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />)}
-          </button>
           {/* Notification Bell with Dropdown */}
           <div className="relative" ref={notificationRef}>
             <button
@@ -552,16 +536,8 @@ function NavbarContent() {
       );
     }
 
-    const isDark = themeMounted && resolvedTheme === 'dark';
     return (
       <div className="flex items-center gap-2 mr-2">
-        <button
-          onClick={() => themeMounted && setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-          className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          aria-label={isDark ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الداكن'}
-        >
-          {!themeMounted ? <Moon className="w-5 h-5 opacity-70" /> : (isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />)}
-        </button>
         <Link
           href="/login"
           className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#003366] to-[#01375e] text-white hover:from-[#01375e] hover:to-[#003366] transition-all font-semibold shadow-md"

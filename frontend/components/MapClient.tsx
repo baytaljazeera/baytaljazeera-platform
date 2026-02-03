@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   MapContainer,
   TileLayer,
@@ -23,13 +24,6 @@ import {
   Heart,
   Navigation,
 } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
 import { useSearchMapStore } from "@/lib/stores/searchMapStore";
 import { getImageUrl } from "@/lib/imageUrl";
 import { getCurrencySymbol, getCurrencyCodeByCountry } from "@/lib/stores/currencyStore";
@@ -44,8 +38,6 @@ export type MapListing = {
   currency_code?: string;
   price?: number;
   area?: number;
-  land_area?: number;
-  building_area?: number;
   bedrooms?: number;
   bathrooms?: number;
   latitude?: number | null;
@@ -436,11 +428,11 @@ function ListingPopupCard({
   const [imgIndex, setImgIndex] = useState(0);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const [lastTap, setLastTap] = useState<number>(0);
   const [imgError, setImgError] = useState(false);
   const [isFavorite, setIsFavorite] = useState(listing.isFavorite || false);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [modalImgIndex, setModalImgIndex] = useState(0);
   const favoriteButtonRef = useRef<HTMLButtonElement>(null);
+  const router = useRouter();
   
   // Update isFavorite when listing.isFavorite changes
   useEffect(() => {
@@ -463,16 +455,14 @@ function ListingPopupCard({
     setIsFavorite(newFavoriteState);
     listing.isFavorite = newFavoriteState;
     
-    // إرسال الطلب في الخلفية (تجنب .catch على undefined)
+    // إرسال الطلب في الخلفية
     if (onToggleFavorite) {
-      const p = onToggleFavorite(listing.id, newFavoriteState);
-      if (p && typeof p?.catch === 'function') {
-        p.catch((error: unknown) => {
-          console.error("Error toggling favorite:", error);
-          setIsFavorite(!newFavoriteState);
-          listing.isFavorite = !newFavoriteState;
-        });
-      }
+      onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
+        console.error("Error toggling favorite:", error);
+        // Rollback on error
+        setIsFavorite(!newFavoriteState);
+        listing.isFavorite = !newFavoriteState;
+      });
     }
     
     return false;
@@ -527,6 +517,7 @@ function ListingPopupCard({
     }
     if (!hasImages) return;
     setImgIndex((prev) => (prev === 0 ? allImages.length - 1 : prev - 1));
+    setLastTap(0); // إلغاء double-tap detection
   };
 
   const goNext = (e?: React.MouseEvent | React.TouchEvent) => {
@@ -537,6 +528,7 @@ function ListingPopupCard({
     }
     if (!hasImages) return;
     setImgIndex((prev) => (prev === allImages.length - 1 ? 0 : prev + 1));
+    setLastTap(0); // إلغاء double-tap detection
   };
 
   const onTouchStart = (e: React.TouchEvent) => {
@@ -564,17 +556,19 @@ function ListingPopupCard({
     e.nativeEvent.stopImmediatePropagation();
   };
 
-  // نقرة واحدة أو مزدوجة لفتح overlay التفاصيل (مثل Zillow)
-  const openDetailModal = () => {
-    setModalImgIndex(imgIndex);
-    setShowDetailModal(true);
+  // Double tap/click للانتقال لصفحة التفاصيل
+  const handleImageDoubleTap = () => {
+    router.push(`/listing/${listing.id}`);
   };
 
   const handleImageClick = (e: React.MouseEvent | React.TouchEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.closest('.popup-favorite-btn') || target.closest('.popup-nav-btn') || target.closest('.popup-dot-btn')) return;
     e.stopPropagation();
-    openDetailModal();
+    const now = Date.now();
+    if (now - lastTap < 300) {
+      // Double tap detected
+      handleImageDoubleTap();
+    }
+    setLastTap(now);
   };
 
   const showNavButtons = hasImages && allImages.length > 1;
@@ -625,17 +619,16 @@ function ListingPopupCard({
         position: "relative",
       }}
     >
-      {/* منطقة الصورة / السلايدر - نقرة واحدة لفتح التفاصيل (مثل Zillow) */}
+      {/* منطقة الصورة / السلايدر - wrapper خارجي للأزرار - double click/tap للتفاصيل */}
       <div 
         style={{ position: "relative", width: "100%", height: 180, touchAction: "pan-y", cursor: "pointer" }}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={(e) => {
-          const hadSwipe = touchStart != null && touchEnd != null && Math.abs(touchStart - touchEnd) > 50;
           onTouchEnd(e);
-          if (!hadSwipe) handleImageClick(e);
+          handleImageClick(e);
         }}
-        onClick={handleImageClick}
+        onDoubleClick={handleImageDoubleTap}
       >
         {/* الصورة */}
         <div style={{ 
@@ -703,42 +696,44 @@ function ListingPopupCard({
               type="button"
               className="popup-favorite-btn"
               onMouseDown={(e) => {
+                // منع الانتشار إلى Leaflet فقط
                 e.stopPropagation();
                 if (e.nativeEvent) {
                   e.nativeEvent.stopImmediatePropagation();
                   e.nativeEvent.stopPropagation();
                 }
+                // تحديث الحالة فوراً بدون preventDefault
                 const newFavoriteState = !isFavorite;
                 setIsFavorite(newFavoriteState);
                 listing.isFavorite = newFavoriteState;
+                // إرسال الطلب في الخلفية
                 if (onToggleFavorite) {
-                  const p = onToggleFavorite(listing.id, newFavoriteState);
-                  if (p && typeof p?.catch === 'function') {
-                    p.catch(() => {
-                      setIsFavorite(!newFavoriteState);
-                      listing.isFavorite = !newFavoriteState;
-                    });
-                  }
+                  onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
+                    console.error("Error toggling favorite:", error);
+                    setIsFavorite(!newFavoriteState);
+                    listing.isFavorite = !newFavoriteState;
+                  });
                 }
                 return false;
               }}
               onClick={(e) => {
+                // منع الانتشار إلى Leaflet فقط
                 e.stopPropagation();
                 if (e.nativeEvent) {
                   e.nativeEvent.stopImmediatePropagation();
                   e.nativeEvent.stopPropagation();
                 }
+                // تحديث الحالة فوراً بدون preventDefault
                 const newFavoriteState = !isFavorite;
                 setIsFavorite(newFavoriteState);
                 listing.isFavorite = newFavoriteState;
+                // إرسال الطلب في الخلفية
                 if (onToggleFavorite) {
-                  const p = onToggleFavorite(listing.id, newFavoriteState);
-                  if (p && typeof p?.catch === 'function') {
-                    p.catch(() => {
-                      setIsFavorite(!newFavoriteState);
-                      listing.isFavorite = !newFavoriteState;
-                    });
-                  }
+                  onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
+                    console.error("Error toggling favorite:", error);
+                    setIsFavorite(!newFavoriteState);
+                    listing.isFavorite = !newFavoriteState;
+                  });
                 }
                 return false;
               }}
@@ -947,11 +942,8 @@ function ListingPopupCard({
         
       </div>
 
-      {/* الجسم - معلومات العقار - انقر لفتح التفاصيل */}
-      <div 
-        style={{ padding: "10px 12px 12px 12px", direction: "rtl", cursor: "pointer" }}
-        onClick={handleImageClick}
-      >
+      {/* الجسم - معلومات العقار */}
+      <div style={{ padding: "10px 12px 12px 12px", direction: "rtl" }}>
         {/* السعر */}
         <div
           style={{
@@ -1058,7 +1050,7 @@ function ListingPopupCard({
           </div>
         )}
 
-        {/* تلميح النقر */}
+        {/* تلميح النقر المزدوج */}
         <div
           style={{
             marginTop: 6,
@@ -1067,114 +1059,9 @@ function ListingPopupCard({
             textAlign: "center",
           }}
         >
-          انقر لعرض التفاصيل
+          انقر مرتين على الصورة لعرض التفاصيل
         </div>
       </div>
-
-      {/* Overlay تفاصيل العقار - كل المحتوى يظهر بوضوح */}
-      <Dialog open={showDetailModal} onOpenChange={setShowDetailModal} dir="rtl">
-        <DialogContent 
-          className="!flex !flex-col !max-w-2xl !max-h-[90vh] overflow-y-auto !p-0 !gap-0 !grid-none bg-white"
-          showCloseButton
-          aria-describedby="listing-detail-desc"
-        >
-          <DialogTitle className="sr-only">
-            {listing.title || "تفاصيل العقار"} - {priceText}
-          </DialogTitle>
-          <DialogDescription id="listing-detail-desc" className="sr-only">
-            {locationLine || "عقار"}
-          </DialogDescription>
-
-          {/* السعر أولاً (الأهم) + الدولار تحته + الموقع + المساحة والمواصفات */}
-          <div className="p-4 sm:p-5 border-b border-slate-200 bg-white text-[#002845]">
-            <div className="text-2xl font-black text-[#002845]">{priceText}</div>
-            {listing.price != null && listing.price > 0 && (
-              <div className="text-sm text-slate-600 mt-1 font-medium">
-                ≈ ${(listing.price / 3.75).toLocaleString("en-US", { maximumFractionDigits: 0 })} USD
-              </div>
-            )}
-            {locationLine && (
-              <div className="flex items-center gap-2 text-slate-600 mt-2">
-                <MapPin size={16} className="flex-shrink-0 text-[#D4AF37]" />
-                <span>{locationLine}</span>
-              </div>
-            )}
-            <div className="flex flex-wrap gap-3 mt-3 text-sm font-semibold">
-              {(listing.area ?? listing.land_area ?? listing.building_area) != null && (
-                <span className="flex items-center gap-1">
-                  <Square size={16} className="text-[#D4AF37]" />
-                  {(listing.area ?? listing.land_area ?? listing.building_area)} م²
-                </span>
-              )}
-              {listing.bedrooms != null && (
-                <span className="flex items-center gap-1">
-                  <BedDouble size={16} className="text-[#D4AF37]" />
-                  {listing.bedrooms} غرف
-                </span>
-              )}
-              {listing.bathrooms != null && (
-                <span className="flex items-center gap-1">
-                  <Bath size={16} className="text-[#D4AF37]" />
-                  {listing.bathrooms} حمام
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* الصورة */}
-          <div className="relative w-full h-[200px] sm:h-[220px] bg-slate-100 flex-shrink-0">
-            {hasImages && allImages.length > 0 ? (
-              <>
-                <img
-                  src={allImages[modalImgIndex]}
-                  alt={listing.title || "صورة العقار"}
-                  className="w-full h-full object-cover"
-                />
-                {allImages.length > 1 && (
-                  <div className="absolute bottom-2 right-2 flex gap-1">
-                    {allImages.slice(0, 5).map((img, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => setModalImgIndex(i)}
-                        className={`w-8 h-8 rounded overflow-hidden border-2 ${
-                          i === modalImgIndex ? "border-[#D4AF37]" : "border-white"
-                        }`}
-                      >
-                        <img src={img} alt="" className="w-full h-full object-cover" />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
-                <span className="text-4xl">🏠</span>
-                <span>لا توجد صور</span>
-              </div>
-            )}
-          </div>
-
-          {/* العنوان والوصف والزر */}
-          <div className="p-4 sm:p-5 bg-white text-[#002845] flex-shrink-0">
-            {listing.title && (
-              <h3 className="text-base font-bold leading-snug mb-2">{listing.title}</h3>
-            )}
-            {listing.description && (
-              <p className="text-sm text-slate-600 line-clamp-2 mb-4 leading-relaxed">
-                {listing.description}
-              </p>
-            )}
-            <Link
-              href={`/listing/${listing.id}`}
-              className="flex items-center justify-center gap-2 w-full py-3.5 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] font-bold hover:opacity-95 transition"
-            >
-              <ExternalLink size={18} />
-              عرض التفاصيل الكاملة
-            </Link>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

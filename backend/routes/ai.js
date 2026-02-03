@@ -1681,19 +1681,21 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
     });
   }
 
-  console.log("🚀 [AI Route] Python Engine Request for user:", userId);
+  console.log("🚀 [AI Route] Video generation for user:", userId);
   console.log("[Video] Image count:", cleanImages.length);
 
-  // Immediate Response
+  const operationId = `vid_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  const opData = { userId, status: "processing", startedAt: Date.now() };
+  videoOperations.set(operationId, opData);
+
   res.json({ 
     success: true, 
+    operationId,
     message: "جاري إعداد الفيديو السينمائي...", 
     status: "processing" 
   });
 
-  // Background Processing
   const { generateListingSlideshow } = require('../services/videoService');
-  
   const listingData = { 
     title: title || 'عقار مميز', 
     city, 
@@ -1702,12 +1704,22 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
     userId, 
     description: description || `${propertyType} لل${purpose}` 
   };
-  
   const targetId = listingId || `temp_${Date.now()}`; 
 
   generateListingSlideshow(targetId, cleanImages, listingData)
-    .then(result => console.log("[Video] ✅ Background job success:", result?.url ?? result))
-    .catch(err => console.error("[Video] ❌ Background job failed:", err.message));
+    .then((result) => {
+      const url = result?.url ?? (typeof result === 'string' ? result : null);
+      if (url) {
+        const op = videoOperations.get(operationId) || opData;
+        videoOperations.set(operationId, { ...op, status: "completed", videoUrl: url, promoText: result?.promoText });
+        console.log("[Video] ✅ Background job success:", url);
+      }
+    })
+    .catch((err) => {
+      const op = videoOperations.get(operationId) || opData;
+      videoOperations.set(operationId, { ...op, status: "error", error: err?.message || "فشل في توليد الفيديو" });
+      console.error("[Video] ❌ Background job failed:", err?.message);
+    });
 }));
 
 // Background polling function for video generation

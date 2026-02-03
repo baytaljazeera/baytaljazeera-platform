@@ -1,6 +1,5 @@
-const { Queue, Worker } = require('bullmq');
+const { Queue, Worker, QueueScheduler } = require('bullmq');
 const { getRedisClient, isRedisConnected, REDIS_CONFIG } = require('../config/redis');
-const { generateListingSlideshow } = require('../services/videoService');
 
 const QUEUE_NAMES = {
   EMAIL: 'email-notifications',
@@ -14,16 +13,10 @@ const queues = {};
 const workers = {};
 
 function getQueueConnection() {
-  // تعطيل الطوابير: DISABLE_QUEUES=true أو (بدون Redis في التطوير)
-  // لتفعيل Queue في التطوير: VIDEO_QUEUE_ENABLED=true + REDIS_URL أو UPSTASH_REDIS_URL
-  const forceEnable = process.env.VIDEO_QUEUE_ENABLED === 'true';
-  const isProduction = process.env.NODE_ENV === 'production';
-  if (process.env.DISABLE_QUEUES === 'true') {
-    console.warn('⚠️ BullMQ: Queues disabled (DISABLE_QUEUES=true)');
-    return null;
-  }
-  if (!forceEnable && !isProduction) {
-    console.warn('⚠️ BullMQ: Queues disabled in development (set VIDEO_QUEUE_ENABLED=true to enable)');
+  // تعطيل الطوابير في بيئة التطوير لتوفير طلبات Redis (Upstash limit)
+  // في الإنتاج، BullMQ سيعمل تلقائياً
+  if (process.env.DISABLE_QUEUES === 'true' || process.env.NODE_ENV !== 'production') {
+    console.warn('⚠️ BullMQ: Queues disabled (enable in production only)');
     return null;
   }
   
@@ -154,21 +147,7 @@ async function processEmailImmediately(type, data) {
 }
 
 async function processVideoImmediately(type, data) {
-  console.log(`🎬 Processing video immediately (queue disabled): ${type}`);
-  if (type === 'listing-slideshow') {
-    const { listingId, imageUrls, listingData } = data;
-    if (!listingId || !imageUrls || !listingData) {
-      console.error('[Video] Missing required data for listing-slideshow');
-      return { success: false, error: 'Missing data' };
-    }
-    try {
-      await generateListingSlideshow(listingId, imageUrls, listingData);
-      return { success: true, processed: 'immediate' };
-    } catch (err) {
-      console.error('[Video] Immediate processing failed:', err.message);
-      throw err;
-    }
-  }
+  console.log(`🎬 Processing video immediately: ${type}`, data);
   return { success: true, processed: 'immediate' };
 }
 
@@ -185,18 +164,9 @@ function initializeWorkers() {
   });
 
   createWorker(QUEUE_NAMES.VIDEO, async (job) => {
-    const { name, data } = job;
-    console.log(`🎬 Processing video job: ${name}`);
-    if (name === 'listing-slideshow') {
-      const { listingId, imageUrls, listingData } = data;
-      if (!listingId || !imageUrls || !listingData) {
-        throw new Error('Missing required data for listing-slideshow');
-      }
-      await generateListingSlideshow(listingId, imageUrls, listingData);
-      return { processed: true, listingId };
-    }
+    console.log(`🎬 Processing video job: ${job.name}`, job.data);
     return { processed: true };
-  }, { concurrency: 2 });
+  });
 
   createWorker(QUEUE_NAMES.CLEANUP, async (job) => {
     console.log(`🧹 Processing cleanup job: ${job.name}`, job.data);

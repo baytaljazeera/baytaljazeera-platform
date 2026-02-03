@@ -11,8 +11,7 @@
     "migrate": "node backend/scripts/migrate.js latest",
     "migrate:rollback": "node backend/scripts/migrate.js rollback",
     "migrate:status": "node backend/scripts/migrate.js status",
-    "migrate:make": "npx knex migrate:make --knexfile backend/knexfile.js",
-    "fix-cities": "node backend/scripts/fix-featured-cities.js"
+    "migrate:make": "npx knex migrate:make --knexfile backend/knexfile.js"
   },
   "keywords": [],
   "author": "",

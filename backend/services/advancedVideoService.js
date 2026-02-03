@@ -399,7 +399,7 @@ async function createAdvancedSlideshow(imagePaths, outputPath, promoText, option
   } = options;
 
   const templateConfig = VIDEO_TEMPLATES[template] || VIDEO_TEMPLATES.luxury;
-  const tempDir = path.join(__dirname, "../../public/uploads/temp");
+  const tempDir = path.join(__dirname, "../public/uploads/temp");
   await fs.mkdir(tempDir, { recursive: true });
 
   if (!imagePaths || imagePaths.length === 0) {
@@ -411,7 +411,7 @@ async function createAdvancedSlideshow(imagePaths, outputPath, promoText, option
   const slideDuration = Math.max(3.0, (duration + (numImages - 1) * transition) / numImages);
   const totalDuration = (numImages * slideDuration) - ((numImages - 1) * transition);
 
-  const publicDir = path.resolve(__dirname, "../../public");
+  const publicDir = path.resolve(__dirname, "../public");
   const os = require('os');
   const tmpDir = os.tmpdir();
   const https = require('https');
@@ -531,7 +531,7 @@ async function createAdvancedSlideshow(imagePaths, outputPath, promoText, option
   console.log(`[AdvancedVideo] ✅ Found ${validPaths.length} valid images out of ${imagePaths.length} input paths`);
 
   const assPath = path.join(tempDir, `captions_${Date.now()}.ass`);
-  const fontsDir = path.join(__dirname, "../../public/fonts");
+  const fontsDir = path.join(__dirname, "../public/fonts");
   const audioPath = path.join(tempDir, `audio_${Date.now()}.aac`);
 
   try {

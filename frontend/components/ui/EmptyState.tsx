@@ -15,11 +15,6 @@ interface EmptyStateProps {
 }
 
 const defaultIcons = {
-  globe: (
-    <svg className="w-16 h-16 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0h.5a2.5 2.5 0 002.5-2.5V8m0 0V3.935M12 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  ),
   search: (
     <svg className="w-16 h-16 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -67,8 +62,7 @@ export function EmptyState({
       {action && (
         <button
           onClick={action.onClick}
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-gold to-lightgold text-navy font-semibold rounded-lg hover:shadow-lg hover:shadow-gold/25 transition-all duration-200 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-gold focus:ring-offset-2"
-          aria-label={action.label}
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-gold to-lightgold text-navy font-semibold rounded-lg hover:shadow-lg hover:shadow-gold/25 transition-all duration-200 hover:scale-[1.02]"
         >
           {action.label}
         </button>

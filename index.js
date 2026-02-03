@@ -12,7 +12,7 @@ const jwt = require("jsonwebtoken");
 const db = require("./backend/db");
 const { authMiddleware, requireRoles, adminMiddleware } = require("./backend/middleware/auth");
 const { sanitizeInput, validatePagination } = require("./backend/middleware/validation");
-const { setCsrfToken, getCsrfToken, csrfProtectionLite } = require("./backend/middleware/csrf");
+const { setCsrfToken, getCsrfToken, csrfProtection } = require("./backend/middleware/csrf");
 const { asyncHandler } = require("./backend/middleware/asyncHandler");
 
 // 📦 Modular imports - security, multer, scheduler, services
@@ -27,6 +27,7 @@ const {
   FREE_PLAN_ID, getPlanById, getFreePlan, 
   getActivePaidPlanForUser, scheduleListingExpiryReminder 
 } = require("./backend/services/planService");
+const { generateListingSlideshow } = require("./backend/services/videoService");
 const { cache, isRedisConnected } = require("./backend/config/redis");
 const { initializeWorkers, closeAllQueues } = require("./backend/queues");
 const { setupAuth, registerAuthRoutes } = require("./backend/replit_auth");
@@ -84,25 +85,6 @@ const app = express();
 
 // 🔒 Trust proxy for Replit (required for rate limiting)
 app.set('trust proxy', 1);
-
-// 🔒 CORS - MUST BE FIRST (before any other middleware)
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    res.header('Access-Control-Allow-Origin', origin);
-  } else {
-    res.header('Access-Control-Allow-Origin', '*');
-  }
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-CSRF-Token, Accept, Origin, Cache-Control, Pragma');
-  res.header('Access-Control-Max-Age', '86400');
-  
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(204);
-  }
-  next();
-});
 
 // 🔧 Hostname Fix Middleware - Fix "base" hostname from Next.js proxy
 // This MUST run before session middleware to prevent ENOTFOUND errors
@@ -170,17 +152,9 @@ app.use(express.urlencoded({ limit: '100mb', extended: true }));
 // 🔒 Input Sanitization - حماية من XSS
 app.use(sanitizeInput);
 
-// 🔒 CSRF Protection - إعداد token للمتصفح (التحقق عبر csrfProtectionLite للطلبات بدون Bearer)
+// 🔒 CSRF Protection - إعداد token للمتصفح
 app.use(setCsrfToken);
 app.get('/api/csrf-token', getCsrfToken);
-// تطبيق CSRF على POST/PUT/DELETE بدون Bearer - استثناء مسارات المصادقة (تعمل cross-origin)
-const CSRF_SKIP_PATHS = ['/api/auth/login', '/api/auth/register', '/api/auth/forgot-password', '/api/auth/reset-password'];
-app.use((req, res, next) => {
-  const safe = ['GET', 'HEAD', 'OPTIONS'];
-  if (safe.includes(req.method)) return next();
-  if (CSRF_SKIP_PATHS.includes(req.path)) return next(); // مسارات الدخول والتسجيل
-  return csrfProtectionLite(req, res, next);
-});
 
 // 🔧 Site Status Note:
 // The frontend handles site status display (normal, maintenance, coming_soon)
@@ -333,48 +307,6 @@ async function runDatabaseInit() {
       CREATE INDEX IF NOT EXISTS idx_favorites_listing_id ON favorites(listing_id);
     `);
     console.log("✅ Performance indexes created");
-
-    // 🏙️ التأكد من جدول المدن المميزة (يعمل تلقائياً عند كل تشغيل)
-    try {
-      const fcCols = await db.query(`
-        SELECT column_name FROM information_schema.columns WHERE table_name = 'featured_cities'
-      `).catch(() => ({ rows: [] }));
-      const hasWrongSchema = fcCols.rows.length > 0 && fcCols.rows.some(r => r.column_name === "city_name");
-      if (hasWrongSchema) {
-        await db.query("DROP TABLE IF EXISTS featured_cities");
-      }
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS featured_cities (
-          id SERIAL PRIMARY KEY,
-          name_ar VARCHAR(100) NOT NULL,
-          name_en VARCHAR(100),
-          country_code VARCHAR(2) NOT NULL,
-          country_name_ar VARCHAR(100),
-          image_url VARCHAR(500),
-          properties_count INTEGER DEFAULT 0,
-          sort_order INTEGER DEFAULT 0,
-          is_active BOOLEAN DEFAULT true,
-          is_capital BOOLEAN DEFAULT false,
-          created_at TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-      `);
-      const fcCount = await db.query("SELECT COUNT(*) as n FROM featured_cities");
-      if (parseInt(fcCount.rows[0]?.n || 0) === 0) {
-        await db.query(`
-          INSERT INTO featured_cities (name_ar, name_en, country_code, country_name_ar, is_capital, sort_order, is_active)
-          VALUES 
-            ('الرياض', 'Riyadh', 'SA', 'السعودية', true, 1, true),
-            ('جدة', 'Jeddah', 'SA', 'السعودية', false, 2, true),
-            ('الطائف', 'Taif', 'SA', 'السعودية', false, 3, true),
-            ('المدينة المنورة', 'Madinah', 'SA', 'السعودية', false, 4, true),
-            ('مكة المكرمة', 'Makkah', 'SA', 'السعودية', false, 5, true)
-        `);
-        console.log("✅ Featured cities seeded (5 مدن)");
-      }
-    } catch (fcErr) {
-      console.log("⚠️ Featured cities:", fcErr.message);
-    }
     
     dbInitialized = true;
     return true;
@@ -393,7 +325,7 @@ process.on("unhandledRejection", (err) =>
 );
 
 // 📦 Plan functions imported from backend/services/planService.js
-// 📦 Video generation via backend/queues (videoQueue) → videoService
+// 📦 Video generation imported from backend/services/videoService.js
 
 // 🔐 Setup Replit OAuth (Google, Apple, GitHub, etc.)
 (async () => {
@@ -611,7 +543,7 @@ app.get("/api/user/ai-level", async (req, res) => {
 
   try {
     const jwt = require("jsonwebtoken");
-    const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET;
+    const JWT_SECRET = process.env.SESSION_SECRET;
     if (!JWT_SECRET) {
       console.error('[AI-Level] SESSION_SECRET is not set');
       return res.status(500).json({ error: 'Server configuration error' });

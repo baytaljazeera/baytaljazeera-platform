@@ -19,15 +19,6 @@ function timingSafeCompare(a, b) {
   }
 }
 
-// Lightweight: skip CSRF for Bearer token (not sent by browsers automatically)
-function csrfProtectionLite(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    return next();
-  }
-  return csrfProtection(req, res, next);
-}
-
 function csrfProtection(req, res, next) {
   const safeMethods = ['GET', 'HEAD', 'OPTIONS'];
   
@@ -92,7 +83,6 @@ function getCsrfToken(req, res) {
 
 module.exports = {
   csrfProtection,
-  csrfProtectionLite,
   setCsrfToken,
   getCsrfToken,
   generateCsrfToken,

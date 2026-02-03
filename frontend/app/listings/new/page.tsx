@@ -794,9 +794,29 @@ export default function NewListingPage() {
 
       if (data.success && data.videoUrl) {
         setVideoResult(data.videoUrl);
-        if (data.promoText) {
-          setVideoPromoText(data.promoText);
+        if (data.promoText) setVideoPromoText(data.promoText);
+      } else if (data.success && data.operationId) {
+        const maxAttempts = 60;
+        const intervalMs = 5000;
+        let done = false;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          await new Promise((r) => setTimeout(r, intervalMs));
+          const statusRes = await fetch(`${API_URL}/api/ai/user/video-status/${data.operationId}`, {
+            credentials: "include",
+            headers: getAuthHeaders(),
+          });
+          const statusData = await statusRes.json();
+          if (statusData.status === "completed" && statusData.videoUrl) {
+            setVideoResult(statusData.videoUrl);
+            if (statusData.promoText) setVideoPromoText(statusData.promoText);
+            done = true;
+            break;
+          }
+          if (statusData.status === "error") {
+            throw new Error(statusData.error || "فشل في توليد الفيديو");
+          }
         }
+        if (!done) throw new Error("انتهت المهلة. جرب إعادة المحاولة.");
       } else {
         throw new Error(data.error || "فشل في توليد الفيديو");
       }
@@ -1558,11 +1578,8 @@ export default function NewListingPage() {
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100" dir="rtl">
       <div className="relative overflow-hidden">
         <div 
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ 
-            backgroundImage: `url('/uploads/listings/1764807083106-931124547.jpeg')`,
-            filter: 'blur(1px)',
-          }}
+          className="absolute inset-0 bg-cover bg-center bg-slate-800"
+          style={{ filter: 'blur(1px)' }}
         />
         <div className="absolute inset-0 bg-gradient-to-l from-[#002845]/55 via-[#003356]/50 to-[#002845]/55" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />

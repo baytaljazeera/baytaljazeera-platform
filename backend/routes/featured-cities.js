@@ -5,19 +5,11 @@ const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
-
-// مسار يوافق express.static في index.js - من جذر المشروع (يعمل مع Docker/Render)
-const projectRoot = path.resolve(__dirname, '../..');
-const UPLOADS_CITIES = path.join(projectRoot, 'public', 'uploads', 'cities');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    if (!fs.existsSync(UPLOADS_CITIES)) {
-      fs.mkdirSync(UPLOADS_CITIES, { recursive: true });
-    }
-    cb(null, UPLOADS_CITIES);
+    cb(null, path.join(__dirname, '../public/uploads/cities'));
   },
   filename: (req, file, cb) => {
     const uniqueName = crypto.randomBytes(16).toString('hex') + path.extname(file.originalname);
@@ -50,42 +42,21 @@ router.get('/', asyncHandler(async (req, res) => {
   
   query += ' ORDER BY sort_order ASC, name_ar ASC';
   
-  try {
-    const result = await db.query(query, params);
-    res.json({ cities: result.rows });
-  } catch (err) {
-    // إذا الجدول غير موجود أو خطأ في DB، نرجع قائمة فارغة بدل 500
-    const isTableMissing = err.code === '42P01' || (err.message && /does not exist|relation.*not found/i.test(err.message));
-    if (isTableMissing) {
-      console.warn('[featured-cities] Table missing - returning empty. Run DB init. Error:', err.message);
-      return res.json({ cities: [] });
-    }
-    console.error('[featured-cities] GET error:', err);
-    throw err;
-  }
+  const result = await db.query(query, params);
+  res.json({ cities: result.rows });
 }));
 
 router.get('/active', asyncHandler(async (req, res) => {
   const CACHE_KEY = 'cities:featured';
   const CACHE_TTL = 60000; // 60 seconds
   
-  try {
-    const result = await db.cachedQuery(
-      CACHE_KEY,
-      'SELECT * FROM featured_cities WHERE is_active = true ORDER BY sort_order ASC, name_ar ASC',
-      [],
-      CACHE_TTL
-    );
-    res.json({ cities: result.rows });
-  } catch (err) {
-    const isTableMissing = err.code === '42P01' || (err.message && /does not exist|relation.*not found/i.test(err.message));
-    if (isTableMissing) {
-      console.warn('[featured-cities] Table missing - returning empty. Run DB init. Error:', err.message);
-      return res.json({ cities: [] });
-    }
-    console.error('[featured-cities] GET /active error:', err);
-    throw err;
-  }
+  const result = await db.cachedQuery(
+    CACHE_KEY,
+    'SELECT * FROM featured_cities WHERE is_active = true ORDER BY sort_order ASC, name_ar ASC',
+    [],
+    CACHE_TTL
+  );
+  res.json({ cities: result.rows });
 }));
 
 router.put('/reorder', authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
@@ -122,7 +93,7 @@ router.put('/reorder', authMiddleware, adminMiddleware, asyncHandler(async (req,
 
 router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const result = await db.query('SELECT * FROM featured_cities WHERE id = $1', [id]);
+  const result = await pool.query('SELECT * FROM featured_cities WHERE id = $1', [id]);
   
   if (result.rows.length === 0) {
     return res.status(404).json({ error: 'المدينة غير موجودة' });
@@ -157,7 +128,7 @@ router.put('/:id', authMiddleware, adminMiddleware, upload.single('image'), asyn
   const { id } = req.params;
   const { name_ar, name_en, country_code, country_name_ar, is_capital, sort_order, is_active } = req.body;
   
-  const existing = await db.query('SELECT * FROM featured_cities WHERE id = $1', [id]);
+  const existing = await pool.query('SELECT * FROM featured_cities WHERE id = $1', [id]);
   if (existing.rows.length === 0) {
     return res.status(404).json({ error: 'المدينة غير موجودة' });
   }

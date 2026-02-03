@@ -38,12 +38,10 @@ const registrationLimiter = rateLimit({
 
 const aiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 15,
+  max: 10,
   message: { error: "تم تجاوز حد طلبات الذكاء الاصطناعي", errorEn: "AI rate limit exceeded" },
   standardHeaders: true,
   legacyHeaders: false,
-  // استثناء استطلاع حالة الفيديو - يحدث كل 5 ثوانٍ لمدة 10 دقائق (120 طلب)
-  skip: (req) => req.path?.includes('/user/video-status/'),
 });
 
 const reportCreateLimiter = rateLimit({

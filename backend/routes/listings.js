@@ -11,7 +11,7 @@ const {
   getActivePaidPlanForUser, 
   scheduleListingExpiryReminder 
 } = require('../services/planService');
-const { videoQueue } = require('../queues');
+const { generateListingSlideshow } = require('../services/videoService');
 const { uploadImage, uploadVideo, isCloudinaryConfigured } = require('../services/cloudinaryService');
 
 const PROPERTY_IMAGES = {
@@ -37,28 +37,22 @@ router.post("/temp-images", authMiddlewareWithEmailCheck, upload.array('images',
       continue;
     }
     
-    // If Cloudinary is configured, upload there
+    const baseUrl = (process.env.BACKEND_URL || process.env.API_URL || '').replace(/\/$/, '');
     if (isCloudinaryConfigured()) {
       try {
         const result = await uploadImage(file.path);
-        // Extract URL from result object
-        const cloudinaryUrl = result.url || result;
-        if (typeof cloudinaryUrl === 'string') {
-          paths.push(cloudinaryUrl);
+        if (result && result.success && result.url) {
+          paths.push(result.url);
         } else {
-          console.error("[TempImages] Invalid Cloudinary response:", result);
-          paths.push(`/uploads/listings/${file.filename}`);
+          paths.push(baseUrl ? `${baseUrl}/uploads/listings/${file.filename}` : `/uploads/listings/${file.filename}`);
         }
-        // Clean up local file after Cloudinary upload
         try { fs.unlinkSync(file.path); } catch (e) {}
       } catch (err) {
         console.error("[TempImages] Cloudinary upload failed:", err.message);
-        // Fallback to local path
-        paths.push(`/uploads/listings/${file.filename}`);
+        paths.push(baseUrl ? `${baseUrl}/uploads/listings/${file.filename}` : `/uploads/listings/${file.filename}`);
       }
     } else {
-      // Use local path
-      paths.push(`/uploads/listings/${file.filename}`);
+      paths.push(baseUrl ? `${baseUrl}/uploads/listings/${file.filename}` : `/uploads/listings/${file.filename}`);
     }
   }
 
@@ -1040,8 +1034,8 @@ router.post("/:id/regenerate-video", authMiddlewareWithEmailCheck, asyncHandler(
     status: "processing"
   });
   
-  // Add to video queue (or process immediately if queue disabled)
-  const listingData = {
+  // Generate video asynchronously (don't block response)
+  generateListingSlideshow(id, imageUrls, {
     propertyType: listing.type,
     purpose: listing.purpose,
     city: listing.city,
@@ -1053,10 +1047,10 @@ router.post("/:id/regenerate-video", authMiddlewareWithEmailCheck, asyncHandler(
     bathrooms: listing.bathrooms,
     landArea: listing.land_area,
     buildingArea: listing.building_area
-  };
-  videoQueue.add('listing-slideshow', { listingId: id, imageUrls, listingData }).catch(err => {
-    console.error(`[Regenerate] ❌ Failed to queue video for listing ${id}:`, err.message);
-    db.query(`UPDATE properties SET video_status = 'failed' WHERE id = $1`, [id]).catch(() => {});
+  }).catch(err => {
+    console.error(`[Regenerate] ❌ Failed for listing ${id}:`, err.message);
+    console.error(`[Regenerate] Stack:`, err.stack);
+    // Status already set to 'failed' in generateListingSlideshow
   });
 }));
 

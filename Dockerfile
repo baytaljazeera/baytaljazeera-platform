@@ -21,9 +21,6 @@ RUN if [ -f package-lock.json ]; then \
 # Copy application files
 COPY backend/ ./backend/
 COPY index.js ./
-# مجلد public لرفع الصور (المدن، الإعلانات، إلخ)
-COPY public/ ./public/
-RUN mkdir -p public/uploads/cities public/uploads/listings public/uploads/videos
 
 # Expose port (Render uses PORT env var)
 EXPOSE ${PORT:-8080}

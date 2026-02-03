@@ -6,7 +6,7 @@ const db = require("../db");
 const { JWT_SECRET, JWT_CONFIG, JWT_VERIFY_OPTIONS, optionalAuth } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { validatePassword, PASSWORD_POLICY, sanitizeInput, strictAuthLimiter } = require("../config/security");
-const { sendPasswordResetEmail, sendVerificationEmail, resendVerificationEmail, sendWelcomeEmail, sendEmailVerificationEmail } = require("../services/emailService");
+const { sendPasswordResetEmail, sendWelcomeEmail, sendEmailVerificationEmail } = require("../services/emailService");
 
 const router = express.Router();
 
@@ -31,18 +31,6 @@ function generateReferralCode() {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return code;
-}
-
-function normalizePhone(phone) {
-  if (!phone) return null;
-  let cleaned = phone.replace(/[\s\-\(\)\.]/g, '').trim();
-  if (cleaned.startsWith('00')) {
-    cleaned = '+' + cleaned.slice(2);
-  }
-  if (!cleaned.startsWith('+') && cleaned.length >= 9) {
-    cleaned = '+' + cleaned;
-  }
-  return cleaned || null;
 }
 
 router.post("/register", asyncHandler(async (req, res) => {
@@ -76,33 +64,7 @@ router.post("/register", asyncHandler(async (req, res) => {
 
   const sanitizedEmail = sanitizeInput(email.toLowerCase().trim());
   const sanitizedName = name ? sanitizeInput(name) : null;
-  const sanitizedPhone = normalizePhone(phone);
-
-  // Pre-check for existing email
-  const existingEmail = await db.query(
-    `SELECT id FROM users WHERE LOWER(email) = LOWER($1)`,
-    [sanitizedEmail]
-  );
-  if (existingEmail.rows.length > 0) {
-    return res.status(409).json({ 
-      error: "البريد الإلكتروني مستخدم من قبل", 
-      errorEn: "Email already exists" 
-    });
-  }
-
-  // Pre-check for existing phone (if provided)
-  if (sanitizedPhone) {
-    const existingPhone = await db.query(
-      `SELECT id FROM users WHERE phone = $1`,
-      [sanitizedPhone]
-    );
-    if (existingPhone.rows.length > 0) {
-      return res.status(409).json({ 
-        error: "رقم الجوال مستخدم من قبل. يرجى استخدام رقم هاتف آخر أو ترك الحقل فارغاً", 
-        errorEn: "Phone number already exists" 
-      });
-    }
-  }
+  const sanitizedPhone = phone ? sanitizeInput(phone) : null;
 
   let referrerId = null;
   let referrerCode = null;
@@ -141,8 +103,8 @@ router.post("/register", asyncHandler(async (req, res) => {
 
   try {
     const result = await db.query(
-      `INSERT INTO users (email, password_hash, name, phone, referral_code, referred_by, email_verification_token, email_verification_expires, email_verified, email_verified_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, NULL)
+      `INSERT INTO users (email, password_hash, name, phone, referral_code, referred_by, email_verification_token, email_verification_expires)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, email, name, phone, role, created_at, referral_code`,
       [sanitizedEmail, hashed, sanitizedName, sanitizedPhone, newReferralCode, referrerId, emailVerificationToken, emailVerificationExpires]
     );
@@ -286,55 +248,36 @@ router.post("/register", asyncHandler(async (req, res) => {
       }
     );
 
-    // Send verification email
-    let emailSent = false;
-    let emailError = null;
-    
+    // Send email verification email (non-blocking)
     try {
-      const verificationToken = crypto.randomBytes(32).toString('hex');
-      const tokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-      
-      await db.query(
-        `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
-         VALUES ($1, $2, $3)`,
-        [user.id, tokenHash, expiresAt]
-      );
-      
-      const emailResult = await sendVerificationEmail(user.email, verificationToken, user.name);
+      const emailResult = await sendEmailVerificationEmail(user.email, emailVerificationToken, user.name);
       if (emailResult.success) {
-        emailSent = true;
         console.log(`✅ [Auth] Email verification sent successfully to ${user.email}, messageId: ${emailResult.messageId}`);
       } else {
-        emailError = emailResult.error;
         console.error(`❌ [Auth] Failed to send email verification to ${user.email}:`, emailResult.error);
       }
     } catch (emailErr) {
-      emailError = emailErr.message;
-      console.error('⚠️ Failed to send verification email:', emailErr.message);
+      console.error('❌ [Auth] Exception while sending email verification:', emailErr);
+      // Don't fail registration if email fails
     }
 
-    // ⚠️ SECURITY: Do NOT send JWT token on registration!
-    // User must verify email before they can login
-    // Only send user info without token - no automatic login
-    res.json({ 
-      ok: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        phone: user.phone,
-        role: user.role,
-        email_verified: false
-      },
-      // NO token sent - user must verify email first
-      message: emailSent 
-        ? "تم إنشاء الحساب بنجاح! يرجى تأكيد بريدك الإلكتروني من صندوق الوارد"
-        : "تم إنشاء الحساب. فشل إرسال رسالة التأكيد - يرجى إعادة الإرسال من صفحة التحقق",
-      requiresVerification: true,
-      emailSent,
-      emailError: emailError ? String(emailError) : null
-    });
+    // Send welcome email (non-blocking) - after verification
+    // We'll send welcome email after email is verified
+
+    res
+      .cookie("token", token, getCookieOptions())
+      .json({ 
+        ok: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          phone: user.phone,
+          role: user.role,
+        },
+        token,
+        message: "تم إنشاء الحساب بنجاح"
+      });
   } catch (err) {
     if (err.code === "23505") {
       // Check constraint name to determine which field caused the duplicate
@@ -387,10 +330,7 @@ router.post("/login", asyncHandler(async (req, res) => {
   
   if (!user) {
     console.log(`⚠️ Login attempt failed: User not found - ${email}`);
-    return res.status(401).json({ 
-      error: "البريد الإلكتروني أو كلمة المرور غير صحيحة. يرجى المحاولة مرة أخرى", 
-      errorEn: "Invalid email or password. Please try again" 
-    });
+    return res.status(401).json({ error: "بيانات الدخول غير صحيحة", errorEn: "Invalid credentials" });
   }
 
   if (user.locked_until && new Date(user.locked_until) > new Date()) {
@@ -422,20 +362,9 @@ router.post("/login", asyncHandler(async (req, res) => {
     );
     
     return res.status(401).json({ 
-      error: "البريد الإلكتروني أو كلمة المرور غير صحيحة. يرجى المحاولة مرة أخرى", 
-      errorEn: "Invalid email or password. Please try again",
+      error: "بيانات الدخول غير صحيحة", 
+      errorEn: "Invalid credentials",
       attemptsRemaining: PASSWORD_POLICY.maxLoginAttempts - failedAttempts
-    });
-  }
-  
-  // Check if email is verified (skip for admins)
-  const adminRoles = ['admin', 'super_admin', 'content', 'finance', 'support'];
-  if (!user.email_verified && !adminRoles.includes(user.role)) {
-    return res.status(403).json({ 
-      error: "يرجى تأكيد بريدك الإلكتروني أولاً. تحقق من صندوق الوارد أو اطلب رابط تأكيد جديد.", 
-      errorEn: "Please verify your email first",
-      requiresVerification: true,
-      email: user.email
     });
   }
   
@@ -578,7 +507,7 @@ router.get("/me", asyncHandler(async (req, res) => {
   }
   
   const result = await db.query(
-    `SELECT id, email, name, phone, whatsapp, role, email_verified, email_verified_at, phone_verified_at, created_at
+    `SELECT id, email, name, phone, whatsapp, role, email_verified_at, phone_verified_at, created_at
      FROM users WHERE id = $1`,
     [payload.userId]
   );
@@ -599,7 +528,7 @@ router.get("/me", asyncHandler(async (req, res) => {
   res.json({
     user: {
       ...user,
-      emailVerified: user.email_verified === true || !!user.email_verified_at,
+      emailVerified: !!user.email_verified_at,
       phoneVerified: !!user.phone_verified_at,
     },
     plan: planResult.rows[0] || null,
@@ -691,7 +620,7 @@ router.post("/reset-password", strictAuthLimiter, asyncHandler(async (req, res) 
   const hashedPassword = await bcrypt.hash(password, 10);
 
   await db.query(
-    `UPDATE users SET password_hash = $1, failed_login_attempts = 0, locked_until = NULL, updated_at = NOW()
+    `UPDATE users SET password_hash = $1, failed_login_attempts = 0, lockout_until = NULL, updated_at = NOW()
      WHERE id = $2`,
     [hashedPassword, resetRecord.user_id]
   );
@@ -709,124 +638,199 @@ router.post("/reset-password", strictAuthLimiter, asyncHandler(async (req, res) 
   });
 }));
 
-// Email verification endpoint
-router.post("/verify-email", asyncHandler(async (req, res) => {
-  const { token } = req.body;
+// ========== EMAIL VERIFICATION ==========
+
+router.get("/verify-email", asyncHandler(async (req, res) => {
+  const { token } = req.query;
   
   if (!token) {
     return res.status(400).json({ 
-      error: "رمز التحقق مطلوب", 
-      errorEn: "Verification token is required" 
+      error: "رمز التأكيد مطلوب", 
+      errorEn: "Verification token required" 
     });
   }
 
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  try {
+    const result = await db.query(
+      `SELECT id, email, email_verified_at, email_verification_expires 
+       FROM users 
+       WHERE email_verification_token = $1`,
+      [token]
+    );
 
-  const tokenResult = await db.query(
-    `SELECT evt.*, u.email, u.name 
-     FROM email_verification_tokens evt
-     JOIN users u ON evt.user_id = u.id
-     WHERE evt.token_hash = $1 AND evt.expires_at > NOW() AND evt.used_at IS NULL`,
-    [tokenHash]
-  );
+    if (result.rows.length === 0) {
+      return res.status(400).json({ 
+        error: "رمز التأكيد غير صالح", 
+        errorEn: "Invalid verification token" 
+      });
+    }
 
-  if (tokenResult.rows.length === 0) {
-    return res.status(400).json({ 
-      error: "الرابط غير صالح أو منتهي الصلاحية", 
-      errorEn: "Invalid or expired verification link" 
+    const user = result.rows[0];
+
+    // Check if already verified
+    if (user.email_verified_at) {
+      return res.status(400).json({ 
+        error: "البريد الإلكتروني مؤكد بالفعل", 
+        errorEn: "Email already verified" 
+      });
+    }
+
+    // Check if token expired
+    if (new Date(user.email_verification_expires) < new Date()) {
+      return res.status(400).json({ 
+        error: "انتهت صلاحية رمز التأكيد", 
+        errorEn: "Verification token expired" 
+      });
+    }
+
+    // Verify email
+    await db.query(
+      `UPDATE users 
+       SET email_verified_at = NOW(), 
+           email_verification_token = NULL, 
+           email_verification_expires = NULL,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [user.id]
+    );
+
+    // Send welcome email after verification
+    try {
+      await sendWelcomeEmail(user.email, user.name || 'عزيزنا العميل');
+      console.log(`📧 Welcome email sent to ${user.email} after verification`);
+    } catch (emailErr) {
+      console.error('❌ Failed to send welcome email:', emailErr);
+    }
+
+    res.json({ 
+      ok: true,
+      message: "تم تأكيد بريدك الإلكتروني بنجاح",
+      messageEn: "Email verified successfully"
+    });
+  } catch (err) {
+    console.error("Email verification error:", err);
+    res.status(500).json({ 
+      error: "حدث خطأ أثناء تأكيد البريد الإلكتروني", 
+      errorEn: "Error verifying email" 
     });
   }
-
-  const verifyRecord = tokenResult.rows[0];
-
-  await db.query(
-    `UPDATE users SET email_verified = true, email_verified_at = NOW(), updated_at = NOW()
-     WHERE id = $1`,
-    [verifyRecord.user_id]
-  );
-
-  await db.query(
-    `UPDATE email_verification_tokens SET used_at = NOW() WHERE id = $1`,
-    [verifyRecord.id]
-  );
-
-  console.log(`✅ Email verified for user ${verifyRecord.email}`);
-
-  res.json({ 
-    ok: true, 
-    message: "تم تأكيد البريد الإلكتروني بنجاح!" 
-  });
 }));
 
 // Resend verification email
-router.post("/resend-verification", strictAuthLimiter, asyncHandler(async (req, res) => {
+// Allow resending without authentication - user just needs to provide their email
+// Use optionalAuth to set req.user if token exists, but don't require it
+router.post("/resend-verification", strictAuthLimiter, optionalAuth, asyncHandler(async (req, res) => {
+  console.log('📧 [Resend Verification] Request received');
+  console.log('📧 [Resend Verification] Body:', JSON.stringify(req.body));
+  console.log('📧 [Resend Verification] User:', req.user ? 'Authenticated' : 'Not authenticated');
+  
   const { email } = req.body;
   
-  if (!email) {
+  // Try to get userId from auth first (if user is logged in)
+  // Note: req.user might be set by optionalAuth middleware if token exists
+  let userId = req.user?.id || req.user?.userId;
+  
+  console.log('📧 [Resend Verification] userId:', userId, 'email:', email);
+  
+  // If no userId from auth, require email in body
+  if (!userId && !email) {
+    console.log('📧 [Resend Verification] Missing both userId and email');
     return res.status(400).json({ 
-      error: "البريد الإلكتروني مطلوب", 
+      error: "يرجى إدخال بريدك الإلكتروني", 
       errorEn: "Email is required" 
     });
   }
 
-  const userResult = await db.query(
-    `SELECT id, email, name, email_verified FROM users WHERE email = $1`,
-    [email.toLowerCase().trim()]
-  );
-
-  if (userResult.rows.length === 0) {
-    return res.json({ 
-      ok: true, 
-      message: "إذا كان البريد مسجلاً لدينا، ستصلك رسالة تأكيد" 
-    });
-  }
-
-  const user = userResult.rows[0];
-
-  if (user.email_verified) {
-    return res.status(400).json({ 
-      error: "البريد الإلكتروني مؤكد مسبقاً", 
-      errorEn: "Email is already verified" 
-    });
-  }
-
-  await db.query(
-    `DELETE FROM email_verification_tokens WHERE user_id = $1`,
-    [user.id]
-  );
-
-  const verificationToken = crypto.randomBytes(32).toString('hex');
-  const tokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-  await db.query(
-    `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
-     VALUES ($1, $2, $3)`,
-    [user.id, tokenHash, expiresAt]
-  );
-
   try {
-    const emailResult = await resendVerificationEmail(user.email, verificationToken, user.name);
-    if (emailResult.success) {
-      console.log(`✅ [Auth] Verification email resent to ${user.email}, messageId: ${emailResult.messageId}`);
-      return res.json({ 
-        ok: true, 
-        message: "تم إرسال رسالة تأكيد جديدة إلى بريدك الإلكتروني" 
-      });
+    let result;
+    if (userId) {
+      // If user is authenticated, use userId
+      result = await db.query(
+        `SELECT id, email, name, email_verified_at, email_verification_token, email_verification_expires
+         FROM users 
+         WHERE id = $1`,
+        [userId]
+      );
     } else {
-      console.error(`❌ [Auth] Failed to resend verification email to ${user.email}:`, emailResult.error);
-      return res.status(500).json({ 
-        ok: false, 
-        error: "فشل في إرسال البريد الإلكتروني. يرجى المحاولة لاحقاً.",
-        details: emailResult.error
+      // If not authenticated, use email from body
+      if (!email || !email.trim()) {
+        console.log('📧 [Resend Verification] No email provided and user not authenticated');
+        return res.status(400).json({ 
+          error: "يرجى إدخال بريدك الإلكتروني", 
+          errorEn: "Email is required" 
+        });
+      }
+      
+      const sanitizedEmail = sanitizeInput(email.toLowerCase().trim());
+      console.log('📧 [Resend Verification] Looking up user by email:', sanitizedEmail);
+      result = await db.query(
+        `SELECT id, email, name, email_verified_at, email_verification_token, email_verification_expires
+         FROM users 
+         WHERE email = $1`,
+        [sanitizedEmail]
+      );
+    }
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ 
+        error: "المستخدم غير موجود", 
+        errorEn: "User not found" 
       });
     }
-  } catch (emailErr) {
-    console.error('❌ Failed to resend verification email:', emailErr.message);
-    return res.status(500).json({ 
-      ok: false, 
-      error: "حدث خطأ أثناء إرسال البريد الإلكتروني",
-      details: emailErr.message
+
+    const user = result.rows[0];
+
+    // Check if already verified
+    if (user.email_verified_at) {
+      return res.status(400).json({ 
+        error: "البريد الإلكتروني مؤكد بالفعل", 
+        errorEn: "Email already verified" 
+      });
+    }
+
+    // Generate new verification token
+    const emailVerificationToken = crypto.randomBytes(32).toString('hex');
+    const emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    await db.query(
+      `UPDATE users 
+       SET email_verification_token = $1, 
+           email_verification_expires = $2,
+           updated_at = NOW()
+       WHERE id = $3`,
+      [emailVerificationToken, emailVerificationExpires, user.id]
+    );
+
+    // Send verification email
+    try {
+      const emailResult = await sendEmailVerificationEmail(user.email, emailVerificationToken, user.name);
+      if (emailResult.success) {
+        console.log(`✅ [Auth] Verification email resent successfully to ${user.email}, messageId: ${emailResult.messageId}`);
+      } else {
+        console.error(`❌ [Auth] Failed to resend verification email to ${user.email}:`, emailResult.error);
+        return res.status(500).json({ 
+          error: `فشل إرسال إيميل التأكيد: ${emailResult.error}`, 
+          errorEn: `Failed to send verification email: ${emailResult.error}` 
+        });
+      }
+    } catch (emailErr) {
+      console.error('❌ [Auth] Exception while resending verification email:', emailErr);
+      return res.status(500).json({ 
+        error: "فشل إرسال إيميل التأكيد", 
+        errorEn: "Failed to send verification email" 
+      });
+    }
+
+    res.json({ 
+      ok: true,
+      message: "تم إرسال إيميل التأكيد بنجاح",
+      messageEn: "Verification email sent successfully"
+    });
+  } catch (err) {
+    console.error("Resend verification error:", err);
+    res.status(500).json({ 
+      error: "حدث خطأ أثناء إرسال إيميل التأكيد", 
+      errorEn: "Error sending verification email" 
     });
   }
 }));

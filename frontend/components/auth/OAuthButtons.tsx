@@ -1,15 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/lib/stores/authStore';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -18,22 +10,9 @@ interface OAuthButtonsProps {
 }
 
 export default function OAuthButtons({ className = '' }: OAuthButtonsProps) {
-  const searchParams = useSearchParams();
   const { loginWithOAuth } = useAuthStore();
   const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
   const [oauthAvailable, setOauthAvailable] = useState<boolean | null>(null);
-  const [showAppleComingSoon, setShowAppleComingSoon] = useState(false);
-
-  // عند التوجيه من الباكند (مثلاً من رابط مباشر لـ /api/auth/apple)، اعرض لوحة الاعتذار
-  useEffect(() => {
-    if (searchParams.get('apple') === 'coming-soon') {
-      setShowAppleComingSoon(true);
-      // إزالة البارامتر من الرابط دون إعادة تحميل الصفحة
-      const url = new URL(window.location.href);
-      url.searchParams.delete('apple');
-      window.history.replaceState({}, '', url.pathname + url.search);
-    }
-  }, [searchParams]);
 
   // Check OAuth availability on mount
   useEffect(() => {
@@ -53,14 +32,12 @@ export default function OAuthButtons({ className = '' }: OAuthButtonsProps) {
   }, []);
 
   const handleOAuthClick = (provider: string) => {
-    if (provider === 'apple') {
-      setShowAppleComingSoon(true);
-      return;
-    }
     setLoadingProvider(provider);
     // Redirect to OAuth provider via backend
     if (provider === 'google') {
       window.location.href = `${API_URL}/api/auth/google`;
+    } else if (provider === 'apple') {
+      window.location.href = `${API_URL}/api/auth/apple`;
     } else {
       loginWithOAuth(); // Fallback for other providers
     }
@@ -144,33 +121,6 @@ export default function OAuthButtons({ className = '' }: OAuthButtonsProps) {
       <p className="text-center text-xs text-gray-500 mt-3">
         يدعم أيضاً: GitHub, X, البريد الإلكتروني
       </p>
-
-      {/* لوحة اعتذار Apple - بدلاً من JSON */}
-      <Dialog open={showAppleComingSoon} onOpenChange={setShowAppleComingSoon} dir="rtl">
-        <DialogContent className="sm:max-w-md text-center" showCloseButton>
-          <DialogHeader>
-            <div className="w-16 h-16 mx-auto mb-4 bg-black rounded-2xl flex items-center justify-center">
-              <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
-              </svg>
-            </div>
-            <DialogTitle className="text-xl font-bold text-[#002845]">
-              تسجيل الدخول بـ Apple
-            </DialogTitle>
-            <DialogDescription className="text-base pt-2 space-y-3">
-              <p className="text-slate-600">
-                نعتذر، تسجيل الدخول عبر Apple غير متاح حالياً.
-              </p>
-              <p className="text-[#D4AF37] font-semibold">
-                قريباً إن شاء الله ✨
-              </p>
-              <p className="text-sm text-slate-500">
-                يمكنك استخدام البريد الإلكتروني وكلمة المرور أو تسجيل الدخول بـ Google
-              </p>
-            </DialogDescription>
-          </DialogHeader>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

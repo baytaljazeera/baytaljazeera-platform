@@ -3,7 +3,6 @@
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { getCsrfToken, API_URL } from "@/lib/api";
 
 function ResetPasswordContent() {
   const router = useRouter();
@@ -41,12 +40,9 @@ function ResetPasswordContent() {
     }
     
     try {
-      const csrf = await getCsrfToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (csrf) headers['x-csrf-token'] = csrf;
-      const res = await fetch(`${API_URL}/api/auth/reset-password`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/auth/reset-password`, {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, password }),
         credentials: 'include'
       });

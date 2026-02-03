@@ -90,16 +90,15 @@ async function uploadVideo(filePath, folder = 'videos') {
   try {
     const result = await cloudinary.uploader.upload(filePath, {
       folder: `baytaljazeera/${folder}`,
-      resource_type: 'video'
+      resource_type: 'video',
+      eager: [
+        { quality: 'auto', format: 'mp4' }
+      ],
+      eager_async: true
     });
-    const url = result.secure_url || result.url;
-    if (!url) {
-      console.error('[Cloudinary] Video upload: no URL in result', { hasSecureUrl: !!result.secure_url, hasUrl: !!result.url });
-      return { success: false, error: 'لم يتم إرجاع رابط الفيديو من Cloudinary' };
-    }
     return {
       success: true,
-      url,
+      url: result.secure_url,
       publicId: result.public_id,
       duration: result.duration
     };
