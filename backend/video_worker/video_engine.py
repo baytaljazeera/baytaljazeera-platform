@@ -41,8 +41,9 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY")) if OpenAI and os.environ.get("OPENAI_API_KEY") else None
 
 
-# أصوات ذكورية فقط (تم استبعاد nova, shimmer)
-ALLOWED_VOICES = {"onyx", "echo", "alloy"}
+# أصوات ذكورية فقط - onyx (الأعمق), fable (بريطاني), echo (متوسط)
+# ملاحظة: alloy و nova و shimmer أصوات أنثوية تم استبعادها
+ALLOWED_VOICES = {"onyx", "fable", "echo"}
 
 # قاموس تحسين النطق العربي - تكرار الحرف بدل الشدة + تشكيل واضح
 ARABIC_PRONUNCIATION_MAP = {
