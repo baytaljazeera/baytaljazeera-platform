@@ -1385,6 +1385,29 @@ async function initializeDatabase() {
       console.log("✅ First elite period (7 days) created");
     }
 
+    // 🔄 التحقق من وجود فترة نشطة وإنشاء واحدة جديدة إذا انتهت جميع الفترات
+    const activePeriodCheck = await db.query(`
+      SELECT id FROM elite_slot_periods 
+      WHERE status = 'active' AND ends_at > NOW()
+      LIMIT 1
+    `);
+    
+    if (activePeriodCheck.rows.length === 0) {
+      // تحديث الفترات المنتهية
+      await db.query(`
+        UPDATE elite_slot_periods 
+        SET status = 'ended' 
+        WHERE ends_at < NOW() AND status = 'active'
+      `);
+      
+      // إنشاء فترة جديدة لمدة 30 يوم
+      await db.query(`
+        INSERT INTO elite_slot_periods (starts_at, ends_at, status)
+        VALUES (NOW(), NOW() + INTERVAL '30 days', 'active')
+      `);
+      console.log("✅ New elite period (30 days) created - previous period expired");
+    }
+
     // تنظيف حجوزات النخبة المرتبطة بإعلانات مرفوضة
     const cleanupResult = await db.query(`
       UPDATE elite_slot_reservations 

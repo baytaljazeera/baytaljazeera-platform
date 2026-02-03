@@ -44,6 +44,81 @@ client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY")) if OpenAI and os.envir
 # أصوات ذكورية فقط (تم استبعاد nova, shimmer)
 ALLOWED_VOICES = {"onyx", "echo", "alloy"}
 
+# قاموس تحسين النطق العربي - تكرار الحرف بدل الشدة + تشكيل واضح
+ARABIC_PRONUNCIATION_MAP = {
+    # عقارات - الشدة تتحول لحرف مكرر
+    "فيلا": "فِيلْلَا",
+    "فيلّا": "فِيلْلَا",
+    "شقة": "شَقْقَة",
+    "شقّة": "شَقْقَة",
+    "شاليه": "شَالِيه",
+    "دوبلكس": "دُوبْلِكْس",
+    "بنتهاوس": "بِنْتْهَاوْس",
+    "استوديو": "اِسْتُودْيُو",
+    "روف": "رُوف",
+    "ملحق": "مُلْحَق",
+    "عمارة": "عِمَارَة",
+    "عمّارة": "عِمَارَة",
+    # مواقع
+    "الرياض": "الرِّيَاض",
+    "جدة": "جِدَّة",
+    "جدّة": "جِدْدَة",
+    "مكة": "مَكَّة",
+    "مكّة": "مَكْكَة",
+    "المدينة": "الْمَدِينَة",
+    "الدمام": "الدَّمَّام",
+    "الدمّام": "الدَّمْمَام",
+    "دبي": "دُبَي",
+    "أبوظبي": "أَبُو ظَبِي",
+    "الكويت": "الْكُوَيْت",
+    "الدوحة": "الدَّوْحَة",
+    "المنامة": "الْمَنَامَة",
+    "مسقط": "مَسْقَط",
+    # صفات
+    "فاخرة": "فَاخِرَة",
+    "فخمة": "فَخْمَة",
+    "راقية": "رَاقِيَة",
+    "مميزة": "مُمَيَّزَة",
+    "مميّزة": "مُمَيْيَزَة",
+    "حصرية": "حَصْرِيَّة",
+    "حصريّة": "حَصْرِيْيَة",
+    "استثمارية": "اِسْتِثْمَارِيَّة",
+    "استثماريّة": "اِسْتِثْمَارِيْيَة",
+    "عصرية": "عَصْرِيَّة",
+    "عصريّة": "عَصْرِيْيَة",
+    "كلاسيكية": "كْلَاسِيكِيَّة",
+    "كلاسيكيّة": "كْلَاسِيكِيْيَة",
+    # أرقام ووحدات
+    "متر": "مِتْر",
+    "ريال": "رِيَال",
+    "درهم": "دِرْهَم",
+    "دينار": "دِينَار",
+    "مليون": "مِلْيُون",
+    "ألف": "أَلْف",
+    # كلمات شائعة
+    "غرفة": "غُرْفَة",
+    "غرف": "غُرَف",
+    "حمام": "حَمَّام",
+    "حمّام": "حَمْمَام",
+    "صالة": "صَالَة",
+    "مطبخ": "مَطْبَخ",
+    "حديقة": "حَدِيقَة",
+    "مسبح": "مَسْبَح",
+    "موقف": "مَوْقِف",
+    "كراج": "كَرَاج",
+    "جراج": "جَرَاج",
+    "إطلالة": "إِطْلَالَة",
+    "بحرية": "بَحْرِيَّة",
+    "بحريّة": "بَحْرِيْيَة",
+}
+
+def enhance_arabic_pronunciation(text):
+    """تحسين النطق العربي - استبدال الكلمات الصعبة بنسخ مشكّلة وتكرار الحروف بدل الشدة."""
+    result = text
+    for word, replacement in ARABIC_PRONUNCIATION_MAP.items():
+        result = result.replace(word, replacement)
+    return result
+
 class BaytVideoEngine:
     def __init__(self, property_data, image_paths, settings):
         self.data = property_data
@@ -93,7 +168,7 @@ class BaytVideoEngine:
         return f"عقار مميز في {location}. {title}. للاستفسار تواصل معنا."
 
     def generate_voiceover(self):
-        """توليد التعليق: gTTS للعربي (افتراضي — أنصق) أو OpenAI إذا VOICE_ENGINE=openai."""
+        """توليد التعليق: gTTS للعربي (افتراضي) أو OpenAI مع تحسين النطق."""
         force_openai = os.environ.get("VOICE_ENGINE", "").strip().lower() == "openai"
         use_gtts = not force_openai and gTTS
         script = self._get_script_for_tts()
@@ -120,10 +195,12 @@ class BaytVideoEngine:
         try:
             if len(script) > 600:
                 script = script[:600].rsplit('.', 1)[0] + '.' if '.' in script[:600] else script[:600]
+            script = enhance_arabic_pronunciation(script)
             res = client.audio.speech.create(
                 model="tts-1-hd",
                 voice=self.voice,
-                input=script
+                input=script,
+                speed=1.1
             )
             res.stream_to_file(str(voice_path))
             print(f"[VideoEngine] ✅ Voiceover (OpenAI) generated: {voice_path}")
