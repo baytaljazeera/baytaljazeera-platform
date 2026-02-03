@@ -50,41 +50,74 @@ class BaytVideoEngine:
             self.voice = 'onyx'
         self.output_filename = f"video_{property_data.get('id', 'temp')}.mp4"
 
+    def _strip_script_prefix(self, raw):
+        """استخراج النص العربي فقط من رد الـ GPT."""
+        script = raw.strip()
+        for prefix in ("النص المشكل:", "النص:", "النص المُشكّل:", "1)", "١)", "2)", "٢)", "المطلوب:", "—", "–", "'''", "```"):
+            if script.startswith(prefix):
+                script = script[len(prefix):].strip()
+        if not script:
+            script = raw.strip()
+        return script
+
     def generate_voiceover(self):
-        """Generate AI voiceover using OpenAI TTS (male voices only)."""
+        """Generate AI voiceover using OpenAI TTS (male voices only). نطق عربي أوضح."""
         if not client:
             print("[VideoEngine] Warning: OpenAI not configured, skipping voiceover")
             return None
 
         voice = self.voice
+        title = self.data.get('title') or ''
+        location = self.data.get('location') or ''
+        price = self.data.get('price') or ''
+        details = (self.data.get('details') or '')[:500]
 
-        prompt = f"""
-        اكتب نصاً إعلانياً قصيراً جداً وجذاباً للعقار التالي، ثم شكّله بالكامل لتحسين النطق:
-        العنوان: {self.data.get('title')}
-        الموقع: {self.data.get('location')}
-        السعر: {self.data.get('price')}
-        الوصف: {self.data.get('details')}
-        المطلوب:
-        1) جمل تسويقية قصيرة وراقية، باللهجة السعودية البيضاء.
-        2) أرجع النص مشكّلاً بالكامل: ضمة ُ، فتحة َ، كسرة ِ، شدة ّ، سكون ْ حيث يلزم، حتى يقرأ التعليق الصوتي النطق بشكل صحيح.
-        لا تذكر أرقام هواتف. ركز على الفخامة والموقع.
-        """
+        # 1) نَصّ مُحَسَّن لِلقِرَاءَةِ الْآلِيَّةِ: جُمَل قَصِيرَة، مُفْرَدَات وَاضِحَة، تشكيل كامل
+        prompt_script = f"""أنت تكتب نصاً إعلانياً للعقار ليقْرَأَه قارئ آلي (TTS) عربي. الهدف نطق سليم وواضح كأن إنساناً عربياً يقرأ.
+
+البيانات:
+- العنوان: {title}
+- الموقع: {location}
+- السعر: {price}
+- الوصف (مختصر): {details}
+
+الشروط الصارمة:
+1) أَرْجِع ٣ إلى ٥ جمل فقط. كل جملة مستقلة وقصيرة (تقريباً ٤–١٠ كلمات).
+2) استخدم لغة عربية فصحى بسيطة، كلمات شائعة وسهلة النطق. لا لهجات عامية معقدة.
+3) شكّل كل كلمة بالكامل: ضمة ُ فتحة َ كسرة ِ شدة ّ سكون ْ (على كل حرف يحتاج حركة). هذا ضروري لنطق القارئ الآلي.
+4) لا أرقام هواتف. لا رموز معقدة. ركّز على الفخامة والموقع والفرصة.
+
+أرجع النص المشكّل فقط، بدون عناوين أو ترقيم."""
 
         try:
             gpt = client.chat.completions.create(
                 model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt_script}]
             )
             raw = gpt.choices[0].message.content or ""
-            # استخراج النص العربي فقط (مع الحركات) — إزالة ترويسات أو ترقيم من الـ GPT
-            script = raw.strip()
-            for prefix in ("النص المشكل:", "النص:", "1)", "١)", "2)", "٢)", "المطلوب:", "—", "–"):
-                if script.startswith(prefix):
-                    script = script[len(prefix):].strip()
-            if not script:
-                script = raw.strip()
+            script = self._strip_script_prefix(raw)
 
-            # tts-1-hd لجودة أوضح وتقليل تقطيع الصوت
+            # 2) اختياري: لو النص طويل جداً أو بدون تشكيل كافٍ، نطلب تشكيلاً إضافياً (مرة واحدة)
+            if len(script) > 20 and not any(c in script for c in 'َُِّْ'):
+                diac_prompt = f"""شكّل النص التالي بالكامل (حركات العربية: ضمة فتحة كسرة شدة سكون) على كل كلمة. أَرْجِع النص نفسه فقط مع التشكيل، بدون أي تعليق.
+
+النص:
+{script}"""
+                try:
+                    diac_resp = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[{"role": "user", "content": diac_prompt}]
+                    )
+                    diac_text = (diac_resp.choices[0].message.content or "").strip()
+                    script = self._strip_script_prefix(diac_text) or script
+                except Exception:
+                    pass
+
+            # تقصير النص إذا زاد عن حد معقول لتفادي تقطيع الصوت
+            if len(script) > 600:
+                script = script[:600].rsplit('.', 1)[0] + '.' if '.' in script[:600] else script[:600]
+
+            # tts-1-hd لجودة أوضح
             res = client.audio.speech.create(
                 model="tts-1-hd",
                 voice=voice,

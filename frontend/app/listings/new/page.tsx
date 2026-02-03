@@ -221,6 +221,8 @@ export default function NewListingPage() {
 
   // Elite slot booking state
   const [eliteSlots, setEliteSlots] = useState<any[]>([]);
+  const [eliteSlotsLoading, setEliteSlotsLoading] = useState(true);
+  const [eliteSlotsError, setEliteSlotsError] = useState<string | null>(null);
   const [elitePeriod, setElitePeriod] = useState<any>(null);
   const [selectedEliteSlot, setSelectedEliteSlot] = useState<any>(null);
   const [elitePaymentData, setElitePaymentData] = useState<any>(null);
@@ -868,24 +870,50 @@ export default function NewListingPage() {
     return (selectedBucket?.benefits?.supportLevel ?? 0) >= 3;
   }, [selectedBucket]);
 
-  // Fetch elite slots when user is eligible
+  // Fetch elite slots — طلب نسبي /api/... (يعمل مع Next rewrite بدون CORS) + مهلة 15 ثانية
   useEffect(() => {
+    let cancelled = false;
+    const timeoutMs = 15000;
+
     async function fetchEliteSlots() {
-      if (!isEligibleForElite || !user) return;
+      if (!isEligibleForElite || !user) {
+        setEliteSlotsLoading(false);
+        return;
+      }
+      setEliteSlotsLoading(true);
+      setEliteSlotsError(null);
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), timeoutMs);
+
       try {
         const res = await fetch('/api/elite-slots/availability', {
-          credentials: 'include'
+          credentials: 'include',
+          signal: controller.signal
         });
+        clearTimeout(tid);
+        if (cancelled) return;
+
+        const data = await res.json().catch(() => ({}));
         if (res.ok) {
-          const data = await res.json();
           setEliteSlots(data.slots || []);
-          setElitePeriod(data.period);
+          setElitePeriod(data.period || null);
+        } else {
+          setEliteSlotsError(data.error || 'فشل تحميل مواقع النخبة');
+          setEliteSlots([]);
         }
       } catch (err) {
+        clearTimeout(tid);
+        if (cancelled) return;
+        const isAbort = (err as Error)?.name === 'AbortError';
         console.error('Error fetching elite slots:', err);
+        setEliteSlotsError(isAbort ? 'انتهت مهلة التحميل. حدّث الصفحة وجرّب مرة أخرى.' : 'تعذر تحميل المواقع. حدّث الصفحة أو جرّب لاحقاً.');
+        setEliteSlots([]);
+      } finally {
+        if (!cancelled) setEliteSlotsLoading(false);
       }
     }
     fetchEliteSlots();
+    return () => { cancelled = true; };
   }, [isEligibleForElite, user]);
 
   // Handle elite slot payment (simulated - no real card data)
@@ -1444,16 +1472,23 @@ export default function NewListingPage() {
         formData.append("aiVideoUrl", videoResult);
       }
 
+      // إرسال التوكن مع الطلب لتجنب 401 (غير مصرح) — لا نضع Content-Type لأن FormData يحددها تلقائياً
+      const authH = getAuthHeaders();
+      const headers: HeadersInit = {};
+      if (authH?.Authorization) headers.Authorization = authH.Authorization as string;
+
       const res = await fetch(`${API_URL}/api/listings/create`, {
         method: "POST",
         credentials: "include",
+        headers,
         body: formData,
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.message || data.error || "حدث خطأ أثناء إنشاء الإعلان");
+        const msg = data.message || data.error || "حدث خطأ أثناء إنشاء الإعلان";
+        throw new Error(res.status === 401 ? (msg || "انتهت صلاحية الجلسة. سجّل الدخول من جديد ثم جرّب نشر الإعلان.") : msg);
       }
 
       // If elite slot payment was made, complete the reservation
@@ -3590,11 +3625,11 @@ export default function NewListingPage() {
                       </div>
                       {videoQuality === "full" && (
                         <div>
-                          <p className="text-xs font-semibold text-[#002845]/80 mb-2">صوت التعليق</p>
+                          <p className="text-xs font-semibold text-[#002845]/80 mb-2">صوت التعليق (أصحاب الأصوات)</p>
                           <select value={videoVoice} onChange={(e) => setVideoVoice(e.target.value)} className="rounded-lg border border-[#D4AF37]/40 bg-white px-3 py-2 text-sm text-[#002845] focus:ring-2 focus:ring-[#D4AF37]/50 w-full max-w-xs">
-                            <option value="onyx">أونيكس (عميق)</option>
-                            <option value="echo">إيكو (واضح)</option>
-                            <option value="alloy">ألوي (محايد)</option>
+                            <option value="onyx">فيصل — صوت عميق</option>
+                            <option value="echo">سعد — صوت واضح</option>
+                            <option value="alloy">خالد — صوت محايد</option>
                           </select>
                         </div>
                       )}
@@ -3952,7 +3987,17 @@ export default function NewListingPage() {
                             </div>
                           )}
                           
-                          {eliteSlots.length > 0 ? (
+                          {eliteSlotsLoading ? (
+                            <div className="text-center py-4 text-slate-500">
+                              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                              جاري تحميل المواقع المتاحة...
+                            </div>
+                          ) : eliteSlotsError ? (
+                            <div className="text-center py-4 text-amber-700 bg-amber-50 rounded-xl border border-amber-200">
+                              <AlertTriangle className="w-6 h-6 mx-auto mb-2" />
+                              <p className="text-sm font-medium">{eliteSlotsError}</p>
+                            </div>
+                          ) : eliteSlots.length > 0 ? (
                             <div className="grid grid-cols-3 gap-2 mb-3">
                               {eliteSlots.map((slot) => {
                                 const isBooked = slot.status === 'booked';
@@ -3995,8 +4040,7 @@ export default function NewListingPage() {
                             </div>
                           ) : (
                             <div className="text-center py-4 text-slate-500">
-                              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
-                              جاري تحميل المواقع المتاحة...
+                              لا توجد مواقع نخبة متاحة لهذه الفترة. جرّب لاحقاً أو تابع بدون النخبة.
                             </div>
                           )}
                           
