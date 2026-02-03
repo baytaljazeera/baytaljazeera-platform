@@ -2879,17 +2879,17 @@ async function initializeDatabase() {
       console.log("✅ Default cities inserted");
     }
 
-    // ترتيب مدن السعودية: مكة، المدينة، جدة، الطائف، الرياض (للقواعد الحالية أو بعد seed)
+    // ترتيب مدن السعودية: مكة أولاً ثم المدينة ثم جدة ثم الطائف ثم الرياض (الباقي بعدها)
     try {
       const saIdResult = await db.query("SELECT id FROM countries WHERE code = 'SA' LIMIT 1");
       if (saIdResult.rows.length > 0) {
         const saId = saIdResult.rows[0].id;
         await db.query(`
           UPDATE cities SET display_order = CASE name_ar
-            WHEN 'مكة المكرمة' THEN 1 WHEN 'المدينة المنورة' THEN 2 WHEN 'جدة' THEN 3 WHEN 'الطائف' THEN 4
-            WHEN 'الرياض' THEN 5 WHEN 'الدمام' THEN 6 WHEN 'أبها' THEN 7 WHEN 'تبوك' THEN 8
-            WHEN 'بريدة' THEN 9 WHEN 'خميس مشيط' THEN 10
-            ELSE display_order END
+            WHEN 'مكة المكرمة' THEN 0 WHEN 'المدينة المنورة' THEN 1 WHEN 'جدة' THEN 2 WHEN 'الطائف' THEN 3 WHEN 'الرياض' THEN 4
+            WHEN 'الدمام' THEN 5 WHEN 'أبها' THEN 6 WHEN 'تبوك' THEN 7 WHEN 'بريدة' THEN 8 WHEN 'خميس مشيط' THEN 9
+            ELSE 100
+          END
           WHERE country_id = $1
         `, [saId]);
       }
