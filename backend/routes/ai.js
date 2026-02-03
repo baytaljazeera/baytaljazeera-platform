@@ -1625,7 +1625,7 @@ router.post("/user/generate-advanced-video", authMiddleware, asyncHandler(async 
 // 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي - Python Engine
 router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description, videoQuality } = req.body;
+  const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description, videoQuality, videoVoice } = req.body;
 
   // Check user's support level - متاح للباقات المميزة فقط
   const planResult = await db.query(
@@ -1703,7 +1703,8 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
     price, 
     userId, 
     description: description || `${propertyType} لل${purpose}`,
-    videoQuality: videoQuality ?? 'full'
+    videoQuality: videoQuality ?? 'full',
+    voice: videoVoice || 'onyx'
   };
   const targetId = listingId || `temp_${Date.now()}`; 
 

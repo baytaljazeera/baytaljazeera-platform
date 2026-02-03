@@ -169,17 +169,29 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
   console.log(`[Video] FFmpeg available: ${ffmpegAvailable}`);
   console.log(`[Video] Cloudinary configured: ${isCloudinaryConfigured()}`);
 
-  // الجودة العالية الأصلية: Worker أولاً (صوت + تأثيرات) — Replicate فقط عند اختيار "سريع" أو فشل Worker
+  // الجودة العالية (صوت + تأثيرات): Worker فقط — لا نعطي المستخدم فيديو Replicate الصامت إذا طلب صوت
   const preferFastOnly = listingData.videoQuality === 'fast';
-  if (!preferFastOnly && PYTHON_WORKER_URL && imageUrls.length >= 2) {
+  if (!preferFastOnly && imageUrls.length >= 2) {
+    if (!PYTHON_WORKER_URL) {
+      if (!String(listingId).startsWith('temp_')) {
+        await db.query(`UPDATE properties SET video_status = 'failed' WHERE id = $1`, [listingId]).catch(() => {});
+      }
+      throw new Error(
+        'جودة عالية (صوت + تأثيرات) غير متاحة حالياً — خدمة الفيديو غير مضبوطة. اختر «سريع فقط (صور بدون صوت)» أو جرّب لاحقاً.'
+      );
+    }
     const absoluteUrls = toAbsoluteImageUrls(imageUrls);
     const workerUrl = PYTHON_WORKER_URL.replace(/\/$/, '') + '/generate';
-    console.log('[Video] 🎙️ Trying Python Worker first (high quality: voice + effects)');
+    console.log('[Video] 🎙️ Trying Python Worker (high quality: voice + effects)');
     try {
+      const voice = ['onyx', 'echo', 'alloy'].includes(String(listingData.voice || '').toLowerCase())
+        ? String(listingData.voice).toLowerCase()
+        : 'onyx';
       const res = await axios.post(workerUrl, {
         images: absoluteUrls.slice(0, 12),
         tier: 'tier2_business',
         ambience: 'none',
+        voice,
         property: {
           id: String(listingId),
           title: listingData.title || 'عقار مميز',
@@ -187,7 +199,7 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
           price: listingData.price,
           details: listingData.description
         }
-      }, { responseType: 'arraybuffer', timeout: 240000 });
+      }, { responseType: 'arraybuffer', timeout: 300000 }); // 5 دقائق للسماح بالتوليد الكامل
       const tempDir = path.join(os.tmpdir(), 'video-gen', 'worker');
       if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
       const tempPath = path.join(tempDir, `worker_${listingId}_${Date.now()}.mp4`);
@@ -210,8 +222,23 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
       }
       throw new Error('فشل رفع الفيديو من Worker');
     } catch (workerErr) {
-      console.warn('[Video] ⚠️ Worker failed (timeout or error), using fallback:', workerErr.message);
-      // fall through to Replicate or FFmpeg
+      if (!String(listingId).startsWith('temp_')) {
+        await db.query(`UPDATE properties SET video_status = 'failed' WHERE id = $1`, [listingId]).catch(() => {});
+      }
+      const status = workerErr.response?.status;
+      const data = workerErr.response?.data;
+      const msg = data
+        ? (typeof data === 'string' ? data : (data.error || workerErr.message))
+        : workerErr.message || '';
+      const isTimeout = workerErr.code === 'ECONNABORTED' || msg.includes('timeout');
+      const isVoiceUnavailable = status === 503 || (msg && (msg.includes('OPENAI_API_KEY') || msg.includes('Voice not available')));
+      if (isVoiceUnavailable) {
+        throw new Error('التوليد بجودة عالية (صوت) غير مفعّل على الخادم. راجع إعدادات خدمة الفيديو (OPENAI_API_KEY) أو اختر «سريع فقط (صور بدون صوت)».');
+      }
+      if (isTimeout) {
+        throw new Error('انتهت مهلة توليد الفيديو بجودة عالية (صوت). جرّب عدد صور أقل (3–8) أو اختر «سريع فقط».');
+      }
+      throw new Error('فشل توليد الفيديو بجودة عالية (صوت + تأثيرات). تحقق من خدمة الفيديو أو جرّب «سريع فقط (صور بدون صوت)».');
     }
   }
 

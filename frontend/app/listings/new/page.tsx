@@ -5,7 +5,7 @@ import { useAuthStore } from "@/lib/stores/authStore";
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, FormEvent, useCallback, useMemo } from "react";
+import { useEffect, useState, useRef, FormEvent, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import nextDynamic from "next/dynamic";
 import {
@@ -252,6 +252,10 @@ export default function NewListingPage() {
   const [videoPromoText, setVideoPromoText] = useState<{headline: string; subheadline: string; callToAction: string; tagline?: string; priceTag: string | null} | null>(null);
   const [selectedVideoImageIndex, setSelectedVideoImageIndex] = useState<number | null>(null);
   const [videoQuality, setVideoQuality] = useState<"fast" | "full">("full");
+  const [videoVoice, setVideoVoice] = useState<string>("onyx"); // أصوات ذكورية فقط: onyx, echo, alloy
+  const [showVideoConfirmModal, setShowVideoConfirmModal] = useState(false);
+  const [videoConfirmImageCount, setVideoConfirmImageCount] = useState(0);
+  const pendingVideoImagesRef = useRef<File[]>([]);
 
   // Scroll to top button state
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -711,12 +715,18 @@ export default function NewListingPage() {
       return;
     }
     
-    // تحذير إذا كانت الصور كثيرة
+    // تحذير إذا كانت الصور كثيرة — مودال مخصص بدل النافذة السوداء
     if (imagesToUse.length > 10) {
-      const proceed = window.confirm(`تم اختيار ${imagesToUse.length} صورة. عدد أقل من الصور يعني سرعة أكبر في التوليد. هل تريد المتابعة؟`);
-      if (!proceed) return;
+      pendingVideoImagesRef.current = imagesToUse;
+      setVideoConfirmImageCount(imagesToUse.length);
+      setShowVideoConfirmModal(true);
+      return;
     }
 
+    doVideoGeneration(imagesToUse);
+  }
+
+  async function doVideoGeneration(imagesToUse: File[]) {
     setVideoLoading(true);
     setVideoError(null);
     setVideoResult(null);
@@ -788,7 +798,8 @@ export default function NewListingPage() {
           customPromoText: customPromoText.trim() || undefined,
           imagePaths: uploadedPaths,
           template: "luxury",
-          videoQuality: videoQuality
+          videoQuality: videoQuality,
+          videoVoice: videoQuality === "full" ? videoVoice : undefined
         })
       });
 
@@ -3549,46 +3560,44 @@ export default function NewListingPage() {
                   )}
                 </div>
 
-                {/* توليد فيديو بالذكاء الاصطناعي - لوحة ذهبي/أزرق مثل بقية الموقع */}
+                {/* فيديو ترويجي — ترتيب: صور (أعلى) ← صوت ← جودة ← توليد */}
                 {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 2 && imagePreviews.length > 0 && (
                   <div className="mb-6 p-5 bg-gradient-to-br from-amber-50 via-[#D4AF37]/10 to-[#002845]/5 rounded-2xl border-2 border-[#D4AF37]/40 shadow-lg shadow-[#D4AF37]/10">
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-12 h-12 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-xl flex items-center justify-center shadow-lg shadow-[#D4AF37]/30">
-                        <BrainCircuit className="w-6 h-6 text-[#002845]" />
+                        <Film className="w-6 h-6 text-[#002845]" />
                       </div>
                       <div className="flex-1">
-                        <h3 className="text-lg font-bold text-[#002845] flex items-center gap-2">
-                          توليد فيديو ترويجي بالذكاء الاصطناعي
-                          <span className="px-2 py-0.5 bg-[#D4AF37] text-[#002845] text-xs rounded-full font-bold">AI</span>
-                        </h3>
-                        <p className="text-sm text-[#002845]/80 mt-1">
-                          أنشئ فيديو سينمائي احترافي من وصف العقار باستخدام الذكاء الاصطناعي
-                        </p>
+                        <h3 className="text-lg font-bold text-[#002845]">فيديو ترويجي بالذكاء الاصطناعي</h3>
+                        <p className="text-sm text-[#002845]/70">فيديو احترافي من وصف العقار — اختر الجودة والصوت ثم ولّد</p>
                       </div>
                     </div>
 
-                    <div className="mb-4 flex flex-wrap items-center gap-3">
-                      <span className="text-sm font-medium text-[#002845]">نوع الفيديو:</span>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="videoQuality"
-                          checked={videoQuality === "full"}
-                          onChange={() => setVideoQuality("full")}
-                          className="accent-[#D4AF37]"
-                        />
-                        <span className="text-sm font-medium text-[#002845]">جودة عالية (صوت + تأثيرات) — الافتراضي</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="videoQuality"
-                          checked={videoQuality === "fast"}
-                          onChange={() => setVideoQuality("fast")}
-                          className="accent-[#D4AF37]"
-                        />
-                        <span className="text-sm text-[#002845]/70">سريع فقط (صور بدون صوت)</span>
-                      </label>
+                    {/* ١ الجودة — ٢ الصوت (واضح بدون إرباك) */}
+                    <div className="space-y-4 mb-4">
+                      <div>
+                        <p className="text-xs font-semibold text-[#002845]/80 mb-2">جودة الفيديو</p>
+                        <div className="flex flex-wrap gap-4">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="videoQuality" checked={videoQuality === "full"} onChange={() => setVideoQuality("full")} className="accent-[#D4AF37]" />
+                            <span className="text-sm text-[#002845]">عالي (صوت + تأثيرات)</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="videoQuality" checked={videoQuality === "fast"} onChange={() => setVideoQuality("fast")} className="accent-[#D4AF37]" />
+                            <span className="text-sm text-[#002845]/80">سريع (صور فقط)</span>
+                          </label>
+                        </div>
+                      </div>
+                      {videoQuality === "full" && (
+                        <div>
+                          <p className="text-xs font-semibold text-[#002845]/80 mb-2">صوت التعليق</p>
+                          <select value={videoVoice} onChange={(e) => setVideoVoice(e.target.value)} className="rounded-lg border border-[#D4AF37]/40 bg-white px-3 py-2 text-sm text-[#002845] focus:ring-2 focus:ring-[#D4AF37]/50 w-full max-w-xs">
+                            <option value="onyx">أونيكس (عميق)</option>
+                            <option value="echo">إيكو (واضح)</option>
+                            <option value="alloy">ألوي (محايد)</option>
+                          </select>
+                        </div>
+                      )}
                     </div>
 
                     {videoLoading ? (
@@ -3606,16 +3615,16 @@ export default function NewListingPage() {
                           />
                         </div>
                         <p className="text-xs text-[#002845]/80">
-                          {videoQuality === "full" ? "فيديو كامل مع صوت — قد يستغرق 2–3 دقائق" : "قد يستغرق 1–2 دقيقة"}
+                          {videoQuality === "full" ? "صوت + تأثيرات (2–3 دقائق)" : "صور فقط (1–2 دقيقة)"}
                         </p>
                       </div>
                     ) : videoResult ? (
                       <div className="space-y-3">
-                        <div className="relative rounded-xl overflow-hidden border-2 border-[#D4AF37]/50 bg-white shadow-lg">
+                        <div className="relative rounded-xl overflow-hidden border-2 border-[#D4AF37]/50 bg-[#002845]/5 shadow-lg [--video-accent:#D4AF37]">
                           <video 
                             src={videoResult} 
                             controls 
-                            className="w-full max-h-[300px]"
+                            className="w-full max-h-[300px] accent-[#D4AF37]"
                             poster={imagePreviews[0]}
                           />
                           <button
@@ -3663,22 +3672,7 @@ export default function NewListingPage() {
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        <div className="p-4 bg-white/90 rounded-xl border border-[#D4AF37]/30">
-                          <div className="flex items-start gap-3">
-                            <div className="w-8 h-8 bg-[#D4AF37]/20 rounded-lg flex items-center justify-center shrink-0">
-                              <Zap className="w-4 h-4 text-[#B8860B]" />
-                            </div>
-                            <div className="flex-1">
-                              <p className="text-sm font-semibold text-[#002845] mb-1">مميزات الفيديو بالذكاء الاصطناعي:</p>
-                              <ul className="text-xs text-[#002845]/80 space-y-1 list-disc list-inside">
-                                <li>فيديو سينمائي احترافي بتقنية Veo 2.0</li>
-                                <li>مدة 8 ثوانٍ بتنسيق 16:9</li>
-                                <li>نص ترويجي ذكي مُنشأ تلقائياً</li>
-                                <li>مُحسّن للعقارات السكنية والتجارية</li>
-                              </ul>
-                            </div>
-                          </div>
-                        </div>
+                        <p className="text-xs text-[#002845]/70">فيديو سينمائي 16:9 مع نص ترويجي تلقائي — يُرفق مع الإعلان عند النشر.</p>
                         <button
                           type="button"
                           onClick={handleGenerateVideo}
@@ -4294,6 +4288,47 @@ export default function NewListingPage() {
                       </>
                     )}
                   </TouchButton>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* مودال تأكيد عدد الصور للفيديو — بألوان الموقع بدل النافذة السوداء */}
+        {showVideoConfirmModal && (
+          <div className="fixed inset-0 bg-[#002845]/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border-2 border-[#D4AF37]/40">
+              <div className="bg-gradient-to-l from-[#D4AF37] to-[#B8860B] p-6 text-[#002845]">
+                <h3 className="text-xl font-bold flex items-center gap-3">
+                  <div className="w-12 h-12 bg-white/30 rounded-full flex items-center justify-center">
+                    <Film className="w-6 h-6" />
+                  </div>
+                  تأكيد عدد الصور
+                </h3>
+              </div>
+              <div className="p-6">
+                <p className="text-[#002845] mb-6">
+                  تم اختيار <span className="font-bold text-[#B8860B]">{videoConfirmImageCount}</span> صورة. عدد أقل من الصور يعني سرعة أكبر في التوليد. هل تريد المتابعة؟
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowVideoConfirmModal(false)}
+                    className="flex-1 py-2.5 px-4 rounded-xl border-2 border-[#002845]/30 text-[#002845] font-medium hover:bg-[#002845]/5 transition"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowVideoConfirmModal(false);
+                      const imgs = pendingVideoImagesRef.current;
+                      if (imgs.length) doVideoGeneration(imgs);
+                    }}
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] font-bold hover:opacity-90 transition shadow-lg"
+                  >
+                    متابعة
+                  </button>
                 </div>
               </div>
             </div>

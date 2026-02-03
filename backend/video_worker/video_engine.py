@@ -36,42 +36,58 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY")) if OpenAI and os.environ.get("OPENAI_API_KEY") else None
 
 
+# أصوات ذكورية فقط (تم استبعاد nova, shimmer)
+ALLOWED_VOICES = {"onyx", "echo", "alloy"}
+
 class BaytVideoEngine:
     def __init__(self, property_data, image_paths, settings):
         self.data = property_data
         self.images = image_paths
         self.tier = settings.get('tier', 'tier2_business')
         self.ambience = settings.get('ambience', 'none')
+        self.voice = (settings.get('voice') or 'onyx').lower()
+        if self.voice not in ALLOWED_VOICES:
+            self.voice = 'onyx'
         self.output_filename = f"video_{property_data.get('id', 'temp')}.mp4"
 
     def generate_voiceover(self):
-        """Generate AI voiceover using OpenAI TTS."""
+        """Generate AI voiceover using OpenAI TTS (male voices only)."""
         if not client:
             print("[VideoEngine] Warning: OpenAI not configured, skipping voiceover")
             return None
-            
-        voice = "onyx"
-        
+
+        voice = self.voice
+
         prompt = f"""
-        اكتب نصاً إعلانياً قصيراً جداً وجذاباً للعقار التالي:
+        اكتب نصاً إعلانياً قصيراً جداً وجذاباً للعقار التالي، ثم شكّله بالكامل لتحسين النطق:
         العنوان: {self.data.get('title')}
         الموقع: {self.data.get('location')}
         السعر: {self.data.get('price')}
         الوصف: {self.data.get('details')}
-        المطلوب: جمل تسويقية قصيرة وراقية. باللهجة السعودية البيضاء الراقية.
-        تحذير: لا تذكر أرقام هواتف. ركز على الفخامة والموقع.
+        المطلوب:
+        1) جمل تسويقية قصيرة وراقية، باللهجة السعودية البيضاء.
+        2) أرجع النص مشكّلاً بالكامل: ضمة ُ، فتحة َ، كسرة ِ، شدة ّ، سكون ْ حيث يلزم، حتى يقرأ التعليق الصوتي النطق بشكل صحيح.
+        لا تذكر أرقام هواتف. ركز على الفخامة والموقع.
         """
-        
+
         try:
             gpt = client.chat.completions.create(
-                model="gpt-4o-mini", 
+                model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}]
             )
-            script = gpt.choices[0].message.content
-            
+            raw = gpt.choices[0].message.content or ""
+            # استخراج النص العربي فقط (مع الحركات) — إزالة ترويسات أو ترقيم من الـ GPT
+            script = raw.strip()
+            for prefix in ("النص المشكل:", "النص:", "1)", "١)", "2)", "٢)", "المطلوب:", "—", "–"):
+                if script.startswith(prefix):
+                    script = script[len(prefix):].strip()
+            if not script:
+                script = raw.strip()
+
+            # tts-1-hd لجودة أوضح وتقليل تقطيع الصوت
             res = client.audio.speech.create(
-                model="tts-1", 
-                voice=voice, 
+                model="tts-1-hd",
+                voice=voice,
                 input=script
             )
             
@@ -204,15 +220,20 @@ class BaytVideoEngine:
         return str(output_path)
 
 
-def generate_property_video(images, tier="tier1_safwa", ambience="none", property_data=None):
+def generate_property_video(images, tier="tier1_safwa", ambience="none", property_data=None, voice="onyx"):
     """
     Convenience function for generating property videos.
     Forces high quality tier for best results.
+    voice: male only — onyx, echo, alloy.
     """
     if property_data is None:
         property_data = {"id": "temp", "title": "عقار مميز", "location": "موقع متميز"}
-    
-    settings = {"tier": "tier2_business", "ambience": ambience}
+
+    voice = (voice or "onyx").lower()
+    if voice not in ALLOWED_VOICES:
+        voice = "onyx"
+
+    settings = {"tier": "tier2_business", "ambience": ambience, "voice": voice}
     engine = BaytVideoEngine(property_data, images, settings)
     return engine.create_video()
 
@@ -232,7 +253,8 @@ if __name__ == "__main__":
         images=config.get("images", []),
         tier=config.get("tier", "tier2_business"),
         ambience=config.get("ambience", "none"),
-        property_data=config.get("property")
+        property_data=config.get("property"),
+        voice=config.get("voice", "onyx")
     )
     
     print(f"Video generated: {output}")

@@ -37,9 +37,10 @@ def generate():
     
     Request JSON:
     {
-        "images": ["https://cloudinary.com/img1.jpg", "https://cloudinary.com/img2.jpg"],
+        "images": ["https://cloudinary.com/img1.jpg", ...],
         "tier": "tier1_safwa" | "tier2_business",
         "ambience": "none" | "birds" | "sea",
+        "voice": "onyx" | "echo" | "alloy" (ذكوري فقط),
         "property": {"id": "123", "title": "فيلا فاخرة", "location": "الرياض"}
     }
     
@@ -47,10 +48,10 @@ def generate():
     """
     try:
         data = request.json
-        
+
         if not data or not data.get('images'):
             return jsonify({"error": "No images provided"}), 400
-        
+
         local_images = []
         for img in data.get('images', []):
             local_path = download_image(img)
@@ -64,7 +65,8 @@ def generate():
             images=local_images,
             tier=data.get('tier', 'tier1_safwa'),
             ambience=data.get('ambience', 'none'),
-            property_data=data.get('property', {})
+            property_data=data.get('property', {}),
+            voice=data.get('voice', 'onyx')
         )
         
         for img in local_images:
