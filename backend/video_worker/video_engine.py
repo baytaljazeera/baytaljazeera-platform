@@ -234,34 +234,36 @@ class BaytVideoEngine:
         audio_clips = []
         voice_duration = 0
         
+        # حساب مدة الفيديو المطلوبة بناءً على عدد الصور (3 ثواني لكل صورة)
+        min_video_duration = len(self.images) * 3.0
+        MAX_VIDEO_DURATION = 60.0
+        
         if voice_path and os.path.exists(voice_path):
             vc = AudioFileClip(voice_path)
             voice_duration = vc.duration
-            # Cap duration to avoid Render timeout/OOM (max ~60s)
-            MAX_VIDEO_DURATION = 60.0
             if voice_duration > MAX_VIDEO_DURATION:
                 vc = vc.subclip(0, MAX_VIDEO_DURATION)
                 voice_duration = MAX_VIDEO_DURATION
-                audio_clips.append(vc)
-                print(f"[VideoEngine] Voice capped to {voice_duration}s to avoid OOM")
-            else:
-                audio_clips.append(vc)
+            audio_clips.append(vc)
             print(f"[VideoEngine] Voice duration: {voice_duration:.1f}s")
-        else:
-            voice_duration = min(max(len(self.images) * 4, 15), 60)
-            print(f"[VideoEngine] No voice, using default duration: {voice_duration}s")
+        
+        # استخدام المدة الأطول: إما الصوت أو الصور (3 ثواني لكل صورة)
+        target_duration = min(max(voice_duration, min_video_duration), MAX_VIDEO_DURATION)
+        print(f"[VideoEngine] Target video duration: {target_duration:.1f}s (voice: {voice_duration:.1f}s, images need: {min_video_duration:.1f}s)")
 
         if self.ambience != 'none':
             sound_file = ASSETS_DIR / f"{self.ambience}.mp3"
             if sound_file.exists():
                 bg = AudioFileClip(str(sound_file))
-                bg = audio_loop(bg, duration=voice_duration + 3)
+                bg = audio_loop(bg, duration=target_duration + 3)
                 bg = bg.fx(volumex, 0.15)
                 audio_clips.append(bg)
                 print(f"[VideoEngine] Added ambience: {self.ambience}")
 
         clips = []
-        duration_per_img = min((voice_duration / len(self.images)) + 1.5, 15.0)
+        # توزيع الوقت على كل الصور بالتساوي
+        duration_per_img = target_duration / len(self.images)
+        print(f"[VideoEngine] Duration per image: {duration_per_img:.1f}s ({len(self.images)} images)")
         
         for i, img_path in enumerate(self.images):
             try:
@@ -298,8 +300,10 @@ class BaytVideoEngine:
         
         final_video = concatenate_videoclips(clips, method="compose", padding=-1)
         
-        if final_video.duration > voice_duration:
-            final_video = final_video.subclip(0, voice_duration)
+        # قص الفيديو فقط إذا تجاوز 60 ثانية
+        if final_video.duration > MAX_VIDEO_DURATION:
+            final_video = final_video.subclip(0, MAX_VIDEO_DURATION)
+            print(f"[VideoEngine] Video capped to {MAX_VIDEO_DURATION}s")
         
         if audio_clips:
             final_video = final_video.set_audio(CompositeAudioClip(audio_clips))
