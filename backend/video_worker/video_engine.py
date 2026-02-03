@@ -113,11 +113,57 @@ ARABIC_PRONUNCIATION_MAP = {
     "بحريّة": "بَحْرِيْيَة",
 }
 
+def apply_waqf_rule(text):
+    """
+    قاعدة الوقف: تسكين آخر حرف في آخر كلمة من كل جملة.
+    عند التوقف في نهاية الجملة، يُسكّن الحرف الأخير لتحسين النطق.
+    مثال: "ذَهَبَ مُحَمَّدٌ" → "ذَهَبَ مُحَمَّدْ"
+    """
+    import re
+    
+    # الحركات العربية
+    HARAKAT = '\u064B\u064C\u064D\u064E\u064F\u0650\u0651\u0652'  # فتحتان، ضمتان، كسرتان، فتحة، ضمة، كسرة، شدة، سكون
+    SUKUN = '\u0652'  # السكون ْ
+    
+    # فواصل الجمل
+    sentence_endings = ['.', '!', '؟', '،', '؛', '\n', '–', '—']
+    
+    result = []
+    i = 0
+    while i < len(text):
+        char = text[i]
+        
+        # إذا وصلنا لنهاية جملة
+        if char in sentence_endings:
+            # ابحث عن آخر حرف عربي قبل الفاصلة
+            j = len(result) - 1
+            while j >= 0 and (result[j] in HARAKAT or result[j] == ' '):
+                j -= 1
+            
+            if j >= 0:
+                # احذف أي حركة على الحرف الأخير وضع سكون
+                # ابحث عن الحركات بعد الحرف الأخير
+                k = j + 1
+                while k < len(result) and result[k] in HARAKAT:
+                    result.pop(k)
+                # أضف السكون بعد الحرف
+                result.insert(j + 1, SUKUN)
+            
+            result.append(char)
+        else:
+            result.append(char)
+        i += 1
+    
+    return ''.join(result)
+
 def enhance_arabic_pronunciation(text):
-    """تحسين النطق العربي - استبدال الكلمات الصعبة بنسخ مشكّلة وتكرار الحروف بدل الشدة."""
+    """تحسين النطق العربي - استبدال الكلمات الصعبة بنسخ مشكّلة وتكرار الحروف بدل الشدة + قاعدة الوقف."""
     result = text
+    # أولاً: استبدال الكلمات الصعبة
     for word, replacement in ARABIC_PRONUNCIATION_MAP.items():
         result = result.replace(word, replacement)
+    # ثانياً: تطبيق قاعدة الوقف (تسكين آخر حرف في الجملة)
+    result = apply_waqf_rule(result)
     return result
 
 class BaytVideoEngine:
