@@ -4,9 +4,12 @@ const os = require('os');
 const https = require('https');
 const http = require('http');
 const { execSync } = require('child_process');
+const axios = require('axios');
 const db = require('../db');
 const { uploadVideo, isCloudinaryConfigured } = require('./cloudinaryService');
 const replicateVideoService = require('./replicateVideoService');
+
+const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || '';
 
 let createSlideshowVideo, generateDynamicPromoText, generatePromotionalText;
 let ffmpegAvailable = false;
@@ -166,8 +169,54 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
   console.log(`[Video] FFmpeg available: ${ffmpegAvailable}`);
   console.log(`[Video] Cloudinary configured: ${isCloudinaryConfigured()}`);
 
+  // الجودة العالية الأصلية: Worker أولاً (صوت + تأثيرات) — Replicate فقط عند اختيار "سريع" أو فشل Worker
+  const preferFastOnly = listingData.videoQuality === 'fast';
+  if (!preferFastOnly && PYTHON_WORKER_URL && imageUrls.length >= 2) {
+    const absoluteUrls = toAbsoluteImageUrls(imageUrls);
+    const workerUrl = PYTHON_WORKER_URL.replace(/\/$/, '') + '/generate';
+    console.log('[Video] 🎙️ Trying Python Worker first (high quality: voice + effects)');
+    try {
+      const res = await axios.post(workerUrl, {
+        images: absoluteUrls.slice(0, 12),
+        tier: 'tier2_business',
+        ambience: 'none',
+        property: {
+          id: String(listingId),
+          title: listingData.title || 'عقار مميز',
+          location: [listingData.city, listingData.district].filter(Boolean).join('، ') || listingData.city,
+          price: listingData.price,
+          details: listingData.description
+        }
+      }, { responseType: 'arraybuffer', timeout: 240000 });
+      const tempDir = path.join(os.tmpdir(), 'video-gen', 'worker');
+      if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+      const tempPath = path.join(tempDir, `worker_${listingId}_${Date.now()}.mp4`);
+      fs.writeFileSync(tempPath, res.data);
+      if (isCloudinaryConfigured()) {
+        const folder = `listings/${listingId}/promo`;
+        const uploadResult = await uploadVideo(tempPath, folder);
+        try { fs.unlinkSync(tempPath); } catch (_) {}
+        if (uploadResult.success && uploadResult.url) {
+          if (!String(listingId).startsWith('temp_')) {
+            await db.query(`UPDATE properties SET video_status = 'ready', video_url = $1 WHERE id = $2`, [uploadResult.url, listingId]).catch(() => {});
+          }
+          console.log('[Video] ✅ Worker success:', uploadResult.url);
+          let promoText = null;
+          try {
+            if (generateDynamicPromoText) promoText = await generateDynamicPromoText(listingData);
+          } catch (_) {}
+          return { url: uploadResult.url, promoText };
+        }
+      }
+      throw new Error('فشل رفع الفيديو من Worker');
+    } catch (workerErr) {
+      console.warn('[Video] ⚠️ Worker failed (timeout or error), using fallback:', workerErr.message);
+      // fall through to Replicate or FFmpeg
+    }
+  }
+
   if (replicateVideoService.isConfigured()) {
-    console.log('[Video] 🚀 Using Replicate API (cloud) — avoids Worker timeout/OOM');
+    console.log('[Video] 🚀 Using Replicate (slideshow, no voice)');
     const absoluteUrls = toAbsoluteImageUrls(imageUrls);
     if (absoluteUrls.length < 2) {
       await db.query(`UPDATE properties SET video_status = 'failed' WHERE id = $1`, [listingId]).catch(() => {});
@@ -200,21 +249,26 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
           );
         }
       }
+      let promoText = null;
+      try {
+        if (generateDynamicPromoText) promoText = await generateDynamicPromoText(listingData);
+      } catch (_) {}
       console.log('[Video] ✅ Replicate success:', videoUrl);
-      return { url: videoUrl };
+      return { url: videoUrl, promoText };
     } catch (err) {
-      const isReplicateAuth = (err?.message || '').includes('توكن Replicate') || (err?.message || '').includes('401');
-      if (isReplicateAuth) {
-        console.warn('[Video] ⚠️ Replicate token invalid or 401 — falling back to Worker/FFmpeg');
+      const msg = err?.message || '';
+      const isReplicateFail = msg.includes('توكن Replicate') || msg.includes('401') || msg.includes('402') || msg.includes('رصيد');
+      if (isReplicateFail) {
+        console.warn('[Video] ⚠️ Replicate 401/402 — falling back to Worker/FFmpeg');
       }
-      if (!isReplicateAuth || !ffmpegAvailable) {
+      if (!isReplicateFail || !ffmpegAvailable) {
         if (!String(listingId).startsWith('temp_')) {
           await db.query(`UPDATE properties SET video_status = 'failed' WHERE id = $1`, [listingId]).catch(() => {});
         }
         throw err;
       }
       // Fall through to Worker/FFmpeg path below
-      console.log('[Video] Using Worker/FFmpeg fallback after Replicate 401');
+      console.log('[Video] Using Worker/FFmpeg fallback after Replicate 401/402');
     }
   }
   

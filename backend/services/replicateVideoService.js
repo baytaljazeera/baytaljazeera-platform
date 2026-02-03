@@ -16,6 +16,7 @@ const REPLICATE_MODEL = 'lucataco/image-to-video-slideshow';
 const REPLICATE_BASE = 'https://api.replicate.com/v1';
 
 const REPLICATE_401_MSG = 'توكن Replicate غير صالح أو غير مضبوط. تحقق من REPLICATE_API_TOKEN في Environment على Render.';
+const REPLICATE_402_MSG = 'حساب Replicate يحتاج رصيد أو تفعيل الدفع. تحقق من replicate.com أو سيتم المحاولة بالطريقة البديلة.';
 
 function isConfigured() {
   return !!REPLICATE_API_TOKEN;
@@ -26,6 +27,9 @@ function wrapReplicateErr(err) {
   const msg = err.message || '';
   if (status === 401 || (msg && msg.includes('401'))) {
     throw new Error(REPLICATE_401_MSG);
+  }
+  if (status === 402 || (msg && msg.includes('402'))) {
+    throw new Error(REPLICATE_402_MSG);
   }
   throw err;
 }
@@ -62,9 +66,9 @@ async function runSlideshow(imageUrls, options = {}) {
   const version = await getLatestVersion();
   const input = {
     images: imageUrls,
-    duration_per_image: options.duration_per_image ?? 3,
+    duration_per_image: options.duration_per_image ?? 4,
     aspect_ratio: options.aspect_ratio ?? '16:9',
-    resolution: options.resolution ?? '720p',
+    resolution: options.resolution ?? '1080p',
     transition_type: options.transition_type ?? 'fade',
     frame_rate: options.frame_rate ?? 30,
   };
@@ -142,9 +146,9 @@ async function downloadAndUploadToCloudinary(videoUrl, folder) {
 
 async function generateSlideshowVideo(listingId, imageUrls, options = {}) {
   const videoUrl = await runSlideshow(imageUrls, {
-    duration_per_image: options.duration_per_image ?? 3,
+    duration_per_image: options.duration_per_image ?? 4,
     aspect_ratio: '16:9',
-    resolution: '720p',
+    resolution: options.resolution ?? '1080p',
     transition_type: 'fade',
     frame_rate: 30,
   });

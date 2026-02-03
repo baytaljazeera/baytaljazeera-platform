@@ -1625,7 +1625,7 @@ router.post("/user/generate-advanced-video", authMiddleware, asyncHandler(async 
 // 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي - Python Engine
 router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description } = req.body;
+  const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description, videoQuality } = req.body;
 
   // Check user's support level - متاح للباقات المميزة فقط
   const planResult = await db.query(
@@ -1702,7 +1702,8 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
     district, 
     price, 
     userId, 
-    description: description || `${propertyType} لل${purpose}` 
+    description: description || `${propertyType} لل${purpose}`,
+    videoQuality: videoQuality ?? 'full'
   };
   const targetId = listingId || `temp_${Date.now()}`; 
 
@@ -1720,6 +1721,9 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
       let errMsg = err?.message || "فشل في توليد الفيديو";
       if (errMsg.includes("401") && !errMsg.includes("توكن")) {
         errMsg = "توكن Replicate غير صالح أو غير مضبوط. تحقق من REPLICATE_API_TOKEN في Environment على Render.";
+      }
+      if (errMsg.includes("402") && !errMsg.includes("رصيد")) {
+        errMsg = "حساب Replicate يحتاج رصيد أو تفعيل الدفع. تحقق من replicate.com أو جرب لاحقاً.";
       }
       videoOperations.set(operationId, { ...op, status: "error", error: errMsg });
       console.error("[Video] ❌ Background job failed:", err?.message);

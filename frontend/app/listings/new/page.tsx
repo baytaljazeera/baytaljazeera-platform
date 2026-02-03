@@ -251,6 +251,7 @@ export default function NewListingPage() {
   const [videoError, setVideoError] = useState<string | null>(null);
   const [videoPromoText, setVideoPromoText] = useState<{headline: string; subheadline: string; callToAction: string; tagline?: string; priceTag: string | null} | null>(null);
   const [selectedVideoImageIndex, setSelectedVideoImageIndex] = useState<number | null>(null);
+  const [videoQuality, setVideoQuality] = useState<"fast" | "full">("full");
 
   // Scroll to top button state
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -786,7 +787,8 @@ export default function NewListingPage() {
           hasGarden: form.hasGarden,
           customPromoText: customPromoText.trim() || undefined,
           imagePaths: uploadedPaths,
-          template: "luxury"
+          template: "luxury",
+          videoQuality: videoQuality
         })
       });
 
@@ -3565,6 +3567,30 @@ export default function NewListingPage() {
                       </div>
                     </div>
 
+                    <div className="mb-4 flex flex-wrap items-center gap-3">
+                      <span className="text-sm font-medium text-slate-700">نوع الفيديو:</span>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="videoQuality"
+                          checked={videoQuality === "full"}
+                          onChange={() => setVideoQuality("full")}
+                          className="text-purple-600"
+                        />
+                        <span className="text-sm font-medium text-purple-800">جودة عالية (صوت + تأثيرات) — الافتراضي</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="videoQuality"
+                          checked={videoQuality === "fast"}
+                          onChange={() => setVideoQuality("fast")}
+                          className="text-purple-600"
+                        />
+                        <span className="text-sm text-slate-600">سريع فقط (صور بدون صوت)</span>
+                      </label>
+                    </div>
+
                     {videoLoading ? (
                       <div className="p-6 bg-white/80 rounded-xl border-2 border-purple-300 text-center">
                         <div className="flex items-center justify-center gap-3 mb-3">
@@ -3580,7 +3606,7 @@ export default function NewListingPage() {
                           />
                         </div>
                         <p className="text-xs text-purple-600">
-                          قد يستغرق هذا 1-3 دقائق حسب الطلب
+                          {videoQuality === "full" ? "فيديو كامل مع صوت — قد يستغرق 2–3 دقائق" : "قد يستغرق 1–2 دقيقة"}
                         </p>
                       </div>
                     ) : videoResult ? (
