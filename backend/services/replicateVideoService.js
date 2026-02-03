@@ -15,22 +15,37 @@ const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN;
 const REPLICATE_MODEL = 'lucataco/image-to-video-slideshow';
 const REPLICATE_BASE = 'https://api.replicate.com/v1';
 
+const REPLICATE_401_MSG = 'توكن Replicate غير صالح أو غير مضبوط. تحقق من REPLICATE_API_TOKEN في Environment على Render.';
+
 function isConfigured() {
   return !!REPLICATE_API_TOKEN;
 }
 
+function wrapReplicateErr(err) {
+  const status = err.response?.status;
+  const msg = err.message || '';
+  if (status === 401 || (msg && msg.includes('401'))) {
+    throw new Error(REPLICATE_401_MSG);
+  }
+  throw err;
+}
+
 async function getLatestVersion() {
   const [owner, name] = REPLICATE_MODEL.split('/');
-  const { data } = await axios.get(
-    `${REPLICATE_BASE}/models/${owner}/${name}`,
-    {
-      headers: { Authorization: `Bearer ${REPLICATE_API_TOKEN}` },
-      timeout: 10000,
-    }
-  );
-  const version = data.latest_version?.id;
-  if (!version) throw new Error('Replicate: لا يوجد إصدار للنموذج');
-  return version;
+  try {
+    const { data } = await axios.get(
+      `${REPLICATE_BASE}/models/${owner}/${name}`,
+      {
+        headers: { Authorization: `Bearer ${REPLICATE_API_TOKEN}` },
+        timeout: 10000,
+      }
+    );
+    const version = data.latest_version?.id;
+    if (!version) throw new Error('Replicate: لا يوجد إصدار للنموذج');
+    return version;
+  } catch (e) {
+    wrapReplicateErr(e);
+  }
 }
 
 async function runSlideshow(imageUrls, options = {}) {
@@ -54,17 +69,23 @@ async function runSlideshow(imageUrls, options = {}) {
     frame_rate: options.frame_rate ?? 30,
   };
 
-  const { data: prediction } = await axios.post(
-    `${REPLICATE_BASE}/predictions`,
-    { version, input },
-    {
-      headers: {
-        Authorization: `Bearer ${REPLICATE_API_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 15000,
-    }
-  );
+  let prediction;
+  try {
+    const res = await axios.post(
+      `${REPLICATE_BASE}/predictions`,
+      { version, input },
+      {
+        headers: {
+          Authorization: `Bearer ${REPLICATE_API_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 15000,
+      }
+    );
+    prediction = res.data;
+  } catch (e) {
+    wrapReplicateErr(e);
+  }
 
   let id = prediction.id;
   let status = prediction.status;
@@ -75,13 +96,17 @@ async function runSlideshow(imageUrls, options = {}) {
 
   while (status !== 'succeeded' && status !== 'failed' && status !== 'canceled' && Date.now() - start < maxWait) {
     await new Promise((r) => setTimeout(r, pollInterval));
-    const { data: next } = await axios.get(`${REPLICATE_BASE}/predictions/${id}`, {
-      headers: { Authorization: `Bearer ${REPLICATE_API_TOKEN}` },
-    });
-    status = next.status;
-    output = next.output;
-    if (next.error) {
-      throw new Error(`Replicate: ${next.error}`);
+    try {
+      const { data: next } = await axios.get(`${REPLICATE_BASE}/predictions/${id}`, {
+        headers: { Authorization: `Bearer ${REPLICATE_API_TOKEN}` },
+      });
+      status = next.status;
+      output = next.output;
+      if (next.error) {
+        throw new Error(`Replicate: ${next.error}`);
+      }
+    } catch (e) {
+      wrapReplicateErr(e);
     }
   }
 

@@ -1717,7 +1717,11 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
     })
     .catch((err) => {
       const op = videoOperations.get(operationId) || opData;
-      videoOperations.set(operationId, { ...op, status: "error", error: err?.message || "فشل في توليد الفيديو" });
+      let errMsg = err?.message || "فشل في توليد الفيديو";
+      if (errMsg.includes("401") && !errMsg.includes("توكن")) {
+        errMsg = "توكن Replicate غير صالح أو غير مضبوط. تحقق من REPLICATE_API_TOKEN في Environment على Render.";
+      }
+      videoOperations.set(operationId, { ...op, status: "error", error: errMsg });
       console.error("[Video] ❌ Background job failed:", err?.message);
     });
 }));

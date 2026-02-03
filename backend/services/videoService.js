@@ -203,10 +203,18 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
       console.log('[Video] ✅ Replicate success:', videoUrl);
       return { url: videoUrl };
     } catch (err) {
-      if (!String(listingId).startsWith('temp_')) {
-        await db.query(`UPDATE properties SET video_status = 'failed' WHERE id = $1`, [listingId]).catch(() => {});
+      const isReplicateAuth = (err?.message || '').includes('توكن Replicate') || (err?.message || '').includes('401');
+      if (isReplicateAuth) {
+        console.warn('[Video] ⚠️ Replicate token invalid or 401 — falling back to Worker/FFmpeg');
       }
-      throw err;
+      if (!isReplicateAuth || !ffmpegAvailable) {
+        if (!String(listingId).startsWith('temp_')) {
+          await db.query(`UPDATE properties SET video_status = 'failed' WHERE id = $1`, [listingId]).catch(() => {});
+        }
+        throw err;
+      }
+      // Fall through to Worker/FFmpeg path below
+      console.log('[Video] Using Worker/FFmpeg fallback after Replicate 401');
     }
   }
   

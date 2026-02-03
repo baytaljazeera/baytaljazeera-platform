@@ -722,18 +722,24 @@ export default function NewListingPage() {
     setVideoPromoText(null);
 
     try {
+      // Resolve token once for all requests (fix 401 cross-origin)
+      const authHeaders = getAuthHeaders();
+      const authToken =
+        (authHeaders as Record<string, string>)["Authorization"]?.replace(/^Bearer\s+/i, "") ||
+        useAuthStore.getState().token ||
+        (typeof localStorage !== "undefined" ? (localStorage.getItem("token") || localStorage.getItem("oauth_token")) : null);
+      if (!authToken) {
+        setVideoError("يجب تسجيل الدخول أولاً. أعد تحميل الصفحة أو سجّل الدخول من جديد.");
+        setVideoLoading(false);
+        return;
+      }
+
       // Step 1: Upload images temporarily for video generation
       const formData = new FormData();
       imagesToUse.forEach((img) => {
         formData.append('images', img);
       });
-
-      // Get token for authorization (can't use getAuthHeaders with FormData)
-      const token = typeof localStorage !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('oauth_token')) : null;
-      const uploadHeaders: HeadersInit = {};
-      if (token) {
-        uploadHeaders['Authorization'] = `Bearer ${token}`;
-      }
+      const uploadHeaders: HeadersInit = { Authorization: `Bearer ${authToken}` };
 
       const uploadRes = await fetch(`${API_URL}/api/listings/temp-images`, {
         method: "POST",
@@ -754,12 +760,11 @@ export default function NewListingPage() {
         throw new Error("لم يتم رفع أي صور");
       }
 
-      // Step 2: Generate video — ensure token is sent (fix 403: authStore token fallback)
-      const headers = getAuthHeaders();
-      const authToken = useAuthStore.getState().token ?? (typeof localStorage !== "undefined" ? (localStorage.getItem("token") || localStorage.getItem("oauth_token")) : null);
-      if (authToken && !headers["Authorization"]) {
-        (headers as Record<string, string>)["Authorization"] = `Bearer ${authToken}`;
-      }
+      // Step 2: Generate video (token already resolved above)
+      const headers: HeadersInit = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      };
       const res = await fetch(`${API_URL}/api/ai/user/generate-video`, {
         method: "POST",
         headers,
@@ -787,7 +792,10 @@ export default function NewListingPage() {
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "فشل في توليد الفيديو");
+        const msg = res.status === 401
+          ? (errorData.error || "انتهت صلاحية الجلسة، سجّل الدخول من جديد")
+          : (errorData.error || "فشل في توليد الفيديو");
+        throw new Error(msg);
       }
 
       const data = await res.json();
@@ -799,13 +807,17 @@ export default function NewListingPage() {
         const maxAttempts = 60;
         const intervalMs = 5000;
         let done = false;
+        const statusHeaders: HeadersInit = { Authorization: `Bearer ${authToken}` };
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           await new Promise((r) => setTimeout(r, intervalMs));
           const statusRes = await fetch(`${API_URL}/api/ai/user/video-status/${data.operationId}`, {
             credentials: "include",
-            headers: getAuthHeaders(),
+            headers: statusHeaders,
           });
-          const statusData = await statusRes.json();
+          const statusData = await statusRes.json().catch(() => ({}));
+          if (!statusRes.ok) {
+            throw new Error(statusData?.error || (statusRes.status === 401 ? "انتهت صلاحية الجلسة، سجّل الدخول من جديد" : "فشل في التحقق من حالة الفيديو"));
+          }
           if (statusData.status === "completed" && statusData.videoUrl) {
             setVideoResult(statusData.videoUrl);
             if (statusData.promoText) setVideoPromoText(statusData.promoText);
@@ -3559,8 +3571,13 @@ export default function NewListingPage() {
                           <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
                           <span className="font-semibold text-purple-700">جاري توليد الفيديو...</span>
                         </div>
-                        <div className="w-full bg-purple-200 rounded-full h-2 mb-2">
-                          <div className="bg-purple-600 h-2 rounded-full animate-pulse" style={{width: '60%'}}></div>
+                        <div className="w-full bg-purple-200 rounded-full h-2 mb-2 overflow-hidden">
+                          <motion.div
+                            className="bg-purple-600 h-2 rounded-full"
+                            initial={{ width: "0%" }}
+                            animate={{ width: ["0%", "70%", "100%", "0%"] }}
+                            transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+                          />
                         </div>
                         <p className="text-xs text-purple-600">
                           قد يستغرق هذا 1-3 دقائق حسب الطلب
