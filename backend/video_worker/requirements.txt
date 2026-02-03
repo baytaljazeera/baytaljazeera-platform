@@ -7,3 +7,4 @@ numpy<1.24.0
 imageio>=2.31.0
 imageio-ffmpeg>=0.4.8
 requests>=2.31.0
+gtts>=2.4.0

@@ -20,6 +20,11 @@ except ImportError:
     OpenAI = None
 
 try:
+    from gtts import gTTS
+except ImportError:
+    gTTS = None
+
+try:
     from moviepy.editor import (
         ImageClip, AudioFileClip, CompositeAudioClip,
         concatenate_videoclips
@@ -73,8 +78,8 @@ ARABIC_PRONUNCIATION_MAP = {
     "فاخرة": "فَاخِرَة",
     "فخمة": "فَخْمَة",
     "راقية": "رَاقِيَة",
-    "مميزة": "مُمَيْيِزَة",
-    "مميّزة": "مُمَيْيِزَة",
+    "مميزة": "مُمَيَّزَة",
+    "مميّزة": "مُمَيْيَزَة",
     "حصرية": "حَصْرِيَّة",
     "حصريّة": "حَصْرِيْيَة",
     "استثمارية": "اِسْتِثْمَارِيَّة",
@@ -135,80 +140,71 @@ class BaytVideoEngine:
             script = raw.strip()
         return script
 
-    def generate_voiceover(self):
-        """Generate AI voiceover using OpenAI TTS (male voices only). نطق عربي أوضح."""
-        if not client:
-            print("[VideoEngine] Warning: OpenAI not configured, skipping voiceover")
-            return None
-
-        voice = self.voice
+    def _get_script_for_tts(self):
+        """يولّد النص الإعلاني (باستخدام GPT إذا متوفر)."""
         title = self.data.get('title') or ''
         location = self.data.get('location') or ''
         price = self.data.get('price') or ''
         details = (self.data.get('details') or '')[:500]
+        if client:
+            prompt = f"""اكتب نصاً إعلانياً قصيراً للعقار (٣ إلى ٥ جمل). عربي فصيح بسيط، جمل قصيرة، بدون أرقام هواتف. ركّز على الفخامة والموقع.
+العنوان: {title}
+الموقع: {location}
+السعر: {price}
+الوصف: {details}
+أرجع النص فقط بدون عناوين."""
+            try:
+                gpt = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                raw = gpt.choices[0].message.content or ""
+                script = self._strip_script_prefix(raw)
+                if len(script) > 500:
+                    script = script[:500].rsplit('.', 1)[0] + '.' if '.' in script[:500] else script[:500]
+                return script
+            except Exception as e:
+                print(f"[VideoEngine] GPT script error: {e}")
+        return f"عقار مميز في {location}. {title}. للاستفسار تواصل معنا."
 
-        # 1) نَصّ مُحَسَّن لِلقِرَاءَةِ الْآلِيَّةِ: تشكيل كامل، تكرار الحرف بدل الشدة
-        prompt_script = f"""أنت تكتب نصاً إعلانياً للعقار ليقرأه قارئ آلي (TTS) عربي. الهدف نطق سليم وواضح.
+    def generate_voiceover(self):
+        """توليد التعليق: gTTS للعربي (افتراضي) أو OpenAI مع تحسين النطق."""
+        force_openai = os.environ.get("VOICE_ENGINE", "").strip().lower() == "openai"
+        use_gtts = not force_openai and gTTS
+        script = self._get_script_for_tts()
+        if not script or not script.strip():
+            return None
+        voice_path = OUTPUT_DIR / f"voice_{self.data.get('id', 'temp')}.mp3"
 
-البيانات:
-- العنوان: {title}
-- الموقع: {location}
-- السعر: {price}
-- الوصف: {details}
+        if use_gtts and gTTS:
+            try:
+                import re
+                clean = re.sub(r'[\u064B-\u0652\u0670]', '', script)
+                if not clean.strip():
+                    clean = script
+                tts = gTTS(text=clean, lang='ar', slow=False)
+                tts.save(str(voice_path))
+                print(f"[VideoEngine] ✅ Voiceover (gTTS) generated: {voice_path}")
+                return str(voice_path)
+            except Exception as e:
+                print(f"[VideoEngine] gTTS failed, falling back to OpenAI: {e}")
 
-الشروط الصارمة:
-1) أَرْجِع ٣ إلى ٤ جمل فقط. كل جملة قصيرة (٥–٨ كلمات).
-2) لغة عربية فصحى بسيطة، كلمات واضحة.
-3) شكّل كل كلمة بالكامل مع هذه القواعد المهمة:
-   - بدلاً من الشدّة (ّ) اكتب الحرف مرتين. مثال: فيلّا ← فِيلْلَا، شقّة ← شَقْقَة
-   - ضع حركة على كل حرف: فتحة َ ضمة ُ كسرة ِ سكون ْ
-4) لا أرقام هواتف. لا رموز. ركّز على الفخامة والموقع.
-
-أرجع النص المشكّل فقط، بدون عناوين أو ترقيم."""
+        if not client:
+            print("[VideoEngine] Warning: no TTS configured, skipping voiceover")
+            return None
         try:
-            gpt = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt_script}]
-            )
-            raw = gpt.choices[0].message.content or ""
-            script = self._strip_script_prefix(raw)
-
-            # 2) اختياري: لو النص طويل جداً أو بدون تشكيل كافٍ، نطلب تشكيلاً إضافياً (مرة واحدة)
-            if len(script) > 20 and not any(c in script for c in 'َُِّْ'):
-                diac_prompt = f"""شكّل النص التالي بالكامل (حركات العربية: ضمة فتحة كسرة شدة سكون) على كل كلمة. أَرْجِع النص نفسه فقط مع التشكيل، بدون أي تعليق.
-
-النص:
-{script}"""
-                try:
-                    diac_resp = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[{"role": "user", "content": diac_prompt}]
-                    )
-                    diac_text = (diac_resp.choices[0].message.content or "").strip()
-                    script = self._strip_script_prefix(diac_text) or script
-                except Exception:
-                    pass
-
-            # تقصير النص إذا زاد عن حد معقول لتفادي تقطيع الصوت
             if len(script) > 600:
                 script = script[:600].rsplit('.', 1)[0] + '.' if '.' in script[:600] else script[:600]
-
-            # تحسين النطق: استبدال الكلمات الصعبة بنسخ مشكّلة
             script = enhance_arabic_pronunciation(script)
-            print(f"[VideoEngine] 📝 Enhanced script: {script[:100]}...")
-
-            # tts-1-hd لجودة أوضح
             res = client.audio.speech.create(
                 model="tts-1-hd",
-                voice=voice,
-                input=script
+                voice=self.voice,
+                input=script,
+                speed=1.1
             )
-            
-            voice_path = OUTPUT_DIR / f"voice_{self.data.get('id', 'temp')}.mp3"
             res.stream_to_file(str(voice_path))
-            print(f"[VideoEngine] ✅ Voiceover generated: {voice_path}")
+            print(f"[VideoEngine] ✅ Voiceover (OpenAI) generated: {voice_path}")
             return str(voice_path)
-            
         except Exception as e:
             print(f"[VideoEngine] ❌ Voice generation error: {e}")
             return None
@@ -238,36 +234,34 @@ class BaytVideoEngine:
         audio_clips = []
         voice_duration = 0
         
-        # حساب مدة الفيديو المطلوبة بناءً على عدد الصور (3 ثواني لكل صورة)
-        min_video_duration = len(self.images) * 3.0
-        MAX_VIDEO_DURATION = 60.0
-        
         if voice_path and os.path.exists(voice_path):
             vc = AudioFileClip(voice_path)
             voice_duration = vc.duration
+            # Cap duration to avoid Render timeout/OOM (max ~60s)
+            MAX_VIDEO_DURATION = 60.0
             if voice_duration > MAX_VIDEO_DURATION:
                 vc = vc.subclip(0, MAX_VIDEO_DURATION)
                 voice_duration = MAX_VIDEO_DURATION
-            audio_clips.append(vc)
+                audio_clips.append(vc)
+                print(f"[VideoEngine] Voice capped to {voice_duration}s to avoid OOM")
+            else:
+                audio_clips.append(vc)
             print(f"[VideoEngine] Voice duration: {voice_duration:.1f}s")
-        
-        # استخدام المدة الأطول: إما الصوت أو الصور (3 ثواني لكل صورة)
-        target_duration = min(max(voice_duration, min_video_duration), MAX_VIDEO_DURATION)
-        print(f"[VideoEngine] Target video duration: {target_duration:.1f}s (voice: {voice_duration:.1f}s, images need: {min_video_duration:.1f}s)")
+        else:
+            voice_duration = min(max(len(self.images) * 4, 15), 60)
+            print(f"[VideoEngine] No voice, using default duration: {voice_duration}s")
 
         if self.ambience != 'none':
             sound_file = ASSETS_DIR / f"{self.ambience}.mp3"
             if sound_file.exists():
                 bg = AudioFileClip(str(sound_file))
-                bg = audio_loop(bg, duration=target_duration + 3)
+                bg = audio_loop(bg, duration=voice_duration + 3)
                 bg = bg.fx(volumex, 0.15)
                 audio_clips.append(bg)
                 print(f"[VideoEngine] Added ambience: {self.ambience}")
 
         clips = []
-        # توزيع الوقت على كل الصور بالتساوي
-        duration_per_img = target_duration / len(self.images)
-        print(f"[VideoEngine] Duration per image: {duration_per_img:.1f}s ({len(self.images)} images)")
+        duration_per_img = min((voice_duration / len(self.images)) + 1.5, 15.0)
         
         for i, img_path in enumerate(self.images):
             try:
@@ -304,11 +298,8 @@ class BaytVideoEngine:
         
         final_video = concatenate_videoclips(clips, method="compose", padding=-1)
         
-        # قص الفيديو فقط إذا تجاوز 60 ثانية (لتجنب مشاكل الذاكرة)
-        MAX_VIDEO_DURATION = 60.0
-        if final_video.duration > MAX_VIDEO_DURATION:
-            final_video = final_video.subclip(0, MAX_VIDEO_DURATION)
-            print(f"[VideoEngine] Video capped to {MAX_VIDEO_DURATION}s")
+        if final_video.duration > voice_duration:
+            final_video = final_video.subclip(0, voice_duration)
         
         if audio_clips:
             final_video = final_video.set_audio(CompositeAudioClip(audio_clips))
