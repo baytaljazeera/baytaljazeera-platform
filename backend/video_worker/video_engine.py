@@ -121,40 +121,78 @@ def apply_waqf_rule(text):
     """
     import re
     
-    # الحركات العربية
-    HARAKAT = '\u064B\u064C\u064D\u064E\u064F\u0650\u0651\u0652'  # فتحتان، ضمتان، كسرتان، فتحة، ضمة، كسرة، شدة، سكون
+    # الحركات العربية (بدون السكون - لا نريد حذفه)
+    HARAKAT_NO_SUKUN = '\u064B\u064C\u064D\u064E\u064F\u0650'  # فتحتان، ضمتان، كسرتان، فتحة، ضمة، كسرة
+    SHADDA = '\u0651'  # الشدة
     SUKUN = '\u0652'  # السكون ْ
+    ALL_HARAKAT = HARAKAT_NO_SUKUN + SHADDA + SUKUN
+    
+    # الحروف العربية
+    ARABIC_LETTERS = 'ءآأؤإئابةتثجحخدذرزسشصضطظعغفقكلمنهوىي'
+    
+    def sukun_last_letter(segment):
+        """تسكين آخر حرف عربي في المقطع."""
+        if not segment:
+            return segment
+        
+        chars = list(segment)
+        # ابحث عن آخر حرف عربي
+        last_letter_idx = -1
+        for i in range(len(chars) - 1, -1, -1):
+            if chars[i] in ARABIC_LETTERS:
+                last_letter_idx = i
+                break
+        
+        if last_letter_idx == -1:
+            return segment
+        
+        # احذف الحركات بعد الحرف الأخير (ما عدا الشدة)
+        result = chars[:last_letter_idx + 1]
+        i = last_letter_idx + 1
+        
+        # إذا كان هناك شدة، أبقها
+        if i < len(chars) and chars[i] == SHADDA:
+            result.append(chars[i])
+            i += 1
+        
+        # احذف أي حركة أخرى
+        while i < len(chars) and chars[i] in HARAKAT_NO_SUKUN:
+            i += 1
+        
+        # أضف السكون
+        result.append(SUKUN)
+        
+        # أضف الباقي (علامات الترقيم)
+        while i < len(chars):
+            if chars[i] not in ALL_HARAKAT:
+                result.append(chars[i])
+            i += 1
+        
+        return ''.join(result)
     
     # فواصل الجمل
-    sentence_endings = ['.', '!', '؟', '،', '؛', '\n', '–', '—']
+    sentence_pattern = r'([.!؟،؛\n–—])'
+    
+    # قسّم النص على فواصل الجمل
+    parts = re.split(sentence_pattern, text)
     
     result = []
-    i = 0
-    while i < len(text):
-        char = text[i]
-        
-        # إذا وصلنا لنهاية جملة
-        if char in sentence_endings:
-            # ابحث عن آخر حرف عربي قبل الفاصلة
-            j = len(result) - 1
-            while j >= 0 and (result[j] in HARAKAT or result[j] == ' '):
-                j -= 1
-            
-            if j >= 0:
-                # احذف أي حركة على الحرف الأخير وضع سكون
-                # ابحث عن الحركات بعد الحرف الأخير
-                k = j + 1
-                while k < len(result) and result[k] in HARAKAT:
-                    result.pop(k)
-                # أضف السكون بعد الحرف
-                result.insert(j + 1, SUKUN)
-            
-            result.append(char)
+    for i, part in enumerate(parts):
+        if re.match(sentence_pattern, part):
+            # هذا فاصل، أضفه كما هو
+            result.append(part)
+        elif part.strip():
+            # هذا نص، سكّن آخر حرف فيه
+            result.append(sukun_last_letter(part))
         else:
-            result.append(char)
-        i += 1
+            result.append(part)
     
-    return ''.join(result)
+    # سكّن آخر حرف في النص الكامل (حتى لو بدون نقطة)
+    final = ''.join(result)
+    if final and not any(final.rstrip().endswith(p) for p in ['.', '!', '؟', '،', '؛']):
+        final = sukun_last_letter(final)
+    
+    return final
 
 def enhance_arabic_pronunciation(text):
     """تحسين النطق العربي - استبدال الكلمات الصعبة بنسخ مشكّلة وتكرار الحروف بدل الشدة + قاعدة الوقف."""
