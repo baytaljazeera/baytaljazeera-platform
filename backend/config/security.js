@@ -36,9 +36,10 @@ const registrationLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// رفع الحد ليتسع لطلبة بدء الفيديو + استطلاع الحالة كل بضع ثوانٍ (مثلاً 1 + ~30 في الدقيقة)
 const aiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: 90,
   message: { error: "تم تجاوز حد طلبات الذكاء الاصطناعي", errorEn: "AI rate limit exceeded" },
   standardHeaders: true,
   legacyHeaders: false,

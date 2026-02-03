@@ -3549,35 +3549,35 @@ export default function NewListingPage() {
                   )}
                 </div>
 
-                {/* توليد فيديو بالذكاء الاصطناعي - متاح للباقات المتقدمة - بعد الصور */}
+                {/* توليد فيديو بالذكاء الاصطناعي - لوحة ذهبي/أزرق مثل بقية الموقع */}
                 {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 2 && imagePreviews.length > 0 && (
-                  <div className="mb-6 p-5 bg-gradient-to-br from-purple-50 via-indigo-50 to-blue-50 rounded-2xl border-2 border-purple-200">
+                  <div className="mb-6 p-5 bg-gradient-to-br from-amber-50 via-[#D4AF37]/10 to-[#002845]/5 rounded-2xl border-2 border-[#D4AF37]/40 shadow-lg shadow-[#D4AF37]/10">
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="w-12 h-12 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                        <BrainCircuit className="w-6 h-6 text-white" />
+                      <div className="w-12 h-12 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-xl flex items-center justify-center shadow-lg shadow-[#D4AF37]/30">
+                        <BrainCircuit className="w-6 h-6 text-[#002845]" />
                       </div>
                       <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                        <h3 className="text-lg font-bold text-[#002845] flex items-center gap-2">
                           توليد فيديو ترويجي بالذكاء الاصطناعي
-                          <span className="px-2 py-0.5 bg-purple-600 text-white text-xs rounded-full font-bold">AI</span>
+                          <span className="px-2 py-0.5 bg-[#D4AF37] text-[#002845] text-xs rounded-full font-bold">AI</span>
                         </h3>
-                        <p className="text-sm text-slate-600 mt-1">
+                        <p className="text-sm text-[#002845]/80 mt-1">
                           أنشئ فيديو سينمائي احترافي من وصف العقار باستخدام الذكاء الاصطناعي
                         </p>
                       </div>
                     </div>
 
                     <div className="mb-4 flex flex-wrap items-center gap-3">
-                      <span className="text-sm font-medium text-slate-700">نوع الفيديو:</span>
+                      <span className="text-sm font-medium text-[#002845]">نوع الفيديو:</span>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="radio"
                           name="videoQuality"
                           checked={videoQuality === "full"}
                           onChange={() => setVideoQuality("full")}
-                          className="text-purple-600"
+                          className="accent-[#D4AF37]"
                         />
-                        <span className="text-sm font-medium text-purple-800">جودة عالية (صوت + تأثيرات) — الافتراضي</span>
+                        <span className="text-sm font-medium text-[#002845]">جودة عالية (صوت + تأثيرات) — الافتراضي</span>
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
@@ -3585,33 +3585,33 @@ export default function NewListingPage() {
                           name="videoQuality"
                           checked={videoQuality === "fast"}
                           onChange={() => setVideoQuality("fast")}
-                          className="text-purple-600"
+                          className="accent-[#D4AF37]"
                         />
-                        <span className="text-sm text-slate-600">سريع فقط (صور بدون صوت)</span>
+                        <span className="text-sm text-[#002845]/70">سريع فقط (صور بدون صوت)</span>
                       </label>
                     </div>
 
                     {videoLoading ? (
-                      <div className="p-6 bg-white/80 rounded-xl border-2 border-purple-300 text-center">
+                      <div className="p-6 bg-white/90 rounded-xl border-2 border-[#D4AF37]/50 text-center shadow-inner">
                         <div className="flex items-center justify-center gap-3 mb-3">
-                          <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
-                          <span className="font-semibold text-purple-700">جاري توليد الفيديو...</span>
+                          <Loader2 className="w-6 h-6 animate-spin text-[#D4AF37]" />
+                          <span className="font-semibold text-[#002845]">جاري توليد الفيديو...</span>
                         </div>
-                        <div className="w-full bg-purple-200 rounded-full h-2 mb-2 overflow-hidden">
+                        <div className="w-full bg-[#D4AF37]/20 rounded-full h-2 mb-2 overflow-hidden">
                           <motion.div
-                            className="bg-purple-600 h-2 rounded-full"
+                            className="h-full rounded-full bg-gradient-to-r from-[#D4AF37] to-[#B8860B]"
                             initial={{ width: "0%" }}
                             animate={{ width: ["0%", "70%", "100%", "0%"] }}
                             transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
                           />
                         </div>
-                        <p className="text-xs text-purple-600">
+                        <p className="text-xs text-[#002845]/80">
                           {videoQuality === "full" ? "فيديو كامل مع صوت — قد يستغرق 2–3 دقائق" : "قد يستغرق 1–2 دقيقة"}
                         </p>
                       </div>
                     ) : videoResult ? (
                       <div className="space-y-3">
-                        <div className="relative rounded-xl overflow-hidden border-2 border-purple-300 bg-white">
+                        <div className="relative rounded-xl overflow-hidden border-2 border-[#D4AF37]/50 bg-white shadow-lg">
                           <video 
                             src={videoResult} 
                             controls 
@@ -3630,15 +3630,15 @@ export default function NewListingPage() {
                           </button>
                         </div>
                         {videoPromoText && (
-                          <div className="p-3 bg-white/80 rounded-lg border border-purple-200">
-                            <p className="text-xs font-semibold text-purple-700 mb-1">النص الترويجي المُنشأ:</p>
-                            <p className="text-sm text-slate-700">{videoPromoText.headline || videoPromoText.topLine}</p>
+                          <div className="p-3 bg-amber-50/80 rounded-lg border border-[#D4AF37]/30">
+                            <p className="text-xs font-semibold text-[#B8860B] mb-1">النص الترويجي المُنشأ:</p>
+                            <p className="text-sm text-[#002845]">{videoPromoText.headline || videoPromoText.topLine}</p>
                             {videoPromoText.subheadline && (
-                              <p className="text-xs text-slate-600 mt-1">{videoPromoText.subheadline}</p>
+                              <p className="text-xs text-[#002845]/80 mt-1">{videoPromoText.subheadline}</p>
                             )}
                           </div>
                         )}
-                        <div className="flex items-center gap-2 text-sm text-emerald-600">
+                        <div className="flex items-center gap-2 text-sm text-emerald-700">
                           <CheckCircle2 className="w-4 h-4" />
                           <span>سيتم إرفاق هذا الفيديو مع الإعلان عند النشر</span>
                         </div>
@@ -3663,14 +3663,14 @@ export default function NewListingPage() {
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        <div className="p-4 bg-white/80 rounded-xl border border-purple-200">
+                        <div className="p-4 bg-white/90 rounded-xl border border-[#D4AF37]/30">
                           <div className="flex items-start gap-3">
-                            <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center shrink-0">
-                              <Zap className="w-4 h-4 text-purple-600" />
+                            <div className="w-8 h-8 bg-[#D4AF37]/20 rounded-lg flex items-center justify-center shrink-0">
+                              <Zap className="w-4 h-4 text-[#B8860B]" />
                             </div>
                             <div className="flex-1">
-                              <p className="text-sm font-semibold text-slate-800 mb-1">مميزات الفيديو بالذكاء الاصطناعي:</p>
-                              <ul className="text-xs text-slate-600 space-y-1 list-disc list-inside">
+                              <p className="text-sm font-semibold text-[#002845] mb-1">مميزات الفيديو بالذكاء الاصطناعي:</p>
+                              <ul className="text-xs text-[#002845]/80 space-y-1 list-disc list-inside">
                                 <li>فيديو سينمائي احترافي بتقنية Veo 2.0</li>
                                 <li>مدة 8 ثوانٍ بتنسيق 16:9</li>
                                 <li>نص ترويجي ذكي مُنشأ تلقائياً</li>
@@ -3688,7 +3688,7 @@ export default function NewListingPage() {
                             images.length === 0 ||
                             ((selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && selectedImagesForVideo.size === 0)
                           }
-                          className="w-full flex items-center justify-center gap-3 px-6 py-4 md:py-5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-base md:text-lg shadow-lg active:scale-95 touch-manipulation"
+                          className="w-full flex items-center justify-center gap-3 px-6 py-4 md:py-5 bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] rounded-xl hover:shadow-lg hover:shadow-[#D4AF37]/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-bold text-base md:text-lg shadow-lg active:scale-95 touch-manipulation"
                         >
                           {videoLoading ? (
                             <>

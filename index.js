@@ -114,14 +114,14 @@ app.use(helmet({
   contentSecurityPolicy: false,
 }));
 
-// تطبيق Rate Limiting
+// 🔒 CORS - MUST be before rate limiters so 429/5xx responses still have CORS headers (avoid "blocked by CORS" in browser)
+app.use(cors(corsOptions));
+
+// تطبيق Rate Limiting (بعد CORS حتى كل الاستجابات تحمل رؤوس CORS)
 app.use(generalLimiter);
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/register", authLimiter);
 app.use("/api/ai", aiLimiter);
-
-// 🔒 CORS - استخدام الإعدادات من الملف المستورد
-app.use(cors(corsOptions));
 
 app.use(cookieParser());
 
