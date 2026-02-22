@@ -673,7 +673,7 @@ function NavbarContent() {
           backgroundPosition: "center",
         }}
       >
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between h-14 sm:h-16 lg:h-16 gap-2">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between h-14 sm:h-16 lg:h-16 gap-2 overflow-hidden">
           <div className="flex items-center gap-2 sm:gap-3 flex-shrink min-w-0 site-name-container">
             <button
               type="button"
@@ -713,7 +713,7 @@ function NavbarContent() {
             </Link>
           )}
 
-        <nav className="hidden lg:flex items-center gap-2 text-sm font-medium text-[#003366]">
+        <nav className="hidden lg:flex items-center gap-1 xl:gap-2 text-xs xl:text-sm font-medium text-[#003366]">
           <div className="flex items-center bg-[#E8F5F0]/80 backdrop-blur-sm rounded-xl p-1 border border-[#5FBDAA]/30 shadow-sm">
             <Link
               href="/search?view=list"

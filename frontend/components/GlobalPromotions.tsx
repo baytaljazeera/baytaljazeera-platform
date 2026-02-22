@@ -448,7 +448,7 @@ export default function GlobalPromotions() {
                   damping: 30
                 }
               }}
-              className={`${isTop ? "relative z-40 px-4 py-3" : "fixed left-0 right-0 z-40 px-4 bottom-4"}`}
+              className={`fixed left-0 right-0 z-40 px-4 ${isTop ? "top-20" : "bottom-4"}`}
               onAnimationComplete={() => {
                 if (bannerRef.current && isTop && hasTopBanner) {
                   setBannerHeight(bannerRef.current.offsetHeight + 24);
