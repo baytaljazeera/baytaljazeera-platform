@@ -703,7 +703,7 @@ function NavbarContent() {
           </div>
 
           {/* Mobile: Auth buttons */}
-          <div className="md:hidden flex items-center gap-2 shrink-0">
+          <div className="lg:hidden flex items-center gap-2 shrink-0">
             {!isAuthenticated && isHydrated && (
               <>
                 <Link
@@ -732,7 +732,7 @@ function NavbarContent() {
             )}
           </div>
 
-        <nav className="hidden md:flex items-center gap-2 text-sm font-medium text-[#003366]">
+        <nav className="hidden lg:flex items-center gap-2 text-sm font-medium text-[#003366]">
           <div className="flex items-center bg-[#E8F5F0]/80 backdrop-blur-sm rounded-xl p-1 border border-[#5FBDAA]/30 shadow-sm">
             <Link
               href="/search?view=list"
@@ -778,7 +778,7 @@ function NavbarContent() {
 
         {/* Mobile Menu Button */}
         <button
-          className="md:hidden p-2 rounded-lg hover:bg-slate-100 transition shrink-0"
+          className="lg:hidden p-2 rounded-lg hover:bg-slate-100 transition shrink-0"
           onClick={() => setShowMobileMenu(!showMobileMenu)}
         >
           {showMobileMenu ? (
@@ -865,7 +865,7 @@ export default function Navbar() {
             <div className="w-[52px] h-[52px] bg-slate-200 rounded-md animate-pulse" />
             <div className="w-32 h-6 bg-slate-200 rounded animate-pulse" />
           </div>
-          <div className="hidden md:flex items-center gap-4">
+          <div className="hidden lg:flex items-center gap-4">
             <div className="w-24 h-8 bg-slate-100 rounded-xl animate-pulse" />
             <div className="w-24 h-8 bg-slate-100 rounded-xl animate-pulse" />
             <div className="w-24 h-10 bg-slate-200 rounded-xl animate-pulse" />
