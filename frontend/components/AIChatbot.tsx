@@ -85,7 +85,7 @@ export default function AIChatbot() {
           return parsed;
         } catch {
           // Default position
-          return { x: window.innerWidth - 80, y: window.innerHeight - 80 };
+          return { x: 12, y: window.innerHeight - 80 };
         }
       }
     }
@@ -108,8 +108,8 @@ export default function AIChatbot() {
     if (typeof window !== "undefined" && position.x === 0 && position.y === 0) {
       // Set default position based on screen size
       const isMobile = window.innerWidth < 768;
-      const defaultX = isMobile ? window.innerWidth - 64 : 24;
-      const defaultY = isMobile ? window.innerHeight - 64 : window.innerHeight - 80;
+      const defaultX = isMobile ? 12 : 24;
+      const defaultY = isMobile ? window.innerHeight - 80 : window.innerHeight - 80;
       setPosition({ x: defaultX, y: defaultY });
     }
   }, []);
@@ -295,7 +295,7 @@ export default function AIChatbot() {
           top: `${position.y}px`,
           cursor: isDragging ? "grabbing" : "grab",
         }}
-        className="z-50 w-14 h-14 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-transform active:cursor-grabbing touch-none"
+        className="z-50 w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-transform active:cursor-grabbing touch-none"
         aria-label="فتح المحادثة"
       >
         <MessageCircle className="w-6 h-6 text-[#002845] pointer-events-none" />

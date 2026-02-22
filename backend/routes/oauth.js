@@ -85,7 +85,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 
       const result = await db.query(
         `INSERT INTO users (email, name, google_id, profile_image, email_verified, referral_code, email_verification_token, email_verification_expires, password_hash)
-         VALUES ($1, $2, $3, $4, false, $5, $6, $7, $8)
+         VALUES ($1, $2, $3, $4, true, $5, $6, $7, $8)
          RETURNING id, email, name, phone, role, created_at, referral_code`,
         [email.toLowerCase(), name, googleId, photo, referralCode, emailVerificationToken, emailVerificationExpires, oauthPasswordPlaceholder]
       );
@@ -104,24 +104,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         );
       }
 
-      // Send verification email with activation link
-      try {
-        const verificationToken = crypto.randomBytes(32).toString('hex');
-        const tokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-        
-        await db.query(
-          `INSERT INTO email_verifications (user_id, token_hash, expires_at, created_at)
-           VALUES ($1, $2, $3, NOW())
-           ON CONFLICT (user_id) DO UPDATE SET token_hash = $2, expires_at = $3, created_at = NOW()`,
-          [newUser.id, tokenHash, expiresAt]
-        );
-        
-        await sendVerificationEmail(newUser.email, verificationToken, newUser.name);
-        console.log(`✅ [OAuth] Verification email sent to ${newUser.email}`);
-      } catch (emailErr) {
-        console.error('Failed to send verification email:', emailErr);
-      }
+      console.log(`✅ [OAuth] New user created via Google: ${newUser.email} (email auto-verified)`);
 
       return done(null, newUser);
     } catch (error) {

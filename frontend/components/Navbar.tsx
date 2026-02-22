@@ -669,7 +669,7 @@ function NavbarContent() {
           backgroundPosition: "center",
         }}
       >
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between h-12 sm:h-14 lg:h-16 gap-2">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between h-14 sm:h-16 lg:h-16 gap-2">
           <div className="flex items-center gap-2 sm:gap-3 flex-shrink min-w-0 site-name-container">
             <button
               type="button"
@@ -698,35 +698,34 @@ function NavbarContent() {
             </Link>
           </div>
 
-          {/* Mobile: Fixed buttons in header */}
-          <div className="md:hidden flex items-center gap-1.5 ml-2 shrink-0">
-            {/* Map/List Toggle Button */}
-            {isSearchPage ? (
+          {/* Mobile: Auth + Action buttons */}
+          <div className="md:hidden flex items-center gap-1.5 shrink-0">
+            {!isAuthenticated && isHydrated && (
+              <>
+                <Link
+                  href="/login"
+                  className="flex items-center gap-1 px-3 py-2 rounded-xl bg-gradient-to-r from-[#003366] to-[#01375e] text-white shadow-md transition-all active:scale-95 font-semibold text-xs min-h-[40px]"
+                >
+                  <User className="w-4 h-4" />
+                  <span>دخول</span>
+                </Link>
+                <Link
+                  href="/register"
+                  className="flex items-center gap-1 px-3 py-2 rounded-xl border-2 border-[#D4AF37] text-[#003366] transition-all active:scale-95 font-semibold text-xs min-h-[40px]"
+                >
+                  <span>حساب جديد</span>
+                </Link>
+              </>
+            )}
+            {isAuthenticated && isHydrated && (
               <Link
-                href={`/search?view=${nextView}`}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md hover:shadow-lg transition-all active:scale-95"
+                href="/listings/new"
+                className="flex items-center gap-1 px-3 py-2 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md transition-all active:scale-95 font-semibold text-xs min-h-[40px]"
               >
-                <SearchIcon className="w-4 h-4" />
-                <span className="text-xs font-semibold hidden sm:inline">{searchLabel}</span>
-              </Link>
-            ) : (
-              <Link
-                href="/search?view=map"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md hover:shadow-lg transition-all active:scale-95"
-              >
-                <Map className="w-4 h-4" />
-                <span className="text-xs font-semibold hidden sm:inline">الخريطة</span>
+                <PlusCircle className="w-4 h-4" />
+                <span>أضف عقار</span>
               </Link>
             )}
-            
-            {/* Add Listing Button */}
-            <Link
-              href="/listings/new"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md hover:shadow-lg transition-all active:scale-95 font-semibold"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span className="text-xs hidden sm:inline">إضافة</span>
-            </Link>
           </div>
 
         <nav className="hidden md:flex items-center gap-2 text-sm font-medium text-[#003366]">
@@ -793,6 +792,33 @@ function NavbarContent() {
         maxHeight="70vh"
       >
         <nav className="space-y-2">
+          <div className="flex gap-2 mb-3">
+            <Link
+              href="/search?view=map"
+              onClick={() => setShowMobileMenu(false)}
+              className="flex-1 flex items-center justify-center gap-2 min-h-[48px] px-4 py-3 rounded-xl bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md active:scale-95 touch-manipulation"
+            >
+              <Map className="w-5 h-5" />
+              <span className="font-semibold">الخريطة</span>
+            </Link>
+            <Link
+              href="/search?view=list"
+              onClick={() => setShowMobileMenu(false)}
+              className="flex-1 flex items-center justify-center gap-2 min-h-[48px] px-4 py-3 rounded-xl bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md active:scale-95 touch-manipulation"
+            >
+              <List className="w-5 h-5" />
+              <span className="font-semibold">القائمة</span>
+            </Link>
+          </div>
+          <Link
+            href="/listings/new"
+            onClick={() => setShowMobileMenu(false)}
+            className="flex items-center justify-center gap-2 min-h-[48px] px-4 py-3 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md active:scale-95 touch-manipulation font-bold mb-3"
+          >
+            <PlusCircle className="w-5 h-5" />
+            <span>أضف عقارك الآن</span>
+          </Link>
+
           {staticNavItems.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
