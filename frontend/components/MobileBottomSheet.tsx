@@ -23,23 +23,14 @@ export default function MobileBottomSheet({
   showCloseButton = true,
 }: MobileBottomSheetProps) {
   useEffect(() => {
-    const unlock = () => {
-      const savedY = parseInt(document.body.dataset.scrollY || "0", 10);
-      document.body.classList.remove("scroll-locked");
-      document.body.style.top = "";
-      delete document.body.dataset.scrollY;
-      window.scrollTo(0, savedY);
-    };
-
     if (isOpen) {
-      const scrollY = window.scrollY;
-      document.body.dataset.scrollY = String(scrollY);
-      document.body.style.top = `-${scrollY}px`;
       document.body.classList.add("scroll-locked");
     } else {
-      unlock();
+      document.body.classList.remove("scroll-locked");
     }
-    return () => unlock();
+    return () => {
+      document.body.classList.remove("scroll-locked");
+    };
   }, [isOpen]);
 
   // Handle escape key

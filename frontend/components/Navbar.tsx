@@ -702,35 +702,16 @@ function NavbarContent() {
             </Link>
           </div>
 
-          {/* Mobile: Auth buttons */}
-          <div className="lg:hidden flex items-center gap-2 shrink-0">
-            {!isAuthenticated && isHydrated && (
-              <>
-                <Link
-                  href="/login"
-                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#003366] to-[#01375e] text-white shadow-md transition-all active:scale-95 font-bold text-sm"
-                >
-                  <User className="w-4 h-4" />
-                  <span>دخول</span>
-                </Link>
-                <Link
-                  href="/register"
-                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md transition-all active:scale-95 font-bold text-sm"
-                >
-                  <span>حساب جديد</span>
-                </Link>
-              </>
-            )}
-            {isAuthenticated && isHydrated && (
-              <Link
-                href="/listings/new"
-                className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md transition-all active:scale-95 font-bold text-sm"
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>أضف عقار</span>
-              </Link>
-            )}
-          </div>
+          {/* Mobile: Quick action button (only for authenticated users) */}
+          {isAuthenticated && isHydrated && (
+            <Link
+              href="/listings/new"
+              className="lg:hidden flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md transition-all active:scale-95 font-bold text-xs shrink-0"
+            >
+              <PlusCircle className="w-3.5 h-3.5" />
+              <span>أضف عقار</span>
+            </Link>
+          )}
 
         <nav className="hidden lg:flex items-center gap-2 text-sm font-medium text-[#003366]">
           <div className="flex items-center bg-[#E8F5F0]/80 backdrop-blur-sm rounded-xl p-1 border border-[#5FBDAA]/30 shadow-sm">
