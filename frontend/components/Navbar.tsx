@@ -754,12 +754,12 @@ function NavbarContent() {
             </Link>
           ))}
 
-          {renderAuthSection()}
+          {isAuthenticated && isHydrated && renderAuthSection()}
         </nav>
 
-        {/* Mobile Menu Button */}
+        {/* Menu Button - always visible for guests, xl:hidden for authenticated */}
         <button
-          className="xl:hidden p-2 rounded-lg hover:bg-slate-100 transition shrink-0"
+          className={`${isAuthenticated && isHydrated ? 'xl:hidden' : ''} p-2 rounded-lg hover:bg-slate-100 transition shrink-0`}
           onClick={() => setShowMobileMenu(!showMobileMenu)}
         >
           {showMobileMenu ? (
