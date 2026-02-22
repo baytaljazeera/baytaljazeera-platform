@@ -706,14 +706,14 @@ function NavbarContent() {
           {isAuthenticated && isHydrated && (
             <Link
               href="/listings/new"
-              className="lg:hidden flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md transition-all active:scale-95 font-bold text-xs shrink-0"
+              className="xl:hidden flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md transition-all active:scale-95 font-bold text-xs shrink-0"
             >
               <PlusCircle className="w-3.5 h-3.5" />
               <span>أضف عقار</span>
             </Link>
           )}
 
-        <nav className="hidden lg:flex items-center gap-1 xl:gap-2 text-xs xl:text-sm font-medium text-[#003366]">
+        <nav className="hidden xl:flex items-center gap-2 text-sm font-medium text-[#003366]">
           <div className="flex items-center bg-[#E8F5F0]/80 backdrop-blur-sm rounded-xl p-1 border border-[#5FBDAA]/30 shadow-sm">
             <Link
               href="/search?view=list"
@@ -759,7 +759,7 @@ function NavbarContent() {
 
         {/* Mobile Menu Button */}
         <button
-          className="lg:hidden p-2 rounded-lg hover:bg-slate-100 transition shrink-0"
+          className="xl:hidden p-2 rounded-lg hover:bg-slate-100 transition shrink-0"
           onClick={() => setShowMobileMenu(!showMobileMenu)}
         >
           {showMobileMenu ? (
@@ -846,7 +846,7 @@ export default function Navbar() {
             <div className="w-[52px] h-[52px] bg-slate-200 rounded-md animate-pulse" />
             <div className="w-32 h-6 bg-slate-200 rounded animate-pulse" />
           </div>
-          <div className="hidden lg:flex items-center gap-4">
+          <div className="hidden xl:flex items-center gap-4">
             <div className="w-24 h-8 bg-slate-100 rounded-xl animate-pulse" />
             <div className="w-24 h-8 bg-slate-100 rounded-xl animate-pulse" />
             <div className="w-24 h-10 bg-slate-200 rounded-xl animate-pulse" />
