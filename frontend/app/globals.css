@@ -21,15 +21,34 @@
   padding-top: env(safe-area-inset-top);
 }
 
-/* Improved scrolling on mobile */
+/* Prevent double scrollbars */
+html {
+  overflow-x: hidden;
+}
+
+body {
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+}
+
 @media (max-width: 768px) {
-  * {
+  html {
     -webkit-overflow-scrolling: touch;
   }
-  
+
   body {
-    overscroll-behavior-y: contain;
+    overscroll-behavior: none;
   }
+}
+
+body.scroll-locked {
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
 }
 
 @custom-variant dark (&:is(.dark *));
@@ -836,11 +855,6 @@ button.popup-dot-btn,
     padding-bottom: env(safe-area-inset-bottom, 16px);
   }
   
-  /* Prevent horizontal scroll */
-  body {
-    overflow-x: hidden;
-  }
-  
   /* Better input styling */
   input[type="text"],
   input[type="number"],
@@ -950,9 +964,15 @@ button.popup-dot-btn,
   }
 }
 
-/* Smooth scroll behavior */
+/* Smooth scroll behavior & prevent double scrollbars */
 html {
   scroll-behavior: smooth;
+  overflow-x: hidden;
+}
+
+html, body {
+  max-width: 100vw;
+  -webkit-text-size-adjust: 100%;
 }
 
 /* Mobile form optimizations */

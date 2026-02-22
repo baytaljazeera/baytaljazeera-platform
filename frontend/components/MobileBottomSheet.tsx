@@ -22,16 +22,24 @@ export default function MobileBottomSheet({
   maxHeight = "80vh",
   showCloseButton = true,
 }: MobileBottomSheetProps) {
-  // Prevent body scroll when sheet is open
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-    return () => {
-      document.body.style.overflow = "";
+    const unlock = () => {
+      const savedY = parseInt(document.body.dataset.scrollY || "0", 10);
+      document.body.classList.remove("scroll-locked");
+      document.body.style.top = "";
+      delete document.body.dataset.scrollY;
+      window.scrollTo(0, savedY);
     };
+
+    if (isOpen) {
+      const scrollY = window.scrollY;
+      document.body.dataset.scrollY = String(scrollY);
+      document.body.style.top = `-${scrollY}px`;
+      document.body.classList.add("scroll-locked");
+    } else {
+      unlock();
+    }
+    return () => unlock();
   }, [isOpen]);
 
   // Handle escape key
