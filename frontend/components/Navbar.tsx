@@ -304,12 +304,7 @@ function NavbarContent() {
 
   const renderAuthSection = () => {
     if (!isHydrated) {
-      return (
-        <div className="flex items-center gap-2 mr-2">
-          <div className="w-24 h-10 bg-slate-200 rounded-xl animate-pulse" />
-          <div className="w-24 h-10 bg-slate-100 rounded-xl animate-pulse" />
-        </div>
-      );
+      return null;
     }
 
     if (isAuthenticated && user) {
@@ -540,22 +535,7 @@ function NavbarContent() {
       );
     }
 
-    return (
-      <div className="flex items-center gap-2 mr-2">
-        <Link
-          href="/login"
-          className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#003366] to-[#01375e] text-white hover:from-[#01375e] hover:to-[#003366] transition-all font-semibold shadow-md"
-        >
-          تسجيل دخول
-        </Link>
-        <Link
-          href="/register"
-          className="px-4 py-2 rounded-xl border-2 border-[#003366] text-[#003366] hover:bg-[#003366] hover:text-white transition-all font-semibold"
-        >
-          حساب جديد
-        </Link>
-      </div>
-    );
+    return null;
   };
 
   const renderMobileAuthSection = () => {
@@ -754,7 +734,7 @@ function NavbarContent() {
             </Link>
           ))}
 
-          {isAuthenticated && isHydrated && renderAuthSection()}
+          {renderAuthSection()}
         </nav>
 
         {/* Menu Button - always visible for guests, xl:hidden for authenticated */}
