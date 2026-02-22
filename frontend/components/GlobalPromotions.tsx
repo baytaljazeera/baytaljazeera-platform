@@ -187,7 +187,11 @@ export default function GlobalPromotions() {
     return ANIMATION_VARIANTS[animType as keyof typeof ANIMATION_VARIANTS] || ANIMATION_VARIANTS.fade;
   };
 
+  const authPages = ['/login', '/register', '/verify-email', '/forgot-password', '/reset-password', '/oauth-callback'];
+  const isAuthPage = authPages.some(p => pathname === p || pathname.startsWith(p + '/'));
+
   const isPageMatched = (targetPages: string[] | undefined): boolean => {
+    if (isAuthPage) return false;
     if (!targetPages || targetPages.length === 0) return true;
     return targetPages.some(page => {
       if (page === "/") return pathname === "/";

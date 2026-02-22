@@ -68,6 +68,10 @@ function NavbarContent() {
   }, [hydrate, checkAuth]);
 
   useEffect(() => {
+    setShowMobileMenu(false);
+  }, [pathname]);
+
+  useEffect(() => {
     fetchSettings();
   }, [fetchSettings]);
 
@@ -698,20 +702,20 @@ function NavbarContent() {
             </Link>
           </div>
 
-          {/* Mobile: Auth + Action buttons */}
-          <div className="md:hidden flex items-center gap-1.5 shrink-0">
+          {/* Mobile: Auth buttons */}
+          <div className="md:hidden flex items-center gap-2 shrink-0">
             {!isAuthenticated && isHydrated && (
               <>
                 <Link
                   href="/login"
-                  className="flex items-center gap-1 px-3 py-2 rounded-xl bg-gradient-to-r from-[#003366] to-[#01375e] text-white shadow-md transition-all active:scale-95 font-semibold text-xs min-h-[40px]"
+                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#003366] to-[#01375e] text-white shadow-md transition-all active:scale-95 font-bold text-sm"
                 >
                   <User className="w-4 h-4" />
                   <span>دخول</span>
                 </Link>
                 <Link
                   href="/register"
-                  className="flex items-center gap-1 px-3 py-2 rounded-xl border-2 border-[#D4AF37] text-[#003366] transition-all active:scale-95 font-semibold text-xs min-h-[40px]"
+                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md transition-all active:scale-95 font-bold text-sm"
                 >
                   <span>حساب جديد</span>
                 </Link>
@@ -720,7 +724,7 @@ function NavbarContent() {
             {isAuthenticated && isHydrated && (
               <Link
                 href="/listings/new"
-                className="flex items-center gap-1 px-3 py-2 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md transition-all active:scale-95 font-semibold text-xs min-h-[40px]"
+                className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md transition-all active:scale-95 font-bold text-sm"
               >
                 <PlusCircle className="w-4 h-4" />
                 <span>أضف عقار</span>

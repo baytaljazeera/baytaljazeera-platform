@@ -275,10 +275,12 @@ function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { register: authRegister, isAuthenticated, user } = useAuthStore();
+  const hasNavigated = useRef(false);
+  const justRegistered = useRef(false);
 
-  // توجيه المستخدم المسجل بعيداً عن صفحة التسجيل
   useEffect(() => {
-    if (isAuthenticated && user) {
+    if (isAuthenticated && user && !hasNavigated.current && !justRegistered.current) {
+      hasNavigated.current = true;
       router.replace("/");
     }
   }, [isAuthenticated, user, router]);
