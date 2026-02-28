@@ -306,9 +306,12 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     }
   }
 
-  if (replicateVideoService.isConfigured()) {
-    const wantsVoice = !preferFastOnly && listingData.elevenlabsVoiceId && ELEVENLABS_API_KEY;
-    console.log(`[Video] 🚀 Using Replicate${wantsVoice ? ' + ElevenLabs voiceover' : ' (slideshow only)'}`);
+  // For "full" quality with FFmpeg available: use FFmpeg directly (Ken Burns effects + transitions)
+  // For "fast" quality: use Replicate (basic slideshow, faster)
+  const useFFmpegDirect = !preferFastOnly && ffmpegAvailable && createSlideshowVideo;
+
+  if (!useFFmpegDirect && replicateVideoService.isConfigured()) {
+    console.log(`[Video] 🚀 Using Replicate (fast slideshow mode)`);
     const absoluteUrls = toAbsoluteImageUrls(imageUrls);
     if (absoluteUrls.length < 2) {
       await db.query(`UPDATE properties SET video_status = 'failed' WHERE id = $1`, [listingId]).catch(() => {});
@@ -325,48 +328,6 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
         maxWaitMs: 300000
       });
       let videoUrl = result.url;
-
-      let promoText = null;
-      try {
-        if (generateDynamicPromoText) promoText = await generateDynamicPromoText(listingData);
-      } catch (_) {}
-
-      if (wantsVoice && ffmpegAvailable) {
-        try {
-          console.log('[Video] 🎙️ Adding ElevenLabs voiceover to Replicate video...');
-          const voiceText = promoText
-            ? [promoText.headline, promoText.subheadline, promoText.topLine, promoText.callToAction].filter(Boolean).join('. ')
-            : `${listingData.title || 'عقار مميز'}. ${listingData.description || ''}`.slice(0, 1500);
-          console.log('[Video] 📝 Voice script:', voiceText);
-          if (promoText) promoText._voiceScript = voiceText;
-          const audioPath = await elevenLabsTTSToMp3(voiceText, listingData.elevenlabsVoiceId);
-
-          const tempDir = path.join(os.tmpdir(), 'video-gen', 'mux');
-          if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-          const tempVideoPath = path.join(tempDir, `replicate_${listingId}_${Date.now()}.mp4`);
-          const finalPath = path.join(tempDir, `final_${listingId}_${Date.now()}.mp4`);
-
-          const dlRes = await axios({ method: 'get', url: videoUrl, responseType: 'arraybuffer', timeout: 120000 });
-          fs.writeFileSync(tempVideoPath, Buffer.from(dlRes.data));
-
-          muxAudioIntoVideo(tempVideoPath, audioPath, finalPath);
-
-          if (isCloudinaryConfigured()) {
-            const folder = `listings/${listingId}/promo`;
-            const uploadResult = await uploadVideo(finalPath, folder);
-            if (uploadResult.success && uploadResult.url) {
-              videoUrl = uploadResult.url;
-              console.log('[Video] ✅ Replicate + ElevenLabs voiceover merged:', videoUrl);
-            }
-          }
-
-          try { fs.unlinkSync(tempVideoPath); } catch (_) {}
-          try { fs.unlinkSync(audioPath); } catch (_) {}
-          try { fs.unlinkSync(finalPath); } catch (_) {}
-        } catch (voiceErr) {
-          console.warn('[Video] ⚠️ Voiceover failed, using silent video:', voiceErr.message);
-        }
-      }
 
       if (!String(listingId).startsWith('temp_')) {
         await db.query(
@@ -389,13 +350,13 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
           );
         }
       }
-      console.log('[Video] ✅ Replicate success:', videoUrl);
-      return { url: videoUrl, promoText };
+      console.log('[Video] ✅ Replicate fast mode success:', videoUrl);
+      return { url: videoUrl, promoText: null };
     } catch (err) {
       const msg = err?.message || '';
       const isReplicateFail = msg.includes('توكن Replicate') || msg.includes('401') || msg.includes('402') || msg.includes('رصيد');
       if (isReplicateFail) {
-        console.warn('[Video] ⚠️ Replicate 401/402 — falling back to Worker/FFmpeg');
+        console.warn('[Video] ⚠️ Replicate 401/402 — falling back to FFmpeg');
       }
       if (!isReplicateFail || !ffmpegAvailable) {
         if (!String(listingId).startsWith('temp_')) {
@@ -403,9 +364,12 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
         }
         throw err;
       }
-      // Fall through to Worker/FFmpeg path below
-      console.log('[Video] Using Worker/FFmpeg fallback after Replicate 401/402');
+      console.log('[Video] Using FFmpeg fallback after Replicate failure');
     }
+  }
+
+  if (useFFmpegDirect) {
+    console.log('[Video] 🎬 Using FFmpeg (full quality: Ken Burns + transitions + voiceover)');
   }
   
   // Check if video has been processing for too long (stuck)
@@ -525,14 +489,17 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
 
       if (chosenElevenId && ELEVENLABS_API_KEY && ELEVENLABS_API_KEY.trim()) {
         try {
-          console.log('[Video] 🎙️ Fallback TTS via ElevenLabs (no worker)');
-          const ttsText = [
-            promoText?.headline || promoText?.topLine || '',
-            promoText?.subheadline || promoText?.midLine || '',
-            promoText?.priceTag || promoText?.callToAction || ''
-          ].filter(Boolean).join('. ');
+          console.log('[Video] 🎙️ Adding ElevenLabs voiceover to FFmpeg video...');
+          const ttsText = promoText?.voiceScript
+            || [
+              promoText?.headline || promoText?.topLine || '',
+              promoText?.subheadline || promoText?.midLine || '',
+              promoText?.priceTag || promoText?.callToAction || ''
+            ].filter(Boolean).join('. ');
 
           if (ttsText) {
+            console.log('[Video] 📝 Voice script (tashkeel):', ttsText);
+            if (promoText) promoText._voiceScript = ttsText;
             const audioPath = await elevenLabsTTSToMp3(ttsText, chosenElevenId);
             const outWithAudio = path.join(videoDir, `slideshow_${listingId}_${Date.now()}_audio.mp4`);
             muxAudioIntoVideo(videoPath, audioPath, outWithAudio);
@@ -545,7 +512,7 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
           console.warn('[Video] ⚠️ ElevenLabs TTS/mux failed, continuing without audio:', ttsErr.message);
         }
       } else {
-        console.log('[Video] ℹ️ No ElevenLabs voiceId/key — continuing without audio in fallback.');
+        console.log('[Video] ℹ️ No ElevenLabs voiceId/key — continuing without audio.');
       }
     }
 

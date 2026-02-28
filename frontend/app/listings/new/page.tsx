@@ -869,8 +869,9 @@ export default function NewListingPage() {
         setVideoResult(data.videoUrl);
         if (data.promoText) {
           setVideoPromoText(data.promoText);
-          const scriptParts = [data.promoText.headline, data.promoText.subheadline, data.promoText.topLine, data.promoText.callToAction].filter(Boolean);
-          if (scriptParts.length > 0) setVideoScriptText(scriptParts.join(' — '));
+          const script = data.promoText.voiceScript || data.promoText._voiceScript
+            || [data.promoText.headline, data.promoText.subheadline, data.promoText.topLine, data.promoText.callToAction].filter(Boolean).join(' — ');
+          if (script) setVideoScriptText(script);
         }
       } else if (data.success && data.operationId) {
         const maxAttempts = 60;
@@ -892,8 +893,9 @@ export default function NewListingPage() {
             setVideoResult(statusData.videoUrl);
             if (statusData.promoText) {
               setVideoPromoText(statusData.promoText);
-              const scriptParts = [statusData.promoText.headline, statusData.promoText.subheadline, statusData.promoText.topLine, statusData.promoText.callToAction].filter(Boolean);
-              if (scriptParts.length > 0) setVideoScriptText(scriptParts.join(' — '));
+              const script = statusData.promoText.voiceScript || statusData.promoText._voiceScript
+                || [statusData.promoText.headline, statusData.promoText.subheadline, statusData.promoText.topLine, statusData.promoText.callToAction].filter(Boolean).join(' — ');
+              if (script) setVideoScriptText(script);
             }
             if (statusData.scriptText) setVideoScriptText(statusData.scriptText);
             done = true;

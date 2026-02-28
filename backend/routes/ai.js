@@ -953,7 +953,7 @@ async function generateDynamicPromoText(listingData) {
   if (hasGarden) features.push("حديقة");
   const featuresText = features.length > 0 ? features.join(" • ") : "تشطيب فاخر";
   
-  const prompt = `أنت كاتب إعلانات عقارية محترف في الخليج. مهمتك كتابة نصوص إعلانية تلفت الانتباه وتجعل المشاهد يتوقف ويشاهد الفيديو كاملاً.
+  const prompt = `أنت كاتب إعلانات عقارية محترف في الخليج ومعلّق صوتي. مهمتك كتابة نصوص إعلانية تلفت الانتباه وتجعل المشاهد يتوقف ويشاهد الفيديو كاملاً.
 
 🏠 بيانات العقار:
 - النوع: ${propertyType || "عقار فاخر"}
@@ -963,38 +963,26 @@ async function generateDynamicPromoText(listingData) {
 - السعر: ${formattedPrice || "عرض حصري"}
 - المساحة: ${formattedArea || "مساحة واسعة"}
 - المميزات: ${featuresText}
+${title ? `- العنوان: ${title}` : ''}
+${description ? `- الوصف: ${description}` : ''}
 
-📝 المطلوب - 3 نصوص إعلانية قوية ومشوقة:
+📝 المطلوب - 4 نصوص إعلانية:
 
-1. headline (5-10 كلمات): عنوان يلفت الانتباه فوراً ويثير الفضول
-   أمثلة قوية:
-   - "امتلك قصرك الخاص في أرقى أحياء الرياض"
-   - "فرصة لا تتكرر - فيلا فاخرة بسعر استثنائي"
-   - "لأول مرة - شقة VIP بإطلالة بانورامية"
-   - "حلمك يتحقق الآن في قلب المدينة"
+1. headline (5-10 كلمات): عنوان يلفت الانتباه فوراً
+2. subheadline (8-15 كلمة): وصف يبرز أهم المميزات
+3. priceTag (3-6 كلمات): دعوة للتواصل
+4. voiceScript (40-80 كلمة): نص مفصّل للتعليق الصوتي يصف العقار بأسلوب معلّق محترف، يذكر الموقع والمميزات والسعر ودعوة للتواصل. يجب أن يكون طويلاً بما يكفي ليُقرأ في 20-30 ثانية.
 
-2. subheadline (8-15 كلمة): وصف يبرز أهم المميزات بطريقة مشوقة
-   أمثلة قوية:
-   - "تصميم معماري فريد • تشطيبات سوبر ديلوكس • موقع ذهبي"
-   - "5 غرف ماستر • مسبح خاص • حديقة واسعة • جراج 3 سيارات"
-   - "على بُعد دقائق من الخدمات الرئيسية والمرافق الحيوية"
-
-3. priceTag (3-6 كلمات): دعوة للتواصل أو عرض السعر بطريقة جذابة
-   أمثلة قوية:
-   - "السعر الآن قبل الارتفاع"
-   - "عرض محدود - تواصل فوراً"  
-   - "استثمار مضمون العائد"
-   - "احجز موعد المعاينة الآن"
-
-⚡ قواعد مهمة:
-- استخدم كلمات تحفيزية: فاخر، استثنائي، حصري، نادر، ذهبي، VIP، أرقى، أفخم
+⚡ قواعد مهمة جداً:
+- كل النصوص يجب أن تكون **مُشكَّلة بالكامل** (بالفتحة والضمة والكسرة والسكون والتنوين والشدة) لضمان نطق صحيح
+  مثال: "اِمْتَلِكْ فِيلَّا فَاخِرَةً فِي أَرْقَى أَحْيَاءِ الرِّيَاضِ" وليس "امتلك فيلا فاخرة في أرقى أحياء الرياض"
+- استخدم كلمات تحفيزية: فَاخِر، اسْتِثْنَائِيّ، حَصْرِيّ، ذَهَبِيّ
 - اخلق إحساس بالفرصة والعجلة
-- ركز على القيمة والتميز
 - بدون أي emoji
-- عربي فصيح راقي
+- عربي فصيح راقي مُشكَّل بالكامل
 
 أرجع JSON فقط:
-{"headline": "...", "subheadline": "...", "priceTag": "..."}`;
+{"headline": "...", "subheadline": "...", "priceTag": "...", "voiceScript": "..."}`;
 
   // محاولة Gemini أولاً
   if (genAI) {
@@ -1005,7 +993,7 @@ async function generateDynamicPromoText(listingData) {
         contents: prompt,
         config: {
           temperature: 0.8,
-          maxOutputTokens: 300,
+          maxOutputTokens: 800,
         }
       });
       
@@ -1027,10 +1015,10 @@ async function generateDynamicPromoText(listingData) {
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: "أنت خبير تسويق عقارات فاخرة في الخليج. تكتب نصوص إعلانية راقية ومشجعة تلفت الانتباه وتحفز على الشراء. أسلوبك احترافي وجذاب. أرجع JSON فقط." },
+        { role: "system", content: "أنت خبير تسويق عقارات فاخرة في الخليج ومعلّق صوتي محترف. تكتب نصوص إعلانية راقية مُشكَّلة بالكامل (بالحركات: فتحة، ضمة، كسرة، سكون، شدة، تنوين). أرجع JSON فقط." },
         { role: "user", content: prompt }
       ],
-      max_tokens: 300,
+      max_tokens: 800,
       temperature: 0.7,
     });
 
@@ -1728,8 +1716,11 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
         const promoText = result?.promoText;
         let scriptText = null;
         if (promoText) {
-          const parts = [promoText.headline, promoText.subheadline, promoText.topLine, promoText.callToAction].filter(Boolean);
-          if (parts.length > 0) scriptText = parts.join(' — ');
+          scriptText = promoText.voiceScript || promoText._voiceScript || null;
+          if (!scriptText) {
+            const parts = [promoText.headline, promoText.subheadline, promoText.topLine, promoText.callToAction].filter(Boolean);
+            if (parts.length > 0) scriptText = parts.join(' — ');
+          }
         }
         videoOperations.set(operationId, { ...op, status: "completed", videoUrl: url, promoText, scriptText });
         console.log("[Video] ✅ Background job success:", url);
