@@ -54,10 +54,14 @@ async function elevenLabsTTSToMp3(text, voiceId) {
   if (!ELEVENLABS_API_KEY || !ELEVENLABS_API_KEY.trim()) {
     throw new Error('ELEVENLABS_API_KEY غير مضبوط');
   }
-  const safeText = String(text || '').trim().slice(0, 2000);
-  if (!safeText) throw new Error('نص الصوت فارغ');
+  const cleanText = String(text || '').trim()
+    .replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED]/g, '')
+    .slice(0, 3000);
+  if (!cleanText) throw new Error('نص الصوت فارغ');
   const v = String(voiceId || '').trim();
   if (!v || v.length < 10) throw new Error('voiceId غير صالح لـ ElevenLabs');
+
+  console.log('[TTS] Clean text (no tashkeel):', cleanText.substring(0, 100) + '...');
 
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(v)}`;
   const outDir = path.join(os.tmpdir(), 'video-gen', 'tts');
@@ -67,13 +71,13 @@ async function elevenLabsTTSToMp3(text, voiceId) {
   const res = await axios.post(
     url,
     {
-      text: safeText,
+      text: cleanText,
       model_id: 'eleven_multilingual_v2',
-      voice_settings: { stability: 0.35, similarity_boost: 0.85, style: 0.25, use_speaker_boost: true }
+      voice_settings: { stability: 0.6, similarity_boost: 0.8, style: 0.15, use_speaker_boost: true }
     },
     {
       responseType: 'arraybuffer',
-      timeout: 60000,
+      timeout: 120000,
       headers: {
         'xi-api-key': ELEVENLABS_API_KEY.trim(),
         'Content-Type': 'application/json',
@@ -86,7 +90,25 @@ async function elevenLabsTTSToMp3(text, voiceId) {
   if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 2000) {
     throw new Error('فشل توليد الصوت من ElevenLabs');
   }
+  console.log(`[TTS] Audio saved: ${outPath} (${(fs.statSync(outPath).size / 1024).toFixed(1)} KB)`);
   return outPath;
+}
+
+function getAudioDuration(audioPath) {
+  try {
+    const result = spawnSync('ffprobe', [
+      '-v', 'quiet', '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1', audioPath
+    ], { encoding: 'utf8', timeout: 10000 });
+    const dur = parseFloat(result.stdout?.trim());
+    if (dur && dur > 0) {
+      console.log(`[TTS] Audio duration: ${dur.toFixed(1)}s`);
+      return dur;
+    }
+  } catch (e) {
+    console.warn('[TTS] Could not get audio duration:', e.message);
+  }
+  return 0;
 }
 
 function muxAudioIntoVideo(videoPath, audioPath, outPath) {
@@ -473,10 +495,44 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     const videoPath = path.join(videoDir, videoFilename);
     let finalVideoUrl = `/uploads/videos/${videoFilename}`;
     
-    console.log(`[Video] Creating slideshow video...`);
+    let audioPath = null;
+    let audioDuration = 0;
+    const maybeElevenVoiceId = String(listingData?.elevenlabsVoiceId || '').trim();
+    const voiceIdFromUI = String(listingData?.voice || '').trim();
+    const chosenElevenId =
+      (maybeElevenVoiceId && maybeElevenVoiceId.length > 10) ? maybeElevenVoiceId :
+      (voiceIdFromUI && voiceIdFromUI.length > 10) ? voiceIdFromUI : '';
+
+    if (!preferFastOnly && chosenElevenId && ELEVENLABS_API_KEY && ELEVENLABS_API_KEY.trim()) {
+      try {
+        console.log('[Video] 🎙️ Step 1: Generating voiceover FIRST to determine video length...');
+        const ttsText = promoText?.voiceScript
+          || [
+            promoText?.headline || promoText?.topLine || '',
+            promoText?.subheadline || promoText?.midLine || '',
+            promoText?.priceTag || promoText?.callToAction || ''
+          ].filter(Boolean).join('. ');
+
+        if (ttsText) {
+          console.log('[Video] 📝 Voice script:', ttsText.substring(0, 100) + '...');
+          if (promoText) promoText._voiceScript = ttsText;
+          audioPath = await elevenLabsTTSToMp3(ttsText, chosenElevenId);
+          audioDuration = getAudioDuration(audioPath);
+          console.log(`[Video] ✅ Audio generated: ${audioDuration.toFixed(1)}s`);
+        }
+      } catch (ttsErr) {
+        console.warn('[Video] ⚠️ ElevenLabs TTS failed, will create video without audio:', ttsErr.message);
+        audioPath = null;
+        audioDuration = 0;
+      }
+    } else {
+      console.log('[Video] ℹ️ No ElevenLabs voiceId/key — creating video without audio.');
+    }
+    
+    const duration = audioDuration > 10 ? Math.ceil(audioDuration) + 3 : clamp(targetDurationSec, 8, 180);
+    console.log(`[Video] 🎬 Step 2: Creating video (${duration}s to match audio ${audioDuration.toFixed(1)}s)...`);
     console.log(`[Video] Output path: ${videoPath}`);
     
-    const duration = clamp(targetDurationSec, 8, 180);
     try {
       await createSlideshowVideo(imagePaths, videoPath, promoText, duration);
       console.log(`[Video] ✅ Video created successfully`);
@@ -486,39 +542,18 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     }
     
     let videoToUpload = videoPath;
-    if (!preferFastOnly) {
-      const maybeElevenVoiceId = String(listingData?.elevenlabsVoiceId || '').trim();
-      const voiceIdFromUI = String(listingData?.voice || '').trim();
-      const chosenElevenId =
-        (maybeElevenVoiceId && maybeElevenVoiceId.length > 10) ? maybeElevenVoiceId :
-        (voiceIdFromUI && voiceIdFromUI.length > 10) ? voiceIdFromUI : '';
-
-      if (chosenElevenId && ELEVENLABS_API_KEY && ELEVENLABS_API_KEY.trim()) {
-        try {
-          console.log('[Video] 🎙️ Adding ElevenLabs voiceover to FFmpeg video...');
-          const ttsText = promoText?.voiceScript
-            || [
-              promoText?.headline || promoText?.topLine || '',
-              promoText?.subheadline || promoText?.midLine || '',
-              promoText?.priceTag || promoText?.callToAction || ''
-            ].filter(Boolean).join('. ');
-
-          if (ttsText) {
-            console.log('[Video] 📝 Voice script (tashkeel):', ttsText);
-            if (promoText) promoText._voiceScript = ttsText;
-            const audioPath = await elevenLabsTTSToMp3(ttsText, chosenElevenId);
-            const outWithAudio = path.join(videoDir, `slideshow_${listingId}_${Date.now()}_audio.mp4`);
-            muxAudioIntoVideo(videoPath, audioPath, outWithAudio);
-            try { fs.unlinkSync(audioPath); } catch (_) {}
-            try { fs.unlinkSync(videoPath); } catch (_) {}
-            videoToUpload = outWithAudio;
-            console.log('[Video] ✅ Audio muxed successfully');
-          }
-        } catch (ttsErr) {
-          console.warn('[Video] ⚠️ ElevenLabs TTS/mux failed, continuing without audio:', ttsErr.message);
-        }
-      } else {
-        console.log('[Video] ℹ️ No ElevenLabs voiceId/key — continuing without audio.');
+    if (audioPath && fs.existsSync(audioPath)) {
+      try {
+        console.log('[Video] 🔊 Step 3: Merging audio with video...');
+        const outWithAudio = path.join(videoDir, `slideshow_${listingId}_${Date.now()}_audio.mp4`);
+        muxAudioIntoVideo(videoPath, audioPath, outWithAudio);
+        try { fs.unlinkSync(audioPath); } catch (_) {}
+        try { fs.unlinkSync(videoPath); } catch (_) {}
+        videoToUpload = outWithAudio;
+        console.log('[Video] ✅ Audio muxed successfully - video synced with voiceover');
+      } catch (muxErr) {
+        console.warn('[Video] ⚠️ Audio mux failed, using video without audio:', muxErr.message);
+        try { if (audioPath) fs.unlinkSync(audioPath); } catch (_) {}
       }
     }
 
