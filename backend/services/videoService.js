@@ -372,45 +372,51 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     console.log('[Video] 🎬 Using FFmpeg (full quality: Ken Burns + transitions + voiceover)');
   }
   
+  const isRealListing = !String(listingId).startsWith('temp_');
+
   // Check if video has been processing for too long (stuck)
-  try {
-    const stuckCheck = await db.query(
-      `SELECT video_status, updated_at FROM properties WHERE id = $1`,
-      [listingId]
-    );
-    if (stuckCheck.rows.length > 0) {
-      const status = stuckCheck.rows[0].video_status;
-      const updatedAt = stuckCheck.rows[0].updated_at;
-      if (status === 'processing' && updatedAt) {
-        const timeSinceUpdate = Date.now() - new Date(updatedAt).getTime();
-        const minutesStuck = Math.round(timeSinceUpdate / 1000 / 60);
-        if (timeSinceUpdate > MAX_PROCESSING_TIME) {
-          console.warn(`[Video] ⚠️ Video has been processing for ${minutesStuck} minutes, resetting to failed`);
-          await db.query(
-            `UPDATE properties SET video_status = 'failed' WHERE id = $1`,
-            [listingId]
-          );
-          throw new Error(`Video generation timeout - process took too long (${minutesStuck} minutes)`);
-        } else if (minutesStuck > 5) {
-          console.warn(`[Video] ⚠️ Video has been processing for ${minutesStuck} minutes, this is taking longer than expected`);
+  if (isRealListing) {
+    try {
+      const stuckCheck = await db.query(
+        `SELECT video_status, updated_at FROM properties WHERE id = $1`,
+        [listingId]
+      );
+      if (stuckCheck.rows.length > 0) {
+        const status = stuckCheck.rows[0].video_status;
+        const updatedAt = stuckCheck.rows[0].updated_at;
+        if (status === 'processing' && updatedAt) {
+          const timeSinceUpdate = Date.now() - new Date(updatedAt).getTime();
+          const minutesStuck = Math.round(timeSinceUpdate / 1000 / 60);
+          if (timeSinceUpdate > MAX_PROCESSING_TIME) {
+            console.warn(`[Video] ⚠️ Video has been processing for ${minutesStuck} minutes, resetting to failed`);
+            await db.query(
+              `UPDATE properties SET video_status = 'failed' WHERE id = $1`,
+              [listingId]
+            );
+            throw new Error(`Video generation timeout - process took too long (${minutesStuck} minutes)`);
+          } else if (minutesStuck > 5) {
+            console.warn(`[Video] ⚠️ Video has been processing for ${minutesStuck} minutes, this is taking longer than expected`);
+          }
         }
       }
+    } catch (checkErr) {
+      if (checkErr.message.includes('timeout')) {
+        throw checkErr;
+      }
+      console.warn(`[Video] Could not check stuck status:`, checkErr.message);
     }
-  } catch (checkErr) {
-    if (checkErr.message.includes('timeout')) {
-      throw checkErr;
-    }
-    console.warn(`[Video] Could not check stuck status:`, checkErr.message);
   }
   
   try {
     if (!ffmpegAvailable) {
       ffmpegAvailable = checkFFmpegAvailable();
       if (!ffmpegAvailable) {
-        await db.query(
-          `UPDATE properties SET video_status = 'failed' WHERE id = $1`,
-          [listingId]
-        );
+        if (isRealListing) {
+          await db.query(
+            `UPDATE properties SET video_status = 'failed' WHERE id = $1`,
+            [listingId]
+          );
+        }
         throw new Error('FFmpeg is not available on this server. Please install FFmpeg.');
       }
     }
@@ -549,26 +555,28 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     
     cleanupTempFiles(String(listingId));
     
-    await db.query(
-      `UPDATE properties SET video_url = $1, video_status = 'ready' WHERE id = $2`,
-      [finalVideoUrl, listingId]
-    );
-    
-    const existingVideo = await db.query(
-      `SELECT id FROM listing_media WHERE listing_id = $1 AND kind = 'video'`,
-      [listingId]
-    );
-    
-    if (existingVideo.rows.length > 0) {
+    if (isRealListing) {
       await db.query(
-        `UPDATE listing_media SET url = $1 WHERE listing_id = $2 AND kind = 'video'`,
+        `UPDATE properties SET video_url = $1, video_status = 'ready' WHERE id = $2`,
         [finalVideoUrl, listingId]
       );
-    } else {
-      await db.query(
-        `INSERT INTO listing_media (listing_id, url, kind, is_cover, sort_order) VALUES ($1, $2, 'video', false, 999)`,
-        [listingId, finalVideoUrl]
+      
+      const existingVideo = await db.query(
+        `SELECT id FROM listing_media WHERE listing_id = $1 AND kind = 'video'`,
+        [listingId]
       );
+      
+      if (existingVideo.rows.length > 0) {
+        await db.query(
+          `UPDATE listing_media SET url = $1 WHERE listing_id = $2 AND kind = 'video'`,
+          [finalVideoUrl, listingId]
+        );
+      } else {
+        await db.query(
+          `INSERT INTO listing_media (listing_id, url, kind, is_cover, sort_order) VALUES ($1, $2, 'video', false, 999)`,
+          [listingId, finalVideoUrl]
+        );
+      }
     }
     
     console.log(`[Video] ========================================`);
@@ -582,14 +590,16 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     
     cleanupTempFiles(String(listingId));
     
-    try {
-      await db.query(
-        `UPDATE properties SET video_status = 'failed' WHERE id = $1`,
-        [listingId]
-      );
-      console.log(`[Video] Updated status to 'failed' in database`);
-    } catch (dbErr) {
-      console.error("[Video] Failed to update status:", dbErr.message);
+    if (isRealListing) {
+      try {
+        await db.query(
+          `UPDATE properties SET video_status = 'failed' WHERE id = $1`,
+          [listingId]
+        );
+        console.log(`[Video] Updated status to 'failed' in database`);
+      } catch (dbErr) {
+        console.error("[Video] Failed to update status:", dbErr.message);
+      }
     }
     
     throw error;
