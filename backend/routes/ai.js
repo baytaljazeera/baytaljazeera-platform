@@ -971,15 +971,27 @@ ${description ? `- الوصف: ${description}` : ''}
 1. headline (5-10 كلمات): عنوان يلفت الانتباه فوراً
 2. subheadline (8-15 كلمة): وصف يبرز أهم المميزات
 3. priceTag (3-6 كلمات): دعوة للتواصل
-4. voiceScript (40-80 كلمة): نص مفصّل للتعليق الصوتي يصف العقار بأسلوب معلّق محترف، يذكر الموقع والمميزات والسعر ودعوة للتواصل. يجب أن يكون طويلاً بما يكفي ليُقرأ في 20-30 ثانية.
+4. voiceScript (200-300 كلمة): نص طويل ومفصّل للتعليق الصوتي مدته دقيقتين تقريباً. يجب أن يكون بأسلوب معلّق وثائقي عقاري محترف مثل قنوات العقارات الفاخرة. يجب أن يتضمن:
+   - مقدمة جذابة تشد المشاهد
+   - وصف تفصيلي للموقع والحي والمنطقة المحيطة
+   - وصف دقيق لمميزات العقار من الداخل والخارج (الغرف، المساحات، التشطيبات، المواد المستخدمة)
+   - ذكر المرافق والخدمات القريبة
+   - ذكر السعر بطريقة تسويقية جذابة
+   - وصف نمط الحياة الذي سيعيشه المالك
+   - خاتمة قوية مع دعوة للتواصل عبر بيت الجزيرة
+   النص يجب أن يتدفق بسلاسة كأنه حلقة وثائقية عن العقار.
 
-⚡ قواعد مهمة جداً:
-- كل النصوص يجب أن تكون **مُشكَّلة بالكامل** (بالفتحة والضمة والكسرة والسكون والتنوين والشدة) لضمان نطق صحيح
-  مثال: "اِمْتَلِكْ فِيلَّا فَاخِرَةً فِي أَرْقَى أَحْيَاءِ الرِّيَاضِ" وليس "امتلك فيلا فاخرة في أرقى أحياء الرياض"
-- استخدم كلمات تحفيزية: فَاخِر، اسْتِثْنَائِيّ، حَصْرِيّ، ذَهَبِيّ
+⚡ قواعد التشكيل (مهمة جداً للنطق الصحيح):
+- كل النصوص يجب أن تكون **مُشكَّلة بالكامل** بالحركات العربية
+- كل حرف يجب أن يكون عليه حركة: فَتْحَة (َ) أو ضَمَّة (ُ) أو كَسْرَة (ِ) أو سُكُونْ (ْ) أو شَدَّة (ّ) أو تَنْوِين (ً ٌ ٍ)
+- **مهم جداً**: آخر كلمة في كل جملة يجب أن تكون مُسَكَّنَة (عليها سكون ْ) - هذا يجعل النطق طبيعياً وصحيحاً
+  مثال صحيح: "اِكْتَشِفْ هَذَا الْعَقَارَ الْفَاخِرْ" (الراء الأخيرة عليها سكون)
+  مثال خاطئ: "اِكْتَشِفْ هَذَا الْعَقَارَ الْفَاخِرَ" (بدون سكون في النهاية)
+- مثال كامل: "اِمْتَلِكْ فِيلَّا فَاخِرَةً فِي أَرْقَى أَحْيَاءِ الرِّيَاضْ" وليس "امتلك فيلا فاخرة في أرقى أحياء الرياض"
+- استخدم كلمات تحفيزية: فَاخِرْ، اِسْتِثْنَائِيّْ، حَصْرِيّْ، ذَهَبِيّْ
 - اخلق إحساس بالفرصة والعجلة
 - بدون أي emoji
-- عربي فصيح راقي مُشكَّل بالكامل
+- عربي فصيح راقي مُشكَّل بالكامل بدون استثناء
 
 أرجع JSON فقط:
 {"headline": "...", "subheadline": "...", "priceTag": "...", "voiceScript": "..."}`;
@@ -993,7 +1005,7 @@ ${description ? `- الوصف: ${description}` : ''}
         contents: prompt,
         config: {
           temperature: 0.8,
-          maxOutputTokens: 800,
+          maxOutputTokens: 2000,
         }
       });
       
@@ -1127,16 +1139,14 @@ function buildAssFile(promoText, totalDuration, outPath) {
   const t3 = 2.5;
   const endTime = totalDuration - 0.3;
   
-  // ألوان احترافية محسّنة (BGR format for ASS)
+  // ألوان احترافية (BGR format for ASS) - بدون خلفية سوداء
   const GOLD = "&H0037AFD4";       // ذهبي فاخر
   const WHITE = "&H00FFFFFF";      // أبيض نقي
   const BLACK = "&H00000000";      // أسود للحدود
-  const DARK_BG = "&HE0000000";    // خلفية سوداء شفافة 88% (أكثر وضوحاً)
-  const GOLD_BG = "&H8037AFD4";    // خلفية ذهبية شفافة 50% للسعر
+  const SHADOW_CLR = "&H80000000"; // ظل خفيف شفاف
   
-  // ASS بتصميم احترافي محسّن - خطوط أكبر، ظلال أقوى، خلفيات أوضح
-  // Alignment: 8=top-center, 5=middle-center, 2=bottom-center
-  // Outline: 5-6 (حدود سميكة)، Shadow: 2-3 (ظلال قوية)
+  // تصميم احترافي: نصوص بحدود وظلال بدون خلفية سوداء
+  // BorderStyle=1 = حدود + ظلال (بدون صندوق خلفية)
   const ass = `[Script Info]
 ScriptType: v4.00+
 PlayResX: 1920
@@ -1145,17 +1155,17 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Logo,Arial,68,${GOLD},${GOLD},${BLACK},${DARK_BG},1,0,0,0,100,100,3,0,3,5,3,8,100,100,50,1
-Style: Title,Arial,88,${WHITE},${WHITE},${BLACK},${DARK_BG},1,0,0,0,100,100,2,0,3,6,3,5,100,100,0,1
-Style: Features,Arial,58,${GOLD},${GOLD},${BLACK},${DARK_BG},1,0,0,0,100,100,2,0,3,5,2,5,100,100,0,1
-Style: Price,Arial,78,${WHITE},${WHITE},${BLACK},${GOLD_BG},1,0,0,0,100,100,3,0,3,6,3,2,100,100,60,1
+Style: Logo,Arial,72,${GOLD},${GOLD},${BLACK},${SHADOW_CLR},1,0,0,0,100,100,4,0,1,4,4,8,100,100,50,1
+Style: Title,Arial,82,${WHITE},${WHITE},${BLACK},${SHADOW_CLR},1,0,0,0,100,100,2,0,1,5,4,5,100,100,0,1
+Style: Features,Arial,54,${GOLD},${GOLD},${BLACK},${SHADOW_CLR},1,0,0,0,100,100,2,0,1,4,3,5,100,100,0,1
+Style: Price,Arial,72,${GOLD},${GOLD},${BLACK},${SHADOW_CLR},1,0,0,0,100,100,3,0,1,5,4,2,100,100,60,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,${toAssTime(t1)},${toAssTime(endTime)},Logo,,0,0,0,,${logo}
-Dialogue: 0,${toAssTime(t1 + 0.3)},${toAssTime(endTime)},Title,,0,0,0,,${topLine}
-Dialogue: 0,${toAssTime(t2)},${toAssTime(endTime)},Features,,0,0,0,,${midLine}
-Dialogue: 0,${toAssTime(t3)},${toAssTime(endTime)},Price,,0,0,0,,${bottomLine}
+Dialogue: 0,${toAssTime(t1)},${toAssTime(endTime)},Logo,,0,0,0,,{\\fad(800,600)}${logo}
+Dialogue: 0,${toAssTime(t1 + 0.3)},${toAssTime(endTime)},Title,,0,0,0,,{\\fad(800,600)}${topLine}
+Dialogue: 0,${toAssTime(t2)},${toAssTime(endTime)},Features,,0,0,0,,{\\fad(800,600)}${midLine}
+Dialogue: 0,${toAssTime(t3)},${toAssTime(endTime)},Price,,0,0,0,,{\\fad(800,600)}${bottomLine}
 `.trim();
 
   require("fs").writeFileSync(outPath, ass, "utf8");
@@ -1201,9 +1211,9 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
   }
 
   // Calculate duration per slide with transition overlap
-  const transition = 0.8; // مدة الانتقال
+  const transition = 1.2; // مدة انتقال أطول لمظهر سينمائي
   const numImages = imagePaths.length;
-  const slideDuration = Math.max(2.5, (duration + (numImages - 1) * transition) / numImages);
+  const slideDuration = Math.max(4, Math.min(20, (duration + (numImages - 1) * transition) / numImages));
   const totalDuration = (numImages * slideDuration) - ((numImages - 1) * transition);
   
   // 🔒 Security: Define allowed base directories for images
@@ -1317,22 +1327,29 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
   const W = 1920;
   const H = 1080;
   
-  // Realistic camera movements (ground-level, no aerial shots)
+  const frames = Math.round(slideDuration * fps);
+  // حركات كاميرا درامية - Ken Burns قوي ومتنوع
   const cameraMovements = [
-    // Gentle zoom in (subtle)
-    { zoom: "min(zoom+0.0005,1.1)", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
-    // Gentle zoom out (subtle)
-    { zoom: "if(lte(zoom,1.0),1.1,max(1.0,zoom-0.0005))", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
-    // Slow pan left to right
-    { zoom: "1.05", x: "on/(25*" + String(slideDuration) + ")*(iw-iw/zoom)", y: "ih/2-(ih/zoom/2)" },
-    // Slow pan right to left
-    { zoom: "1.05", x: "(iw-iw/zoom)-(on/(25*" + String(slideDuration) + ")*(iw-iw/zoom))", y: "ih/2-(ih/zoom/2)" },
-    // Static (no movement)
-    { zoom: "1.0", x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
+    // تكبير قوي من المنتصف
+    { zoom: `min(zoom+0.0015,1.35)`, x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
+    // تصغير من قريب إلى بعيد
+    { zoom: `if(lte(zoom,1.0),1.35,max(1.0,zoom-0.0015))`, x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
+    // تكبير + حركة للأسفل (كشف المبنى)
+    { zoom: `min(zoom+0.001,1.25)`, x: "iw/2-(iw/zoom/2)", y: `min(on*${(0.6/frames).toFixed(6)}*ih,ih/2-(ih/zoom/2))` },
+    // حركة بانورامية يسار إلى يمين مع تكبير خفيف
+    { zoom: "1.15", x: `on/${frames}*(iw-iw/zoom)`, y: "ih/2-(ih/zoom/2)" },
+    // حركة بانورامية يمين إلى يسار مع تكبير خفيف
+    { zoom: "1.15", x: `(iw-iw/zoom)-on/${frames}*(iw-iw/zoom)`, y: "ih/2-(ih/zoom/2)" },
+    // تكبير على الزاوية العلوية اليمنى
+    { zoom: `min(zoom+0.001,1.3)`, x: `iw/zoom/4`, y: `ih/zoom/4` },
+    // تكبير على الزاوية السفلية اليسرى
+    { zoom: `min(zoom+0.001,1.3)`, x: `iw-iw/zoom-iw/zoom/4`, y: `ih-ih/zoom-ih/zoom/4` },
+    // تكبير بطيء مع حركة قطرية
+    { zoom: `min(zoom+0.0008,1.2)`, x: `on/${frames}*(iw-iw/zoom)`, y: `on/${frames}*(ih-ih/zoom)` },
   ];
   
-  // Professional transition types (crossfade variations)
-  const transitionTypes = ["fade", "fadeblack", "fadewhite", "distance", "fadefast"];
+  // انتقالات احترافية متنوعة
+  const transitionTypes = ["fade", "fadeblack", "fadewhite", "smoothleft", "smoothright", "smoothup", "circlecrop", "dissolve", "radial", "hblur"];
   
   // Build input arguments
   let args = ["-y"];
@@ -1343,12 +1360,11 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
   // Build filter complex
   const filters = [];
   
-  // Step 1: Scale and apply subtle Ken Burns effect (ground-level only)
+  // Step 1: Scale and apply dramatic Ken Burns effect
   for (let i = 0; i < validPaths.length; i++) {
-    const frames = Math.round(slideDuration * fps);
     const movement = cameraMovements[i % cameraMovements.length];
     
-    // Scale to 1920x1080 with padding, then apply subtle zoom/pan
+    // Scale to 1920x1080 with padding, then apply dramatic zoom/pan
     filters.push(
       `[${i}:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,scale=8000:-1,zoompan=z='${movement.zoom}':x='${movement.x}':y='${movement.y}':d=${frames}:s=${W}x${H}:fps=${fps},format=yuv420p[v${i}]`
     );

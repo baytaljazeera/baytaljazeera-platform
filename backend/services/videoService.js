@@ -45,9 +45,9 @@ function clamp(n, a, b) {
 
 function computeDurationPerImage(imageCount, targetDurationSec) {
   const n = Math.max(2, Number(imageCount || 2));
-  const target = clamp(targetDurationSec ?? 20, 8, 120);
+  const target = clamp(targetDurationSec ?? 120, 8, 180);
   const dpi = Math.round(target / n);
-  return clamp(dpi, 2, 8);
+  return clamp(dpi, 3, 20);
 }
 
 async function elevenLabsTTSToMp3(text, voiceId) {
@@ -238,7 +238,7 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
   // حالياً الاعتماد الأساسي على Replicate مباشرة، ويمكن إعادة تفعيل الـ Worker لاحقاً عبر USE_PYTHON_VIDEO_WORKER=1.
   const preferFastOnly = listingData.videoQuality === 'fast';
   const usePythonWorker = !!PYTHON_WORKER_URL && process.env.USE_PYTHON_VIDEO_WORKER === '1';
-  const targetDurationSec = Number(listingData?.targetDurationSec ?? 20);
+  const targetDurationSec = Number(listingData?.targetDurationSec ?? 120);
   if (usePythonWorker && !preferFastOnly && imageUrls.length >= 2) {
     const absoluteUrls = toAbsoluteImageUrls(imageUrls);
     const workerUrl = PYTHON_WORKER_URL.replace(/\/$/, '') + '/generate';
@@ -476,7 +476,7 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     console.log(`[Video] Creating slideshow video...`);
     console.log(`[Video] Output path: ${videoPath}`);
     
-    const duration = clamp(targetDurationSec, 8, 120);
+    const duration = clamp(targetDurationSec, 8, 180);
     try {
       await createSlideshowVideo(imagePaths, videoPath, promoText, duration);
       console.log(`[Video] ✅ Video created successfully`);
