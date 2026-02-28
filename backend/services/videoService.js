@@ -335,8 +335,10 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
         try {
           console.log('[Video] 🎙️ Adding ElevenLabs voiceover to Replicate video...');
           const voiceText = promoText
-            ? [promoText.headline, promoText.subheadline, promoText.topLine].filter(Boolean).join('. ')
+            ? [promoText.headline, promoText.subheadline, promoText.topLine, promoText.callToAction].filter(Boolean).join('. ')
             : `${listingData.title || 'عقار مميز'}. ${listingData.description || ''}`.slice(0, 1500);
+          console.log('[Video] 📝 Voice script:', voiceText);
+          if (promoText) promoText._voiceScript = voiceText;
           const audioPath = await elevenLabsTTSToMp3(voiceText, listingData.elevenlabsVoiceId);
 
           const tempDir = path.join(os.tmpdir(), 'video-gen', 'mux');

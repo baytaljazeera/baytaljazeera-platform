@@ -1725,7 +1725,13 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
       const url = result?.url ?? (typeof result === 'string' ? result : null);
       if (url) {
         const op = videoOperations.get(operationId) || opData;
-        videoOperations.set(operationId, { ...op, status: "completed", videoUrl: url, promoText: result?.promoText });
+        const promoText = result?.promoText;
+        let scriptText = null;
+        if (promoText) {
+          const parts = [promoText.headline, promoText.subheadline, promoText.topLine, promoText.callToAction].filter(Boolean);
+          if (parts.length > 0) scriptText = parts.join(' — ');
+        }
+        videoOperations.set(operationId, { ...op, status: "completed", videoUrl: url, promoText, scriptText });
         console.log("[Video] ✅ Background job success:", url);
       }
     })
@@ -1952,6 +1958,7 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
       success: true,
       videoUrl: opData.videoUrl,
       promoText: opData.promoText,
+      scriptText: opData.scriptText,
       useImageToVideo: opData.useImageToVideo,
       message: opData.useImageToVideo 
         ? "تم تحويل صورتك إلى فيديو سينمائي بنجاح! 🎬" 

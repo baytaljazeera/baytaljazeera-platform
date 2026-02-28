@@ -71,6 +71,9 @@ async function runSlideshow(imageUrls, options = {}) {
     resolution: options.resolution ?? '1080p',
     transition_type: options.transition_type ?? 'fade',
     frame_rate: options.frame_rate ?? 30,
+    zoom_speed: options.zoom_speed ?? 0.03,
+    ken_burns: options.ken_burns !== undefined ? options.ken_burns : true,
+    transition_duration: options.transition_duration ?? 1.0,
   };
 
   let prediction;
@@ -94,8 +97,8 @@ async function runSlideshow(imageUrls, options = {}) {
   let id = prediction.id;
   let status = prediction.status;
   let output = prediction.output;
-  const maxWait = 120000;
-  const pollInterval = 2000;
+  const maxWait = options.maxWaitMs || 300000;
+  const pollInterval = 3000;
   const start = Date.now();
 
   while (status !== 'succeeded' && status !== 'failed' && status !== 'canceled' && Date.now() - start < maxWait) {
@@ -151,6 +154,9 @@ async function generateSlideshowVideo(listingId, imageUrls, options = {}) {
     resolution: options.resolution ?? '1080p',
     transition_type: 'fade',
     frame_rate: 30,
+    ken_burns: true,
+    zoom_speed: 0.03,
+    transition_duration: 1.0,
   });
 
   const folder = `listings/${listingId}/promo`;

@@ -263,6 +263,9 @@ export default function NewListingPage() {
   const pendingVideoImagesRef = useRef<File[]>([]);
   const voicePreviewAudioRef = useRef<HTMLAudioElement | null>(null);
   const [voicePreviewPlaying, setVoicePreviewPlaying] = useState(false);
+  const [videoProgressPercent, setVideoProgressPercent] = useState(0);
+  const [videoScriptText, setVideoScriptText] = useState<string | null>(null);
+  const videoProgressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Scroll to top button state
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -768,6 +771,17 @@ export default function NewListingPage() {
     setVideoError(null);
     setVideoResult(null);
     setVideoPromoText(null);
+    setVideoScriptText(null);
+    setVideoProgressPercent(0);
+
+    const estimatedDurationMs = videoQuality === "full" ? 150000 : 90000;
+    const startTime = Date.now();
+    if (videoProgressIntervalRef.current) clearInterval(videoProgressIntervalRef.current);
+    videoProgressIntervalRef.current = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const pct = Math.min(95, (elapsed / estimatedDurationMs) * 100);
+      setVideoProgressPercent(Math.round(pct));
+    }, 500);
 
     try {
       // Resolve token once for all requests (fix 401 cross-origin)
@@ -851,8 +865,13 @@ export default function NewListingPage() {
       const data = await res.json();
 
       if (data.success && data.videoUrl) {
+        setVideoProgressPercent(100);
         setVideoResult(data.videoUrl);
-        if (data.promoText) setVideoPromoText(data.promoText);
+        if (data.promoText) {
+          setVideoPromoText(data.promoText);
+          const scriptParts = [data.promoText.headline, data.promoText.subheadline, data.promoText.topLine, data.promoText.callToAction].filter(Boolean);
+          if (scriptParts.length > 0) setVideoScriptText(scriptParts.join(' — '));
+        }
       } else if (data.success && data.operationId) {
         const maxAttempts = 60;
         const intervalMs = 5000;
@@ -869,8 +888,14 @@ export default function NewListingPage() {
             throw new Error(statusData?.error || (statusRes.status === 401 ? "انتهت صلاحية الجلسة، سجّل الدخول من جديد" : "فشل في التحقق من حالة الفيديو"));
           }
           if (statusData.status === "completed" && statusData.videoUrl) {
+            setVideoProgressPercent(100);
             setVideoResult(statusData.videoUrl);
-            if (statusData.promoText) setVideoPromoText(statusData.promoText);
+            if (statusData.promoText) {
+              setVideoPromoText(statusData.promoText);
+              const scriptParts = [statusData.promoText.headline, statusData.promoText.subheadline, statusData.promoText.topLine, statusData.promoText.callToAction].filter(Boolean);
+              if (scriptParts.length > 0) setVideoScriptText(scriptParts.join(' — '));
+            }
+            if (statusData.scriptText) setVideoScriptText(statusData.scriptText);
             done = true;
             break;
           }
@@ -886,6 +911,10 @@ export default function NewListingPage() {
     } catch (err: any) {
       setVideoError(err.message || "حدث خطأ أثناء توليد الفيديو");
     } finally {
+      if (videoProgressIntervalRef.current) {
+        clearInterval(videoProgressIntervalRef.current);
+        videoProgressIntervalRef.current = null;
+      }
       setVideoLoading(false);
     }
   }
@@ -3774,14 +3803,12 @@ export default function NewListingPage() {
                       <div className="p-6 bg-white/90 rounded-xl border-2 border-[#D4AF37]/50 text-center shadow-inner">
                         <div className="flex items-center justify-center gap-3 mb-3">
                           <Loader2 className="w-6 h-6 animate-spin text-[#D4AF37]" />
-                          <span className="font-semibold text-[#002845]">جاري توليد الفيديو...</span>
+                          <span className="font-semibold text-[#002845]">جاري توليد الفيديو... {videoProgressPercent}%</span>
                         </div>
-                        <div className="w-full bg-[#D4AF37]/20 rounded-full h-2 mb-2 overflow-hidden">
-                          <motion.div
-                            className="h-full rounded-full bg-gradient-to-r from-[#D4AF37] to-[#B8860B]"
-                            initial={{ width: "0%" }}
-                            animate={{ width: ["0%", "70%", "100%", "0%"] }}
-                            transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+                        <div className="w-full bg-[#D4AF37]/20 rounded-full h-3 mb-2 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-[#D4AF37] to-[#B8860B] transition-all duration-500 ease-out"
+                            style={{ width: `${videoProgressPercent}%` }}
                           />
                         </div>
                         <p className="text-xs text-[#002845]/80">
@@ -3808,12 +3835,22 @@ export default function NewListingPage() {
                             <X className="w-4 h-4" />
                           </button>
                         </div>
-                        {videoPromoText && (
-                          <div className="p-3 bg-amber-50/80 rounded-lg border border-[#D4AF37]/30">
-                            <p className="text-xs font-semibold text-[#B8860B] mb-1">النص الترويجي المُنشأ:</p>
-                            <p className="text-sm text-[#002845]">{videoPromoText.headline || videoPromoText.topLine}</p>
-                            {videoPromoText.subheadline && (
-                              <p className="text-xs text-[#002845]/80 mt-1">{videoPromoText.subheadline}</p>
+                        {(videoPromoText || videoScriptText) && (
+                          <div className="p-3 bg-amber-50/80 rounded-lg border border-[#D4AF37]/30 space-y-2">
+                            {videoPromoText && (
+                              <>
+                                <p className="text-xs font-semibold text-[#B8860B] mb-1">النص الترويجي المُنشأ:</p>
+                                <p className="text-sm text-[#002845]">{videoPromoText.headline || videoPromoText.topLine}</p>
+                                {videoPromoText.subheadline && (
+                                  <p className="text-xs text-[#002845]/80 mt-1">{videoPromoText.subheadline}</p>
+                                )}
+                              </>
+                            )}
+                            {videoScriptText && (
+                              <div className="pt-2 border-t border-[#D4AF37]/20">
+                                <p className="text-xs font-semibold text-[#B8860B] mb-1">📝 النص المقروء بالصوت:</p>
+                                <p className="text-sm text-[#002845] leading-relaxed" dir="rtl">{videoScriptText}</p>
+                              </div>
                             )}
                           </div>
                         )}
