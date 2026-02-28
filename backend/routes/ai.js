@@ -1625,7 +1625,7 @@ router.post("/user/generate-advanced-video", authMiddleware, asyncHandler(async 
 // 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي - Python Engine
 router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description, videoQuality, videoVoice } = req.body;
+  const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description, videoQuality, videoVoice, targetDurationSec } = req.body;
 
   // Check user's support level - متاح للباقات المميزة فقط
   const planResult = await db.query(
@@ -1680,6 +1680,12 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
       error: "يرجى رفع صور العقار أولاً لتوليد الفيديو" 
     });
   }
+  if (cleanImages.length < 2) {
+    return res.status(400).json({ 
+      success: false, 
+      error: "يحتاج الفيديو صورتين على الأقل. اختر 2–8 صور ثم ولد." 
+    });
+  }
 
   console.log("🚀 [AI Route] Video generation for user:", userId);
   console.log("[Video] Image count:", cleanImages.length);
@@ -1696,15 +1702,21 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
   });
 
   const { generateListingSlideshow } = require('../services/videoService');
+  const openAiVoices = ['onyx', 'ash', 'fable', 'echo', 'alloy'];
+  const isOpenAiVoice = openAiVoices.includes(String(videoVoice || '').toLowerCase());
   const listingData = { 
     title: title || 'عقار مميز', 
     city, 
     district, 
     price, 
     userId, 
+    propertyType,
+    purpose,
     description: description || `${propertyType} لل${purpose}`,
     videoQuality: videoQuality ?? 'full',
-    voice: videoVoice || 'onyx'
+    voice: isOpenAiVoice ? (videoVoice || 'onyx') : 'onyx',
+    elevenlabsVoiceId: !isOpenAiVoice && videoVoice && String(videoVoice).length > 10 ? String(videoVoice).trim() : undefined,
+    targetDurationSec: targetDurationSec ?? 20
   };
   const targetId = listingId || `temp_${Date.now()}`; 
 
@@ -1826,6 +1838,92 @@ async function pollVideoOperation(operationId) {
     videoOperations.set(operationId, { ...opData, status: "error", error: err.message || "فشل حفظ الفيديو" });
   }
 }
+
+// 🎙️ جلب أصواتي فقط (My Voices) — أصواتك المحفوظة في ElevenLabs بدون الأصوات الافتراضية
+router.get("/user/elevenlabs-voices", authMiddleware, asyncHandler(async (req, res) => {
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    return res.json({ voices: [], message: "ELEVENLABS_API_KEY غير مضبوط" });
+  }
+  return new Promise((resolve) => {
+    // v2 مع voice_type=cloned = أصواتي فقط (مستنسخة/مخصصة). إن فشل نرجع v1 ونفلتر حسب category
+    const pathV2 = "/v2/voices?voice_type=cloned&page_size=100";
+    const options = {
+      hostname: "api.elevenlabs.io",
+      path: pathV2,
+      method: "GET",
+      headers: { "xi-api-key": apiKey.trim(), "Content-Type": "application/json" },
+    };
+    const reqHttp = https.request(options, (resp) => {
+      let data = "";
+      resp.on("data", (ch) => { data += ch; });
+      resp.on("end", () => {
+        if (resp.statusCode !== 200) {
+          // إن v2 غير متاح أو يرجع خطأ، نجرب v1 ونفلتر بأصوات مخصصة فقط (category cloned أو generated)
+          const pathV1 = "/v1/voices";
+          const optV1 = {
+            hostname: "api.elevenlabs.io",
+            path: pathV1,
+            method: "GET",
+            headers: { "xi-api-key": apiKey.trim(), "Content-Type": "application/json" },
+          };
+          const reqV1 = https.request(optV1, (resp1) => {
+            let data1 = "";
+            resp1.on("data", (ch) => { data1 += ch; });
+            resp1.on("end", () => {
+              try {
+                const json = JSON.parse(data1);
+                const all = json.voices || [];
+                const onlyMine = all.filter((v) => {
+                  const cat = (v.category || v.labels || "").toString().toLowerCase();
+                  return cat === "cloned" || cat === "generated" || cat === "instant" || (v.labels && Array.isArray(v.labels) && v.labels.some((l) => /cloned|generated|custom/i.test(l)));
+                });
+                const voices = (onlyMine.length ? onlyMine : all).map((v) => ({
+                  id: v.voice_id || v.id,
+                  name: v.name || "بدون اسم",
+                  previewUrl: v.preview_url || (v.samples && v.samples[0] && (v.samples[0].url || v.samples[0].preview_url)) || null,
+                })).filter((v) => v.id);
+                res.json({ voices });
+              } catch (_) {
+                res.status(500).json({ voices: [], error: "خطأ في قراءة الأصوات" });
+              }
+              resolve();
+            });
+          });
+          reqV1.on("error", () => {
+            res.status(500).json({ voices: [], error: "تعذر جلب أصواتي من ElevenLabs" });
+            resolve();
+          });
+          reqV1.setTimeout(12000, () => { reqV1.destroy(); });
+          reqV1.end();
+          return;
+        }
+        try {
+          const json = JSON.parse(data);
+          const voices = (json.voices || []).map((v) => ({
+            id: v.voice_id || v.id,
+            name: v.name || "بدون اسم",
+            previewUrl: v.preview_url || (v.samples && v.samples[0] && (v.samples[0].url || v.samples[0].content_url || v.samples[0].preview_url)) || null,
+          })).filter((v) => v.id);
+          res.json({ voices });
+        } catch (_) {
+          res.status(500).json({ voices: [], error: "خطأ في قراءة الأصوات" });
+        }
+        resolve();
+      });
+    });
+    reqHttp.on("error", (err) => {
+      res.status(500).json({ voices: [], error: err.message || "خطأ اتصال بخدمة الأصوات" });
+      resolve();
+    });
+    reqHttp.setTimeout(15000, () => {
+      reqHttp.destroy();
+      res.status(504).json({ voices: [], error: "انتهت مهلة الاتصال" });
+      resolve();
+    });
+    reqHttp.end();
+  });
+}));
 
 // 🔄 التحقق من حالة توليد الفيديو (Polling endpoint)
 router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async (req, res) => {

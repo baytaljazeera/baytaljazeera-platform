@@ -55,13 +55,19 @@ The application comprises a Node.js/Express.js backend and a Next.js 16 + React 
     - **Featured Cities System**: Admin-managed "Most Requested Cities" displayed in the search sidebar with filtering functionality.
     - **AI-Powered Features**: Integrates OpenAI and Gemini for an admin AI center, customer chatbot, smart pricing, marketing tips, AI conversation analysis, and AI-powered SEO generation.
     - **Advanced Video Generation System**: Professional property video creation with:
+      - Multi-tier pipeline: Replicate (slideshow) + ElevenLabs (voiceover) + FFmpeg (merge)
+      - When quality is "full" and ElevenLabs voice selected: generates slideshow via Replicate, generates voiceover via ElevenLabs TTS, merges audio+video via FFmpeg, uploads to Cloudinary
+      - When quality is "fast": generates silent slideshow via Replicate only
+      - Fallback chain: Python Worker → Replicate+ElevenLabs → Replicate only → FFmpeg local
+      - ElevenLabs voice selection: fetches user's custom/cloned voices from ElevenLabs API (v2 cloned → v1 fallback)
+      - Frontend voice UI: radio-card grid with preview playback, OpenAI voices in collapsible section
       - 4 video templates: Luxury (فاخر), Modern (عصري), Classic (كلاسيكي), Minimal (بسيط)
       - Ken Burns effects with template-specific motion styles (slow, dynamic, gentle, subtle)
       - Professional transitions: fade, dissolve, wipeleft, slideup, circleopen, radial
       - AI-generated promotional text with strong marketing copy
       - Ambient background audio generated dynamically per template mood (elegant, upbeat, warm, calm)
       - Arabic RTL text support with proper reshaping and glow effects
-      - Endpoints: GET `/api/ai/video-templates`, POST `/api/ai/user/generate-advanced-video`
+      - Endpoints: GET `/api/ai/video-templates`, POST `/api/ai/user/generate-video`, GET `/api/ai/user/elevenlabs-voices`
     - **SEO as Paid Feature**: Tiered SEO features (Level 0, 1, 2) with AI-generated content, Schema.org JSON-LD, and dynamic meta tags.
     - **Admin Systems**: Comprehensive administration for listing reports, finance, marketing analytics, RBAC, user management, payments, invoicing, and refunds.
     - **Enhanced Billing System**: Supports partial refunds, multiple partial refunds per invoice, complaint-invoice linking, and a full chargeback management system with audit logging.

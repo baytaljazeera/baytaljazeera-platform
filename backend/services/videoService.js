@@ -3,13 +3,14 @@ const fs = require('fs');
 const os = require('os');
 const https = require('https');
 const http = require('http');
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 const axios = require('axios');
 const db = require('../db');
 const { uploadVideo, isCloudinaryConfigured } = require('./cloudinaryService');
 const replicateVideoService = require('./replicateVideoService');
 
 const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || '';
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '';
 
 let createSlideshowVideo, generateDynamicPromoText, generatePromotionalText;
 let ffmpegAvailable = false;
@@ -35,6 +36,69 @@ function checkFFmpegAvailable() {
 }
 
 ffmpegAvailable = checkFFmpegAvailable();
+
+function clamp(n, a, b) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return a;
+  return Math.max(a, Math.min(b, x));
+}
+
+function computeDurationPerImage(imageCount, targetDurationSec) {
+  const n = Math.max(2, Number(imageCount || 2));
+  const target = clamp(targetDurationSec ?? 20, 8, 120);
+  const dpi = Math.round(target / n);
+  return clamp(dpi, 2, 8);
+}
+
+async function elevenLabsTTSToMp3(text, voiceId) {
+  if (!ELEVENLABS_API_KEY || !ELEVENLABS_API_KEY.trim()) {
+    throw new Error('ELEVENLABS_API_KEY غير مضبوط');
+  }
+  const safeText = String(text || '').trim().slice(0, 2000);
+  if (!safeText) throw new Error('نص الصوت فارغ');
+  const v = String(voiceId || '').trim();
+  if (!v || v.length < 10) throw new Error('voiceId غير صالح لـ ElevenLabs');
+
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(v)}`;
+  const outDir = path.join(os.tmpdir(), 'video-gen', 'tts');
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+  const outPath = path.join(outDir, `tts_${Date.now()}.mp3`);
+
+  const res = await axios.post(
+    url,
+    {
+      text: safeText,
+      model_id: 'eleven_multilingual_v2',
+      voice_settings: { stability: 0.35, similarity_boost: 0.85, style: 0.25, use_speaker_boost: true }
+    },
+    {
+      responseType: 'arraybuffer',
+      timeout: 60000,
+      headers: {
+        'xi-api-key': ELEVENLABS_API_KEY.trim(),
+        'Content-Type': 'application/json',
+        'Accept': 'audio/mpeg'
+      }
+    }
+  );
+
+  fs.writeFileSync(outPath, Buffer.from(res.data));
+  if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 2000) {
+    throw new Error('فشل توليد الصوت من ElevenLabs');
+  }
+  return outPath;
+}
+
+function muxAudioIntoVideo(videoPath, audioPath, outPath) {
+  const r = spawnSync('ffmpeg', [
+    '-y', '-i', videoPath, '-i', audioPath,
+    '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k',
+    '-shortest', '-movflags', '+faststart',
+    outPath
+  ], { stdio: 'ignore' });
+  if (r.status !== 0) throw new Error('فشل دمج الصوت مع الفيديو');
+  return outPath;
+}
 
 async function downloadImage(url, destPath) {
   return new Promise((resolve, reject) => {
@@ -169,17 +233,13 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
   console.log(`[Video] FFmpeg available: ${ffmpegAvailable}`);
   console.log(`[Video] Cloudinary configured: ${isCloudinaryConfigured()}`);
 
-  // الجودة العالية (صوت + تأثيرات): Worker فقط — لا نعطي المستخدم فيديو Replicate الصامت إذا طلب صوت
+  // الجودة العالية (صوت + تأثيرات):
+  // سابقاً كنا نمر عبر Python Worker (PYTHON_WORKER_URL + /generate).
+  // حالياً الاعتماد الأساسي على Replicate مباشرة، ويمكن إعادة تفعيل الـ Worker لاحقاً عبر USE_PYTHON_VIDEO_WORKER=1.
   const preferFastOnly = listingData.videoQuality === 'fast';
-  if (!preferFastOnly && imageUrls.length >= 2) {
-    if (!PYTHON_WORKER_URL) {
-      if (!String(listingId).startsWith('temp_')) {
-        await db.query(`UPDATE properties SET video_status = 'failed' WHERE id = $1`, [listingId]).catch(() => {});
-      }
-      throw new Error(
-        'جودة عالية (صوت + تأثيرات) غير متاحة حالياً — خدمة الفيديو غير مضبوطة. اختر «سريع فقط (صور بدون صوت)» أو جرّب لاحقاً.'
-      );
-    }
+  const usePythonWorker = !!PYTHON_WORKER_URL && process.env.USE_PYTHON_VIDEO_WORKER === '1';
+  const targetDurationSec = Number(listingData?.targetDurationSec ?? 20);
+  if (usePythonWorker && !preferFastOnly && imageUrls.length >= 2) {
     const absoluteUrls = toAbsoluteImageUrls(imageUrls);
     const workerUrl = PYTHON_WORKER_URL.replace(/\/$/, '') + '/generate';
     console.log('[Video] 🎙️ Trying Python Worker (high quality: voice + effects)');
@@ -187,7 +247,7 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
       const voice = ['onyx', 'ash', 'fable', 'echo', 'alloy'].includes(String(listingData.voice || '').toLowerCase())
         ? String(listingData.voice).toLowerCase()
         : 'onyx';
-      const res = await axios.post(workerUrl, {
+      const payload = {
         images: absoluteUrls.slice(0, 12),
         tier: 'tier2_business',
         ambience: 'none',
@@ -199,7 +259,11 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
           price: listingData.price,
           details: listingData.description
         }
-      }, { responseType: 'arraybuffer', timeout: 300000 }); // 5 دقائق للسماح بالتوليد الكامل
+      };
+      if (listingData.elevenlabsVoiceId && String(listingData.elevenlabsVoiceId).length > 10) {
+        payload.elevenlabs_voice_id = String(listingData.elevenlabsVoiceId).trim();
+      }
+      const res = await axios.post(workerUrl, payload, { responseType: 'arraybuffer', timeout: 300000 }); // 5 دقائق للسماح بالتوليد الكامل
       const tempDir = path.join(os.tmpdir(), 'video-gen', 'worker');
       if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
       const tempPath = path.join(tempDir, `worker_${listingId}_${Date.now()}.mp4`);
@@ -243,18 +307,65 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
   }
 
   if (replicateVideoService.isConfigured()) {
-    console.log('[Video] 🚀 Using Replicate (slideshow, no voice)');
+    const wantsVoice = !preferFastOnly && listingData.elevenlabsVoiceId && ELEVENLABS_API_KEY;
+    console.log(`[Video] 🚀 Using Replicate${wantsVoice ? ' + ElevenLabs voiceover' : ' (slideshow only)'}`);
     const absoluteUrls = toAbsoluteImageUrls(imageUrls);
     if (absoluteUrls.length < 2) {
       await db.query(`UPDATE properties SET video_status = 'failed' WHERE id = $1`, [listingId]).catch(() => {});
-      throw new Error('لا توجد صور صالحة (تحقق من روابط الصور)');
+      throw new Error('يحتاج الفيديو صورتين على الأقل. تحقق من روابط الصور أو اختر 2–8 صور.');
     }
     if (!String(listingId).startsWith('temp_')) {
       await db.query(`UPDATE properties SET video_status = 'processing' WHERE id = $1`, [listingId]).catch(() => {});
     }
     try {
-      const result = await replicateVideoService.generateSlideshowVideo(listingId, absoluteUrls, {});
-      const videoUrl = result.url;
+      const duration_per_image = computeDurationPerImage(absoluteUrls.length, targetDurationSec);
+      const result = await replicateVideoService.generateSlideshowVideo(listingId, absoluteUrls, {
+        duration_per_image,
+        resolution: '1080p',
+        maxWaitMs: 300000
+      });
+      let videoUrl = result.url;
+
+      let promoText = null;
+      try {
+        if (generateDynamicPromoText) promoText = await generateDynamicPromoText(listingData);
+      } catch (_) {}
+
+      if (wantsVoice && ffmpegAvailable) {
+        try {
+          console.log('[Video] 🎙️ Adding ElevenLabs voiceover to Replicate video...');
+          const voiceText = promoText
+            ? [promoText.headline, promoText.subheadline, promoText.topLine].filter(Boolean).join('. ')
+            : `${listingData.title || 'عقار مميز'}. ${listingData.description || ''}`.slice(0, 1500);
+          const audioPath = await elevenLabsTTSToMp3(voiceText, listingData.elevenlabsVoiceId);
+
+          const tempDir = path.join(os.tmpdir(), 'video-gen', 'mux');
+          if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+          const tempVideoPath = path.join(tempDir, `replicate_${listingId}_${Date.now()}.mp4`);
+          const finalPath = path.join(tempDir, `final_${listingId}_${Date.now()}.mp4`);
+
+          const dlRes = await axios({ method: 'get', url: videoUrl, responseType: 'arraybuffer', timeout: 120000 });
+          fs.writeFileSync(tempVideoPath, Buffer.from(dlRes.data));
+
+          muxAudioIntoVideo(tempVideoPath, audioPath, finalPath);
+
+          if (isCloudinaryConfigured()) {
+            const folder = `listings/${listingId}/promo`;
+            const uploadResult = await uploadVideo(finalPath, folder);
+            if (uploadResult.success && uploadResult.url) {
+              videoUrl = uploadResult.url;
+              console.log('[Video] ✅ Replicate + ElevenLabs voiceover merged:', videoUrl);
+            }
+          }
+
+          try { fs.unlinkSync(tempVideoPath); } catch (_) {}
+          try { fs.unlinkSync(audioPath); } catch (_) {}
+          try { fs.unlinkSync(finalPath); } catch (_) {}
+        } catch (voiceErr) {
+          console.warn('[Video] ⚠️ Voiceover failed, using silent video:', voiceErr.message);
+        }
+      }
+
       if (!String(listingId).startsWith('temp_')) {
         await db.query(
           `UPDATE properties SET video_status = 'ready', video_url = $1 WHERE id = $2`,
@@ -276,10 +387,6 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
           );
         }
       }
-      let promoText = null;
-      try {
-        if (generateDynamicPromoText) promoText = await generateDynamicPromoText(listingData);
-      } catch (_) {}
       console.log('[Video] ✅ Replicate success:', videoUrl);
       return { url: videoUrl, promoText };
     } catch (err) {
@@ -397,19 +504,54 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     console.log(`[Video] Creating slideshow video...`);
     console.log(`[Video] Output path: ${videoPath}`);
     
+    const duration = clamp(targetDurationSec, 8, 120);
     try {
-      await createSlideshowVideo(imagePaths, videoPath, promoText, 20);
+      await createSlideshowVideo(imagePaths, videoPath, promoText, duration);
       console.log(`[Video] ✅ Video created successfully`);
     } catch (ffmpegError) {
       console.error(`[Video] ❌ FFmpeg failed:`, ffmpegError.message);
       throw new Error(`FFmpeg video creation failed: ${ffmpegError.message}`);
     }
     
-    if (!fs.existsSync(videoPath)) {
+    let videoToUpload = videoPath;
+    if (!preferFastOnly) {
+      const maybeElevenVoiceId = String(listingData?.elevenlabsVoiceId || '').trim();
+      const voiceIdFromUI = String(listingData?.voice || '').trim();
+      const chosenElevenId =
+        (maybeElevenVoiceId && maybeElevenVoiceId.length > 10) ? maybeElevenVoiceId :
+        (voiceIdFromUI && voiceIdFromUI.length > 10) ? voiceIdFromUI : '';
+
+      if (chosenElevenId && ELEVENLABS_API_KEY && ELEVENLABS_API_KEY.trim()) {
+        try {
+          console.log('[Video] 🎙️ Fallback TTS via ElevenLabs (no worker)');
+          const ttsText = [
+            promoText?.headline || promoText?.topLine || '',
+            promoText?.subheadline || promoText?.midLine || '',
+            promoText?.priceTag || promoText?.callToAction || ''
+          ].filter(Boolean).join('. ');
+
+          if (ttsText) {
+            const audioPath = await elevenLabsTTSToMp3(ttsText, chosenElevenId);
+            const outWithAudio = path.join(videoDir, `slideshow_${listingId}_${Date.now()}_audio.mp4`);
+            muxAudioIntoVideo(videoPath, audioPath, outWithAudio);
+            try { fs.unlinkSync(audioPath); } catch (_) {}
+            try { fs.unlinkSync(videoPath); } catch (_) {}
+            videoToUpload = outWithAudio;
+            console.log('[Video] ✅ Audio muxed successfully');
+          }
+        } catch (ttsErr) {
+          console.warn('[Video] ⚠️ ElevenLabs TTS/mux failed, continuing without audio:', ttsErr.message);
+        }
+      } else {
+        console.log('[Video] ℹ️ No ElevenLabs voiceId/key — continuing without audio in fallback.');
+      }
+    }
+
+    if (!fs.existsSync(videoToUpload)) {
       throw new Error('Video file was not created');
     }
     
-    const videoSize = fs.statSync(videoPath).size;
+    const videoSize = fs.statSync(videoToUpload).size;
     console.log(`[Video] Video file size: ${(videoSize / 1024 / 1024).toFixed(2)} MB`);
     
     if (videoSize < 1000) {
@@ -419,11 +561,11 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     if (isCloudinaryConfigured()) {
       console.log(`[Video] Uploading video to Cloudinary...`);
       try {
-        const cloudinaryResult = await uploadVideo(videoPath, 'videos');
+        const cloudinaryResult = await uploadVideo(videoToUpload, 'videos');
         if (cloudinaryResult.success) {
           finalVideoUrl = cloudinaryResult.url;
           console.log(`[Video] ✅ Video uploaded to Cloudinary: ${finalVideoUrl}`);
-          fs.unlinkSync(videoPath);
+          try { fs.unlinkSync(videoToUpload); } catch (_) {}
         } else {
           console.error(`[Video] ❌ Cloudinary upload failed: ${cloudinaryResult.error}`);
           throw new Error(`Cloudinary upload failed: ${cloudinaryResult.error}`);
@@ -462,7 +604,7 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
     
     console.log(`[Video] ========================================`);
     console.log(`[Video] ✅ Video ready for listing ${listingId}: ${finalVideoUrl}`);
-    return { url: finalVideoUrl };
+    return { url: finalVideoUrl, promoText };
     
   } catch (error) {
     console.error(`[Video] ========================================`);
