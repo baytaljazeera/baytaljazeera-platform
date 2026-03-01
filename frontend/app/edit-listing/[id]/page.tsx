@@ -95,6 +95,7 @@ export default function EditListingPage() {
   const [success, setSuccess] = useState("");
   const [listing, setListing] = useState<Listing | null>(null);
   const [isBusinessPlan, setIsBusinessPlan] = useState(false);
+  const [canGenerateVideo, setCanGenerateVideo] = useState(false);
 
   // Elite slot booking state
   const [eliteSlots, setEliteSlots] = useState<any[]>([]);
@@ -114,6 +115,10 @@ export default function EditListingPage() {
   const [pollingVideo, setPollingVideo] = useState(false);
   const [showVideoImageSelection, setShowVideoImageSelection] = useState(false);
   const [selectedImagesForVideo, setSelectedImagesForVideo] = useState<Set<number>>(new Set());
+  const [videoVoice, setVideoVoice] = useState("");
+  const [videoQuality, setVideoQuality] = useState<"full" | "fast">("full");
+  const [elevenlabsVoices, setElevenlabsVoices] = useState<any[]>([]);
+  const [elevenlabsVoicesLoading, setElevenlabsVoicesLoading] = useState(false);
 
   // Image management state
   const [imageQuota, setImageQuota] = useState<{maxPhotos: number; currentCount: number; remainingSlots: number; canAddMore: boolean} | null>(null);
@@ -125,6 +130,20 @@ export default function EditListingPage() {
   // Deal status state
   const [dealStatus, setDealStatus] = useState<string>('active');
   const [updatingDealStatus, setUpdatingDealStatus] = useState(false);
+
+  useEffect(() => {
+    if (!isBusinessPlan && !canGenerateVideo) return;
+    setElevenlabsVoicesLoading(true);
+    fetch(`/api/ai/user/elevenlabs-voices`, { credentials: "include" })
+      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (ok && Array.isArray(data.voices)) {
+          setElevenlabsVoices(data.voices);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setElevenlabsVoicesLoading(false));
+  }, [isBusinessPlan, canGenerateVideo]);
 
   // Polling for video status updates
   useEffect(() => {
@@ -489,16 +508,26 @@ export default function EditListingPage() {
   async function checkPlanEligibility() {
     try {
       const token = getAuthToken();
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
       const res = await fetch('/api/elite-slots/check-eligibility', {
         credentials: 'include',
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
+        headers
       });
       if (res.ok) {
         const data = await res.json();
         setIsBusinessPlan(data.allowed === true);
+        setCanGenerateVideo(true);
         if (data.allowed) {
           fetchEliteSlots();
           checkExistingReservation();
+        }
+      } else {
+        const planRes = await fetch('/api/user/current-plan', { credentials: 'include', headers });
+        if (planRes.ok) {
+          const planData = await planRes.json();
+          const sl = planData?.plan?.support_level || planData?.support_level || 0;
+          if (sl >= 2) setCanGenerateVideo(true);
         }
       }
     } catch (err) {
@@ -738,7 +767,8 @@ export default function EditListingPage() {
       console.log('[Video] Starting video generation for listing:', listingId);
       console.log('[Video] Selected images:', Array.from(selectedImagesForVideo));
       
-      const body: any = {};
+      const body: any = { videoQuality };
+      if (videoVoice) body.voice = videoVoice;
       if (selectedImagesForVideo.size > 0) {
         body.selectedImageIndices = Array.from(selectedImagesForVideo).sort((a, b) => a - b);
       }
@@ -1399,7 +1429,7 @@ export default function EditListingPage() {
           )}
 
           {/* قسم الفيديو - يظهر دائماً */}
-          {isBusinessPlan && listing?.images && listing.images.length > 0 && (
+          {(isBusinessPlan || canGenerateVideo) && listing?.images && listing.images.length > 0 && (
             <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-200 rounded-xl p-5">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center">
@@ -1559,33 +1589,128 @@ export default function EditListingPage() {
                       <span>إنشاء / إعادة إنشاء الفيديو</span>
                     </button>
                   ) : (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          setShowVideoImageSelection(false);
-                          setSelectedImagesForVideo(new Set());
-                        }}
-                        className="flex-1 px-4 py-3 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition font-medium"
-                      >
-                        إلغاء
-                      </button>
-                      <button
-                        onClick={handleRegenerateVideo}
-                        disabled={regeneratingVideo || selectedImagesForVideo.size === 0}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-all disabled:opacity-50 font-medium"
-                      >
-                        {regeneratingVideo ? (
-                          <>
-                            <Loader2 className="w-5 h-5 animate-spin" />
-                            <span>جاري الإنشاء...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Video className="w-5 h-5" />
-                            <span>توليد من الصور المختارة ({selectedImagesForVideo.size})</span>
-                          </>
-                        )}
-                      </button>
+                    <div className="space-y-4">
+                      {/* اختيار الجودة */}
+                      <div className="p-3 bg-white rounded-xl border border-emerald-200">
+                        <p className="text-sm font-semibold text-emerald-800 mb-2">جودة الفيديو:</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setVideoQuality("full")}
+                            className={`p-2.5 rounded-lg border-2 text-center transition-all ${
+                              videoQuality === "full"
+                                ? "border-[#D4AF37] bg-amber-50 shadow-sm"
+                                : "border-slate-200 bg-white hover:border-amber-300"
+                            }`}
+                          >
+                            <Sparkles className={`w-4 h-4 mx-auto mb-1 ${videoQuality === "full" ? "text-[#D4AF37]" : "text-slate-400"}`} />
+                            <span className="text-xs font-semibold block">جودة عالية</span>
+                            <span className="text-[10px] text-slate-500">صوت + تأثيرات</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setVideoQuality("fast")}
+                            className={`p-2.5 rounded-lg border-2 text-center transition-all ${
+                              videoQuality === "fast"
+                                ? "border-[#D4AF37] bg-amber-50 shadow-sm"
+                                : "border-slate-200 bg-white hover:border-amber-300"
+                            }`}
+                          >
+                            <Zap className={`w-4 h-4 mx-auto mb-1 ${videoQuality === "fast" ? "text-[#D4AF37]" : "text-slate-400"}`} />
+                            <span className="text-xs font-semibold block">سريع</span>
+                            <span className="text-[10px] text-slate-500">صور فقط</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* اختيار الصوت */}
+                      {videoQuality === "full" && (
+                        <div className="p-3 bg-white rounded-xl border border-emerald-200">
+                          <p className="text-sm font-semibold text-emerald-800 mb-2">اختر الصوت:</p>
+                          {elevenlabsVoicesLoading ? (
+                            <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span>جاري تحميل الأصوات...</span>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {elevenlabsVoices.length > 0 && (
+                                <div className="grid grid-cols-3 gap-2">
+                                  {elevenlabsVoices.map((v: any) => (
+                                    <div
+                                      key={v.voice_id}
+                                      onClick={() => setVideoVoice(v.voice_id)}
+                                      className={`cursor-pointer rounded-lg p-2 border-2 text-center transition-all ${
+                                        videoVoice === v.voice_id
+                                          ? "border-[#D4AF37] bg-amber-50"
+                                          : "border-slate-200 bg-white hover:border-amber-300"
+                                      }`}
+                                    >
+                                      <span className="text-lg">🎙️</span>
+                                      <p className="text-xs font-semibold mt-1">{v.name}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <details className="mt-2">
+                                <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-700">أصوات OpenAI الافتراضية</summary>
+                                <div className="grid grid-cols-3 gap-2 mt-2">
+                                  {[
+                                    { id: "onyx", name: "سعود" },
+                                    { id: "ash", name: "علي" },
+                                    { id: "echo", name: "أناس" },
+                                  ].map((v) => (
+                                    <div
+                                      key={v.id}
+                                      onClick={() => setVideoVoice(v.id)}
+                                      className={`cursor-pointer rounded-lg p-2 border-2 text-center transition-all ${
+                                        videoVoice === v.id
+                                          ? "border-[#D4AF37] bg-amber-50"
+                                          : "border-slate-200 bg-white hover:border-amber-300"
+                                      }`}
+                                    >
+                                      <span className="text-lg">🎤</span>
+                                      <p className="text-xs font-semibold mt-1">{v.name}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
+                              {!videoVoice && (
+                                <p className="text-xs text-amber-600 mt-1">اختر صوتاً لإضافة تعليق صوتي احترافي</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            setShowVideoImageSelection(false);
+                            setSelectedImagesForVideo(new Set());
+                          }}
+                          className="flex-1 px-4 py-3 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition font-medium"
+                        >
+                          إلغاء
+                        </button>
+                        <button
+                          onClick={handleRegenerateVideo}
+                          disabled={regeneratingVideo || selectedImagesForVideo.size === 0}
+                          className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-all disabled:opacity-50 font-medium"
+                        >
+                          {regeneratingVideo ? (
+                            <>
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                              <span>جاري الإنشاء...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Video className="w-5 h-5" />
+                              <span>توليد ({selectedImagesForVideo.size} صور)</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   )}
                   {regenerateMessage && (

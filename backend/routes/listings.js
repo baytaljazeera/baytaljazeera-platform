@@ -983,8 +983,8 @@ router.post("/:id/regenerate-video", authMiddlewareWithEmailCheck, asyncHandler(
   
   const userSupportLevel = userPlanResult.rows[0]?.support_level || 0;
   
-  if (userSupportLevel < 3) {
-    return res.status(403).json({ error: "هذه الميزة متاحة لمشتركي باقة كبار رجال الأعمال فقط" });
+  if (userSupportLevel < 2) {
+    return res.status(403).json({ error: "هذه الميزة متاحة لمشتركي الباقات المميزة فقط" });
   }
   
   const mediaResult = await db.query(
@@ -1034,7 +1034,9 @@ router.post("/:id/regenerate-video", authMiddlewareWithEmailCheck, asyncHandler(
     status: "processing"
   });
   
-  // Generate video asynchronously (don't block response)
+  const videoVoice = req.body.voice || '';
+  const videoQuality = req.body.videoQuality || 'full';
+
   generateListingSlideshow(id, imageUrls, {
     propertyType: listing.type,
     purpose: listing.purpose,
@@ -1046,7 +1048,10 @@ router.post("/:id/regenerate-video", authMiddlewareWithEmailCheck, asyncHandler(
     bedrooms: listing.bedrooms,
     bathrooms: listing.bathrooms,
     landArea: listing.land_area,
-    buildingArea: listing.building_area
+    buildingArea: listing.building_area,
+    voice: videoVoice,
+    elevenlabsVoiceId: videoVoice,
+    videoQuality: videoQuality
   }).catch(err => {
     console.error(`[Regenerate] ❌ Failed for listing ${id}:`, err.message);
     console.error(`[Regenerate] Stack:`, err.stack);
