@@ -302,6 +302,9 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'plans' AND column_name = 'feature_display_order') THEN
           ALTER TABLE plans ADD COLUMN feature_display_order JSONB DEFAULT '{"listings": 1, "photos": 2, "map": 3, "ai": 4, "video": 5, "elite": 6, "seo": 7}'::jsonb;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'plans' AND column_name = 'video_config') THEN
+          ALTER TABLE plans ADD COLUMN video_config JSONB DEFAULT '{"enabled": false, "tier": "tier1_safwa", "ambience": "none"}'::jsonb;
+        END IF;
       END $$;
     `);
     console.log("✅ SEO level columns added to plans");
