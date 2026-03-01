@@ -737,9 +737,27 @@ function NavbarContent() {
           {renderAuthSection()}
         </nav>
 
-        {/* Menu Button - always visible for guests, xl:hidden for authenticated */}
+        {/* Guest desktop auth buttons */}
+        {isHydrated && !isAuthenticated && (
+          <div className="hidden xl:flex items-center gap-2 mr-2">
+            <Link
+              href="/login"
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#003366] to-[#01375e] text-white font-semibold text-sm hover:shadow-lg transition-all"
+            >
+              تسجيل دخول
+            </Link>
+            <Link
+              href="/register"
+              className="px-5 py-2.5 rounded-xl border-2 border-[#003366] text-[#003366] font-semibold text-sm hover:bg-[#003366]/5 transition-all"
+            >
+              حساب جديد
+            </Link>
+          </div>
+        )}
+
+        {/* Menu Button - hidden on desktop */}
         <button
-          className={`${isAuthenticated && isHydrated ? 'xl:hidden' : ''} p-2 rounded-lg hover:bg-slate-100 transition shrink-0`}
+          className="xl:hidden p-2 rounded-lg hover:bg-slate-100 transition shrink-0"
           onClick={() => setShowMobileMenu(!showMobileMenu)}
         >
           {showMobileMenu ? (
