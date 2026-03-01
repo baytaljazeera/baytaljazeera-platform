@@ -2970,6 +2970,12 @@ async function initializeDatabase() {
       }
     }
     console.log("✅ All admin users configured");
+
+    // تفعيل بريد صاحب المشروع
+    await db.query(`
+      UPDATE users SET email_verified = true, email_verified_at = COALESCE(email_verified_at, NOW())
+      WHERE email = 'husseinbabsail@gmail.com' AND (email_verified = false OR email_verified IS NULL)
+    `);
     
     // 🔍 إضافة Indexes ناقصة لتحسين الأداء (تلقائياً عند كل نشر)
     try {
