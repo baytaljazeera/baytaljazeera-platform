@@ -202,10 +202,9 @@ async function createPlan(planData, adminUserId) {
     } = planData;
 
     const sanitizedVideoConfig = validateVideoConfig(video_config);
+    const hasVideoConfig = await ensureVideoConfigColumn(client);
 
-    const result = await client.query(
-      `INSERT INTO plans (
-        name_ar, name_en, slug, price, duration_days,
+    const baseColumns = `name_ar, name_en, slug, price, duration_days,
         max_listings, max_photos_per_listing, max_videos_per_listing,
         show_on_map, ai_support_level, highlights_allowed,
         description, logo, icon, color, badge, visible, features, sort_order,
@@ -217,10 +216,8 @@ async function createPlan(planData, adminUserId) {
         badge_font_size, header_bg_opacity, body_bg_opacity, badge_bg_opacity,
         seo_level, seo_feature_title, seo_feature_description,
         elite_feature_title, elite_feature_description, ai_feature_title, ai_feature_description,
-        feature_display_order, video_config
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48::jsonb, $49::jsonb)
-      RETURNING *`,
-      [
+        feature_display_order`;
+    const baseParams = [
         name_ar, name_en, slug || null, price, duration_days,
         max_listings, max_photos_per_listing, max_videos_per_listing,
         show_on_map, ai_support_level, highlights_allowed,
@@ -234,10 +231,23 @@ async function createPlan(planData, adminUserId) {
         seo_level, seo_feature_title || null, seo_feature_description || null,
         elite_feature_title || null, elite_feature_description || null,
         ai_feature_title || null, ai_feature_description || null,
-        JSON.stringify(typeof feature_display_order === 'string' ? JSON.parse(feature_display_order) : feature_display_order),
-        JSON.stringify(sanitizedVideoConfig)
-      ]
-    );
+        JSON.stringify(typeof feature_display_order === 'string' ? JSON.parse(feature_display_order) : feature_display_order)
+    ];
+
+    let insertQuery, insertParams;
+    if (hasVideoConfig) {
+      insertQuery = `INSERT INTO plans (${baseColumns}, video_config)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48::jsonb,$49::jsonb)
+        RETURNING *`;
+      insertParams = [...baseParams, JSON.stringify(sanitizedVideoConfig)];
+    } else {
+      insertQuery = `INSERT INTO plans (${baseColumns})
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48::jsonb)
+        RETURNING *`;
+      insertParams = baseParams;
+    }
+
+    const result = await client.query(insertQuery, insertParams);
 
     await client.query(
       `INSERT INTO admin_audit_log (admin_id, action, target_type, target_id, details, created_at)
@@ -296,8 +306,9 @@ async function updatePlan(planId, planData, adminUserId) {
       video_config
     } = planData;
 
-    const result = await client.query(
-      `UPDATE plans SET
+    const hasVideoConfig = await ensureVideoConfigColumn(client);
+
+    const baseSetClauses = `
         name_ar = COALESCE($1, name_ar),
         name_en = COALESCE($2, name_en),
         price = COALESCE($3, price),
@@ -344,12 +355,9 @@ async function updatePlan(planId, planData, adminUserId) {
         seo_level = COALESCE($44, seo_level),
         seo_feature_title = COALESCE(NULLIF($45, ''), seo_feature_title),
         seo_feature_description = COALESCE(NULLIF($46, ''), seo_feature_description),
-        feature_display_order = COALESCE($47::jsonb, feature_display_order),
-        video_config = COALESCE($48::jsonb, video_config),
-        updated_at = NOW()
-      WHERE id = $49
-      RETURNING *`,
-      [
+        feature_display_order = COALESCE($47::jsonb, feature_display_order)`;
+
+    const baseParams = [
         name_ar, name_en, price, duration_days,
         max_listings, max_photos_per_listing, max_videos_per_listing,
         show_on_map, ai_support_level, highlights_allowed,
@@ -365,11 +373,26 @@ async function updatePlan(planId, planData, adminUserId) {
         elite_feature_title, elite_feature_description,
         ai_feature_title, ai_feature_description,
         seo_level, seo_feature_title, seo_feature_description,
-        feature_display_order ? JSON.stringify(typeof feature_display_order === 'string' ? JSON.parse(feature_display_order) : feature_display_order) : null,
-        video_config ? JSON.stringify(validateVideoConfig(video_config)) : null,
-        planId
-      ]
-    );
+        feature_display_order ? JSON.stringify(typeof feature_display_order === 'string' ? JSON.parse(feature_display_order) : feature_display_order) : null
+    ];
+
+    let updateQuery, updateParams;
+    if (hasVideoConfig) {
+      updateQuery = `UPDATE plans SET ${baseSetClauses},
+        video_config = COALESCE($48::jsonb, video_config),
+        updated_at = NOW()
+      WHERE id = $49
+      RETURNING *`;
+      updateParams = [...baseParams, video_config ? JSON.stringify(validateVideoConfig(video_config)) : null, planId];
+    } else {
+      updateQuery = `UPDATE plans SET ${baseSetClauses},
+        updated_at = NOW()
+      WHERE id = $48
+      RETURNING *`;
+      updateParams = [...baseParams, planId];
+    }
+
+    const result = await client.query(updateQuery, updateParams);
 
     const updatedPlan = result.rows[0];
     const propagationResults = { userPlans: 0, quotaBuckets: 0 };
