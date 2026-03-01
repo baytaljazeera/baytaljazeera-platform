@@ -4177,11 +4177,7 @@ export default function NewListingPage() {
                                 const isBooked = slot.status === 'booked';
                                 const isSelected = selectedEliteSlot?.id === slot.id;
                                 const tierEmoji = slot.tier === 'top' ? '🥇' : slot.tier === 'middle' ? '🥈' : '🥉';
-                                const tierBg = slot.tier === 'top' 
-                                  ? 'from-amber-100 to-amber-50 border-amber-300' 
-                                  : slot.tier === 'middle' 
-                                  ? 'from-slate-100 to-slate-50 border-slate-300' 
-                                  : 'from-orange-100 to-orange-50 border-orange-300';
+                                const tierBg = 'from-amber-50 to-yellow-50 border-[#D4AF37]/60';
                                 
                                 return (
                                   <button
@@ -4202,9 +4198,7 @@ export default function NewListingPage() {
                                       موقع {slot.row_num}-{slot.col_num}
                                     </p>
                                     <p className={`font-bold ${
-                                      isSelected ? 'text-[#D4AF37]' : 
-                                      slot.tier === 'top' ? 'text-[#D4AF37]' : 
-                                      slot.tier === 'middle' ? 'text-slate-700' : 'text-orange-700'
+                                      isSelected ? 'text-[#D4AF37]' : 'text-[#D4AF37]'
                                     }`}>
                                       {isBooked ? 'محجوز' : `${slot.base_price} ريال`}
                                     </p>
