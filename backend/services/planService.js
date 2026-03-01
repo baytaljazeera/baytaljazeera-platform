@@ -3,6 +3,26 @@ const promotionService = require('./promotionService');
 
 const FREE_PLAN_ID = 1;
 
+let _videoConfigColumnExists = null;
+async function ensureVideoConfigColumn(client) {
+  if (_videoConfigColumnExists === true) return true;
+  try {
+    const r = await (client || db).query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name='plans' AND column_name='video_config' LIMIT 1`
+    );
+    if (r.rows.length === 0) {
+      await (client || db).query(
+        `ALTER TABLE plans ADD COLUMN IF NOT EXISTS video_config JSONB DEFAULT '{"enabled":false,"tier":"tier1_safwa","ambience":"none"}'::jsonb`
+      );
+    }
+    _videoConfigColumnExists = true;
+    return true;
+  } catch (e) {
+    console.error('[PlanService] video_config column check error:', e.message);
+    return false;
+  }
+}
+
 const PLAN_VALIDATION_RULES = {
   name_ar: { type: 'string', required: true, minLength: 2, maxLength: 100 },
   name_en: { type: 'string', required: true, minLength: 2, maxLength: 100 },
@@ -161,6 +181,7 @@ async function createPlan(planData, adminUserId) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    await ensureVideoConfigColumn(client);
 
     const {
       name_ar, name_en, slug, price, duration_days = 30,
@@ -250,6 +271,7 @@ async function updatePlan(planId, planData, adminUserId) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    await ensureVideoConfigColumn(client);
 
     const existingPlan = await getPlanById(planId, client);
     if (!existingPlan) {
