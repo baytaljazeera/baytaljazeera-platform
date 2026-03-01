@@ -255,7 +255,8 @@ type PendingCounts = {
 };
 
 export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSidebarProps) {
-  const pathname = usePathname();
+  const rawPathname = usePathname();
+  const pathname = rawPathname?.replace('/add-listing/admin', '/admin') || rawPathname;
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [userRole, setUserRole] = useState<string>('');
@@ -409,6 +410,13 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     }
   }
 
+  function resolveAdminHref(href: string): string {
+    if (href.startsWith('/admin/') || href === '/admin') {
+      return `/add-listing${href}`;
+    }
+    return href;
+  }
+
   function handleNavigation(href: string) {
     if (pathname === href) {
       onNavigate?.();
@@ -416,7 +424,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     }
     setNavigatingTo(href);
     startTransition(() => {
-      router.push(href);
+      router.push(resolveAdminHref(href));
       onNavigate?.();
     });
   }
