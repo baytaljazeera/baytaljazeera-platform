@@ -1525,7 +1525,7 @@ export default function NewListingPage() {
       });
 
       // إرسال مؤشرات الصور المختارة لتوليد الفيديو (فقط إذا كانت هناك صور مختارة)
-      if (selectedImagesForVideo.size > 0 && (selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 2) {
+      if (selectedImagesForVideo.size > 0 && (selectedBucket?.benefits?.maxVideos || 0) > 0) {
         formData.append("selectedImageIndices", JSON.stringify(Array.from(selectedImagesForVideo).sort((a, b) => a - b)));
       }
 
@@ -3484,7 +3484,7 @@ export default function NewListingPage() {
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
                         {imagePreviews.map((preview, idx) => {
                           const isSelected = selectedImagesForVideo.has(idx);
-                          const showVideoSelection = (selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 2 && imagePreviews.length > 0;
+                          const showVideoSelection = (selectedBucket?.benefits?.maxVideos || 0) > 0 && imagePreviews.length > 0;
                           
                           return (
                             <motion.div 
@@ -3608,7 +3608,7 @@ export default function NewListingPage() {
                       </div>
 
                       {/* Video Generation Image Selection - Only for Business tier - بعد الصور */}
-                      {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 2 && imagePreviews.length > 0 && (
+                      {(selectedBucket?.benefits?.maxVideos || 0) > 0 && imagePreviews.length > 0 && (
                         <div className="mt-4 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border-2 border-emerald-200">
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
@@ -3662,7 +3662,7 @@ export default function NewListingPage() {
                 </div>
 
                 {/* فيديو ترويجي — ترتيب: صور (أعلى) ← صوت ← جودة ← توليد */}
-                {(selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 2 && imagePreviews.length > 0 && (
+                {(selectedBucket?.benefits?.maxVideos || 0) > 0 && imagePreviews.length > 0 && (
                   <div className="mb-6 p-5 bg-gradient-to-br from-amber-50 via-[#D4AF37]/10 to-[#002845]/5 rounded-2xl border-2 border-[#D4AF37]/40 shadow-lg shadow-[#D4AF37]/10">
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-12 h-12 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-xl flex items-center justify-center shadow-lg shadow-[#D4AF37]/30">

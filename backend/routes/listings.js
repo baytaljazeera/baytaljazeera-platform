@@ -911,6 +911,41 @@ router.delete("/:id", authMiddlewareWithEmailCheck, asyncHandler(async (req, res
   res.json({ success: true, message: "تم حذف الإعلان بنجاح" });
 }));
 
+// Get user's video quota for a listing
+router.get("/:id/video-quota", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { id } = req.params;
+
+  const userPlanResult = await db.query(`
+    SELECT p.max_videos_per_listing, p.max_video_duration, p.max_video_seconds, p.name_ar
+    FROM user_plans up
+    JOIN plans p ON up.plan_id = p.id
+    WHERE up.user_id = $1 AND up.status = 'active'
+      AND (up.expires_at IS NULL OR up.expires_at > NOW())
+    ORDER BY p.max_videos_per_listing DESC
+    LIMIT 1
+  `, [userId]);
+
+  const plan = userPlanResult.rows[0];
+  const maxVideos = plan?.max_videos_per_listing || 0;
+  const maxDuration = plan?.max_video_duration || plan?.max_video_seconds || 0;
+
+  const existingVideos = await db.query(
+    `SELECT COUNT(*) as count FROM listing_media WHERE listing_id = $1 AND kind = 'generated_video'`,
+    [id]
+  );
+  const usedVideos = parseInt(existingVideos.rows[0]?.count) || 0;
+
+  res.json({
+    allowed: maxVideos > 0,
+    maxVideos,
+    usedVideos,
+    remainingVideos: Math.max(0, maxVideos - usedVideos),
+    maxDuration,
+    planName: plan?.name_ar || ''
+  });
+}));
+
 // Reset stuck videos endpoint (admin only)
 router.post("/:id/reset-video-status", authMiddlewareWithEmailCheck, asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -972,20 +1007,28 @@ router.post("/:id/regenerate-video", authMiddlewareWithEmailCheck, asyncHandler(
   }
   
   const userPlanResult = await db.query(`
-    SELECT p.support_level, p.name_ar
+    SELECT p.support_level, p.name_ar, p.max_videos_per_listing, p.max_video_duration, p.max_video_seconds
     FROM user_plans up
     JOIN plans p ON up.plan_id = p.id
     WHERE up.user_id = $1 AND up.status = 'active'
       AND (up.expires_at IS NULL OR up.expires_at > NOW())
-    ORDER BY p.support_level DESC
+    ORDER BY p.max_videos_per_listing DESC, p.support_level DESC
     LIMIT 1
   `, [userId]);
   
-  const userSupportLevel = userPlanResult.rows[0]?.support_level || 0;
+  const userPlan = userPlanResult.rows[0];
+  const maxVideos = userPlan?.max_videos_per_listing || 0;
   
-  if (userSupportLevel < 2) {
-    return res.status(403).json({ error: "هذه الميزة متاحة لمشتركي الباقات المميزة فقط" });
+  if (maxVideos <= 0) {
+    return res.status(403).json({ error: "باقتك الحالية لا تتضمن ميزة توليد الفيديو. يرجى ترقية الباقة" });
   }
+
+  const existingVideos = await db.query(
+    `SELECT COUNT(*) as count FROM listing_media WHERE listing_id = $1 AND kind = 'generated_video'`,
+    [id]
+  );
+  const currentVideoCount = parseInt(existingVideos.rows[0]?.count) || 0;
+  const maxDuration = userPlan?.max_video_duration || userPlan?.max_video_seconds || 60;
   
   const mediaResult = await db.query(
     `SELECT url FROM listing_media WHERE listing_id = $1 AND kind = 'image' ORDER BY sort_order`,

@@ -96,6 +96,7 @@ export default function EditListingPage() {
   const [listing, setListing] = useState<Listing | null>(null);
   const [isBusinessPlan, setIsBusinessPlan] = useState(false);
   const [canGenerateVideo, setCanGenerateVideo] = useState(false);
+  const [videoQuota, setVideoQuota] = useState<{ allowed: boolean; maxVideos: number; usedVideos: number; remainingVideos: number; maxDuration: number; planName: string } | null>(null);
 
   // Elite slot booking state
   const [eliteSlots, setEliteSlots] = useState<any[]>([]);
@@ -305,6 +306,7 @@ export default function EditListingPage() {
       fetchListing();
       checkPlanEligibility();
       fetchImageQuota();
+      fetchVideoQuota();
       fetchDealStatus();
     }
   }, [listingId, countries]);
@@ -517,21 +519,29 @@ export default function EditListingPage() {
       if (res.ok) {
         const data = await res.json();
         setIsBusinessPlan(data.allowed === true);
-        setCanGenerateVideo(true);
         if (data.allowed) {
           fetchEliteSlots();
           checkExistingReservation();
         }
-      } else {
-        const planRes = await fetch('/api/user/current-plan', { credentials: 'include', headers });
-        if (planRes.ok) {
-          const planData = await planRes.json();
-          const sl = planData?.plan?.support_level || planData?.support_level || 0;
-          if (sl >= 2) setCanGenerateVideo(true);
-        }
       }
     } catch (err) {
       console.error('Error checking plan eligibility:', err);
+    }
+  }
+
+  async function fetchVideoQuota() {
+    try {
+      const token = getAuthToken();
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(`/api/listings/${listingId}/video-quota`, { credentials: 'include', headers });
+      if (res.ok) {
+        const data = await res.json();
+        setVideoQuota(data);
+        setCanGenerateVideo(data.allowed === true);
+      }
+    } catch (err) {
+      console.error('Error fetching video quota:', err);
     }
   }
 
@@ -1429,16 +1439,24 @@ export default function EditListingPage() {
           )}
 
           {/* قسم الفيديو - يظهر دائماً */}
-          {(isBusinessPlan || canGenerateVideo) && listing?.images && listing.images.length > 0 && (
+          {canGenerateVideo && listing?.images && listing.images.length > 0 && (
             <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-200 rounded-xl p-5">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center">
                   <Video className="w-5 h-5 text-white" />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h4 className="font-bold text-emerald-800">📷 فيديو ترويجي بالذكاء الاصطناعي</h4>
                   <p className="text-sm text-emerald-600">سيتم إنشاء فيديو احترافي من صورك الفعلية</p>
                 </div>
+                {videoQuota && (
+                  <div className="text-left text-xs space-y-0.5">
+                    <div className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
+                      {videoQuota.remainingVideos} / {videoQuota.maxVideos} متاح
+                    </div>
+                    <div className="text-emerald-500 text-center">حتى {videoQuota.maxDuration} ثانية</div>
+                  </div>
+                )}
               </div>
 
               {/* حالة معالجة الفيديو */}

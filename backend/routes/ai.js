@@ -1630,33 +1630,35 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
   const userId = req.user.id;
   const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description, videoQuality, videoVoice, targetDurationSec } = req.body;
 
-  // Check user's support level - متاح للباقات المميزة فقط
+  // Check user's plan video quota
   const planResult = await db.query(
-    `SELECT COALESCE(MAX(support_level), 0) as support_level
+    `SELECT p.max_videos_per_listing, p.max_video_duration, p.max_video_seconds, p.support_level, p.name_ar
      FROM (
-       SELECT p.support_level
-       FROM user_plans up
-       JOIN plans p ON up.plan_id = p.id
+       SELECT up.plan_id FROM user_plans up
        WHERE up.user_id = $1 AND up.status = 'active' AND (up.expires_at IS NULL OR up.expires_at > NOW())
        UNION ALL
-       SELECT p.support_level
-       FROM quota_buckets qb
-       JOIN plans p ON qb.plan_id = p.id
+       SELECT qb.plan_id FROM quota_buckets qb
        WHERE qb.user_id = $1 AND qb.active = true 
          AND (qb.expires_at IS NULL OR qb.expires_at > NOW())
          AND (qb.total_slots - qb.used_slots) > 0
-     ) AS combined`,
+     ) AS combined
+     JOIN plans p ON p.id = combined.plan_id
+     ORDER BY p.max_videos_per_listing DESC
+     LIMIT 1`,
     [userId]
   );
   
-  const supportLevel = parseInt(planResult.rows[0]?.support_level) || 0;
+  const userPlan = planResult.rows[0];
+  const maxVideos = userPlan?.max_videos_per_listing || 0;
   
-  if (supportLevel < 2) {
+  if (maxVideos <= 0) {
     return res.status(403).json({ 
-      error: "ميزة توليد الفيديو الترويجي متاحة لمشتركي الباقات المميزة (النخبة وأعلى)",
+      error: "باقتك الحالية لا تتضمن ميزة توليد الفيديو. يرجى ترقية الباقة",
       upgradeRequired: true 
     });
   }
+  
+  const planMaxDuration = userPlan?.max_video_duration || userPlan?.max_video_seconds || 60;
 
   if (!propertyType || !city) {
     return res.status(400).json({ error: "يرجى تحديد نوع العقار والمدينة" });
