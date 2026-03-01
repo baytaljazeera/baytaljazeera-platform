@@ -432,8 +432,8 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
   function toggleSection(sectionId: string) {
     setExpandedSections(prev => {
       const updated = prev.includes(sectionId) 
-        ? prev.filter(id => id !== sectionId)
-        : [...prev, sectionId];
+        ? []
+        : [sectionId];
       localStorage.setItem('admin_sidebar_expanded', JSON.stringify(updated));
       return updated;
     });
