@@ -1492,6 +1492,7 @@ router.post("/create", authMiddlewareWithEmailCheck, upload.fields([
   const coverImage = imageUrls[0];
 
   let videoUrl = null;
+  let aiVideoUrl = null;
   if (videos.length > 0) {
     if (isCloudinaryConfigured()) {
       console.log('[Cloudinary] ✅ Uploading video to Cloudinary');
@@ -1508,8 +1509,13 @@ router.post("/create", authMiddlewareWithEmailCheck, upload.fields([
       console.log('[Cloudinary] ⚠️ Not configured for video, using local storage');
       videoUrl = `/uploads/listings/${videos[0].filename}`;
     }
-  } else if (req.body.aiVideoUrl) {
-    videoUrl = req.body.aiVideoUrl;
+  }
+  if (req.body.aiVideoUrl) {
+    if (!videoUrl) {
+      videoUrl = req.body.aiVideoUrl;
+    } else {
+      aiVideoUrl = req.body.aiVideoUrl;
+    }
   }
   
   if (isCloudinaryConfigured()) {
@@ -1602,6 +1608,13 @@ router.post("/create", authMiddlewareWithEmailCheck, upload.fields([
       `INSERT INTO listing_media (listing_id, url, kind, is_cover, sort_order)
        VALUES ($1, $2, 'video', false, 999)`,
       [newListing.id, videoUrl]
+    );
+  }
+  if (aiVideoUrl) {
+    await db.query(
+      `INSERT INTO listing_media (listing_id, url, kind, is_cover, sort_order)
+       VALUES ($1, $2, 'video', false, 998)`,
+      [newListing.id, aiVideoUrl]
     );
   }
 

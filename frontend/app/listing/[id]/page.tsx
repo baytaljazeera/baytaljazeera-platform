@@ -811,18 +811,27 @@ export default function ListingDetailPage() {
                   
                   {/* الفيديو الجاهز */}
                   {listing.videos && Array.isArray(listing.videos) && listing.videos.length > 0 && listing.video_status !== 'processing' && listing.videos[0]?.url ? (
-                    <div className="relative rounded-xl overflow-hidden bg-slate-900">
-                      <video 
-                        controls 
-                        className="w-full max-h-[400px] object-contain"
-                        poster={images && Array.isArray(images) && images.length > 0 && images[0]?.url ? getImageUrl(images[0].url) : undefined}
-                        preload="metadata"
-                      >
-                        <source src={listing.videos[0].url} type="video/mp4" />
-                        <source src={listing.videos[0].url} type="video/webm" />
-                        <source src={listing.videos[0].url} type="video/ogg" />
-                        متصفحك لا يدعم عرض الفيديو
-                      </video>
+                    <div className="space-y-3">
+                      {listing.videos.filter((v: any) => v?.url).map((video: any, idx: number) => (
+                        <div key={idx} className="relative rounded-xl overflow-hidden bg-slate-900">
+                          {listing.videos.length > 1 && (
+                            <div className="absolute top-3 right-3 z-10 bg-black/60 text-white text-xs px-3 py-1 rounded-full backdrop-blur-sm">
+                              {idx === 0 ? "فيديو مرفوع" : "فيديو ذكي"}
+                            </div>
+                          )}
+                          <video 
+                            controls 
+                            className="w-full max-h-[400px] object-contain"
+                            poster={images && Array.isArray(images) && images.length > 0 && images[0]?.url ? getImageUrl(images[0].url) : undefined}
+                            preload="metadata"
+                          >
+                            <source src={video.url} type="video/mp4" />
+                            <source src={video.url} type="video/webm" />
+                            <source src={video.url} type="video/ogg" />
+                            متصفحك لا يدعم عرض الفيديو
+                          </video>
+                        </div>
+                      ))}
                     </div>
                   ) : listing.video_status === 'processing' ? (
                     /* حالة معالجة الفيديو */

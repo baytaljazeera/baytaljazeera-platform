@@ -54,9 +54,30 @@ async function elevenLabsTTSToMp3(text, voiceId) {
   if (!ELEVENLABS_API_KEY || !ELEVENLABS_API_KEY.trim()) {
     throw new Error('ELEVENLABS_API_KEY غير مضبوط');
   }
-  const cleanText = String(text || '').trim()
-    .replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED]/g, '')
-    .slice(0, 3000);
+  const pronunciationDict = {
+    'المحرق': 'المُحَرَّق',
+    'محرق': 'مُحَرَّق',
+    'المنامة': 'المَنامة',
+    'الدمام': 'الدَّمّام',
+    'جدة': 'جِدَّة',
+    'مكة': 'مَكَّة',
+    'المكرمة': 'المُكَرَّمة',
+    'المنورة': 'المُنَوَّرة',
+    'الرياض': 'الرِّياض',
+    'الدوحة': 'الدَّوحة',
+    'الشارقة': 'الشّارقة',
+    'عجمان': 'عَجمان',
+    'الفجيرة': 'الفُجيرة',
+    'صلالة': 'صَلالة',
+    'مسقط': 'مَسقط',
+    'الكويت': 'الكُوَيت',
+  };
+  let processedText = String(text || '').trim()
+    .replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED]/g, '');
+  for (const [word, phonetic] of Object.entries(pronunciationDict)) {
+    processedText = processedText.replace(new RegExp(word, 'g'), phonetic);
+  }
+  const cleanText = processedText.slice(0, 3000);
   if (!cleanText) throw new Error('نص الصوت فارغ');
   const v = String(voiceId || '').trim();
   if (!v || v.length < 10) throw new Error('voiceId غير صالح لـ ElevenLabs');
