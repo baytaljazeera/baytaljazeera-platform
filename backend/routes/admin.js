@@ -395,6 +395,18 @@ router.patch("/users/:id/status", authMiddleware, requireRoles('super_admin'), a
   res.json({ ok: true, user: result.rows[0], message: statusMessages[status] });
 }));
 
+router.patch("/users/:id/verify-email", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const result = await db.query(
+    "UPDATE users SET email_verified = true, email_verified_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING id, name, email, email_verified",
+    [id]
+  );
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: "المستخدم غير موجود" });
+  }
+  res.json({ ok: true, user: result.rows[0], message: "تم تفعيل البريد الإلكتروني بنجاح" });
+}));
+
 router.delete("/users/:id", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
   const { id } = req.params;
   
