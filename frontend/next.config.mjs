@@ -18,6 +18,21 @@ const nextConfig = {
       { hostname: "**.cloudinary.com" },
     ],
   },
+  allowedDevOrigins: ['baytaljazeera.com', 'www.baytaljazeera.com'],
+  async redirects() {
+    return [
+      {
+        source: '/admin',
+        destination: '/add-listing/admin/dashboard',
+        permanent: true,
+      },
+      {
+        source: '/admin/:path*',
+        destination: '/add-listing/admin/:path*',
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     if (process.env.NODE_ENV === 'production') {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://baytaljazeera-backend.onrender.com';
