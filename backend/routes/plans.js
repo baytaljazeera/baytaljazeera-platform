@@ -101,7 +101,7 @@ router.get("/:id", asyncHandler(async (req, res) => {
   res.json({ plan: result.rows[0] });
 }));
 
-router.put("/:id", adminAuth, asyncHandler(async (req, res) => {
+router.put("/:id", adminAuth, async (req, res) => {
   const { id } = req.params;
   
   const planId = parseInt(id, 10);
@@ -109,25 +109,34 @@ router.put("/:id", adminAuth, asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "معرف غير صالح", errorEn: "Invalid plan ID" });
   }
   
-  const adminUserId = req.user.id;
-  const result = await planService.updatePlan(planId, req.body, adminUserId);
-  
-  if (!result.success) {
-    const statusCode = result.errors?.some(e => e.message === 'Plan not found') ? 404 : 400;
-    return res.status(statusCode).json({ 
-      error: result.errors?.[0]?.message || "خطأ في التحديث", 
-      errors: result.errors 
+  try {
+    const adminUserId = req.user.id;
+    const result = await planService.updatePlan(planId, req.body, adminUserId);
+    
+    if (!result.success) {
+      const statusCode = result.errors?.some(e => e.message === 'Plan not found') ? 404 : 400;
+      return res.status(statusCode).json({ 
+        error: result.errors?.[0]?.message || "خطأ في التحديث", 
+        errors: result.errors 
+      });
+    }
+    
+    console.log(`Plan ${planId} updated successfully with propagation:`, result.propagation);
+    res.json({ 
+      ok: true, 
+      plan: result.plan, 
+      propagation: result.propagation,
+      message: "تم تحديث الباقة بنجاح وانعكست التغييرات على المشتركين الحاليين" 
+    });
+  } catch (err) {
+    console.error(`[Plans] ❌ Error updating plan ${planId}:`, err.message, err.stack);
+    res.status(500).json({ 
+      error: "خطأ في تحديث الباقة",
+      errorEn: err.message,
+      detail: err.detail || null
     });
   }
-  
-  console.log(`Plan ${planId} updated successfully with propagation:`, result.propagation);
-  res.json({ 
-    ok: true, 
-    plan: result.plan, 
-    propagation: result.propagation,
-    message: "تم تحديث الباقة بنجاح وانعكست التغييرات على المشتركين الحاليين" 
-  });
-}));
+});
 
 router.patch("/:id/visibility", adminAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;

@@ -332,15 +332,16 @@ export default function PlansManagement() {
 
       const data = await res.json();
 
-      if (data.ok) {
+      if (data.ok || res.ok) {
         setMessage({ type: "success", text: isNewPlan ? "تم إنشاء الباقة بنجاح" : "تم تحديث الباقة بنجاح" });
         setShowModal(false);
         fetchPlans();
       } else {
-        setMessage({ type: "error", text: data.error || "حدث خطأ" });
+        const errMsg = data.errorEn ? `${data.error} (${data.errorEn})` : (data.error || "حدث خطأ");
+        setMessage({ type: "error", text: errMsg });
       }
-    } catch (err) {
-      setMessage({ type: "error", text: "فشل في حفظ الباقة" });
+    } catch (err: any) {
+      setMessage({ type: "error", text: err?.message || "فشل في حفظ الباقة" });
     } finally {
       setSaving(false);
     }
