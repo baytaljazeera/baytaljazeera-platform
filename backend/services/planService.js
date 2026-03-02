@@ -249,11 +249,17 @@ async function createPlan(planData, adminUserId) {
 
     const result = await client.query(insertQuery, insertParams);
 
-    await client.query(
-      `INSERT INTO admin_audit_log (admin_id, action, target_type, target_id, details, created_at)
-       VALUES ($1, 'create_plan', 'plan', $2, $3::jsonb, NOW())`,
-      [adminUserId, result.rows[0].id, JSON.stringify({ name_ar, price, duration_days })]
-    );
+    try {
+      await client.query('SAVEPOINT audit_log');
+      await client.query(
+        `INSERT INTO admin_audit_log (admin_id, action, target_type, target_id, details, created_at)
+         VALUES ($1, 'create_plan', 'plan', $2, $3::jsonb, NOW())`,
+        [adminUserId, result.rows[0].id, JSON.stringify({ name_ar, price, duration_days })]
+      );
+    } catch (auditErr) {
+      await client.query('ROLLBACK TO SAVEPOINT audit_log').catch(() => {});
+      console.warn('[PlanService] Audit log skipped:', auditErr.message);
+    }
 
     await client.query('COMMIT');
     
@@ -502,11 +508,17 @@ async function updatePlan(planId, planData, adminUserId) {
       }
     }
 
-    await client.query(
-      `INSERT INTO admin_audit_log (admin_id, action, target_type, target_id, details, created_at)
-       VALUES ($1, 'update_plan', 'plan', $2, $3::jsonb, NOW())`,
-      [adminUserId, planId, JSON.stringify({ changes: changedFields, propagation: propagationResults })]
-    );
+    try {
+      await client.query('SAVEPOINT audit_log');
+      await client.query(
+        `INSERT INTO admin_audit_log (admin_id, action, target_type, target_id, details, created_at)
+         VALUES ($1, 'update_plan', 'plan', $2, $3::jsonb, NOW())`,
+        [adminUserId, planId, JSON.stringify({ changes: changedFields, propagation: propagationResults })]
+      );
+    } catch (auditErr) {
+      await client.query('ROLLBACK TO SAVEPOINT audit_log').catch(() => {});
+      console.warn('[PlanService] Audit log skipped:', auditErr.message);
+    }
 
     await client.query('COMMIT');
     
@@ -568,11 +580,17 @@ async function deletePlan(planId, adminUserId) {
 
     await client.query("DELETE FROM plans WHERE id = $1", [planId]);
 
-    await client.query(
-      `INSERT INTO admin_audit_log (admin_id, action, target_type, target_id, details, created_at)
-       VALUES ($1, 'delete_plan', 'plan', $2, $3::jsonb, NOW())`,
-      [adminUserId, planId, JSON.stringify({ name_ar: plan.name_ar, price: plan.price })]
-    );
+    try {
+      await client.query('SAVEPOINT audit_log');
+      await client.query(
+        `INSERT INTO admin_audit_log (admin_id, action, target_type, target_id, details, created_at)
+         VALUES ($1, 'delete_plan', 'plan', $2, $3::jsonb, NOW())`,
+        [adminUserId, planId, JSON.stringify({ name_ar: plan.name_ar, price: plan.price })]
+      );
+    } catch (auditErr) {
+      await client.query('ROLLBACK TO SAVEPOINT audit_log').catch(() => {});
+      console.warn('[PlanService] Audit log skipped:', auditErr.message);
+    }
 
     await client.query('COMMIT');
     
