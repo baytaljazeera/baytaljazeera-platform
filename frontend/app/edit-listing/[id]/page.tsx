@@ -1644,7 +1644,7 @@ export default function EditListingPage() {
                       {/* اختيار الصوت */}
                       {videoQuality === "full" && (
                         <div className="p-3 bg-white rounded-xl border border-emerald-200">
-                          <p className="text-sm font-semibold text-emerald-800 mb-2">اختر الصوت:</p>
+                          <p className="text-sm font-semibold text-emerald-800 mb-2">صوت التعليق:</p>
                           {elevenlabsVoicesLoading ? (
                             <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
                               <Loader2 className="w-4 h-4 animate-spin" />
@@ -1653,44 +1653,63 @@ export default function EditListingPage() {
                           ) : (
                             <div className="space-y-2">
                               {elevenlabsVoices.length > 0 && (
-                                <div className="grid grid-cols-3 gap-2">
-                                  {elevenlabsVoices.map((v: any) => (
-                                    <div
-                                      key={v.voice_id}
-                                      onClick={() => setVideoVoice(v.voice_id)}
-                                      className={`cursor-pointer rounded-lg p-2 border-2 text-center transition-all ${
-                                        videoVoice === v.voice_id
-                                          ? "border-[#D4AF37] bg-amber-50"
-                                          : "border-slate-200 bg-white hover:border-amber-300"
-                                      }`}
-                                    >
-                                      <span className="text-lg">🎙️</span>
-                                      <p className="text-xs font-semibold mt-1">{v.name}</p>
-                                    </div>
-                                  ))}
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+                                  {elevenlabsVoices.map((v: any) => {
+                                    const voiceId = v.id || v.voice_id;
+                                    const isSelected = videoVoice === voiceId;
+                                    const displayName = v.name?.includes(" - ") ? v.name.split(" - ")[0].trim() : v.name;
+                                    return (
+                                      <div
+                                        key={voiceId}
+                                        onClick={(e) => { e.stopPropagation(); setVideoVoice(voiceId); }}
+                                        className={`relative cursor-pointer rounded-xl p-3 border-2 transition-all duration-200 ${
+                                          isSelected
+                                            ? "border-[#D4AF37] bg-gradient-to-br from-amber-50 to-[#D4AF37]/10 shadow-md shadow-[#D4AF37]/20"
+                                            : "border-slate-200 bg-white hover:border-[#D4AF37]/50 hover:shadow-sm"
+                                        }`}
+                                      >
+                                        {isSelected && (
+                                          <div className="absolute top-1.5 left-1.5 w-5 h-5 bg-[#D4AF37] rounded-full flex items-center justify-center">
+                                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                          </div>
+                                        )}
+                                        <div className="flex flex-col items-center text-center gap-1.5">
+                                          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${isSelected ? "bg-[#D4AF37]/20" : "bg-slate-100"}`}>
+                                            🎙️
+                                          </div>
+                                          <span className={`text-sm font-semibold truncate w-full ${isSelected ? "text-[#002845]" : "text-[#002845]/80"}`}>
+                                            {displayName}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               )}
-                              <details className="mt-2">
-                                <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-700">أصوات OpenAI الافتراضية</summary>
-                                <div className="grid grid-cols-3 gap-2 mt-2">
+                              <details className="group">
+                                <summary className="text-xs text-[#002845]/50 cursor-pointer hover:text-[#002845]/70 transition">أصوات OpenAI الافتراضية</summary>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
                                   {[
-                                    { id: "onyx", name: "سعود" },
-                                    { id: "ash", name: "علي" },
-                                    { id: "echo", name: "أناس" },
-                                  ].map((v) => (
-                                    <div
-                                      key={v.id}
-                                      onClick={() => setVideoVoice(v.id)}
-                                      className={`cursor-pointer rounded-lg p-2 border-2 text-center transition-all ${
-                                        videoVoice === v.id
-                                          ? "border-[#D4AF37] bg-amber-50"
-                                          : "border-slate-200 bg-white hover:border-amber-300"
-                                      }`}
-                                    >
-                                      <span className="text-lg">🎤</span>
-                                      <p className="text-xs font-semibold mt-1">{v.name}</p>
-                                    </div>
-                                  ))}
+                                    { id: "onyx", name: "فيصل", desc: "عميق" },
+                                    { id: "ash", name: "عاصم", desc: "قوي" },
+                                    { id: "echo", name: "سعد", desc: "واضح" },
+                                  ].map((v) => {
+                                    const isSelected = videoVoice === v.id;
+                                    return (
+                                      <div
+                                        key={v.id}
+                                        onClick={(e) => { e.stopPropagation(); setVideoVoice(v.id); }}
+                                        className={`cursor-pointer rounded-xl p-2.5 border-2 transition-all duration-200 text-center ${
+                                          isSelected
+                                            ? "border-[#D4AF37] bg-gradient-to-br from-amber-50 to-[#D4AF37]/10 shadow-sm"
+                                            : "border-slate-200 bg-white hover:border-[#D4AF37]/50"
+                                        }`}
+                                      >
+                                        <span className={`text-sm font-semibold ${isSelected ? "text-[#002845]" : "text-[#002845]/70"}`}>{v.name}</span>
+                                        <p className="text-[10px] text-[#002845]/50 mt-0.5">{v.desc}</p>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               </details>
                               {!videoVoice && (
