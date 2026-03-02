@@ -4,11 +4,15 @@ const isDevelopment = process.env.NODE_ENV !== 'production';
 
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: isDevelopment ? 1000 : 500,
+  max: isDevelopment ? 2000 : 1500,
   message: { error: "تم تجاوز الحد المسموح من الطلبات، حاول لاحقاً", errorEn: "Too many requests" },
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: false,
+  skip: (req) => {
+    const path = req.originalUrl || req.url || '';
+    return path.includes('/video-status/') || path.includes('/video-quota');
+  },
 });
 
 const authLimiter = rateLimit({
