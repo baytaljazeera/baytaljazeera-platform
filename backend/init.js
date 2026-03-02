@@ -410,6 +410,9 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'properties' AND column_name = 'video_status') THEN
           ALTER TABLE properties ADD COLUMN video_status VARCHAR(20) DEFAULT NULL;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'properties' AND column_name = 'video_regeneration_count') THEN
+          ALTER TABLE properties ADD COLUMN video_regeneration_count INTEGER DEFAULT 0;
+        END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'properties' AND column_name = 'rejection_reason') THEN
           ALTER TABLE properties ADD COLUMN rejection_reason TEXT;
         END IF;

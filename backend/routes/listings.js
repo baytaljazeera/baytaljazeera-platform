@@ -917,7 +917,7 @@ router.get("/:id/video-quota", authMiddlewareWithEmailCheck, asyncHandler(async 
   const { id } = req.params;
 
   const userPlanResult = await db.query(`
-    SELECT p.max_videos_per_listing, p.max_video_duration, p.max_video_seconds, p.name_ar
+    SELECT p.max_videos_per_listing, p.max_video_duration, p.max_video_seconds, p.name_ar, p.video_config
     FROM user_plans up
     JOIN plans p ON up.plan_id = p.id
     WHERE up.user_id = $1 AND up.status = 'active'
@@ -929,6 +929,8 @@ router.get("/:id/video-quota", authMiddlewareWithEmailCheck, asyncHandler(async 
   const plan = userPlanResult.rows[0];
   const maxVideos = plan?.max_videos_per_listing || 0;
   const maxDuration = plan?.max_video_duration || plan?.max_video_seconds || 0;
+  const videoConfig = plan?.video_config || {};
+  const maxRegenerations = videoConfig.max_regenerations ?? 0;
 
   const existingVideos = await db.query(
     `SELECT COUNT(*) as count FROM listing_media WHERE listing_id = $1 AND kind = 'generated_video'`,
@@ -936,13 +938,25 @@ router.get("/:id/video-quota", authMiddlewareWithEmailCheck, asyncHandler(async 
   );
   const usedVideos = parseInt(existingVideos.rows[0]?.count) || 0;
 
+  let currentRegenCount = 0;
+  try {
+    const regenResult = await db.query(
+      `SELECT COALESCE(video_regeneration_count, 0) as count FROM properties WHERE id = $1`,
+      [id]
+    );
+    currentRegenCount = parseInt(regenResult.rows[0]?.count) || 0;
+  } catch (_) {}
+
   res.json({
     allowed: maxVideos > 0,
     maxVideos,
     usedVideos,
     remainingVideos: Math.max(0, maxVideos - usedVideos),
     maxDuration,
-    planName: plan?.name_ar || ''
+    planName: plan?.name_ar || '',
+    maxRegenerations,
+    currentRegenerations: currentRegenCount,
+    remainingRegenerations: maxRegenerations > 0 ? Math.max(0, maxRegenerations - currentRegenCount) : -1
   });
 }));
 
@@ -1007,7 +1021,7 @@ router.post("/:id/regenerate-video", authMiddlewareWithEmailCheck, asyncHandler(
   }
   
   const userPlanResult = await db.query(`
-    SELECT p.support_level, p.name_ar, p.max_videos_per_listing, p.max_video_duration, p.max_video_seconds
+    SELECT p.support_level, p.name_ar, p.max_videos_per_listing, p.max_video_duration, p.max_video_seconds, p.video_config
     FROM user_plans up
     JOIN plans p ON up.plan_id = p.id
     WHERE up.user_id = $1 AND up.status = 'active'
@@ -1021,6 +1035,23 @@ router.post("/:id/regenerate-video", authMiddlewareWithEmailCheck, asyncHandler(
   
   if (maxVideos <= 0) {
     return res.status(403).json({ error: "باقتك الحالية لا تتضمن ميزة توليد الفيديو. يرجى ترقية الباقة" });
+  }
+
+  const videoConfig = userPlan?.video_config || {};
+  const maxRegenerations = videoConfig.max_regenerations ?? 0;
+
+  const regenCountResult = await db.query(
+    `SELECT COALESCE(video_regeneration_count, 0) as count FROM properties WHERE id = $1`,
+    [id]
+  );
+  const currentRegenCount = parseInt(regenCountResult.rows[0]?.count) || 0;
+
+  if (maxRegenerations > 0 && currentRegenCount >= maxRegenerations) {
+    return res.status(403).json({ 
+      error: `وصلت للحد الأقصى لإعادة توليد الفيديو (${maxRegenerations} مرات). تواصل مع الدعم لمزيد من المحاولات`,
+      maxRegenerations,
+      currentCount: currentRegenCount
+    });
   }
 
   const existingVideos = await db.query(
@@ -1067,14 +1098,16 @@ router.post("/:id/regenerate-video", authMiddlewareWithEmailCheck, asyncHandler(
   console.log(`[Regenerate] Video generation: using ${imageUrls.length} images (${selectedImageIndices.length > 0 ? 'selected' : 'all'})`);
   
   await db.query(
-    `UPDATE properties SET video_status = 'processing' WHERE id = $1`,
+    `UPDATE properties SET video_status = 'processing', video_regeneration_count = COALESCE(video_regeneration_count, 0) + 1 WHERE id = $1`,
     [id]
   );
   
+  const remainingRegens = maxRegenerations > 0 ? (maxRegenerations - currentRegenCount - 1) : -1;
   res.json({ 
     success: true, 
     message: "جاري إعادة إنشاء الفيديو من صورك...",
-    status: "processing"
+    status: "processing",
+    remainingRegenerations: remainingRegens
   });
   
   const videoVoice = req.body.voice || '';

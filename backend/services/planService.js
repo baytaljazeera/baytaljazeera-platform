@@ -108,20 +108,25 @@ function validatePlanInput(data, isUpdate = false) {
   return { valid: errors.length === 0, errors, sanitized };
 }
 
-const VALID_VIDEO_TIERS = ['tier1_safwa', 'tier2_business'];
+const VALID_VIDEO_TIERS = ['basic', 'cinematic', 'tier1_safwa', 'tier2_business'];
 const VALID_AMBIENCE_OPTIONS = ['none', 'birds', 'sea'];
 
 function validateVideoConfig(config) {
-  const defaultConfig = { enabled: false, tier: 'tier1_safwa', ambience: 'none' };
+  const defaultConfig = { enabled: false, tier: 'basic', ambience: 'none', max_regenerations: 3 };
   
   if (!config || typeof config !== 'object') {
     return defaultConfig;
   }
 
+  let tier = config.tier;
+  if (tier === 'tier1_safwa') tier = 'basic';
+  if (tier === 'tier2_business') tier = 'cinematic';
+
   return {
     enabled: typeof config.enabled === 'boolean' ? config.enabled : false,
-    tier: VALID_VIDEO_TIERS.includes(config.tier) ? config.tier : 'tier1_safwa',
-    ambience: VALID_AMBIENCE_OPTIONS.includes(config.ambience) ? config.ambience : 'none'
+    tier: ['basic', 'cinematic'].includes(tier) ? tier : 'basic',
+    ambience: VALID_AMBIENCE_OPTIONS.includes(config.ambience) ? config.ambience : 'none',
+    max_regenerations: typeof config.max_regenerations === 'number' ? Math.max(0, Math.min(100, config.max_regenerations)) : 3
   };
 }
 
