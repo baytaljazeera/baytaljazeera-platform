@@ -1461,30 +1461,31 @@ router.post("/user/generate-slideshow-video", authMiddleware, asyncHandler(async
   const userId = req.user.id;
   const { imagePaths, listingData, customText } = req.body;
 
-  // Check user's support level
   const planResult = await db.query(
-    `SELECT COALESCE(MAX(support_level), 0) as support_level
+    `SELECT p.max_videos_per_listing, p.video_config
      FROM (
-       SELECT p.support_level
-       FROM user_plans up
-       JOIN plans p ON up.plan_id = p.id
+       SELECT up.plan_id FROM user_plans up
        WHERE up.user_id = $1 AND up.status = 'active' AND (up.expires_at IS NULL OR up.expires_at > NOW())
        UNION ALL
-       SELECT p.support_level
-       FROM quota_buckets qb
-       JOIN plans p ON qb.plan_id = p.id
+       SELECT qb.plan_id FROM quota_buckets qb
        WHERE qb.user_id = $1 AND qb.active = true 
          AND (qb.expires_at IS NULL OR qb.expires_at > NOW())
          AND (qb.total_slots - qb.used_slots) > 0
-     ) AS combined`,
+     ) AS combined
+     JOIN plans p ON p.id = combined.plan_id
+     ORDER BY p.max_videos_per_listing DESC
+     LIMIT 1`,
     [userId]
   );
   
-  const supportLevel = parseInt(planResult.rows[0]?.support_level) || 0;
+  const userPlan = planResult.rows[0];
+  const maxVideos = userPlan?.max_videos_per_listing || 0;
+  const videoConfig = userPlan?.video_config || {};
+  const videoEnabled = videoConfig.enabled !== false && maxVideos > 0;
   
-  if (supportLevel < 3) {
+  if (!videoEnabled) {
     return res.status(403).json({ 
-      error: "ميزة توليد الفيديو الدعائي متاحة فقط لمشتركي باقة رجال الأعمال",
+      error: "باقتك الحالية لا تتضمن ميزة توليد الفيديو. يرجى ترقية الباقة",
       upgradeRequired: true 
     });
   }
@@ -1546,28 +1547,30 @@ router.post("/user/generate-advanced-video", authMiddleware, asyncHandler(async 
   const { imagePaths, listingData, template = "luxury", includeAudio = true } = req.body;
 
   const planResult = await db.query(
-    `SELECT COALESCE(MAX(support_level), 0) as support_level
+    `SELECT p.max_videos_per_listing, p.video_config
      FROM (
-       SELECT p.support_level
-       FROM user_plans up
-       JOIN plans p ON up.plan_id = p.id
+       SELECT up.plan_id FROM user_plans up
        WHERE up.user_id = $1 AND up.status = 'active' AND (up.expires_at IS NULL OR up.expires_at > NOW())
        UNION ALL
-       SELECT p.support_level
-       FROM quota_buckets qb
-       JOIN plans p ON qb.plan_id = p.id
+       SELECT qb.plan_id FROM quota_buckets qb
        WHERE qb.user_id = $1 AND qb.active = true 
          AND (qb.expires_at IS NULL OR qb.expires_at > NOW())
          AND (qb.total_slots - qb.used_slots) > 0
-     ) AS combined`,
+     ) AS combined
+     JOIN plans p ON p.id = combined.plan_id
+     ORDER BY p.max_videos_per_listing DESC
+     LIMIT 1`,
     [userId]
   );
   
-  const supportLevel = parseInt(planResult.rows[0]?.support_level) || 0;
+  const userPlan = planResult.rows[0];
+  const maxVideos = userPlan?.max_videos_per_listing || 0;
+  const videoConfig = userPlan?.video_config || {};
+  const videoEnabled = videoConfig.enabled !== false && maxVideos > 0;
   
-  if (supportLevel < 2) {
+  if (!videoEnabled) {
     return res.status(403).json({ 
-      error: "ميزة توليد الفيديو المتقدم متاحة لمشتركي الباقات المميزة",
+      error: "باقتك الحالية لا تتضمن ميزة توليد الفيديو. يرجى ترقية الباقة",
       upgradeRequired: true 
     });
   }
@@ -1630,9 +1633,8 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
   const userId = req.user.id;
   const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description, videoQuality, videoVoice, targetDurationSec } = req.body;
 
-  // Check user's plan video quota
   const planResult = await db.query(
-    `SELECT p.max_videos_per_listing, p.max_video_duration, p.max_video_seconds, p.support_level, p.name_ar
+    `SELECT p.max_videos_per_listing, p.max_video_duration, p.max_video_seconds, p.video_config, p.name_ar
      FROM (
        SELECT up.plan_id FROM user_plans up
        WHERE up.user_id = $1 AND up.status = 'active' AND (up.expires_at IS NULL OR up.expires_at > NOW())
@@ -1650,8 +1652,10 @@ router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res
   
   const userPlan = planResult.rows[0];
   const maxVideos = userPlan?.max_videos_per_listing || 0;
+  const videoConfig = userPlan?.video_config || {};
+  const videoEnabled = videoConfig.enabled !== false && maxVideos > 0;
   
-  if (maxVideos <= 0) {
+  if (!videoEnabled) {
     return res.status(403).json({ 
       error: "باقتك الحالية لا تتضمن ميزة توليد الفيديو. يرجى ترقية الباقة",
       upgradeRequired: true 
