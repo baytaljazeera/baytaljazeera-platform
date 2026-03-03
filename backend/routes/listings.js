@@ -1040,18 +1040,28 @@ router.post("/:id/regenerate-video", authMiddlewareWithEmailCheck, asyncHandler(
   const videoConfig = userPlan?.video_config || {};
   const maxRegenerations = videoConfig.max_regenerations ?? 0;
 
-  const regenCountResult = await db.query(
-    `SELECT COALESCE(video_regeneration_count, 0) as count FROM properties WHERE id = $1`,
-    [id]
-  );
-  const currentRegenCount = parseInt(regenCountResult.rows[0]?.count) || 0;
+  let currentRegenCount = 0;
+  if (maxRegenerations > 0) {
+    try {
+      const regenCountResult = await db.query(
+        `SELECT COALESCE(video_regeneration_count, 0) as count FROM properties WHERE id = $1`,
+        [id]
+      );
+      currentRegenCount = parseInt(regenCountResult.rows[0]?.count) || 0;
+    } catch (err) {
+      console.warn(`[Regenerate] video_regeneration_count column may not exist:`, err.message);
+      try {
+        await db.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS video_regeneration_count INTEGER DEFAULT 0`);
+      } catch (_) {}
+    }
 
-  if (maxRegenerations > 0 && currentRegenCount >= maxRegenerations) {
-    return res.status(403).json({ 
-      error: `وصلت للحد الأقصى لإعادة توليد الفيديو (${maxRegenerations} مرات). تواصل مع الدعم لمزيد من المحاولات`,
-      maxRegenerations,
-      currentCount: currentRegenCount
-    });
+    if (currentRegenCount >= maxRegenerations) {
+      return res.status(403).json({ 
+        error: `وصلت للحد الأقصى لإعادة توليد الفيديو (${maxRegenerations} مرات). تواصل مع الدعم لمزيد من المحاولات`,
+        maxRegenerations,
+        currentCount: currentRegenCount
+      });
+    }
   }
 
   const existingVideos = await db.query(
@@ -1097,10 +1107,15 @@ router.post("/:id/regenerate-video", authMiddlewareWithEmailCheck, asyncHandler(
   
   console.log(`[Regenerate] Video generation: using ${imageUrls.length} images (${selectedImageIndices.length > 0 ? 'selected' : 'all'})`);
   
-  await db.query(
-    `UPDATE properties SET video_status = 'processing', video_regeneration_count = COALESCE(video_regeneration_count, 0) + 1 WHERE id = $1`,
-    [id]
-  );
+  try {
+    await db.query(
+      `UPDATE properties SET video_status = 'processing', video_regeneration_count = COALESCE(video_regeneration_count, 0) + 1 WHERE id = $1`,
+      [id]
+    );
+  } catch (err) {
+    console.warn(`[Regenerate] Falling back to simple status update:`, err.message);
+    await db.query(`UPDATE properties SET video_status = 'processing' WHERE id = $1`, [id]);
+  }
   
   const remainingRegens = maxRegenerations > 0 ? (maxRegenerations - currentRegenCount - 1) : -1;
   res.json({ 
