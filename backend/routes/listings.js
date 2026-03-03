@@ -1032,12 +1032,12 @@ router.post("/:id/regenerate-video", authMiddlewareWithEmailCheck, asyncHandler(
   
   const userPlan = userPlanResult.rows[0];
   const maxVideos = userPlan?.max_videos_per_listing || 0;
-  
-  if (maxVideos <= 0) {
-    return res.status(403).json({ error: "باقتك الحالية لا تتضمن ميزة توليد الفيديو. يرجى ترقية الباقة" });
-  }
-
   const videoConfig = userPlan?.video_config || {};
+  const videoEnabled = videoConfig.enabled !== false && maxVideos > 0;
+  
+  if (!videoEnabled) {
+    return res.status(403).json({ error: "باقتك الحالية لا تتضمن ميزة توليد الفيديو. يرجى ترقية الباقة", upgradeRequired: true });
+  }
   const maxRegenerations = videoConfig.max_regenerations ?? 0;
 
   let currentRegenCount = 0;
