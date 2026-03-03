@@ -1220,8 +1220,7 @@ export default function ListingDetailPage() {
                 <button
                   onClick={async () => {
                     try {
-                      const apiBase = getApiBase();
-                      const res = await fetch(`${apiBase}/api/favorites/toggle`, {
+                      const res = await fetch(`/api/favorites/toggle`, {
                         method: "POST",
                         headers: getAuthHeaders(),
                         credentials: "include",
