@@ -6,7 +6,7 @@ import { useState, useEffect } from "react";
 import { 
   Trash2, AlertTriangle, Loader2, Check, RefreshCw,
   DollarSign, MessageSquare, Users, Bot, Phone, Bell,
-  ShieldAlert, RotateCcw
+  ShieldAlert, RotateCcw, UserX
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
@@ -85,6 +85,17 @@ const CATEGORIES = [
     borderColor: "border-red-200",
     tables: ["notifications", "alerts"],
     tableLabels: { notifications: "إشعارات", alerts: "تنبيهات" },
+  },
+  {
+    key: "customers",
+    label: "جميع العملاء (حذف كامل)",
+    description: "حذف جميع حسابات العملاء وإعلاناتهم واشتراكاتهم - لا يشمل حسابات الأدمن",
+    icon: UserX,
+    color: "text-rose-600",
+    bgColor: "bg-rose-50",
+    borderColor: "border-rose-200",
+    tables: ["users", "properties", "subscriptions"],
+    tableLabels: { users: "عملاء", properties: "إعلانات", subscriptions: "اشتراكات" },
   },
 ];
 

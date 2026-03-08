@@ -1470,7 +1470,7 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
     return res.status(400).json({ ok: false, error: "يجب تحديد فئة واحدة على الأقل" });
   }
 
-  const validCategories = ['financial', 'messages', 'ambassador', 'ai_logs', 'whatsapp', 'notifications'];
+  const validCategories = ['financial', 'messages', 'ambassador', 'ai_logs', 'whatsapp', 'notifications', 'customers'];
   const invalid = categories.filter(c => !validCategories.includes(c));
   if (invalid.length > 0) {
     return res.status(400).json({ ok: false, error: `فئات غير صالحة: ${invalid.join(', ')}` });
@@ -1548,6 +1548,33 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
       };
     }
 
+    if (categories.includes('customers')) {
+      await client.query('DELETE FROM messages');
+      await client.query('DELETE FROM conversations');
+      await client.query('DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await client.query('DELETE FROM account_alerts WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await client.query('DELETE FROM ai_chat_logs WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await client.query('DELETE FROM wallet_transactions WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await client.query('DELETE FROM ambassador_withdrawal_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await client.query('DELETE FROM ambassador_wallet WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await client.query('DELETE FROM referrals WHERE referrer_id IN (SELECT id FROM users WHERE role = $1) OR referred_id IN (SELECT id FROM users WHERE role = $1)', ['user', 'user']);
+      await client.query('DELETE FROM advertiser_reviews WHERE reviewer_id IN (SELECT id FROM users WHERE role = $1) OR advertiser_id IN (SELECT id FROM users WHERE role = $1)', ['user', 'user']);
+      await client.query('DELETE FROM advertiser_reputation WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await client.query('DELETE FROM listing_media WHERE listing_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', ['user']);
+      await client.query('DELETE FROM elite_extension_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await client.query('DELETE FROM elite_slot_reservations WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await client.query('DELETE FROM refunds WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await client.query('DELETE FROM invoices WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await client.query('DELETE FROM payments WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await client.query('DELETE FROM quota_buckets WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await client.query('DELETE FROM user_plans WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await client.query('DELETE FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      const r1 = await client.query('DELETE FROM users WHERE role = $1', ['user']);
+      results.customers = {
+        deleted_users: r1.rowCount,
+      };
+    }
+
     await client.query('COMMIT');
 
     await logAdminAction(req, 'RESET_TEST_DATA', 'test_data', null, { categories, results });
@@ -1593,6 +1620,11 @@ router.get("/reset-test-data/stats", authMiddleware, requireRoles('super_admin')
     { key: 'notifications', queries: [
       { name: 'notifications', q: 'SELECT COUNT(*) FROM notifications' },
       { name: 'alerts', q: 'SELECT COUNT(*) FROM account_alerts' },
+    ]},
+    { key: 'customers', queries: [
+      { name: 'users', q: "SELECT COUNT(*) FROM users WHERE role = 'user'" },
+      { name: 'properties', q: "SELECT COUNT(*) FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = 'user')" },
+      { name: 'subscriptions', q: "SELECT COUNT(*) FROM user_plans WHERE user_id IN (SELECT id FROM users WHERE role = 'user')" },
     ]},
   ];
 

@@ -1732,7 +1732,7 @@ export default function ReferralPage() {
   const [termsCheckbox, setTermsCheckbox] = useState(false);
   const [acceptingTerms, setAcceptingTerms] = useState(false);
   const [showTestTools, setShowTestTools] = useState(false);
-  const [devToolsEnabled, setDevToolsEnabled] = useState(true);
+  const [devToolsEnabled, setDevToolsEnabled] = useState(false);
   const [testToolsLoading, setTestToolsLoading] = useState(false);
   
   // Building ref for scroll functionality - must be at top level
