@@ -67,6 +67,8 @@ The application comprises a Node.js/Express.js backend and a Next.js 16 + React 
       - AI-generated promotional text with strong marketing copy
       - Ambient background audio generated dynamically per template mood (elegant, upbeat, warm, calm)
       - Arabic RTL text support with proper reshaping and glow effects
+      - Arabic number grammar normalization: dual forms (حمامان not 2 حمام), word numbers (ثلاث غرف not 3 غرف)
+    - **Property Sub-Specialties**: Configurable specialties/sub-types for medical (مجمع طبي, عيادة, مستشفى), hotel, restaurant, and commercial complex property types. Stored in description field, extracted on edit. Defined in `frontend/lib/propertyTypes.ts` PROPERTY_SPECIALTIES map.
       - Endpoints: GET `/api/ai/video-templates`, POST `/api/ai/user/generate-video`, GET `/api/ai/user/elevenlabs-voices`
     - **SEO as Paid Feature**: Tiered SEO features (Level 0, 1, 2) with AI-generated content, Schema.org JSON-LD, and dynamic meta tags.
     - **Admin Systems**: Comprehensive administration for listing reports, finance, marketing analytics, RBAC, user management, payments, invoicing, and refunds.

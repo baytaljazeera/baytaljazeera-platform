@@ -50,6 +50,50 @@ function computeDurationPerImage(imageCount, targetDurationSec) {
   return clamp(dpi, 3, 20);
 }
 
+function normalizeArabicNumbers(text) {
+  const dualForms = {
+    'غرفة': 'غرفتان', 'غرف': 'غرفتان',
+    'حمام': 'حمامان', 'حمامات': 'حمامان',
+    'موقف': 'موقفان', 'مواقف': 'موقفان',
+    'مسبح': 'مسبحان',
+    'مصعد': 'مصعدان',
+    'طابق': 'طابقان', 'طوابق': 'طابقان',
+    'صالة': 'صالتان', 'صالات': 'صالتان',
+    'مطبخ': 'مطبخان',
+    'شقة': 'شُقَّتان', 'شقق': 'شُقَّتان',
+    'دور': 'دوران',
+    'جناح': 'جناحان',
+    'مكتب': 'مَكتَبان', 'مكاتب': 'مَكتَبان',
+  };
+  const numberWords = {
+    '3': 'ثلاث', '٣': 'ثلاث',
+    '4': 'أربع', '٤': 'أربع',
+    '5': 'خمس', '٥': 'خمس',
+    '6': 'ست', '٦': 'ست',
+    '7': 'سبع', '٧': 'سبع',
+    '8': 'ثمان', '٨': 'ثمان',
+    '9': 'تسع', '٩': 'تسع',
+    '10': 'عشر', '١٠': 'عشر',
+  };
+  let result = text;
+  for (const [noun, dual] of Object.entries(dualForms)) {
+    result = result.replace(new RegExp(`(?:2|٢|اثنين|اثنان)\\s+${noun}`, 'g'), dual);
+    result = result.replace(new RegExp(`${noun}\\s+(?:2|٢|اثنين|اثنان)`, 'g'), dual);
+  }
+  for (const [num, word] of Object.entries(numberWords)) {
+    const escaped = num.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    result = result.replace(new RegExp(`${escaped}\\s+(غرف|غرفة)`, 'g'), `${word} غُرَف`);
+    result = result.replace(new RegExp(`${escaped}\\s+(حمام|حمامات)`, 'g'), `${word} حَمَّامَات`);
+    result = result.replace(new RegExp(`${escaped}\\s+(موقف|مواقف)`, 'g'), `${word} مَوَاقِف`);
+    result = result.replace(new RegExp(`${escaped}\\s+(طابق|طوابق)`, 'g'), `${word} طَوَابِق`);
+  }
+  result = result.replace(/(?:1|١)\s+(غرفة|غرف)/g, 'غُرفَة وَاحِدَة');
+  result = result.replace(/(?:1|١)\s+(حمام|حمامات)/g, 'حَمَّام وَاحِد');
+  result = result.replace(/(?:1|١)\s+(موقف|مواقف)/g, 'مَوقِف وَاحِد');
+  result = result.replace(/(?:1|١)\s+(مسبح)/g, 'مَسبَح وَاحِد');
+  return result;
+}
+
 async function elevenLabsTTSToMp3(text, voiceId) {
   if (!ELEVENLABS_API_KEY || !ELEVENLABS_API_KEY.trim()) {
     throw new Error('ELEVENLABS_API_KEY غير مضبوط');
@@ -144,10 +188,14 @@ async function elevenLabsTTSToMp3(text, voiceId) {
   };
   let processedText = String(text || '').trim()
     .replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED]/g, '');
+
+  processedText = normalizeArabicNumbers(processedText);
+
   const sortedEntries = Object.entries(pronunciationDict).sort((a, b) => b[0].length - a[0].length);
   for (const [word, phonetic] of sortedEntries) {
     processedText = processedText.replace(new RegExp(word, 'g'), phonetic);
   }
+
   const cleanText = processedText.slice(0, 3000);
   if (!cleanText) throw new Error('نص الصوت فارغ');
   const v = String(voiceId || '').trim();

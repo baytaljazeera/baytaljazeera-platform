@@ -1,7 +1,7 @@
 "use client";
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
-import { RESIDENTIAL_TYPES, COMMERCIAL_TYPES, isResidential, isCommercial, normalizeType } from "@/lib/propertyTypes";
+import { RESIDENTIAL_TYPES, COMMERCIAL_TYPES, isResidential, isCommercial, normalizeType, getSpecialties } from "@/lib/propertyTypes";
 
 export const dynamic = "force-dynamic";
 
@@ -198,6 +198,7 @@ export default function EditListingPage() {
     floor_number: "0",
     direction: "",
     parking_spaces: "0",
+    specialties: [] as string[],
   });
 
   // Fetch countries on mount
@@ -264,9 +265,17 @@ export default function EditListingPage() {
           setUsageType("تجاري");
         }
 
+        let desc = l.description || "";
+        let extractedSpecialties: string[] = [];
+        const specMatch = desc.match(/التخصصات:\s*(.+)$/m);
+        if (specMatch) {
+          extractedSpecialties = specMatch[1].split("،").map((s: string) => s.trim()).filter(Boolean);
+          desc = desc.replace(/\n?\n?التخصصات:\s*.+$/m, "").trim();
+        }
+
         setFormData({
           title: l.title || "",
-          description: l.description || "",
+          description: desc,
           country: initialCountry,
           city: initialCity,
           district: l.district || "",
@@ -281,6 +290,7 @@ export default function EditListingPage() {
           floor_number: l.floor_number?.toString() || "0",
           direction: l.direction || "",
           parking_spaces: l.parking_spaces?.toString() || "0",
+          specialties: extractedSpecialties,
         });
         
         // Fetch cities for the initial country if available
@@ -824,12 +834,20 @@ export default function EditListingPage() {
     setSuccess("");
 
     try {
+      let finalDesc = formData.description || "";
+      if (formData.specialties.length > 0) {
+        finalDesc = finalDesc.trim();
+        if (finalDesc) finalDesc += "\n\n";
+        finalDesc += `التخصصات: ${formData.specialties.join("، ")}`;
+      }
+
       const res = await fetch(`/api/listings/${listingId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
           ...formData,
+          description: finalDesc,
           price: parseFloat(formData.price) || 0,
           land_area: parseFloat(formData.land_area) || null,
           building_area: parseFloat(formData.building_area) || null,
@@ -1086,7 +1104,7 @@ export default function EditListingPage() {
                   <button
                     key={type}
                     type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, type }))}
+                    onClick={() => setFormData(prev => ({ ...prev, type, specialties: [] }))}
                     className={`py-3 px-4 rounded-xl border-2 text-sm font-medium transition-all duration-300 ${
                       formData.type === type
                         ? "border-[#D4AF37] bg-gradient-to-r from-[#D4AF37] to-[#C49B2F] text-white shadow-lg shadow-[#D4AF37]/30 scale-[1.02]"
@@ -1098,6 +1116,42 @@ export default function EditListingPage() {
                 ))}
               </div>
             </div>
+
+            {getSpecialties(formData.type).length > 0 && (
+              <div className="mt-4">
+                <label className="block text-sm font-semibold text-[#002845] mb-2">
+                  التخصصات / التصنيف الفرعي
+                  <span className="text-xs text-slate-400 font-normal mr-2">(اختياري)</span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {getSpecialties(formData.type).map((spec) => {
+                    const selected = formData.specialties.includes(spec);
+                    return (
+                      <button
+                        key={spec}
+                        type="button"
+                        onClick={() => {
+                          setFormData((prev) => ({
+                            ...prev,
+                            specialties: selected
+                              ? prev.specialties.filter((s: string) => s !== spec)
+                              : [...prev.specialties, spec],
+                          }));
+                        }}
+                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                          selected
+                            ? "bg-[#0B6B4C] text-white shadow-md shadow-[#0B6B4C]/20"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200"
+                        }`}
+                      >
+                        {selected && <span className="ml-1">✓</span>}
+                        {spec}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-semibold text-[#002845] mb-2">

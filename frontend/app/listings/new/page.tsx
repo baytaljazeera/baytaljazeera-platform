@@ -2,7 +2,7 @@
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { useAuthStore } from "@/lib/stores/authStore";
-import { RESIDENTIAL_TYPES, COMMERCIAL_TYPES } from "@/lib/propertyTypes";
+import { RESIDENTIAL_TYPES, COMMERCIAL_TYPES, getSpecialties } from "@/lib/propertyTypes";
 
 export const dynamic = "force-dynamic";
 
@@ -132,6 +132,7 @@ type ListingFormState = {
   totalFloors: string;
   apartmentCount: string;
   rentalScope: "كامل" | "جزئي" | "";
+  specialties: string[];
   // General field
   parkingSpaces: string;
   // Amenities
@@ -191,6 +192,7 @@ export default function NewListingPage() {
     totalFloors: "",
     apartmentCount: "",
     rentalScope: "",
+    specialties: [],
     parkingSpaces: "",
     bathrooms: "",
     propertyAge: "",
@@ -1012,7 +1014,11 @@ export default function NewListingPage() {
   }
 
   function updateField<K extends keyof ListingFormState>(key: K, value: ListingFormState[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [key]: value };
+      if (key === "propertyType") next.specialties = [];
+      return next;
+    });
     setErrors((prev) => ({ ...prev, [key]: undefined }));
   }
 
@@ -1481,11 +1487,19 @@ export default function NewListingPage() {
         ? Math.round(Number(form.price) / localCurrency.rate)
         : Number(form.price);
 
+      let finalDescription = form.description || "";
+      if (form.specialties.length > 0) {
+        finalDescription = finalDescription.trim();
+        if (finalDescription) finalDescription += "\n\n";
+        finalDescription += `التخصصات: ${form.specialties.join("، ")}`;
+      }
+
       const formData = new FormData();
       formData.append(
         "listing",
         JSON.stringify({
           ...form,
+          description: finalDescription,
           price: priceInSAR,
           originalPrice: Number(form.price),
           originalCurrency: localCurrency?.code || "SAR",
@@ -2150,6 +2164,42 @@ export default function NewListingPage() {
                   </div>
                   {errors.propertyType && <p className="text-red-500 text-xs mt-2">{errors.propertyType}</p>}
                 </div>
+
+                {getSpecialties(form.propertyType).length > 0 && (
+                  <div className="mt-6">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      التخصصات / التصنيف الفرعي
+                      <span className="text-xs text-slate-400 font-normal mr-2">(اختياري - اختر ما ينطبق)</span>
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {getSpecialties(form.propertyType).map((spec) => {
+                        const selected = form.specialties.includes(spec);
+                        return (
+                          <button
+                            key={spec}
+                            type="button"
+                            onClick={() => {
+                              setForm((prev) => ({
+                                ...prev,
+                                specialties: selected
+                                  ? prev.specialties.filter((s) => s !== spec)
+                                  : [...prev.specialties, spec],
+                              }));
+                            }}
+                            className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                              selected
+                                ? "bg-[#0B6B4C] text-white shadow-md shadow-[#0B6B4C]/20"
+                                : "bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200"
+                            }`}
+                          >
+                            {selected && <span className="ml-1">✓</span>}
+                            {spec}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 </motion.div>
             )}
