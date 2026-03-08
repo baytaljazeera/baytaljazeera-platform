@@ -1506,6 +1506,31 @@ export default function AmbassadorAdminPage() {
                       </label>
                     </div>
 
+                    <div className={`rounded-xl border-2 p-4 transition-all ${settings.dev_tools_enabled ? 'bg-amber-50/50 border-amber-300' : 'bg-slate-50 border-slate-200'}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${settings.dev_tools_enabled ? 'bg-amber-500' : 'bg-slate-400'}`}>
+                            <span className="text-white text-lg">🧪</span>
+                          </div>
+                          <div>
+                            <p className="font-bold text-sm text-slate-800">
+                              {settings.dev_tools_enabled ? 'الأدوات التجريبية مفعّلة' : 'الأدوات التجريبية معطّلة'}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              أدوات إضافة عملاء تجريبيين وحذف البيانات في صفحة الإحالة
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSettings({ ...settings, dev_tools_enabled: !settings.dev_tools_enabled })}
+                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors ${settings.dev_tools_enabled ? 'bg-amber-500' : 'bg-slate-300'}`}
+                        >
+                          <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${settings.dev_tools_enabled ? '-translate-x-1.5' : '-translate-x-8'}`} />
+                        </button>
+                      </div>
+                    </div>
+
                       <div>
                         <h3 className="text-md font-bold text-[#003366] mb-4">جدول المكافآت</h3>
                         <div className="space-y-3">

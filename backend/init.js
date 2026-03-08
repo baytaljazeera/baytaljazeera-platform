@@ -2269,6 +2269,9 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ambassador_settings' AND column_name = 'ambassador_enabled') THEN
           ALTER TABLE ambassador_settings ADD COLUMN ambassador_enabled BOOLEAN DEFAULT true;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ambassador_settings' AND column_name = 'dev_tools_enabled') THEN
+          ALTER TABLE ambassador_settings ADD COLUMN dev_tools_enabled BOOLEAN DEFAULT true;
+        END IF;
       END $$;
     `);
     

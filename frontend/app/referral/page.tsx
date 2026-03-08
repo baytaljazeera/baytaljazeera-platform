@@ -1731,7 +1731,8 @@ export default function ReferralPage() {
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [termsCheckbox, setTermsCheckbox] = useState(false);
   const [acceptingTerms, setAcceptingTerms] = useState(false);
-  const [showTestTools, setShowTestTools] = useState(true); // Toggle for test tools
+  const [showTestTools, setShowTestTools] = useState(false);
+  const [devToolsEnabled, setDevToolsEnabled] = useState(true);
   const [testToolsLoading, setTestToolsLoading] = useState(false);
   
   // Building ref for scroll functionality - must be at top level
@@ -2021,6 +2022,7 @@ export default function ReferralPage() {
           total_data: data
         });
         setStats(data);
+        setDevToolsEnabled(data.dev_tools_enabled !== false);
       } else {
         // محاولة قراءة رسالة الخطأ من السيرفر
         let errorData;
@@ -2717,7 +2719,7 @@ export default function ReferralPage() {
                 />
               </div>
               
-              {/* أدوات تجريبية - للاختبار قبل الإطلاق - تظهر دائماً بعد المبنى */}
+              {devToolsEnabled && (
               <div className={`rounded-2xl border-2 transition-all duration-300 overflow-hidden ${
                 showTestTools 
                   ? 'bg-gradient-to-br from-amber-50/90 via-yellow-50/80 to-amber-50/90 border-amber-400/60 shadow-lg' 
@@ -2862,6 +2864,7 @@ export default function ReferralPage() {
                   </div>
                 )}
               </div>
+              )}
               
               {/* حصالة السفير الجذابة تحت المبنى */}
               {walletData?.settings?.financial_rewards_enabled && (() => {

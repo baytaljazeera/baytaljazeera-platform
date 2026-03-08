@@ -60,9 +60,9 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
     console.log(`✅ Flagged floors: ${flaggedFloors}`);
     
     const settingsResult = await db.query(
-      `SELECT max_floors, floors_per_reward, consumption_enabled, require_first_listing, require_email_verified FROM ambassador_settings WHERE id = 1`
+      `SELECT max_floors, floors_per_reward, consumption_enabled, require_first_listing, require_email_verified, dev_tools_enabled FROM ambassador_settings WHERE id = 1`
     );
-    const settings = settingsResult.rows[0] || { max_floors: 20, floors_per_reward: [], consumption_enabled: true, require_first_listing: false, require_email_verified: false };
+    const settings = settingsResult.rows[0] || { max_floors: 20, floors_per_reward: [], consumption_enabled: true, require_first_listing: false, require_email_verified: false, dev_tools_enabled: true };
     console.log(`✅ Settings loaded: max_floors=${settings.max_floors}`);
     
     // جلب الإحالات - استخدام query بسيط بدون referral_risk_scores (مؤقتاً لتجنب المشاكل)
@@ -233,10 +233,10 @@ router.get("/my-stats", combinedAuthMiddleware, requireAmbassadorEnabled, asyncH
       } : null,
       can_consume: Boolean(canConsume),
       consumption_enabled: Boolean(settings.consumption_enabled),
+      dev_tools_enabled: settings.dev_tools_enabled !== false,
       pending_request: safePendingRequest,
       referrals: safeReferrals,
       consumptions: safeConsumptions,
-      // شروط الإحالة
       requirements: {
         require_first_listing: Boolean(settings.require_first_listing) || false,
         require_email_verified: Boolean(settings.require_email_verified) || false
@@ -1227,7 +1227,7 @@ router.put("/admin/settings", authMiddleware, requireRoles('super_admin'), async
   const { 
     max_floors, floors_per_reward, require_email_verified, 
     require_phone_verified, require_first_listing, min_days_active,
-    consumption_enabled, motivational_messages 
+    consumption_enabled, motivational_messages, dev_tools_enabled 
   } = req.body;
   
   await db.query(`
@@ -1240,6 +1240,7 @@ router.put("/admin/settings", authMiddleware, requireRoles('super_admin'), async
       min_days_active = COALESCE($6, min_days_active),
       consumption_enabled = COALESCE($7, consumption_enabled),
       motivational_messages = COALESCE($8, motivational_messages),
+      dev_tools_enabled = COALESCE($10, dev_tools_enabled),
       updated_at = NOW(),
       updated_by = $9
     WHERE id = 1
@@ -1252,7 +1253,8 @@ router.put("/admin/settings", authMiddleware, requireRoles('super_admin'), async
     min_days_active,
     consumption_enabled,
     motivational_messages ? JSON.stringify(motivational_messages) : null,
-    req.user.id
+    req.user.id,
+    dev_tools_enabled
   ]);
   
   res.json({ success: true, message: "تم حفظ الإعدادات بنجاح" });
