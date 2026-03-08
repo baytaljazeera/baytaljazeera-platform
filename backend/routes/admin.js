@@ -1463,4 +1463,157 @@ router.get("/sidebar-settings/visible", asyncHandler(async (req, res) => {
   });
 }));
 
+// 🧹 تصفير بيانات التجارب
+router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
+  const { categories } = req.body;
+  if (!categories || !Array.isArray(categories) || categories.length === 0) {
+    return res.status(400).json({ ok: false, error: "يجب تحديد فئة واحدة على الأقل" });
+  }
+
+  const validCategories = ['financial', 'messages', 'ambassador', 'ai_logs', 'whatsapp', 'notifications'];
+  const invalid = categories.filter(c => !validCategories.includes(c));
+  if (invalid.length > 0) {
+    return res.status(400).json({ ok: false, error: `فئات غير صالحة: ${invalid.join(', ')}` });
+  }
+
+  const results = {};
+  const client = await db.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    if (categories.includes('financial')) {
+      const r0 = await client.query('DELETE FROM elite_extension_requests');
+      const r4 = await client.query('DELETE FROM elite_slot_reservations');
+      const r1 = await client.query('DELETE FROM refunds');
+      const r2 = await client.query('DELETE FROM invoices');
+      const r3 = await client.query('DELETE FROM payments');
+      results.financial = {
+        elite_extensions: r0.rowCount,
+        elite_reservations: r4.rowCount,
+        refunds: r1.rowCount,
+        invoices: r2.rowCount,
+        payments: r3.rowCount,
+      };
+    }
+
+    if (categories.includes('messages')) {
+      const r1 = await client.query('DELETE FROM messages');
+      const r2 = await client.query('DELETE FROM conversations');
+      const r3 = await client.query('DELETE FROM admin_messages');
+      const r4 = await client.query('DELETE FROM admin_conversation_participants');
+      const r5 = await client.query('DELETE FROM admin_conversations');
+      results.messages = {
+        messages: r1.rowCount,
+        conversations: r2.rowCount,
+        admin_messages: r3.rowCount,
+        admin_participants: r4.rowCount,
+        admin_conversations: r5.rowCount,
+      };
+    }
+
+    if (categories.includes('ambassador')) {
+      const r1 = await client.query('DELETE FROM wallet_transactions');
+      const r2 = await client.query('DELETE FROM ambassador_withdrawal_requests');
+      const r3 = await client.query('UPDATE ambassador_wallet SET balance_cents = 0, total_earned_cents = 0, total_withdrawn_cents = 0');
+      const r4 = await client.query('UPDATE referrals SET status = $1 WHERE status != $1', ['completed']);
+      results.ambassador = {
+        wallet_transactions: r1.rowCount,
+        withdrawal_requests: r2.rowCount,
+        wallets_reset: r3.rowCount,
+        referrals_reset: r4.rowCount,
+      };
+    }
+
+    if (categories.includes('ai_logs')) {
+      const r1 = await client.query('DELETE FROM ai_chat_logs');
+      results.ai_logs = { chat_logs: r1.rowCount };
+    }
+
+    if (categories.includes('whatsapp')) {
+      const r1 = await client.query('DELETE FROM whatsapp_messages');
+      const r2 = await client.query('DELETE FROM whatsapp_campaigns');
+      results.whatsapp = {
+        messages: r1.rowCount,
+        campaigns: r2.rowCount,
+      };
+    }
+
+    if (categories.includes('notifications')) {
+      const r1 = await client.query('DELETE FROM notifications');
+      const r2 = await client.query('DELETE FROM account_alerts');
+      results.notifications = {
+        notifications: r1.rowCount,
+        alerts: r2.rowCount,
+      };
+    }
+
+    await client.query('COMMIT');
+
+    await logAdminAction(req, 'RESET_TEST_DATA', 'test_data', null, { categories, results });
+
+    res.json({ ok: true, results });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Reset test data error:', err);
+    res.status(500).json({ ok: false, error: "حدث خطأ أثناء تصفير البيانات" });
+  } finally {
+    client.release();
+  }
+}));
+
+// 🧹 إحصائيات بيانات التجارب (عدد السجلات في كل جدول)
+router.get("/reset-test-data/stats", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
+  const tables = [
+    { key: 'financial', queries: [
+      { name: 'payments', q: 'SELECT COUNT(*) FROM payments' },
+      { name: 'invoices', q: 'SELECT COUNT(*) FROM invoices' },
+      { name: 'refunds', q: 'SELECT COUNT(*) FROM refunds' },
+      { name: 'elite_reservations', q: 'SELECT COUNT(*) FROM elite_slot_reservations' },
+      { name: 'elite_extensions', q: 'SELECT COUNT(*) FROM elite_extension_requests' },
+    ]},
+    { key: 'messages', queries: [
+      { name: 'messages', q: 'SELECT COUNT(*) FROM messages' },
+      { name: 'conversations', q: 'SELECT COUNT(*) FROM conversations' },
+      { name: 'admin_messages', q: 'SELECT COUNT(*) FROM admin_messages' },
+      { name: 'admin_conversations', q: 'SELECT COUNT(*) FROM admin_conversations' },
+    ]},
+    { key: 'ambassador', queries: [
+      { name: 'wallet_transactions', q: 'SELECT COUNT(*) FROM wallet_transactions' },
+      { name: 'withdrawal_requests', q: 'SELECT COUNT(*) FROM ambassador_withdrawal_requests' },
+      { name: 'wallets', q: 'SELECT COUNT(*) FROM ambassador_wallet WHERE balance_cents > 0' },
+    ]},
+    { key: 'ai_logs', queries: [
+      { name: 'chat_logs', q: 'SELECT COUNT(*) FROM ai_chat_logs' },
+    ]},
+    { key: 'whatsapp', queries: [
+      { name: 'messages', q: 'SELECT COUNT(*) FROM whatsapp_messages' },
+      { name: 'campaigns', q: 'SELECT COUNT(*) FROM whatsapp_campaigns' },
+    ]},
+    { key: 'notifications', queries: [
+      { name: 'notifications', q: 'SELECT COUNT(*) FROM notifications' },
+      { name: 'alerts', q: 'SELECT COUNT(*) FROM account_alerts' },
+    ]},
+  ];
+
+  const stats = {};
+  for (const category of tables) {
+    stats[category.key] = {};
+    let total = 0;
+    for (const item of category.queries) {
+      try {
+        const r = await db.query(item.q);
+        const count = parseInt(r.rows[0].count);
+        stats[category.key][item.name] = count;
+        total += count;
+      } catch {
+        stats[category.key][item.name] = 0;
+      }
+    }
+    stats[category.key]._total = total;
+  }
+
+  res.json({ ok: true, stats });
+}));
+
 module.exports = router;

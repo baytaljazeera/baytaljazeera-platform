@@ -33,6 +33,7 @@ import {
   HeartHandshake,
   Cpu,
   Lock,
+  RotateCcw,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
 
@@ -206,6 +207,12 @@ const sidebarSections: SidebarSection[] = [
         href: "/admin/settings", 
         label: "الإعدادات", 
         icon: Settings,
+        permissionKey: 'settings'
+      },
+      { 
+        href: "/admin/reset-data", 
+        label: "تصفير التجارب", 
+        icon: RotateCcw,
         permissionKey: 'settings'
       },
     ]
