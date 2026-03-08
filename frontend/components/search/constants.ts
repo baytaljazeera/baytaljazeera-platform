@@ -1,39 +1,9 @@
 import { SortOption } from "./types";
+export { RESIDENTIAL_TYPES, COMMERCIAL_TYPES, ALL_PROPERTY_TYPES, isResidential, isCommercial } from "@/lib/propertyTypes";
 
-// دالة بناء رابط الـ API - نستخدم مسار نسبي لأن Next.js rewrites يتولى تحويل الطلبات
 export function getApiBase(): string {
   return "";
 }
-
-// أنواع العقار السكنية
-export const RESIDENTIAL_TYPES: string[] = [
-  "شقة",
-  "فيلا",
-  "دوبلكس",
-  "قصر",
-  "استوديو",
-  "بيت شعبي",
-  "شاليه",
-  "عمارة سكنية",
-];
-
-// أنواع العقار التجارية
-export const COMMERCIAL_TYPES: string[] = [
-  "أرض تجارية",
-  "محل تجاري",
-  "مكتب",
-  "معرض",
-  "مستودع",
-  "مزرعة",
-  "فندق",
-  "شقق فندقية",
-  "مستشفى",
-  "مجمع عيادات",
-  "مطعم",
-  "كوفي",
-  "محطة بنزين",
-  "برج تجاري",
-];
 
 // مدن المملكة (الترتيب: مكة، المدينة، جدة، الطائف، الرياض ثم الباقي)
 export const SAUDI_CITIES: string[] = [

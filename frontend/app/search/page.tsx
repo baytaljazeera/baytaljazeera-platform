@@ -122,110 +122,9 @@ function getApiBase(): string {
   return process.env.NEXT_PUBLIC_API_URL || "";
 }
 
-// استيراد دالة تنسيق السعر الموحدة من currencyStore
 import { formatListingPriceByCountry as formatListingPrice } from "@/lib/stores/currencyStore";
-
-// أنواع العقار السكنية
-const RESIDENTIAL_TYPES: string[] = [
-  "شقة",
-  "فيلا",
-  "دوبلكس",
-  "قصر",
-  "استوديو",
-  "بيت شعبي",
-  "شاليه",
-  "عمارة سكنية",
-];
-
-// أنواع العقار التجارية
-const COMMERCIAL_TYPES: string[] = [
-  "أرض تجارية",
-  "محل تجاري",
-  "مكتب",
-  "معرض",
-  "مستودع",
-  "مزرعة",
-  "فندق",
-  "شقق فندقية",
-  "مستشفى",
-  "مجمع عيادات",
-  "مطعم",
-  "كوفي",
-  "محطة بنزين",
-  "برج تجاري",
-];
-
-// مدن المملكة (الترتيب: مكة، المدينة، جدة، الطائف، الرياض ثم الباقي)
-const SAUDI_CITIES: string[] = [
-  "مكة المكرمة",
-  "المدينة المنورة",
-  "جدة",
-  "الطائف",
-  "الهدا (الطائف)",
-  "الشفا (الطائف)",
-  "الرياض",
-  "ينبع",
-  "الدمام",
-  "الخبر",
-  "الظهران",
-  "تبوك",
-  "أبها",
-  "السودة (أبها)",
-  "جازان",
-  "نجران",
-  "حائل",
-  "القصيم",
-];
-
-// هيستوجرام شكلي
-const PRICE_HISTOGRAM: number[] = [
-  2, 4, 6, 9, 12, 9, 7, 11, 15, 18, 16, 13, 10, 9, 11, 14, 12, 9, 6, 4, 3, 2,
-];
-
-// منيو الترتيب
-const SORT_OPTIONS: {
-  value: SortOption;
-  label: string;
-  subLabel?: string;
-}[] = [
-  {
-    value: "recommended",
-    label: "الأنسب لك",
-    subLabel: "ترتيب افتراضي",
-  },
-  {
-    value: "newest",
-    label: "الأحدث أولاً",
-    subLabel: "أحدث الإعلانات",
-  },
-  {
-    value: "oldest",
-    label: "الأقدم أولاً",
-    subLabel: "أقدم الإعلانات",
-  },
-  {
-    value: "price_high",
-    label: "السعر: الأعلى",
-    subLabel: "من الأعلى للأدنى",
-  },
-  {
-    value: "price_low",
-    label: "السعر: الأدنى",
-    subLabel: "من الأدنى للأعلى",
-  },
-  {
-    value: "area_high",
-    label: "المساحة: الأكبر",
-  },
-  {
-    value: "area_low",
-    label: "المساحة: الأصغر",
-  },
-  {
-    value: "beds_desc",
-    label: "أكثر عدد غرف",
-  },
-];
+import { RESIDENTIAL_TYPES, COMMERCIAL_TYPES, isCommercial, normalizeType } from "@/lib/propertyTypes";
+import { SAUDI_CITIES, PRICE_HISTOGRAM, SORT_OPTIONS } from "@/components/search/constants";
 
 // 🔁 سويتش قائمة / خريطة (تغيير عن طريق URL)
 function ViewToggle({
@@ -654,19 +553,11 @@ function SearchPage() {
       let ok = true;
 
       // 1) سكني / تجاري
-      const typeLower = (item.type || "").toLowerCase();
+      const itemType = item.type || "";
       if (usageTab === "residential") {
-        if (
-          COMMERCIAL_TYPES.some((t) => typeLower.includes(t.toLowerCase()))
-        ) {
-          ok = false;
-        }
+        if (isCommercial(itemType)) ok = false;
       } else if (usageTab === "commercial") {
-        if (
-          !COMMERCIAL_TYPES.some((t) => typeLower.includes(t.toLowerCase()))
-        ) {
-          ok = false;
-        }
+        if (!isCommercial(itemType)) ok = false;
       }
 
       // 2) بيع / إيجار

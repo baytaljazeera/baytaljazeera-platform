@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Search, MapPin, Home, Building2, Landmark, X } from "lucide-react";
 import { RangeSliderWithBox } from "./RangeSliderWithBox";
 import { PriceSliderWithGradient } from "./PriceSliderWithGradient";
+import { ALL_PROPERTY_TYPES } from "@/lib/propertyTypes";
+import { SAUDI_CITIES } from "@/components/search/constants";
 
 export type MapSearchFilters = {
   query?: string;
   city?: string;
-  propertyType?: "شقة" | "فيلا" | "أرض" | "مكتب" | "محل" | "";
+  propertyType?: string;
   purpose?: "بيع" | "إيجار" | "";
   priceRange?: [number, number];
   areaRange?: [number, number];
@@ -24,24 +26,19 @@ type MapSearchPanelProps = {
   isLoading?: boolean;
 };
 
-const cities = [
-  "الرياض",
-  "جدة",
-  "مكة المكرمة",
-  "المدينة المنورة",
-  "الدمام",
-  "الخبر",
-  "الطائف",
-  "تبوك",
-  "أبها",
-];
+const cities = SAUDI_CITIES;
 
-const propertyTypes = [
-  { value: "شقة", icon: Building2, label: "شقة" },
-  { value: "فيلا", icon: Home, label: "فيلا" },
-  { value: "أرض", icon: MapPin, label: "أرض" },
-  { value: "مكتب", icon: Landmark, label: "مكتب" },
-];
+const propertyTypeIcons: Record<string, typeof Building2> = {
+  "شقة": Building2,
+  "فيلا": Home,
+  "مكتب": Landmark,
+};
+
+const propertyTypes = ALL_PROPERTY_TYPES.map((t) => ({
+  value: t,
+  icon: propertyTypeIcons[t] || MapPin,
+  label: t,
+}));
 
 export function MapSearchPanel({
   filters,

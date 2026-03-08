@@ -62,62 +62,12 @@ type ActivePanel =
   | "propertyType"
   | "none";
 
-// دالة بناء رابط الـ API - نستخدم مسار نسبي لأن Next.js rewrites يتولى تحويل الطلبات
+import { RESIDENTIAL_TYPES, COMMERCIAL_TYPES, isCommercial } from "@/lib/propertyTypes";
+import { SAUDI_CITIES } from "@/components/search/constants";
+
 function getApiBase(): string {
   return "";
 }
-
-// أنواع العقار السكنية
-const RESIDENTIAL_TYPES: string[] = [
-  "شقة",
-  "فيلا",
-  "دوبلكس",
-  "قصر",
-  "استوديو",
-  "بيت شعبي",
-  "شاليه",
-  "عمارة سكنية",
-];
-
-// أنواع العقار التجارية
-const COMMERCIAL_TYPES: string[] = [
-  "أرض تجارية",
-  "محل تجاري",
-  "مكتب",
-  "معرض",
-  "مستودع",
-  "مزرعة",
-  "فندق",
-  "شقق فندقية",
-  "مستشفى",
-  "مجمع عيادات",
-  "مطعم",
-  "كوفي",
-  "محطة بنزين",
-  "برج تجاري",
-];
-
-// مدن المملكة (يمكن توسعتها)
-const SAUDI_CITIES: string[] = [
-  "مكة المكرمة",
-  "المدينة المنورة",
-  "الطائف",
-  "الهدا (الطائف)",
-  "الشفا (الطائف)",
-  "جدة",
-  "ينبع",
-  "الرياض",
-  "الدمام",
-  "الخبر",
-  "الظهران",
-  "تبوك",
-  "أبها",
-  "السودة (أبها)",
-  "جازان",
-  "نجران",
-  "حائل",
-  "القصيم",
-];
 
 // نفس الهيستوجرام للسعر/المساحة (شكل جمالي مثل Zillow)
 const SLIDER_BARS: number[] = [5, 15, 25, 40, 55, 70, 80, 70, 60, 45, 30, 18, 10];
@@ -187,21 +137,13 @@ export default function MapPage() {
     return listings.filter((item) => {
       let ok = true;
 
-      const typeLower = (item.type || "").toLowerCase();
+      const itemType = item.type || "";
 
       // سكني / تجاري
       if (usageTab === "residential") {
-        if (
-          COMMERCIAL_TYPES.some((t) => typeLower.includes(t.toLowerCase()))
-        ) {
-          ok = false;
-        }
+        if (isCommercial(itemType)) ok = false;
       } else if (usageTab === "commercial") {
-        if (
-          !COMMERCIAL_TYPES.some((t) => typeLower.includes(t.toLowerCase()))
-        ) {
-          ok = false;
-        }
+        if (!isCommercial(itemType)) ok = false;
       }
 
       // بيع / إيجار

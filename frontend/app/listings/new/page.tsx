@@ -2,6 +2,7 @@
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { useAuthStore } from "@/lib/stores/authStore";
+import { RESIDENTIAL_TYPES, COMMERCIAL_TYPES } from "@/lib/propertyTypes";
 
 export const dynamic = "force-dynamic";
 
@@ -147,8 +148,6 @@ const SAUDI_CITIES = [
   "ينبع", "القطيف", "الأحساء", "الجبيل", "خميس مشيط", "الخرج"
 ];
 
-const RESIDENTIAL_TYPES = ["شقة", "فيلا", "دور", "دوبلكس", "قصر", "استوديو", "شاليه", "عمارة سكنية", "أرض سكنية"];
-const COMMERCIAL_TYPES = ["أرض تجارية", "محل", "مكتب", "معرض", "مستودع", "فندق", "مجمع تجاري", "مبنى تجاري"];
 const DIRECTIONS = ["شمالية", "جنوبية", "شرقية", "غربية", "شمالية شرقية", "شمالية غربية", "جنوبية شرقية", "جنوبية غربية"];
 
 const STEPS = [

@@ -1,6 +1,7 @@
 "use client";
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { RESIDENTIAL_TYPES, COMMERCIAL_TYPES, isResidential, isCommercial, normalizeType } from "@/lib/propertyTypes";
 
 export const dynamic = "force-dynamic";
 
@@ -57,16 +58,8 @@ type City = {
   country_id: number;
 };
 
-const PROPERTY_TYPES = [
-  { value: "apartment", label: "شقة" },
-  { value: "villa", label: "فيلا" },
-  { value: "land", label: "أرض" },
-  { value: "building", label: "عمارة" },
-  { value: "office", label: "مكتب" },
-  { value: "shop", label: "محل تجاري" },
-  { value: "warehouse", label: "مستودع" },
-  { value: "farm", label: "مزرعة" },
-];
+
+
 
 const PURPOSES = [
   { value: "sale", label: "للبيع" },
@@ -127,6 +120,9 @@ export default function EditListingPage() {
   const [deletingImageIndex, setDeletingImageIndex] = useState<number | null>(null);
   const [newImages, setNewImages] = useState<File[]>([]);
   const [settingCoverIndex, setSettingCoverIndex] = useState<number | null>(null);
+
+  // Property usage type state
+  const [usageType, setUsageType] = useState<"سكني" | "تجاري" | "">("");
 
   // Deal status state
   const [dealStatus, setDealStatus] = useState<string>('active');
@@ -191,7 +187,7 @@ export default function EditListingPage() {
     country: "",
     city: "",
     district: "",
-    type: "apartment",
+    type: "شقة",
     purpose: "sale",
     price: "",
     land_area: "",
@@ -259,13 +255,22 @@ export default function EditListingPage() {
         const initialCountry = l.country || "";
         const initialCity = l.city || "";
         
+        const rawType = l.type || "شقة";
+        const resolvedType = normalizeType(rawType);
+        
+        if (isResidential(resolvedType)) {
+          setUsageType("سكني");
+        } else if (isCommercial(resolvedType)) {
+          setUsageType("تجاري");
+        }
+
         setFormData({
           title: l.title || "",
           description: l.description || "",
           country: initialCountry,
           city: initialCity,
           district: l.district || "",
-          type: l.type || "apartment",
+          type: resolvedType,
           purpose: l.purpose || "sale",
           price: l.price?.toString() || "",
           land_area: l.land_area?.toString() || "",
@@ -1038,22 +1043,60 @@ export default function EditListingPage() {
               />
             </div>
 
-            <div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-semibold text-[#002845] mb-2">
+                <Home className="w-4 h-4 inline ml-1" />
+                نوع الاستخدام *
+              </label>
+              <div className="flex gap-2 mb-4">
+                {[
+                  { value: "سكني" as const, icon: Home },
+                  { value: "تجاري" as const, icon: Building2 },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setUsageType(option.value);
+                      setFormData(prev => ({ ...prev, type: "" }));
+                    }}
+                    className={`py-3 px-5 rounded-xl border-2 font-medium transition-all duration-300 flex items-center justify-center gap-2 ${
+                      usageType === option.value
+                        ? "border-[#D4AF37] bg-gradient-to-r from-[#D4AF37] to-[#C49B2F] text-white shadow-lg shadow-[#D4AF37]/30 scale-[1.02]"
+                        : "border-slate-200 bg-slate-50 text-slate-500 hover:border-[#D4AF37]/50 hover:bg-[#D4AF37]/5 hover:text-slate-700"
+                    }`}
+                  >
+                    <option.icon className="w-4 h-4" />
+                    {option.value}
+                  </button>
+                ))}
+              </div>
+
               <label className="block text-sm font-semibold text-[#002845] mb-2">
                 <Building2 className="w-4 h-4 inline ml-1" />
                 نوع العقار *
               </label>
-              <select
-                name="type"
-                value={formData.type}
-                onChange={handleChange}
-                required
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#D4AF37] focus:border-transparent outline-none"
-              >
-                {PROPERTY_TYPES.map(type => (
-                  <option key={type.value} value={type.value}>{type.label}</option>
+              <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
+                {(usageType === "تجاري"
+                  ? COMMERCIAL_TYPES
+                  : usageType === "سكني"
+                  ? RESIDENTIAL_TYPES
+                  : [...RESIDENTIAL_TYPES, ...COMMERCIAL_TYPES]
+                ).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, type }))}
+                    className={`py-3 px-4 rounded-xl border-2 text-sm font-medium transition-all duration-300 ${
+                      formData.type === type
+                        ? "border-[#D4AF37] bg-gradient-to-r from-[#D4AF37] to-[#C49B2F] text-white shadow-lg shadow-[#D4AF37]/30 scale-[1.02]"
+                        : "border-slate-200 bg-slate-50 text-slate-500 hover:border-[#D4AF37]/50 hover:bg-[#D4AF37]/5 hover:text-slate-700"
+                    }`}
+                  >
+                    {type}
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
 
             <div>
