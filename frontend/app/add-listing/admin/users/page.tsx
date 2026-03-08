@@ -70,12 +70,15 @@ export default function UsersPage() {
   const [planFilter, setPlanFilter] = useState<string>("all");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{ 
     show: boolean; 
     action: string; 
     userId: string; 
     userName: string 
   } | null>(null);
+  const [bulkConfirmModal, setBulkConfirmModal] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [directSearchResult, setDirectSearchResult] = useState<{
     found: boolean;
@@ -85,6 +88,7 @@ export default function UsersPage() {
   const [directSearchLoading, setDirectSearchLoading] = useState(false);
 
   useEffect(() => {
+    setSelectedUsers(new Set());
     fetchData();
   }, [searchTerm, statusFilter, planFilter]);
 
@@ -202,6 +206,7 @@ export default function UsersPage() {
       const data = await res.json();
       if (data.ok) {
         setMessage({ type: "success", text: "تم حذف الحساب بنجاح" });
+        setSelectedUsers((prev) => { const next = new Set(prev); next.delete(userId); return next; });
         fetchData();
       } else {
         setMessage({ type: "error", text: data.error || "حدث خطأ" });
@@ -211,6 +216,57 @@ export default function UsersPage() {
     } finally {
       setActionLoading(null);
       setConfirmModal(null);
+    }
+  }
+
+  async function handleBulkDelete() {
+    if (selectedUsers.size === 0) return;
+    setBulkDeleting(true);
+    let successCount = 0;
+    const failedIds: string[] = [];
+    const ids = Array.from(selectedUsers);
+    for (const userId of ids) {
+      try {
+        const res = await fetch(`${API_URL}/api/admin/users/${userId}`, {
+          method: "DELETE",
+          credentials: "include",
+          headers: getAuthHeaders(),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          successCount++;
+        } else {
+          failedIds.push(userId);
+        }
+      } catch {
+        failedIds.push(userId);
+      }
+    }
+    setSelectedUsers(new Set(failedIds));
+    setBulkConfirmModal(false);
+    setBulkDeleting(false);
+    if (failedIds.length === 0) {
+      setMessage({ type: "success", text: `تم حذف ${successCount} حساب بنجاح` });
+    } else {
+      setMessage({ type: "error", text: `تم حذف ${successCount}، فشل ${failedIds.length} (لا تزال محددة)` });
+    }
+    fetchData();
+  }
+
+  function toggleSelectUser(userId: string) {
+    setSelectedUsers((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedUsers.size === filteredUsers.length) {
+      setSelectedUsers(new Set());
+    } else {
+      setSelectedUsers(new Set(filteredUsers.map((u) => u.id)));
     }
   }
 
@@ -557,6 +613,29 @@ export default function UsersPage() {
           </div>
         </div>
 
+        {selectedUsers.size > 0 && (
+          <div className="mx-4 mt-3 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-semibold text-red-700">
+                تم تحديد {selectedUsers.size} عميل
+              </span>
+              <button
+                onClick={() => setSelectedUsers(new Set())}
+                className="text-xs text-slate-500 hover:text-slate-700 underline"
+              >
+                إلغاء التحديد
+              </button>
+            </div>
+            <button
+              onClick={() => setBulkConfirmModal(true)}
+              className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-lg transition flex items-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              حذف المحددين ({selectedUsers.size})
+            </button>
+          </div>
+        )}
+
         {directSearchResult && (
           <div className={`mx-4 mt-2 p-4 rounded-xl border ${
             directSearchResult.found ? "bg-green-50 border-green-200" : "bg-yellow-50 border-yellow-200"
@@ -614,6 +693,15 @@ export default function UsersPage() {
             <table className="w-full">
               <thead className="bg-slate-50 text-right">
                 <tr>
+                  <th className="px-4 py-3 text-center w-10">
+                    <input
+                      type="checkbox"
+                      checked={filteredUsers.length > 0 && selectedUsers.size === filteredUsers.length}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 rounded border-slate-300 text-[#D4AF37] focus:ring-[#D4AF37] cursor-pointer accent-[#D4AF37]"
+                      title={selectedUsers.size === filteredUsers.length ? "إلغاء تحديد الكل" : "تحديد الكل"}
+                    />
+                  </th>
                   <th className="px-4 py-3 text-xs font-semibold text-slate-600">#</th>
                   <th className="px-4 py-3 text-xs font-semibold text-slate-600">العميل</th>
                   <th className="px-4 py-3 text-xs font-semibold text-slate-600">البريد</th>
@@ -630,10 +718,19 @@ export default function UsersPage() {
                   <tr 
                     key={`user-${user.id}-${idx}`} 
                     className={`hover:bg-slate-50 transition ${
+                      selectedUsers.has(user.id) ? "bg-amber-50/60" :
                       user.status === "on_hold" ? "bg-red-50/50" : 
                       user.status === "under_review" ? "bg-yellow-50/50" : ""
                     }`}
                   >
+                    <td className="px-4 py-3 text-center w-10">
+                      <input
+                        type="checkbox"
+                        checked={selectedUsers.has(user.id)}
+                        onChange={() => toggleSelectUser(user.id)}
+                        className="w-4 h-4 rounded border-slate-300 cursor-pointer accent-[#D4AF37]"
+                      />
+                    </td>
                     <td className="px-4 py-3 text-sm text-slate-600">{idx + 1}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -772,6 +869,47 @@ export default function UsersPage() {
           </div>
         )}
       </div>
+
+      {bulkConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-6 h-6 text-red-600" />
+            </div>
+            <h3 className="text-lg font-bold text-[#002845] mb-2 text-center">
+              حذف {selectedUsers.size} حساب
+            </h3>
+            <p className="text-slate-600 text-sm mb-4 text-center">
+              هل أنت متأكد من حذف <span className="font-bold text-red-600">{selectedUsers.size}</span> حساب؟
+              <br/>
+              <span className="text-red-500 text-xs">هذا الإجراء لا يمكن التراجع عنه!</span>
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setBulkConfirmModal(false)}
+                disabled={bulkDeleting}
+                className="flex-1 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition flex items-center justify-center gap-2"
+              >
+                {bulkDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    جاري الحذف...
+                  </>
+                ) : (
+                  "تأكيد الحذف"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirmModal?.show && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
