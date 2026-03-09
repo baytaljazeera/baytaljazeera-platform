@@ -13,7 +13,7 @@ import PlansHighlightSection from "@/components/home/PlansHighlightSection";
 import { getImageUrl } from "@/lib/imageUrl";
 import { useAuthStore } from '@/lib/stores/authStore';
 
-const cities = [
+const fallbackCities = [
   { title: "مكة المكرمة", img: "/makkah.jpg" },
   { title: "المدينة المنورة", img: "/madinah.jpg" },
   { title: "جدة", img: "/jeddah.jpg" },
@@ -145,6 +145,51 @@ function HeroSection() {
 }
 
 function CityCardsSection() {
+  const [cities, setCities] = useState<Array<{ title: string; img: string }>>([]);
+
+  useEffect(() => {
+    async function fetchCities() {
+      try {
+        const res = await fetch('/api/featured-cities/active');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.cities && data.cities.length > 0) {
+            const citiesWithImages = data.cities.filter((c: any) => c.image_url);
+            if (citiesWithImages.length > 0) {
+              setCities(citiesWithImages.map((c: any) => ({
+                title: c.name_ar,
+                img: c.image_url,
+              })));
+              return;
+            }
+          }
+        }
+      } catch (e) {}
+      setCities(fallbackCities);
+    }
+    fetchCities();
+  }, []);
+
+  if (cities.length === 0) {
+    return (
+      <section className="relative py-12 sm:py-20 px-4 sm:px-6 bg-[#F7F1E5]" dir="rtl">
+        <div className="max-w-7xl mx-auto">
+          <h2 className="text-mobile-2xl sm:text-3xl md:text-4xl font-extrabold text-center mb-8 sm:mb-12 text-[#003366]">
+            المدن الأكثر طلباً
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6">
+            {[1,2,3,4,5].map((i) => (
+              <div key={i} className="bg-white rounded-2xl sm:rounded-3xl overflow-hidden shadow-lg animate-pulse">
+                <div className="aspect-[16/9] bg-gray-200 min-h-[200px]" />
+                <div className="p-4 sm:p-5 flex justify-center"><div className="h-5 w-24 bg-gray-200 rounded" /></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="relative py-12 sm:py-20 px-4 sm:px-6 bg-[#F7F1E5]" dir="rtl">
       <div className="max-w-7xl mx-auto">
@@ -152,7 +197,7 @@ function CityCardsSection() {
           المدن الأكثر طلباً
         </h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6">
+        <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 ${cities.length <= 3 ? 'lg:grid-cols-3' : cities.length === 4 ? 'lg:grid-cols-4' : cities.length === 5 ? 'lg:grid-cols-5' : 'lg:grid-cols-3 xl:grid-cols-6'}`}>
           {cities.map((city) => (
             <Link
               key={city.title}

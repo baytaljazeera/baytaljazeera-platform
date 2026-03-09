@@ -16,6 +16,7 @@ const nextConfig = {
       { hostname: "**.s3.amazonaws.com" },
       { hostname: "res.cloudinary.com" },
       { hostname: "**.cloudinary.com" },
+      { hostname: "placehold.co" },
     ],
   },
   allowedDevOrigins: ['baytaljazeera.com', 'www.baytaljazeera.com'],
