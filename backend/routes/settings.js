@@ -21,7 +21,8 @@ const GENERAL_SETTINGS_KEYS = [
   'sms_notifications',
   'auto_approve_listings',
   'max_images_per_listing',
-  'listing_duration_days'
+  'listing_duration_days',
+  'invoice_system_enabled'
 ];
 
 const SITE_STATUS_VALUES = ['normal', 'maintenance', 'coming_soon'];
@@ -51,7 +52,8 @@ const DEFAULT_SETTINGS = {
   sms_notifications: 'false',
   auto_approve_listings: 'false',
   max_images_per_listing: '10',
-  listing_duration_days: '30'
+  listing_duration_days: '30',
+  invoice_system_enabled: 'false'
 };
 
 router.get("/site-status", asyncHandler(async (req, res) => {
@@ -193,7 +195,8 @@ router.get("/", asyncHandler(async (req, res) => {
     smsNotifications: (settingsMap.sms_notifications || DEFAULT_SETTINGS.sms_notifications) === 'true',
     autoApproveListings: (settingsMap.auto_approve_listings || DEFAULT_SETTINGS.auto_approve_listings) === 'true',
     maxImagesPerListing: parseInt(settingsMap.max_images_per_listing || DEFAULT_SETTINGS.max_images_per_listing),
-    listingDuration: parseInt(settingsMap.listing_duration_days || DEFAULT_SETTINGS.listing_duration_days)
+    listingDuration: parseInt(settingsMap.listing_duration_days || DEFAULT_SETTINGS.listing_duration_days),
+    invoiceSystemEnabled: (settingsMap.invoice_system_enabled || DEFAULT_SETTINGS.invoice_system_enabled) === 'true'
   };
   
   res.json({ ok: true, settings });
@@ -216,7 +219,8 @@ router.put("/", authMiddleware, requireRoles(['super_admin', 'admin']), asyncHan
     smsNotifications,
     autoApproveListings,
     maxImagesPerListing,
-    listingDuration
+    listingDuration,
+    invoiceSystemEnabled
   } = req.body;
   
   const updates = [
@@ -235,7 +239,8 @@ router.put("/", authMiddleware, requireRoles(['super_admin', 'admin']), asyncHan
     { key: 'sms_notifications', value: String(smsNotifications ?? false) },
     { key: 'auto_approve_listings', value: String(autoApproveListings ?? false) },
     { key: 'max_images_per_listing', value: String(maxImagesPerListing || 10) },
-    { key: 'listing_duration_days', value: String(listingDuration || 30) }
+    { key: 'listing_duration_days', value: String(listingDuration || 30) },
+    { key: 'invoice_system_enabled', value: String(invoiceSystemEnabled ?? false) }
   ];
   
   const client = await db.connect();

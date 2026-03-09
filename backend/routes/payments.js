@@ -525,15 +525,25 @@ router.post('/process-payment', paymentLimiter, authMiddlewareWithEmailCheck, as
 
     const paymentId = paymentResult.rows[0].id;
 
-    const invoiceNumber = await generateInvoiceNumber(client);
-    
-    const invoiceResult = await client.query(`
-      INSERT INTO invoices (invoice_number, user_id, payment_id, plan_id, subtotal, vat_rate, vat_amount, total, currency, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'issued')
-      RETURNING *
-    `, [invoiceNumber, userId, paymentId, planId, total, 0, 0, total, effectiveCurrency.currency_code]);
+    let invoice = null;
+    let invoiceNumber = null;
 
-    const invoice = invoiceResult.rows[0];
+    const invoiceSettingResult = await client.query(
+      `SELECT value FROM app_settings WHERE key = 'invoice_system_enabled'`
+    );
+    const invoiceEnabled = invoiceSettingResult.rows[0]?.value === 'true';
+
+    if (invoiceEnabled && total > 0) {
+      invoiceNumber = await generateInvoiceNumber(client);
+      
+      const invoiceResult = await client.query(`
+        INSERT INTO invoices (invoice_number, user_id, payment_id, plan_id, subtotal, vat_rate, vat_amount, total, currency, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'issued')
+        RETURNING *
+      `, [invoiceNumber, userId, paymentId, planId, total, 0, 0, total, effectiveCurrency.currency_code]);
+
+      invoice = invoiceResult.rows[0];
+    }
 
     await client.query(`
       INSERT INTO quota_buckets (user_id, plan_id, user_plan_id, source, total_slots, used_slots, expires_at, active)
@@ -553,7 +563,7 @@ router.post('/process-payment', paymentLimiter, authMiddlewareWithEmailCheck, as
 
     await logBillingAudit(client, 'PAYMENT_COMPLETED', userId, {
       paymentId,
-      invoiceNumber,
+      invoiceNumber: invoiceNumber || 'N/A',
       transactionId,
       planId,
       previousPlanId,
@@ -565,15 +575,20 @@ router.post('/process-payment', paymentLimiter, authMiddlewareWithEmailCheck, as
     const userResult = await client.query(`SELECT name, email FROM users WHERE id = $1`, [userId]);
     const user = userResult.rows[0];
 
+    const notifBody = invoice 
+      ? `تم ترقية اشتراكك إلى باقة ${plan.name_ar}. رقم الفاتورة: ${invoiceNumber}`
+      : `تم تفعيل باقة ${plan.name_ar} بنجاح`;
+    const notifLink = invoice ? `/invoices/${invoice.id}` : `/account`;
+
     await client.query(`
       INSERT INTO notifications (user_id, title, body, type, link, channel, status, payload, scheduled_at)
       VALUES ($1, $2, $3, 'payment', $4, 'app', 'pending', $5, NOW())
     `, [
       userId,
       'تمت الترقية بنجاح! 🎉',
-      `تم ترقية اشتراكك إلى باقة ${plan.name_ar}. رقم الفاتورة: ${invoiceNumber}`,
-      `/invoices/${invoice.id}`,
-      JSON.stringify({ invoiceId: invoice.id, planId: planId, type: 'upgrade' })
+      notifBody,
+      notifLink,
+      JSON.stringify({ invoiceId: invoice?.id || null, planId: planId, type: 'upgrade' })
     ]);
 
     const responseData = {
@@ -585,13 +600,13 @@ router.post('/process-payment', paymentLimiter, authMiddlewareWithEmailCheck, as
         amount: total.toFixed(2),
         status: 'completed'
       },
-      invoice: {
+      invoice: invoice ? {
         id: invoice.id,
         number: invoiceNumber,
         total: total.toFixed(2),
         currency: effectiveCurrency.currency_code,
         currencySymbol: effectiveCurrency.currency_symbol
-      },
+      } : null,
       newPlan: {
         id: plan.id,
         name: plan.name_ar,

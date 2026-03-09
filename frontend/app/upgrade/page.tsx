@@ -737,28 +737,47 @@ function UpgradePageContent() {
                 تم تفعيل باقة <span className="font-bold text-[#D4AF37]">{paymentResult.newPlan.name}</span> على حسابك
               </p>
 
-              <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-6 text-right">
-                <h3 className="font-bold text-green-800 mb-3 flex items-center gap-2">
-                  <FileText className="w-5 h-5" />
-                  تفاصيل الفاتورة
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-green-700">رقم الفاتورة:</span>
-                    <span className="font-mono font-bold">{paymentResult.invoice.number}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-green-700">رقم العملية:</span>
-                    <span className="font-mono text-xs">{paymentResult.payment.transactionId}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-green-700">المبلغ الإجمالي:</span>
-                    <span className="font-bold text-[#D4AF37]">{paymentResult.invoice.total} {paymentResult.currencySymbol || upgradeData?.pricing?.currencySymbol || "ريال"}</span>
+              {paymentResult.invoice ? (
+                <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-6 text-right">
+                  <h3 className="font-bold text-green-800 mb-3 flex items-center gap-2">
+                    <FileText className="w-5 h-5" />
+                    تفاصيل الفاتورة
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-green-700">رقم الفاتورة:</span>
+                      <span className="font-mono font-bold">{paymentResult.invoice.number}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-green-700">رقم العملية:</span>
+                      <span className="font-mono text-xs">{paymentResult.payment.transactionId}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-green-700">المبلغ الإجمالي:</span>
+                      <span className="font-bold text-[#D4AF37]">{paymentResult.invoice.total} {paymentResult.currencySymbol || upgradeData?.pricing?.currencySymbol || "ريال"}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-6 text-right">
+                  <h3 className="font-bold text-green-800 mb-3 flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5" />
+                    تفاصيل التفعيل
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-green-700">رقم العملية:</span>
+                      <span className="font-mono text-xs">{paymentResult.payment.transactionId}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-green-700">الحالة:</span>
+                      <span className="font-bold text-green-600">تم التفعيل مجاناً</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
-              {paymentResult.emailSent && (
+              {paymentResult.invoice && paymentResult.emailSent && (
                 <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 mb-6 flex items-center gap-3">
                   <Mail className="w-6 h-6 text-blue-600" />
                   <div className="text-right">
@@ -769,13 +788,15 @@ function UpgradePageContent() {
               )}
 
               <div className="flex flex-col gap-3">
-                <button
-                  onClick={() => router.push(`/invoices/${paymentResult.invoice.id}`)}
-                  className="w-full py-3 bg-gradient-to-l from-[#002845] to-[#01375e] text-white rounded-xl font-bold hover:opacity-90 transition flex items-center justify-center gap-2"
-                >
-                  <FileText className="w-5 h-5" />
-                  عرض الفاتورة
-                </button>
+                {paymentResult.invoice && (
+                  <button
+                    onClick={() => router.push(`/invoices/${paymentResult.invoice.id}`)}
+                    className="w-full py-3 bg-gradient-to-l from-[#002845] to-[#01375e] text-white rounded-xl font-bold hover:opacity-90 transition flex items-center justify-center gap-2"
+                  >
+                    <FileText className="w-5 h-5" />
+                    عرض الفاتورة
+                  </button>
+                )}
                 <button
                   onClick={() => router.push("/listings/new")}
                   className="w-full py-3 bg-[#D4AF37] text-white rounded-xl font-bold hover:opacity-90 transition"

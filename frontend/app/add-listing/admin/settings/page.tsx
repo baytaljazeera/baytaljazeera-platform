@@ -28,6 +28,7 @@ interface SettingsData {
   autoApproveListings: boolean;
   maxImagesPerListing: number;
   listingDuration: number;
+  invoiceSystemEnabled: boolean;
 }
 
 const defaultSettings: SettingsData = {
@@ -55,6 +56,7 @@ const defaultSettings: SettingsData = {
   autoApproveListings: false,
   maxImagesPerListing: 10,
   listingDuration: 30,
+  invoiceSystemEnabled: false,
 };
 
 export default function SettingsPage() {
@@ -702,6 +704,27 @@ export default function SettingsPage() {
                 <div
                   className={`w-5 h-5 bg-white rounded-full shadow absolute top-0.5 transition-all ${
                     settings.allowRegistration ? "left-0.5" : "left-6"
+                  }`}
+                />
+              </button>
+            </div>
+            <hr className="border-slate-200" />
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-700">نظام الفواتير</p>
+                <p className="text-xs text-slate-500">عند التفعيل، تُنشأ فاتورة لكل عملية دفع (لا تشمل الباقات المجانية)</p>
+              </div>
+              <button
+                onClick={() =>
+                  setSettings({ ...settings, invoiceSystemEnabled: !settings.invoiceSystemEnabled })
+                }
+                className={`w-12 h-6 rounded-full transition relative ${
+                  settings.invoiceSystemEnabled ? "bg-green-500" : "bg-slate-300"
+                }`}
+              >
+                <div
+                  className={`w-5 h-5 bg-white rounded-full shadow absolute top-0.5 transition-all ${
+                    settings.invoiceSystemEnabled ? "left-0.5" : "left-6"
                   }`}
                 />
               </button>
