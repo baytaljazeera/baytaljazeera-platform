@@ -237,12 +237,11 @@ function generateInvoiceHTML(invoice) {
       <div class="info-grid">
         <div class="info-card">
           <div class="info-label">معلومات المزوّد <span>| Seller</span></div>
-          <div class="info-name">شركة بيت الجزيرة للتسويق العقاري</div>
-          <div class="info-sub">Bait Al-Jazeera Real Estate Marketing Co.</div>
+          <div class="info-name" style="font-size:18px;letter-spacing:1px;">IFAZ</div>
+          <div class="info-sub">Digital Real Estate Marketing Platform</div>
           <div class="info-details">
-            الرياض، المملكة العربية السعودية<br>
-            البريد: info@baitaljazeera.com<br>
-            السجل التجاري: 0000000000
+            منصة رقمية متخصصة في التسويق العقاري<br>
+            البريد: info@baitaljazeera.com
           </div>
         </div>
         <div class="info-card">

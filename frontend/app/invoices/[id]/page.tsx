@@ -251,13 +251,11 @@ export default function InvoiceDetailPage() {
                     معلومات المزوّد <span className="text-[#01273C]/40 font-normal">| Seller</span>
                   </h3>
                   <div className="space-y-1.5">
-                    <p className="font-bold text-[#01273C] text-sm">شركة بيت الجزيرة للتسويق العقاري</p>
-                    <p className="text-[#01273C]/50 text-xs">Bait Al-Jazeera Real Estate Marketing Co.</p>
+                    <p className="font-bold text-[#01273C] text-lg tracking-wide">IFAZ</p>
+                    <p className="text-[#01273C]/60 text-xs leading-relaxed">منصة رقمية متخصصة في التسويق العقاري</p>
+                    <p className="text-[#01273C]/40 text-[11px]">Digital Real Estate Marketing Platform</p>
                     <div className="pt-1.5 space-y-1 text-xs text-[#01273C]/60">
-                      <p>الرياض، المملكة العربية السعودية</p>
-                      <p className="text-[#01273C]/40">Riyadh, Kingdom of Saudi Arabia</p>
                       <p>البريد: info@baitaljazeera.com</p>
-                      <p>السجل التجاري: 0000000000</p>
                     </div>
                   </div>
                 </div>
@@ -377,7 +375,7 @@ export default function InvoiceDetailPage() {
                       </div>
                       <div>
                         <p className="text-[10px] text-[#01273C]/40">اسم المستفيد | Beneficiary</p>
-                        <p className="text-[#01273C] font-medium text-xs">شركة بيت الجزيرة للتسويق العقاري</p>
+                        <p className="text-[#01273C] font-medium text-xs">IFAZ</p>
                       </div>
                     </div>
                     <div className="space-y-2">
