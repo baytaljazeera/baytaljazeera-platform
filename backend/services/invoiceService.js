@@ -1,5 +1,4 @@
 const db = require('../db');
-const taxService = require('./taxService');
 
 async function generateInvoiceNumber() {
   const year = new Date().getFullYear();
@@ -27,8 +26,6 @@ async function createInvoice({
 }) {
   const invoiceNumber = await generateInvoiceNumber();
   
-  // لا نحسب ضريبة - خدمة رقمية عابرة للحدود
-  // No tax calculation - cross-border digital service
   const result = await db.query(`
     INSERT INTO invoices (
       invoice_number, user_id, plan_id, property_id, workflow_id,
@@ -42,7 +39,7 @@ async function createInvoice({
   `, [
     invoiceNumber, userId, planId, propertyId, workflowId,
     countryCode, currencyCode, currencySymbol,
-    subtotal, 0, 0, subtotal, // No tax: tax_rate=0, tax_amount=0, amount=subtotal
+    subtotal, 0, 0, subtotal,
     type, description,
     referrerId, referrerCode
   ]);
@@ -128,131 +125,215 @@ async function updateInvoiceStatus(invoiceId, status, paymentId = null) {
   return result.rows[0];
 }
 
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function generateInvoiceHTML(invoice) {
   const subtotal = parseFloat(invoice.subtotal || invoice.amount);
-  const total = subtotal; // No tax
-  const currencySymbol = invoice.currency_symbol || 'ر.س';
+  const total = subtotal;
+  const currencySymbol = escapeHtml(invoice.currency_symbol || 'ر.س');
+  const currency = escapeHtml(invoice.currency_code || 'SAR');
+  const serviceDescription = escapeHtml(invoice.description || invoice.plan_name || 'اشتراك');
   
-  // Generate service description
-  const serviceDescription = invoice.description || invoice.plan_name || 'اشتراك';
-  const digitalServiceDescription = `تقديم خدمة نشر إعلان رقمي على منصة بيت الجزيرة لعرض محتوى عقاري أو استثماري، موجه لأسواق متعددة وفق إعدادات العميل، دون ارتباط بموقع جغرافي محدد ودون أي تدخل في عمليات البيع أو التملك.`;
-  
-  // Format dates
-  const invoiceDate = new Date(invoice.created_at).toLocaleDateString('ar-SA', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
+  const invoiceDateAr = new Date(invoice.created_at).toLocaleDateString('ar-SA', {
+    year: 'numeric', month: 'long', day: 'numeric'
   });
+  const invoiceDateEn = new Date(invoice.created_at).toLocaleDateString('en-US', {
+    year: 'numeric', month: 'long', day: 'numeric'
+  });
+  const invoiceTime = new Date(invoice.created_at).toLocaleTimeString('ar-SA', {
+    hour: '2-digit', minute: '2-digit'
+  });
+  
+  const statusLabel = invoice.status === 'paid' ? 'مدفوعة | Paid' : 'مستحقة | Due';
+  const statusColor = invoice.status === 'paid' ? '#065F46' : '#92400E';
+  const statusBg = invoice.status === 'paid' ? '#D1FAE5' : '#FEF3C7';
 
-  return `
-    <!DOCTYPE html>
-    <html dir="rtl" lang="ar">
-    <head>
-      <meta charset="UTF-8">
-      <title>فاتورة خدمة رقمية ${invoice.invoice_number}</title>
-      <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; padding: 40px; background: #f5f5f5; }
-        .invoice { max-width: 800px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-        .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #D4AF37; padding-bottom: 20px; margin-bottom: 30px; }
-        .logo-section { flex: 1; }
-        .logo { font-size: 28px; font-weight: bold; color: #01273C; margin-bottom: 8px; }
-        .provider-info { font-size: 14px; color: #666; line-height: 1.6; }
-        .provider-info strong { color: #01273C; }
-        .invoice-info { text-align: left; }
-        .invoice-title { font-size: 20px; font-weight: bold; color: #01273C; margin-bottom: 8px; }
-        .invoice-title-en { font-size: 14px; color: #666; font-weight: normal; margin-top: 4px; }
-        .invoice-number { font-size: 24px; color: #D4AF37; font-weight: bold; margin-top: 8px; }
-        .section { margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 8px; }
-        .section-title { font-weight: bold; color: #01273C; margin-bottom: 10px; font-size: 16px; }
-        .items-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        .items-table th, .items-table td { padding: 12px; text-align: right; border-bottom: 1px solid #eee; }
-        .items-table th { background: #01273C; color: white; }
-        .service-description { font-size: 13px; color: #555; line-height: 1.8; margin-top: 8px; padding: 12px; background: #f0f0f0; border-radius: 6px; }
-        .totals { margin-top: 20px; padding: 20px; background: #01273C; color: white; border-radius: 8px; }
-        .total-row { display: flex; justify-content: space-between; padding: 8px 0; }
-        .total-row.final { font-size: 20px; font-weight: bold; color: #D4AF37; border-top: 2px solid #D4AF37; margin-top: 10px; padding-top: 15px; }
-        .status { display: inline-block; padding: 6px 16px; border-radius: 20px; font-weight: bold; margin-top: 8px; }
-        .status.pending { background: #FEF3C7; color: #92400E; }
-        .status.paid { background: #D1FAE5; color: #065F46; }
-        .footer { margin-top: 40px; text-align: center; color: #666; font-size: 14px; }
-        .legal-notice { margin-top: 30px; padding: 20px; background: #f9f9f9; border-left: 4px solid #D4AF37; border-radius: 6px; }
-        .legal-notice-title { font-weight: bold; color: #01273C; margin-bottom: 8px; }
-        .legal-notice-text { font-size: 13px; color: #555; line-height: 1.8; }
-      </style>
-    </head>
-    <body>
-      <div class="invoice">
-        <div class="header">
-          <div class="logo-section">
-            <div class="logo">🏠 بيت الجزيرة – Bait Al Jazeera</div>
-            <div class="provider-info">
-              <strong>مزود الخدمة</strong><br>
-              منصة إعلانات رقمية متعددة الأسواق<br>
-              <span style="font-size: 12px; color: #888;">(International Digital Advertising Platform)</span>
-            </div>
-          </div>
-          <div class="invoice-info">
-            <div class="invoice-title">فاتورة خدمة رقمية</div>
-            <div class="invoice-title-en" style="font-size: 12px; color: #888;">Digital Service Invoice</div>
-            <div class="invoice-number">${invoice.invoice_number}</div>
-            <div style="margin-top: 8px; color: #666;">التاريخ: ${invoiceDate}</div>
-            <span class="status ${invoice.status}">${invoice.status === 'paid' ? '✓ مدفوعة' : '⏳ معلقة'}</span>
-          </div>
-        </div>
-        
-        <div class="section">
-          <div class="section-title">بيانات العميل</div>
-          <div>الاسم: ${invoice.user_name || '-'}</div>
-          <div>البريد: ${invoice.user_email || '-'}</div>
-          ${invoice.user_phone ? `<div>الهاتف: ${invoice.user_phone}</div>` : ''}
-        </div>
-        
-        <table class="items-table">
-          <thead>
-            <tr>
-              <th>الوصف</th>
-              <th>المبلغ</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>
-                <div style="font-weight: 500;">${serviceDescription}</div>
-                <div class="service-description">
-                  ${digitalServiceDescription}
-                </div>
-                <div style="margin-top: 8px; font-size: 12px; color: #888;">
-                  مدة تفعيل الإعلان الرقمي حسب الباقة المختارة
-                </div>
-              </td>
-              <td style="font-weight: bold; font-size: 16px;">${subtotal.toLocaleString('ar-SA')} ${currencySymbol}</td>
-            </tr>
-          </tbody>
-        </table>
-        
-        <div class="totals">
-          <div class="total-row final">
-            <span>إجمالي المبلغ:</span>
-            <span>${total.toLocaleString('ar-SA')} ${currencySymbol}</span>
-          </div>
-        </div>
-        
-        <div class="legal-notice">
-          <div class="legal-notice-title">تنويه:</div>
-          <div class="legal-notice-text">
-            هذه الفاتورة تخص خدمة رقمية عابرة للحدود (Cross-Border Digital Service).<br>
-            أي التزامات ضريبية محلية – إن وُجدت – تقع على عاتق العميل وفق أنظمة دولته.
-          </div>
-        </div>
-        
-        <div class="footer">
-          <p>شكراً لتعاملكم مع بيت الجزيرة</p>
-          <p>للاستفسارات: support@bait-aljazeera.com</p>
+  return `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>فاتورة ${invoice.invoice_number}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; background: #FDFBF5; color: #01273C; }
+    .invoice { max-width: 800px; margin: 0 auto; background: white; }
+    .header { background: linear-gradient(to left, #01273C, #013A5C); padding: 28px 32px; display: flex; justify-content: space-between; align-items: center; }
+    .header-title { font-size: 28px; font-weight: bold; color: white; }
+    .header-title-en { font-size: 14px; color: rgba(255,255,255,0.5); margin-top: 2px; letter-spacing: 1px; }
+    .brand { text-align: left; display: flex; align-items: center; gap: 12px; }
+    .brand-name { font-size: 22px; font-weight: bold; color: #D4AF37; }
+    .brand-en { font-size: 11px; color: rgba(255,255,255,0.4); letter-spacing: 2px; }
+    .subtitle-bar { background: rgba(212,175,55,0.1); border-bottom: 1px solid rgba(212,175,55,0.2); padding: 8px 32px; text-align: center; font-size: 14px; color: #01273C; }
+    .subtitle-bar span { color: rgba(1,39,60,0.5); }
+    .content { padding: 24px 32px; }
+    .info-grid { display: flex; gap: 24px; margin-bottom: 24px; }
+    .info-card { flex: 1; background: #FDFBF5; border: 1px solid #E8E0CC; border-radius: 12px; padding: 20px; }
+    .info-label { font-size: 11px; font-weight: bold; color: #D4AF37; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+    .info-label span { color: rgba(1,39,60,0.3); font-weight: normal; }
+    .info-name { font-weight: bold; font-size: 14px; color: #01273C; }
+    .info-sub { font-size: 12px; color: rgba(1,39,60,0.4); margin-top: 2px; }
+    .info-details { margin-top: 8px; font-size: 12px; color: rgba(1,39,60,0.5); line-height: 1.8; }
+    .meta-grid { display: flex; gap: 12px; margin-bottom: 24px; }
+    .meta-card { flex: 1; background: white; border: 1px solid #E8E0CC; border-radius: 12px; padding: 14px; text-align: center; }
+    .meta-label { font-size: 10px; color: rgba(1,39,60,0.35); margin-bottom: 4px; }
+    .meta-value { font-weight: bold; font-size: 13px; color: #01273C; }
+    .meta-value-sm { font-size: 10px; color: rgba(1,39,60,0.35); }
+    .status-badge { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; border: 1px solid #E8E0CC; border-radius: 12px; overflow: hidden; }
+    table thead { background: #01273C; }
+    table th { padding: 14px 20px; color: white; font-size: 12px; font-weight: 500; text-align: right; }
+    table th span { color: rgba(255,255,255,0.35); font-weight: normal; }
+    table td { padding: 20px; border-bottom: 1px solid #E8E0CC; font-size: 13px; }
+    .totals { width: 340px; border: 1px solid #E8E0CC; border-radius: 12px; overflow: hidden; margin-bottom: 24px; }
+    .totals-row { display: flex; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid #E8E0CC; font-size: 13px; background: #FDFBF5; }
+    .totals-row span:first-child { color: rgba(1,39,60,0.5); }
+    .totals-final { display: flex; justify-content: space-between; padding: 16px 20px; background: #01273C; }
+    .totals-final span:first-child { color: white; font-weight: bold; font-size: 13px; }
+    .totals-final span:last-child { color: #D4AF37; font-weight: bold; font-size: 18px; }
+    .no-vat { text-align: center; font-size: 10px; color: rgba(1,39,60,0.35); margin-top: 8px; }
+    .footer { border-top: 2px solid rgba(212,175,55,0.2); padding-top: 24px; margin-top: 16px; text-align: center; }
+    .footer p { font-size: 13px; color: #01273C; margin-bottom: 4px; }
+    .footer .sub { font-size: 11px; color: rgba(1,39,60,0.4); }
+    .footer .en { font-size: 11px; color: rgba(1,39,60,0.25); margin-top: 8px; }
+    .sig-section { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 24px; padding-top: 16px; border-top: 1px dashed #E8E0CC; }
+    .sig-line { width: 128px; border-bottom: 1px solid rgba(1,39,60,0.15); margin-bottom: 4px; }
+    .sig-label { font-size: 10px; color: rgba(1,39,60,0.35); text-align: center; }
+    .contact-info { font-size: 10px; color: rgba(1,39,60,0.25); }
+    @media print {
+      body { background: white; }
+      .invoice { box-shadow: none; }
+      @page { size: A4; margin: 10mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="invoice">
+    <div class="header">
+      <div>
+        <div class="header-title">فاتورة</div>
+        <div class="header-title-en">Invoice</div>
+      </div>
+      <div class="brand">
+        <div>
+          <div class="brand-name">بيت الجزيرة</div>
+          <div class="brand-en">BAIT AL-JAZEERA</div>
         </div>
       </div>
-    </body>
-    </html>
-  `;
+    </div>
+    
+    <div class="subtitle-bar">
+      فاتورة خدمات عقارية <span style="color:#D4AF37;margin:0 8px;">|</span> <span>Real Estate Services Invoice</span>
+    </div>
+    
+    <div class="content">
+      <div class="info-grid">
+        <div class="info-card">
+          <div class="info-label">معلومات المزوّد <span>| Seller</span></div>
+          <div class="info-name">شركة بيت الجزيرة للتسويق العقاري</div>
+          <div class="info-sub">Bait Al-Jazeera Real Estate Marketing Co.</div>
+          <div class="info-details">
+            الرياض، المملكة العربية السعودية<br>
+            البريد: info@baitaljazeera.com<br>
+            السجل التجاري: 0000000000
+          </div>
+        </div>
+        <div class="info-card">
+          <div class="info-label">معلومات العميل <span>| Client</span></div>
+          <div class="info-name">${escapeHtml(invoice.user_name) || '—'}</div>
+          <div class="info-sub">Client</div>
+          <div class="info-details">
+            البريد: ${escapeHtml(invoice.user_email) || '—'}<br>
+            ${invoice.user_phone ? `الجوال: ${escapeHtml(invoice.user_phone)}` : ''}
+          </div>
+        </div>
+      </div>
+      
+      <div class="meta-grid">
+        <div class="meta-card">
+          <div class="meta-label">رقم الفاتورة | Invoice No.</div>
+          <div class="meta-value" style="font-family:monospace;">${invoice.invoice_number}</div>
+        </div>
+        <div class="meta-card">
+          <div class="meta-label">تاريخ الإصدار | Issue Date</div>
+          <div class="meta-value">${invoiceDateAr}</div>
+          <div class="meta-value-sm">${invoiceTime}</div>
+        </div>
+        <div class="meta-card">
+          <div class="meta-label">الحالة | Status</div>
+          <div class="status-badge" style="background:${statusBg};color:${statusColor};">${statusLabel}</div>
+        </div>
+      </div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>البيان <span>| Description</span></th>
+            <th style="text-align:center;">الكمية <span>| Qty</span></th>
+            <th style="text-align:center;">سعر الوحدة <span>| Unit Price</span></th>
+            <th style="text-align:left;">الإجمالي <span>| Amount</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div style="font-weight:bold;">${serviceDescription}</div>
+            </td>
+            <td style="text-align:center;">1</td>
+            <td style="text-align:center;">${subtotal.toLocaleString('en-US', {minimumFractionDigits:2})} ${currency}</td>
+            <td style="text-align:left;font-weight:bold;">${subtotal.toLocaleString('en-US', {minimumFractionDigits:2})} ${currency}</td>
+          </tr>
+        </tbody>
+      </table>
+      
+      <div class="totals">
+        <div class="totals-row">
+          <span>المجموع الفرعي | Subtotal</span>
+          <span>${subtotal.toLocaleString('en-US', {minimumFractionDigits:2})} ${currency}</span>
+        </div>
+        <div class="totals-row">
+          <span>الخصم | Discount</span>
+          <span>0.00 ${currency}</span>
+        </div>
+        <div class="totals-final">
+          <span>الإجمالي النهائي | Total</span>
+          <span>${total.toLocaleString('en-US', {minimumFractionDigits:2})} ${currency}</span>
+        </div>
+      </div>
+      <div class="no-vat">غير خاضعة لضريبة القيمة المضافة | No VAT Applied</div>
+      
+      <div class="footer">
+        <p>شكراً لثقتكم في بيت الجزيرة</p>
+        <p class="sub">نفخر بخدمتكم ونتطلع إلى استمرار التعاون معكم</p>
+        <p class="en">Thank you for choosing Bait Al-Jazeera</p>
+        <p class="en">We are honored to serve you and look forward to continuing our partnership</p>
+      </div>
+      
+      <div class="sig-section">
+        <div class="contact-info">
+          info@baitaljazeera.com<br>
+          baytaljazeera.com
+        </div>
+        <div>
+          <div class="sig-line"></div>
+          <div class="sig-label">الاعتماد | Authorized Signature</div>
+        </div>
+        <div class="contact-info" style="text-align:left;" dir="ltr">
+          ${invoice.invoice_number}<br>
+          ${invoiceDateEn}
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
 }
 
 module.exports = {
