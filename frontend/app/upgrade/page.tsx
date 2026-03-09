@@ -222,6 +222,40 @@ function UpgradePageContent() {
     }
   }
 
+  async function handleFreeActivation() {
+    if (!selectedPlanId) return;
+    setProcessing(true);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_URL}/api/payments/process-payment`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          planId: selectedPlanId,
+          paymentMethod: "free",
+          countryCode,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setPaymentResult(data);
+        setStep("success");
+      } else {
+        showError("خطأ في التفعيل", data.error || "خطأ في تفعيل الباقة");
+      }
+    } catch (error) {
+      console.error("Free activation error:", error);
+      showError("خطأ في الاتصال", "حدث خطأ أثناء تفعيل الباقة. يرجى المحاولة مرة أخرى.");
+    } finally {
+      setProcessing(false);
+    }
+  }
+
   async function handlePayment() {
     if (!selectedPlanId) return;
     
@@ -518,13 +552,33 @@ function UpgradePageContent() {
               </div>
 
               <div className="flex gap-3">
-                <button
-                  onClick={() => setStep("payment")}
-                  className="flex-[2] py-4 bg-gradient-to-l from-[#002845] to-[#01375e] text-white rounded-xl font-bold hover:opacity-90 transition flex items-center justify-center gap-2"
-                >
-                  <CreditCard className="w-5 h-5" />
-                  المتابعة للدفع
-                </button>
+                {parseFloat(upgradeData.pricing.total) === 0 ? (
+                  <button
+                    onClick={handleFreeActivation}
+                    disabled={processing}
+                    className="flex-[2] py-4 bg-gradient-to-l from-[#0B6B4C] to-[#085239] text-white rounded-xl font-bold hover:opacity-90 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {processing ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        جاري التفعيل...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-5 h-5" />
+                        تفعيل الباقة مجاناً
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setStep("payment")}
+                    className="flex-[2] py-4 bg-gradient-to-l from-[#002845] to-[#01375e] text-white rounded-xl font-bold hover:opacity-90 transition flex items-center justify-center gap-2"
+                  >
+                    <CreditCard className="w-5 h-5" />
+                    المتابعة للدفع
+                  </button>
+                )}
                 <button
                   onClick={() => router.push("/plans")}
                   className="flex-1 py-4 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition flex items-center justify-center gap-2"
