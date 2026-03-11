@@ -279,7 +279,7 @@ export default function GlobalPromotions() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 touch-manipulation"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 touch-manipulation"
         onClick={(e: React.MouseEvent) => {
           if (e.target === e.currentTarget && allowBackdropClose) {
             dismissOverlay(promo.id);
