@@ -469,20 +469,20 @@ function RegisterForm() {
   return (
     <div
       dir="rtl"
-      className="min-h-screen bg-gradient-to-b from-[#002845] via-[#123a64] to-[#fdf6db] flex items-center justify-center py-12 px-4"
+      className="min-h-screen bg-gradient-to-b from-[#002845] via-[#123a64] to-[#fdf6db] flex items-center justify-center py-4 sm:py-12 px-4"
     >
-      <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl border border-[#f6d879]/50 p-8">
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-[#002845] to-[#123a64] rounded-full flex items-center justify-center shadow-lg">
-            <svg className="w-10 h-10 text-[#f6d879]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl border border-[#f6d879]/50 p-4 sm:p-8">
+        <div className="text-center mb-6 sm:mb-8">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-3 sm:mb-4 bg-gradient-to-br from-[#002845] to-[#123a64] rounded-full flex items-center justify-center shadow-lg">
+            <svg className="w-8 h-8 sm:w-10 sm:h-10 text-[#f6d879]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
             </svg>
           </div>
-          <h1 className="text-2xl font-extrabold text-[#002845]">
+          <h1 className="text-xl sm:text-2xl font-extrabold text-[#002845]">
             إنشاء حساب جديد
           </h1>
-          <p className="text-sm text-slate-600 mt-2">
-            انضم إلى بيت الجزيرة اليوم
+          <p className="text-sm text-slate-600 mt-1 sm:mt-2">
+            انضم إلى منصتنا العقارية اليوم
           </p>
         </div>
 

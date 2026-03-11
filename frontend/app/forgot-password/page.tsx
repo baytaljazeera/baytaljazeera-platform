@@ -49,14 +49,14 @@ export default function ForgotPasswordPage() {
       <div className="max-w-md w-full relative z-10">
         <div className="text-center mb-8">
           <Link href="/" className="inline-block">
-            <h1 className="text-4xl font-black bg-gradient-to-l from-[#D4AF37] via-[#F5E6B8] to-[#D4AF37] bg-clip-text text-transparent drop-shadow-lg">
-              بيت الجزيرة
+            <h1 className="text-3xl sm:text-4xl font-black bg-gradient-to-l from-[#D4AF37] via-[#F5E6B8] to-[#D4AF37] bg-clip-text text-transparent drop-shadow-lg">
+              مرحباً بك
             </h1>
           </Link>
-          <p className="text-[#D4AF37]/80 text-sm mt-2 font-medium">منصة العقارات الخليجية الأولى</p>
+          <p className="text-[#D4AF37]/80 text-sm mt-2 font-medium">منصة العقارات الخليجية</p>
         </div>
 
-        <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-[#D4AF37]/30 p-8 relative overflow-hidden">
+        <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-[#D4AF37]/30 p-4 sm:p-8 relative overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#D4AF37] via-[#F5E6B8] to-[#D4AF37]"></div>
           
           <div className="text-center mb-8">

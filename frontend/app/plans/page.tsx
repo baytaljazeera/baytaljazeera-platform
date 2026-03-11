@@ -444,7 +444,7 @@ export default function PlansPage() {
             </div>
             <h3 className="text-xl font-bold text-[#002845] mb-2">كن سفير البيت 🏆</h3>
             <p className="text-slate-600 text-sm mb-4 leading-relaxed">
-              انضم لبرنامج سفراء بيت الجزيرة. ادعُ أصدقاءك واحصل على باقة رجال الأعمال مجاناً لمدة سنة كاملة!
+              انضم لبرنامج السفراء. ادعُ أصدقاءك واحصل على باقة رجال الأعمال مجاناً لمدة سنة كاملة!
             </p>
             <Link 
               href="/referral"

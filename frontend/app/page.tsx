@@ -571,38 +571,38 @@ function FeaturedPropertiesSection() {
 
 function FreeAdCallToActionSection() {
   return (
-    <section className="py-10 bg-white" dir="rtl">
-      <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center gap-10">
-        <div className="flex-1">
+    <section className="py-8 sm:py-10 bg-white" dir="rtl">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col md:flex-row items-center gap-6 sm:gap-10">
+        <div className="flex-1 w-full">
           <Image
             src="/patterns/palace5.jpeg"
             alt="أعلن عن عقارك الآن"
             width={800}
             height={500}
-            className="rounded-3xl shadow-lg object-cover"
+            className="rounded-2xl sm:rounded-3xl shadow-lg object-cover w-full"
           />
         </div>
-        <div className="flex-1">
+        <div className="flex-1 w-full">
           <p className="text-xs text-[#D4AF37] font-semibold mb-2">
             ابدأ رحلتك الآن 🚀
           </p>
-          <h2 className="text-3xl md:text-4xl font-extrabold text-[#003366] mb-4">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-[#003366] mb-3 sm:mb-4">
             أعلن عن عقارك بكل سهولة
           </h2>
-          <p className="text-sm md:text-base text-slate-700 mb-6 leading-relaxed">
-            انضم لأصحاب العقارات الذين اختاروا بيت الجزيرة كواجهتهم الأولى للعرض. ابدأ بإعلان مجاني
+          <p className="text-sm md:text-base text-slate-700 mb-5 sm:mb-6 leading-relaxed">
+            انضم لآلاف أصحاب العقارات على منصتنا. ابدأ بإعلان مجاني
             لتجربة المنصة، ثم اختر الباقة المناسبة عندما ترى النتائج.
           </p>
           <div className="flex flex-wrap gap-3">
             <Link
               href="/listings/new"
-              className="px-6 py-3 rounded-xl bg-[#D4AF37] text-[#001A33] font-bold text-sm hover:bg-[#E8C882] transition"
+              className="min-h-[48px] px-6 py-3 rounded-xl bg-[#D4AF37] text-[#001A33] font-bold text-sm hover:bg-[#E8C882] transition flex items-center"
             >
               أضف عقارك مجاناً
             </Link>
             <Link
               href="/plans"
-              className="px-6 py-3 rounded-xl border border-[#003366] text-[#003366] font-bold text-sm hover:bg-[#003366] hover:text-white transition"
+              className="min-h-[48px] px-6 py-3 rounded-xl border border-[#003366] text-[#003366] font-bold text-sm hover:bg-[#003366] hover:text-white transition flex items-center"
             >
               استكشف الباقات
             </Link>

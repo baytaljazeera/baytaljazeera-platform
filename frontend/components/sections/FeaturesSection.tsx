@@ -37,7 +37,7 @@ export function FeaturesSection() {
           className="text-3xl md:text-4xl font-extrabold text-center mb-12"
           style={{ color: COLORS.primary }}
         >
-          لماذا بيت الجزيرة؟
+          لماذا تختارنا؟
         </h2>
 
         {/* Features grid */}

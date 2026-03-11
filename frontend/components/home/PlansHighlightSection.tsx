@@ -19,7 +19,7 @@ export default function PlansHighlightSection() {
         {/* العنوان الرئيسي */}
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-extrabold text-[#003366] mb-4">
-            🌟 اكتشف مزايا بيت الجزيرة
+            🌟 اكتشف مزايا منصتنا
           </h2>
           <p className="text-gray-600 max-w-2xl mx-auto text-sm md:text-base">
             باقات متنوعة تناسب الجميع، برامج حصرية للسفراء، وفرص مميزة لإبراز عقارك
@@ -81,7 +81,7 @@ export default function PlansHighlightSection() {
                 </div>
                 <h3 className="text-2xl font-bold text-[#002845] mb-3">كن سفير البيت</h3>
                 <p className="text-slate-600 text-sm mb-5 leading-relaxed">
-                  انضم لبرنامج سفراء بيت الجزيرة. ادعُ 10 أصدقاء واحصل على باقة رجال الأعمال مجاناً لسنة كاملة!
+                  انضم لبرنامج السفراء. ادعُ 10 أصدقاء واحصل على باقة رجال الأعمال مجاناً لسنة كاملة!
                 </p>
                 <Link 
                   href="/referral"
