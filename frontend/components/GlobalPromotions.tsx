@@ -279,7 +279,7 @@ export default function GlobalPromotions() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+        className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 touch-manipulation"
         onClick={(e: React.MouseEvent) => {
           if (e.target === e.currentTarget && allowBackdropClose) {
             dismissOverlay(promo.id);
@@ -299,7 +299,7 @@ export default function GlobalPromotions() {
           {showDismissButton && (
             <button
               onClick={() => dismissOverlay(promo.id)}
-              className="absolute top-4 left-4 z-10 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+              className="absolute top-3 left-3 z-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 active:scale-95 transition-all touch-manipulation"
               aria-label="إغلاق"
             >
               <X className="w-6 h-6 text-white" />
@@ -351,7 +351,7 @@ export default function GlobalPromotions() {
               {promo.overlay_cta_url && promo.overlay_cta_text ? (
                 <a
                   href={promo.overlay_cta_url}
-                  className="px-8 py-3 rounded-xl font-bold text-lg transition-all hover:scale-105 shadow-lg"
+                  className="min-h-[52px] flex items-center justify-center px-8 py-3 rounded-xl font-bold text-lg transition-all hover:scale-105 active:scale-95 shadow-lg touch-manipulation"
                   style={{ backgroundColor: badgeColor, color: bgColor }}
                 >
                   {promo.overlay_cta_text}
@@ -359,7 +359,7 @@ export default function GlobalPromotions() {
               ) : (
                 <button
                   onClick={() => dismissOverlay(promo.id)}
-                  className="px-8 py-3 rounded-xl font-bold text-lg transition-all hover:scale-105 shadow-lg"
+                  className="min-h-[52px] px-8 py-3 rounded-xl font-bold text-lg transition-all hover:scale-105 active:scale-95 shadow-lg touch-manipulation"
                   style={{ backgroundColor: badgeColor, color: bgColor }}
                 >
                   استفد من العرض الآن
@@ -368,7 +368,7 @@ export default function GlobalPromotions() {
               {showDismissButton && (
                 <button
                   onClick={() => dismissOverlay(promo.id)}
-                  className="px-6 py-3 rounded-xl font-medium text-white/80 hover:text-white transition-colors border border-white/20 hover:border-white/40"
+                  className="min-h-[52px] px-6 py-3 rounded-xl font-medium text-white/80 hover:text-white transition-colors border border-white/20 hover:border-white/40 touch-manipulation active:scale-95"
                 >
                   لاحقاً
                 </button>
