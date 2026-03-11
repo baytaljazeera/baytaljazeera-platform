@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -22,9 +22,14 @@ export default function MobileBottomSheet({
   maxHeight = "80vh",
   showCloseButton = true,
 }: MobileBottomSheetProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (isOpen) {
       document.body.classList.add("scroll-locked");
+      if (contentRef.current) {
+        contentRef.current.scrollTop = 0;
+      }
     } else {
       document.body.classList.remove("scroll-locked");
     }
@@ -100,7 +105,7 @@ export default function MobileBottomSheet({
             )}
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto px-6 py-4" dir="rtl">
+            <div ref={contentRef} className="flex-1 overflow-y-auto px-6 py-4" dir="rtl">
               {children}
             </div>
           </motion.div>

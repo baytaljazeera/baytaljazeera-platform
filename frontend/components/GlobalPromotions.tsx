@@ -125,7 +125,7 @@ export default function GlobalPromotions() {
   const [dismissedOverlays, setDismissedOverlays] = useState<Set<number>>(new Set());
   const [loaded, setLoaded] = useState(false);
   const bannerRef = useRef<HTMLDivElement>(null);
-  const { setHasBannerVisible, setBannerHeight, dismissSignal } = usePromotionStore();
+  const { setHasBannerVisible, setBannerHeight } = usePromotionStore();
 
   useEffect(() => {
     const fetchPromos = async () => {
@@ -160,12 +160,6 @@ export default function GlobalPromotions() {
   useEffect(() => {
     dismissAllOverlays();
   }, [pathname]);
-
-  useEffect(() => {
-    if (dismissSignal > 0) {
-      dismissAllOverlays();
-    }
-  }, [dismissSignal]);
 
   useEffect(() => {
     const timers: NodeJS.Timeout[] = [];

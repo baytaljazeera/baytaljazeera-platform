@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { useSiteSettingsStore } from "@/lib/stores/siteSettingsStore";
-import { usePromotionStore } from "@/lib/promotionStore";
 import { apiGet, API_URL } from "@/lib/api";
 import LogoAdminModal from "./LogoAdminModal";
 import MobileBottomSheet from "./MobileBottomSheet";
@@ -37,7 +36,6 @@ function NavbarContent() {
   
   const { user, isAuthenticated, logout, checkAuth, hydrate, isHydrated } = useAuthStore();
   const { settings: siteSettings, fetchSettings } = useSiteSettingsStore();
-  const { dismissAllOverlays } = usePromotionStore();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
@@ -552,7 +550,7 @@ function NavbarContent() {
 
     if (isAuthenticated && user) {
       return (
-        <div className="pb-2 mb-2 border-b border-slate-100">
+        <div className="border-t border-slate-100 pt-2 mt-2">
           <div className="px-4 py-2 mb-2">
             <p className="text-sm font-bold text-[#003366]">{user.name}</p>
             <p className="text-xs text-slate-500">{user.email}</p>
@@ -620,20 +618,20 @@ function NavbarContent() {
     }
 
     return (
-      <div className="space-y-2 pb-3 mb-1 border-b border-slate-100">
-        <Link
-          href="/register"
-          onClick={() => setShowMobileMenu(false)}
-          className="flex items-center justify-center w-full min-h-[52px] px-4 py-3 rounded-xl bg-gradient-to-r from-[#003366] to-[#01375e] text-white font-bold text-base touch-manipulation active:scale-95 transition-transform"
-        >
-          إنشاء حساب جديد
-        </Link>
+      <div className="border-t border-slate-100 pt-4 mt-2 space-y-2">
         <Link
           href="/login"
           onClick={() => setShowMobileMenu(false)}
+          className="flex items-center justify-center w-full min-h-[52px] px-4 py-3 rounded-xl bg-gradient-to-r from-[#003366] to-[#01375e] text-white font-semibold touch-manipulation active:scale-95 transition-transform"
+        >
+          تسجيل دخول
+        </Link>
+        <Link
+          href="/register"
+          onClick={() => setShowMobileMenu(false)}
           className="flex items-center justify-center w-full min-h-[52px] px-4 py-3 rounded-xl border-2 border-[#003366] text-[#003366] font-semibold touch-manipulation active:scale-95 transition-transform"
         >
-          تسجيل الدخول
+          حساب جديد
         </Link>
       </div>
     );
@@ -760,7 +758,7 @@ function NavbarContent() {
         {/* Menu Button - hidden on desktop */}
         <button
           className="xl:hidden p-2 rounded-lg hover:bg-slate-100 transition shrink-0"
-          onClick={() => { dismissAllOverlays(); setShowMobileMenu(!showMobileMenu); }}
+          onClick={() => setShowMobileMenu(!showMobileMenu)}
         >
           {showMobileMenu ? (
             <X className="w-6 h-6 text-[#003366]" />
@@ -777,10 +775,7 @@ function NavbarContent() {
         maxHeight="70vh"
       >
         <nav className="space-y-2">
-          {/* Auth section FIRST - always visible without scrolling */}
-          {renderMobileAuthSection()}
-
-          <div className="flex gap-2 mt-3">
+          <div className="flex gap-2 mb-3">
             <Link
               href="/search?view=map"
               onClick={() => setShowMobileMenu(false)}
@@ -801,7 +796,7 @@ function NavbarContent() {
           <Link
             href="/listings/new"
             onClick={() => setShowMobileMenu(false)}
-            className="flex items-center justify-center gap-2 min-h-[48px] px-4 py-3 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md active:scale-95 touch-manipulation font-bold"
+            className="flex items-center justify-center gap-2 min-h-[48px] px-4 py-3 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md active:scale-95 touch-manipulation font-bold mb-3"
           >
             <PlusCircle className="w-5 h-5" />
             <span>أضف عقارك الآن</span>
@@ -822,6 +817,8 @@ function NavbarContent() {
               <span className={`text-mobile-base font-semibold ${pathname === href ? 'text-white' : 'text-[#003366]'}`}>{label}</span>
             </Link>
           ))}
+
+          {renderMobileAuthSection()}
         </nav>
       </MobileBottomSheet>
 
