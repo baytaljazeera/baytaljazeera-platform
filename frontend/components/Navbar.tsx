@@ -622,14 +622,14 @@ function NavbarContent() {
         <Link
           href="/login"
           onClick={() => setShowMobileMenu(false)}
-          className="block w-full text-center px-4 py-3 rounded-xl bg-gradient-to-r from-[#003366] to-[#01375e] text-white font-semibold"
+          className="flex items-center justify-center w-full min-h-[52px] px-4 py-3 rounded-xl bg-gradient-to-r from-[#003366] to-[#01375e] text-white font-semibold touch-manipulation active:scale-95 transition-transform"
         >
           تسجيل دخول
         </Link>
         <Link
           href="/register"
           onClick={() => setShowMobileMenu(false)}
-          className="block w-full text-center px-4 py-3 rounded-xl border-2 border-[#003366] text-[#003366] font-semibold"
+          className="flex items-center justify-center w-full min-h-[52px] px-4 py-3 rounded-xl border-2 border-[#003366] text-[#003366] font-semibold touch-manipulation active:scale-95 transition-transform"
         >
           حساب جديد
         </Link>

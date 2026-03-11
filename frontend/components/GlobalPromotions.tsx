@@ -153,6 +153,14 @@ export default function GlobalPromotions() {
     setDismissedOverlays(prev => new Set([...prev, promoId]));
   }, []);
 
+  const dismissAllOverlays = useCallback(() => {
+    setDismissedOverlays(prev => new Set([...prev, ...activePromos.map(p => p.id)]));
+  }, [activePromos]);
+
+  useEffect(() => {
+    dismissAllOverlays();
+  }, [pathname]);
+
   useEffect(() => {
     const timers: NodeJS.Timeout[] = [];
     
