@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense, useRef } from "react";
+import { useEffect, useState, Suspense, useRef, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
@@ -38,6 +38,12 @@ function NavbarContent() {
   const { settings: siteSettings, fetchSettings } = useSiteSettingsStore();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+
+  const closeMobileMenu = useCallback(() => {
+    const el = document.querySelector("[data-sheet-content]") as HTMLElement | null;
+    if (el) el.scrollTop = 0;
+    setShowMobileMenu(false);
+  }, []);
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
   const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -562,7 +568,7 @@ function NavbarContent() {
               <Link
                 key={href}
                 href={href}
-                onClick={() => setShowMobileMenu(false)}
+                onClick={closeMobileMenu}
                 className="flex items-center justify-between px-4 py-3 rounded-xl hover:bg-slate-50 transition"
               >
                 <div className="flex items-center gap-3">
@@ -606,7 +612,7 @@ function NavbarContent() {
           <button
             onClick={() => {
               handleLogout();
-              setShowMobileMenu(false);
+              closeMobileMenu();
             }}
             className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50 transition w-full text-red-600"
           >
@@ -621,14 +627,14 @@ function NavbarContent() {
       <div className="border-t border-slate-100 pt-4 mt-2 space-y-2">
         <Link
           href="/login"
-          onClick={() => setShowMobileMenu(false)}
+          onClick={closeMobileMenu}
           className="flex items-center justify-center w-full min-h-[52px] px-4 py-3 rounded-xl bg-gradient-to-r from-[#003366] to-[#01375e] text-white font-semibold touch-manipulation active:scale-95 transition-transform"
         >
           تسجيل دخول
         </Link>
         <Link
           href="/register"
-          onClick={() => setShowMobileMenu(false)}
+          onClick={closeMobileMenu}
           className="flex items-center justify-center w-full min-h-[52px] px-4 py-3 rounded-xl border-2 border-[#003366] text-[#003366] font-semibold touch-manipulation active:scale-95 transition-transform"
         >
           حساب جديد
@@ -770,7 +776,7 @@ function NavbarContent() {
 
       <MobileBottomSheet
         isOpen={showMobileMenu}
-        onClose={() => setShowMobileMenu(false)}
+        onClose={closeMobileMenu}
         title="القائمة الرئيسية"
         maxHeight="70vh"
       >
@@ -778,7 +784,7 @@ function NavbarContent() {
           <div className="flex gap-2 mb-3">
             <Link
               href="/search?view=map"
-              onClick={() => setShowMobileMenu(false)}
+              onClick={closeMobileMenu}
               className="flex-1 flex items-center justify-center gap-2 min-h-[48px] px-4 py-3 rounded-xl bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md active:scale-95 touch-manipulation"
             >
               <Map className="w-5 h-5" />
@@ -786,7 +792,7 @@ function NavbarContent() {
             </Link>
             <Link
               href="/search?view=list"
-              onClick={() => setShowMobileMenu(false)}
+              onClick={closeMobileMenu}
               className="flex-1 flex items-center justify-center gap-2 min-h-[48px] px-4 py-3 rounded-xl bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md active:scale-95 touch-manipulation"
             >
               <List className="w-5 h-5" />
@@ -795,7 +801,7 @@ function NavbarContent() {
           </div>
           <Link
             href="/listings/new"
-            onClick={() => setShowMobileMenu(false)}
+            onClick={closeMobileMenu}
             className="flex items-center justify-center gap-2 min-h-[48px] px-4 py-3 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] shadow-md active:scale-95 touch-manipulation font-bold mb-3"
           >
             <PlusCircle className="w-5 h-5" />
@@ -806,7 +812,7 @@ function NavbarContent() {
             <Link
               key={href}
               href={href}
-              onClick={() => setShowMobileMenu(false)}
+              onClick={closeMobileMenu}
               className={`flex items-center gap-3 min-h-[48px] px-4 py-3 rounded-xl transition-all duration-300 bg-[#E8F5F0] border border-[#5FBDAA]/30 touch-manipulation ${
                 pathname === href 
                   ? 'bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-sm' 
