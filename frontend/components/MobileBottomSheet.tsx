@@ -1,6 +1,7 @@
 "use client";
 
-import { ReactNode, useEffect, useRef } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 interface MobileBottomSheetProps {
@@ -21,6 +22,11 @@ export default function MobileBottomSheet({
   showCloseButton = true,
 }: MobileBottomSheetProps) {
   const contentRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -44,16 +50,16 @@ export default function MobileBottomSheet({
     return () => document.removeEventListener("keydown", handleEscape);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  if (!mounted || !isOpen) return null;
 
-  return (
+  return createPortal(
     <>
       <div
         className="fixed inset-0 bg-black/50 z-[9998]"
         onClick={onClose}
       />
       <div
-        className="fixed bottom-0 left-0 right-0 z-[9999] bg-white rounded-t-3xl shadow-2xl flex flex-col animate-slide-up"
+        className="fixed inset-x-0 bottom-0 z-[9999] w-full bg-white rounded-t-3xl shadow-2xl flex flex-col animate-slide-up"
         style={{ maxHeight }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -63,8 +69,10 @@ export default function MobileBottomSheet({
 
         {(title || showCloseButton) && (
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-            {title && (
+            {title ? (
               <h2 className="text-xl font-bold text-[#003366]">{title}</h2>
+            ) : (
+              <div />
             )}
             {showCloseButton && (
               <button
@@ -86,6 +94,7 @@ export default function MobileBottomSheet({
           {children}
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }
