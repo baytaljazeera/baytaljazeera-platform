@@ -68,7 +68,7 @@ export default function MobileBottomSheet({
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            exit={{ opacity: 0, transition: { duration: 0 } }}
             transition={{ duration: 0.2 }}
             className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9998]"
             onClick={handleClose}
@@ -78,7 +78,7 @@ export default function MobileBottomSheet({
           <motion.div
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
-            exit={{ y: "100%" }}
+            exit={{ y: "100%", transition: { duration: 0 } }}
             transition={{ type: "spring", damping: 30, stiffness: 300 }}
             className={cn(
               "fixed bottom-0 left-0 right-0 z-[9999]",
