@@ -32,6 +32,13 @@ export default function MobileBottomSheet({
       }
     } else {
       document.body.classList.remove("scroll-locked");
+      // Reset scroll via ref or direct DOM fallback
+      if (contentRef.current) {
+        contentRef.current.scrollTop = 0;
+      } else {
+        const el = document.querySelector("[data-sheet-content]") as HTMLElement;
+        if (el) el.scrollTop = 0;
+      }
     }
     return () => {
       document.body.classList.remove("scroll-locked");
@@ -67,7 +74,7 @@ export default function MobileBottomSheet({
           <motion.div
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
-            exit={{ y: "100%" }}
+            exit={{ y: "100%", transition: { duration: 0.18, ease: "easeIn" } }}
             transition={{ type: "spring", damping: 30, stiffness: 300 }}
             className={cn(
               "fixed bottom-0 left-0 right-0 z-[9999]",
@@ -105,7 +112,7 @@ export default function MobileBottomSheet({
             )}
 
             {/* Content */}
-            <div ref={contentRef} className="flex-1 overflow-y-auto px-6 py-4" dir="rtl">
+            <div ref={contentRef} data-sheet-content className="flex-1 overflow-y-auto px-6 py-4" dir="rtl">
               {children}
             </div>
           </motion.div>
