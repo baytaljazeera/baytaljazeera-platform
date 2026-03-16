@@ -288,7 +288,7 @@ router.post(
       return acc;
     }, {});
 
-    const parts: string[] = [];
+    const parts = [];
     Object.entries(statsByPage).forEach(([page, v]) => {
       const label =
         page === "home"
@@ -306,7 +306,7 @@ router.post(
       );
     });
 
-    const suggestions: string[] = [];
+    const suggestions = [];
     if ((statsByPage.search_map?.low || 0) > 0) {
       suggestions.push(
         "تحسين تجربة البحث بالخريطة (سرعة التحميل، وضوح النتائج، سهولة التحريك والتكبير)."
