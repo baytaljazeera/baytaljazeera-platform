@@ -250,6 +250,97 @@ router.get(
   })
 );
 
+// POST /api/feedback/admin/summary - simple automatic analysis & suggestions
+router.post(
+  "/admin/summary",
+  authMiddleware,
+  adminFeedback,
+  asyncHandler(async (req, res) => {
+    const negative = await db.query(
+      `
+      SELECT page_type, rating, had_issue, comment, created_at
+      FROM feedback_responses
+      ORDER BY created_at DESC
+      LIMIT 100
+    `
+    );
+
+    const rows = negative.rows || [];
+    if (rows.length === 0) {
+      return res.json({
+        ok: true,
+        summary:
+          "لا توجد حتى الآن بيانات كافية من تغذية راجعة المستخدمين لاستخلاص استنتاجات.",
+        suggestions: [
+          "استمر في جمع التغذية الراجعة من صفحات البحث وتفاصيل العقار.",
+          "بعد وصول عدد أكبر من الردود يمكن تحليل الأنماط واقتراح تحسينات أدق.",
+        ],
+      });
+    }
+
+    const statsByPage = rows.reduce<Record<string, { total: number; low: number }>>(
+      (acc, r) => {
+        const key = r.page_type || "unknown";
+        if (!acc[key]) acc[key] = { total: 0, low: 0 };
+        acc[key].total += 1;
+        if ((r.rating != null && r.rating <= 2) || r.had_issue === true) {
+          acc[key].low += 1;
+        }
+        return acc;
+      },
+      {}
+    );
+
+    const parts: string[] = [];
+    Object.entries(statsByPage).forEach(([page, v]) => {
+      const label =
+        page === "home"
+          ? "الصفحة الرئيسية"
+          : page === "search"
+          ? "نتائج البحث"
+          : page === "search_map"
+          ? "خريطة البحث"
+          : page === "listing"
+          ? "تفاصيل العقار"
+          : page;
+      const lowRatio = v.total ? Math.round((v.low / v.total) * 100) : 0;
+      parts.push(
+        `${label}: عدد الردود ${v.total}، نسبة التقييمات المنخفضة أو وجود مشاكل تقريباً ${lowRatio}٪.`
+      );
+    });
+
+    const suggestions: string[] = [];
+    if ((statsByPage.search_map?.low || 0) > 0) {
+      suggestions.push(
+        "تحسين تجربة البحث بالخريطة (سرعة التحميل، وضوح النتائج، سهولة التحريك والتكبير)."
+      );
+    }
+    if ((statsByPage.search?.low || 0) > 0) {
+      suggestions.push(
+        "مراجعة فلاتر البحث والنصوص التوضيحية حتى يصل المستخدم للنتيجة المناسبة بأقصر عدد نقرات."
+      );
+    }
+    if ((statsByPage.listing?.low || 0) > 0) {
+      suggestions.push(
+        "مراجعة محتوى تفاصيل العقار (الصور، الوصف، المساحة، السعر) والتأكد من وضوحها للمستخدم."
+      );
+    }
+    if (suggestions.length === 0) {
+      suggestions.push(
+        "استمر في جمع التغذية الراجعة؛ لا توجد أنماط سلبية قوية حالياً تستدعي تغييراً جذرياً."
+      );
+    }
+
+    res.json({
+      ok: true,
+      summary:
+        "تحليل تلقائي مبني على بيانات تغذية راجعة المستخدمين (بدون نموذج ذكاء اصطناعي خارجي حالياً): " +
+        parts.join(" "),
+      suggestions,
+    });
+  })
+);
+
 // GET /api/feedback/admin/responses
 router.get(
   "/admin/responses",

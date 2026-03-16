@@ -193,6 +193,12 @@ const sidebarSections: SidebarSection[] = [
     colorClass: 'text-slate-400',
     links: [
       { 
+        href: "/admin/feedback/overview", 
+        label: "تغذية راجعة المستخدمين", 
+        icon: MessageCirclePlus,
+        permissionKey: 'support'
+      },
+      { 
         href: "/admin/roles?tab=applications", 
         label: "طلبات الإدارة", 
         icon: UserPlus2,
@@ -272,6 +278,7 @@ type PendingCounts = {
   refundsInProgress: number;
   complaintsInProgress: number;
   supportInProgress: number;
+  feedbackNew: number;
 };
 
 export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSidebarProps) {
@@ -295,7 +302,8 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     supportNew: 0, supportInProgress: 0,
     messagesNew: 0,
     ambassadorPending: 0,
-    ambassadorWithdrawals: 0
+    ambassadorWithdrawals: 0,
+    feedbackNew: 0
   });
   const [visibleSections, setVisibleSections] = useState<string[]>([]);
   const [loadingVisibility, setLoadingVisibility] = useState(true);
@@ -474,6 +482,8 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
         
         if (loadingVisibility || visibleSections.length === 0) return true;
         const sectionKey = getSectionKeyFromHref(link.href);
+        // Always show feedback-related links even إذا لم تُضف بعد لإعدادات الظهور
+        if (sectionKey === 'feedback') return true;
         return visibleSections.includes(sectionKey);
       });
       return { ...section, links: filteredLinks };
@@ -489,6 +499,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     if (href === '/admin/customer-service') return { newCount: pendingCounts.complaintsNew + pendingCounts.supportNew, inProgressCount: pendingCounts.complaintsInProgress + pendingCounts.supportInProgress };
     if (href === '/admin/finance') return { newCount: pendingCounts.refundsNew + pendingCounts.ambassadorWithdrawals, inProgressCount: pendingCounts.refundsInProgress };
     if (href === '/admin/ambassador') return { newCount: pendingCounts.ambassadorPending + pendingCounts.ambassadorWithdrawals, inProgressCount: 0 };
+    if (href === '/admin/feedback/responses') return { newCount: pendingCounts.feedbackNew, inProgressCount: 0 };
     return { newCount: 0, inProgressCount: 0 };
   };
 

@@ -30,6 +30,11 @@ interface OverviewData {
   negativeComments: string[];
 }
 
+interface AnalysisData {
+  summary: string;
+  suggestions: string[];
+}
+
 const PAGE_TYPE_LABELS: Record<string, string> = {
   home: "الرئيسية",
   search: "نتائج البحث",
@@ -41,6 +46,8 @@ export default function FeedbackOverviewPage() {
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -63,6 +70,30 @@ export default function FeedbackOverviewPage() {
     fetchData();
   }, []);
 
+  const runAnalysis = async () => {
+    try {
+      setAnalyzing(true);
+      const res = await fetch(`${API_URL}/api/feedback/admin/summary`, {
+        method: "POST",
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("فشل تحليل البيانات");
+      const json = await res.json();
+      setAnalysis({
+        summary: json.summary,
+        suggestions: json.suggestions || [],
+      });
+    } catch (e) {
+      setAnalysis({
+        summary: e instanceof Error ? e.message : "حدث خطأ أثناء التحليل",
+        suggestions: [],
+      });
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[300px]">
@@ -82,10 +113,25 @@ export default function FeedbackOverviewPage() {
 
   return (
     <div className="space-y-6" dir="rtl">
-      <h1 className="text-2xl font-bold text-[#002845] flex items-center gap-2">
-        <LayoutDashboard className="w-7 h-7 text-[#D4AF37]" />
-        نظرة عامة — تجربة المستخدم
-      </h1>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h1 className="text-2xl font-bold text-[#002845] flex items-center gap-2">
+          <LayoutDashboard className="w-7 h-7 text-[#D4AF37]" />
+          نظرة عامة — تجربة المستخدم
+        </h1>
+        <button
+          type="button"
+          onClick={runAnalysis}
+          disabled={analyzing || !data.total}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#002845] text-white text-sm font-bold disabled:opacity-50"
+        >
+          {analyzing ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <TrendingUp className="w-4 h-4" />
+          )}
+          تحليل تلقائي للتجربة
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="rounded-xl bg-gradient-to-br from-[#002845] to-[#003d5c] text-white p-5 shadow-lg">
@@ -182,6 +228,27 @@ export default function FeedbackOverviewPage() {
             )}
           </div>
         </div>
+
+        {analysis && (
+          <div className="rounded-xl bg-white border border-slate-200 shadow-sm overflow-hidden lg:col-span-2">
+            <h2 className="px-5 py-4 border-b border-slate-100 font-bold text-[#002845]">
+              نتيجة التحليل التلقائي
+            </h2>
+            <div className="p-5 space-y-3 text-sm text-[#002845]">
+              <p>{analysis.summary}</p>
+              {analysis.suggestions.length > 0 && (
+                <div>
+                  <p className="font-semibold mb-1">خطوات مقترحة:</p>
+                  <ul className="list-disc pr-5 space-y-1">
+                    {analysis.suggestions.map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

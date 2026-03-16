@@ -38,6 +38,7 @@ const INVALIDATION_MAP = {
   'admin_messages': ['admin:pending-counts'],
   'account_complaints': ['admin:pending-counts'],
   'support_tickets': ['admin:pending-counts'],
+  'feedback_responses': ['admin:pending-counts'],
   'users': ['admin:users-stats'],
   'user_plans': ['admin:users-stats'],
   'featured_cities': ['cities:featured']

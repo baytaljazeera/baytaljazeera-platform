@@ -1523,6 +1523,8 @@ async function initializeDatabase() {
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_feedback_responses_page_created ON feedback_responses(page_type, created_at);`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_feedback_responses_created ON feedback_responses(created_at);`);
+    // unread flag for admin sidebar counters
+    await db.query(`ALTER TABLE feedback_responses ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false;`);
 
     await db.query(`
       CREATE TABLE IF NOT EXISTS feedback_settings (

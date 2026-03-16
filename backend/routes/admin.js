@@ -68,6 +68,7 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
       UNION ALL SELECT 'refunds_new', COUNT(*)::int FROM refunds WHERE status = 'pending'
       UNION ALL SELECT 'refunds_in_progress', COUNT(*)::int FROM refunds WHERE status = 'approved' AND payout_confirmed_at IS NULL
       UNION ALL SELECT 'messages_new', COUNT(*)::int FROM admin_messages WHERE read_by IS NULL
+      UNION ALL SELECT 'feedback_new', COUNT(*)::int FROM feedback_responses WHERE is_read = false
       UNION ALL SELECT 'complaints_new', COUNT(*)::int FROM account_complaints WHERE status = 'new'
       UNION ALL SELECT 'complaints_in_progress', COUNT(*)::int FROM account_complaints WHERE status = 'in_review'
       UNION ALL SELECT 'support_new', COUNT(*)::int FROM support_tickets WHERE status IN ('new', 'open')
@@ -90,7 +91,8 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
       MAX(CASE WHEN key = 'support_new' THEN cnt END) as support_new,
       MAX(CASE WHEN key = 'support_in_progress' THEN cnt END) as support_in_progress,
       MAX(CASE WHEN key = 'ambassador_pending' THEN cnt END) as ambassador_pending,
-      MAX(CASE WHEN key = 'ambassador_withdrawals' THEN cnt END) as ambassador_withdrawals
+      MAX(CASE WHEN key = 'ambassador_withdrawals' THEN cnt END) as ambassador_withdrawals,
+      MAX(CASE WHEN key = 'feedback_new' THEN cnt END) as feedback_new
     FROM counts
   `, [], 30000);
   
@@ -111,7 +113,8 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
     supportNew: row.support_new || 0,
     supportInProgress: row.support_in_progress || 0,
     ambassadorPending: row.ambassador_pending || 0,
-    ambassadorWithdrawals: row.ambassador_withdrawals || 0
+    ambassadorWithdrawals: row.ambassador_withdrawals || 0,
+    feedbackNew: row.feedback_new || 0
   });
 }));
 
