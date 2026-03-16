@@ -79,6 +79,7 @@ const ambassadorRoutes = require("./backend/routes/ambassador");
 const stripeRoutes = require("./backend/routes/stripe");
 const listingWorkflowRoutes = require("./backend/routes/listing-workflow");
 const launchTrialRoutes = require("./backend/routes/launch-trial");
+const feedbackRoutes = require("./backend/routes/feedback");
 const { createSlideshowVideo, generateDynamicPromoText, generatePromotionalText } = require("./backend/routes/ai");
 
 const app = express();
@@ -661,6 +662,7 @@ app.use("/api/ambassador", ambassadorRoutes);
 app.use("/api/stripe", stripeRoutes);
 app.use("/api/listing-workflow", listingWorkflowRoutes);
 app.use("/api/launch-trial", launchTrialRoutes);
+app.use("/api/feedback", feedbackRoutes);
 
 // 🟢 معالج أخطاء عام (خصوصاً أخطاء Multer)
 app.use((err, req, res, next) => {
