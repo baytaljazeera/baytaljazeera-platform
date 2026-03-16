@@ -166,6 +166,13 @@ function MapComponentInner({
                     {marker.type}
                   </span>
                 </div>
+                <a
+                  href={`/listing/${marker.id}`}
+                  className="mt-3 block w-full text-center text-xs font-bold text-white py-2 rounded-xl"
+                  style={{ background: "linear-gradient(to left, #D4AF37, #B8860B)", textDecoration: "none" }}
+                >
+                  🏠 عرض الإعلان كاملاً
+                </a>
               </div>
             </Popup>
           </Marker>

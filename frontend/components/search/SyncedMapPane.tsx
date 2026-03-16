@@ -136,6 +136,13 @@ function PopupContent({ marker }: { marker: PropertyMarker }) {
           {marker.type}
         </span>
       </div>
+      <a
+        href={`/listing/${marker.id}`}
+        className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white transition"
+        style={{ background: "linear-gradient(to left, #D4AF37, #B8860B)", display: "block", textAlign: "center", textDecoration: "none" }}
+      >
+        🏠 عرض الإعلان كاملاً
+      </a>
     </div>
   );
 }
