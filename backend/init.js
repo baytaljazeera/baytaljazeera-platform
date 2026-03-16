@@ -1525,6 +1525,8 @@ async function initializeDatabase() {
     await db.query(`CREATE INDEX IF NOT EXISTS idx_feedback_responses_created ON feedback_responses(created_at);`);
     // unread flag for admin sidebar counters
     await db.query(`ALTER TABLE feedback_responses ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false;`);
+    // ensure existing rows have explicit false instead of NULL
+    await db.query(`UPDATE feedback_responses SET is_read = false WHERE is_read IS NULL;`);
 
     await db.query(`
       CREATE TABLE IF NOT EXISTS feedback_settings (

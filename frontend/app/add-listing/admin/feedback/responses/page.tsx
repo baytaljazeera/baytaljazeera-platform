@@ -74,18 +74,7 @@ export default function FeedbackResponsesPage() {
   }, [page, limit, pageType, ratingFilter, searchText, fromDate, toDate]);
 
   useEffect(() => {
-    fetchResponses().then(async () => {
-      // بعد تحميل الردود نعلم النظام أن الردود تمت قراءتها لتصفير العداد في السايدبار
-      try {
-        await fetch(`${API_URL}/api/feedback/admin/mark-read`, {
-          method: "POST",
-          credentials: "include",
-          headers: getAuthHeaders(),
-        });
-      } catch {
-        // نتجاهل الخطأ هنا، فقط للعداد
-      }
-    });
+    fetchResponses();
   }, [fetchResponses]);
 
   const handleDelete = async (id: number) => {
@@ -187,6 +176,23 @@ export default function FeedbackResponsesPage() {
         >
           <Download className="w-4 h-4" />
           تصدير CSV
+        </button>
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              await fetch(`${API_URL}/api/feedback/admin/mark-read`, {
+                method: "POST",
+                credentials: "include",
+                headers: getAuthHeaders(),
+              });
+            } catch {
+              // ignore
+            }
+          }}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-600 hover:bg-slate-50"
+        >
+          تمييز الكل كمقروء (تصفير العداد)
         </button>
       </div>
 
