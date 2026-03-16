@@ -49,12 +49,28 @@ export default function FeedbackResponsesPage() {
   const [toDate, setToDate] = useState("");
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [messageUserId, setMessageUserId] = useState<string | null>(null);
+  const [messageUserName, setMessageUserName] = useState<string | null>(null);
+  const [messageText, setMessageText] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
 
-  const startInternalMessage = async (userId?: string | null, userName?: string | null) => {
+  const openMessageModal = (userId?: string | null, userName?: string | null) => {
     if (!userId) return;
-    const label = userName && userName.trim() ? ` للعميل ${userName}` : "";
-    const msg = window.prompt(`اكتب رسالة${label}:`);
-    if (!msg) return;
+    setMessageUserId(userId);
+    setMessageUserName(userName || null);
+    setMessageText("");
+  };
+
+  const closeMessageModal = () => {
+    if (sendingMessage) return;
+    setMessageUserId(null);
+    setMessageUserName(null);
+    setMessageText("");
+  };
+
+  const submitInternalMessage = async () => {
+    if (!messageUserId || !messageText.trim()) return;
+    setSendingMessage(true);
     try {
       const res = await fetch(`${API_URL}/api/admin-messages/conversations`, {
         method: "POST",
@@ -63,14 +79,17 @@ export default function FeedbackResponsesPage() {
         body: JSON.stringify({
           department: "support",
           subject: "متابعة تغذية راجعة (بيت الجزيرة)",
-          message: msg,
-          participants: [userId],
+          message: messageText.trim(),
+          participants: [messageUserId],
         }),
       });
       if (!res.ok) throw new Error();
-      window.alert("تم إرسال رسالة داخلية بنجاح");
+      window.alert("تم إرسال رسالة داخلية بنجاح. يمكنك متابعة المحادثة من صفحة الرسائل.");
+      closeMessageModal();
     } catch {
       window.alert("فشل إرسال الرسالة الداخلية");
+    } finally {
+      setSendingMessage(false);
     }
   };
 
@@ -317,7 +336,7 @@ export default function FeedbackResponsesPage() {
                                 type="button"
                                 className="font-medium text-[#002845] truncate text-right w-full hover:underline disabled:cursor-default disabled:opacity-70"
                                 title={r.user_name || ""}
-                                onClick={() => startInternalMessage(r.user_id, r.user_name)}
+                                onClick={() => openMessageModal(r.user_id, r.user_name)}
                                 disabled={!r.user_id}
                               >
                                 {r.user_name || "—"}
@@ -359,6 +378,15 @@ export default function FeedbackResponsesPage() {
                                   WhatsApp
                                 </a>
                               )}
+                              {r.user_id && (
+                                <button
+                                  type="button"
+                                  className="text-xs px-2 py-1 rounded bg-[#002845] text-white hover:opacity-90"
+                                  onClick={() => openMessageModal(r.user_id, r.user_name)}
+                                >
+                                  رسالة داخلية
+                                </button>
+                              )}
                             </div>
                           </td>
                           <td className="py-2 px-4 text-slate-600">
@@ -388,6 +416,58 @@ export default function FeedbackResponsesPage() {
                 </tbody>
               </table>
             </div>
+
+            {messageUserId && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 mx-4">
+                  <h3 className="text-lg font-bold text-[#002845] mb-2">
+                    إرسال رسالة داخلية
+                  </h3>
+                  <p className="text-sm text-slate-600 mb-3">
+                    سيتم إنشاء محادثة في نظام المراسلات مع{" "}
+                    <span className="font-semibold">
+                      {messageUserName || "هذا العميل"}
+                    </span>{" "}
+                    تحت قسم الدعم الفني.
+                  </p>
+                  <textarea
+                    className="w-full h-32 rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#D4AF37]"
+                    placeholder="اكتب رسالتك هنا..."
+                    value={messageText}
+                    onChange={(e) => setMessageText(e.target.value)}
+                    disabled={sendingMessage}
+                  />
+                  <p className="text-[11px] text-slate-500 mt-2">
+                    بعد الإرسال يمكنك متابعة المحادثة من صفحة المراسلات في لوحة التحكم.
+                  </p>
+                  <div className="flex justify-end gap-2 mt-4">
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      onClick={closeMessageModal}
+                      disabled={sendingMessage}
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded-lg bg-[#002845] text-white text-sm font-bold hover:bg-[#011a2d] disabled:opacity-50"
+                      onClick={submitInternalMessage}
+                      disabled={sendingMessage || !messageText.trim()}
+                    >
+                      {sendingMessage ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          جارٍ الإرسال...
+                        </span>
+                      ) : (
+                        "إرسال الرسالة"
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {confirmDeleteId !== null && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
