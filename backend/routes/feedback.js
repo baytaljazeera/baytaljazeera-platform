@@ -407,6 +407,17 @@ router.get(
   })
 );
 
+// POST /api/feedback/admin/mark-read - mark all responses as read (for counters)
+router.post(
+  "/admin/mark-read",
+  authMiddleware,
+  adminFeedback,
+  asyncHandler(async (req, res) => {
+    await db.query(`UPDATE feedback_responses SET is_read = true WHERE is_read = false`);
+    res.json({ ok: true });
+  })
+);
+
 // DELETE /api/feedback/admin/responses/:id
 router.delete(
   "/admin/responses/:id",

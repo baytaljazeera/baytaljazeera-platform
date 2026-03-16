@@ -74,7 +74,18 @@ export default function FeedbackResponsesPage() {
   }, [page, limit, pageType, ratingFilter, searchText, fromDate, toDate]);
 
   useEffect(() => {
-    fetchResponses();
+    fetchResponses().then(async () => {
+      // بعد تحميل الردود نعلم النظام أن الردود تمت قراءتها لتصفير العداد في السايدبار
+      try {
+        await fetch(`${API_URL}/api/feedback/admin/mark-read`, {
+          method: "POST",
+          credentials: "include",
+          headers: getAuthHeaders(),
+        });
+      } catch {
+        // نتجاهل الخطأ هنا، فقط للعداد
+      }
+    });
   }, [fetchResponses]);
 
   const handleDelete = async (id: number) => {
@@ -214,10 +225,19 @@ export default function FeedbackResponsesPage() {
                       </td>
                     </tr>
                   ) : (
-                    items.map((r) => (
-                      <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50">
-                        <td className="py-2 px-4">{r.rating ?? "—"}</td>
-                        <td className="py-2 px-4">
+                    items.map((r) => {
+                      const negative = (r.rating != null && r.rating <= 2) || r.had_issue === true;
+                      return (
+                      <tr
+                        key={r.id}
+                        className={`border-t border-slate-100 hover:bg-slate-50 ${
+                          negative ? "bg-red-50/40" : ""
+                        }`}
+                      >
+                        <td className={`py-2 px-4 ${negative ? "text-red-600 font-bold" : ""}`}>
+                          {r.rating ?? "—"}
+                        </td>
+                        <td className={`py-2 px-4 ${negative ? "text-red-600" : ""}`}>
                           {r.had_issue === true ? "نعم" : r.had_issue === false ? "لا" : "—"}
                         </td>
                         <td className="py-2 px-4 max-w-[200px] truncate" title={r.comment || ""}>
@@ -248,7 +268,7 @@ export default function FeedbackResponsesPage() {
                           </button>
                         </td>
                       </tr>
-                    ))
+                    )})
                   )}
                 </tbody>
               </table>

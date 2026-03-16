@@ -88,21 +88,24 @@ export default function FeedbackForm({
       <div>
         <p className="text-sm text-[#002845]/80 mb-2">التقييم (1–5)</p>
         <div className="flex gap-1">
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => setRating(n)}
-              className={`p-2 rounded-lg transition ${
-                rating === n
-                  ? "bg-[#D4AF37] text-[#002845]"
-                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-              }`}
-              aria-label={`${n} نجوم`}
-            >
-              <Star className="w-5 h-5 fill-current" />
-            </button>
-          ))}
+          {[1, 2, 3, 4, 5].map((n) => {
+            const active = rating != null && n <= rating;
+            return (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setRating(n)}
+                className={`p-2 rounded-lg transition ${
+                  active
+                    ? "bg-[#D4AF37] text-[#002845]"
+                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                }`}
+                aria-label={`${n} نجوم`}
+              >
+                <Star className={`w-5 h-5 ${active ? "fill-current" : ""}`} />
+              </button>
+            );
+          })}
         </div>
       </div>
 
