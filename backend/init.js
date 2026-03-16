@@ -1506,6 +1506,47 @@ async function initializeDatabase() {
     `);
     console.log("✅ Promo banner settings initialized");
 
+    // User Feedback system tables
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS feedback_responses (
+        id SERIAL PRIMARY KEY,
+        rating INT,
+        had_issue BOOLEAN,
+        comment TEXT,
+        page_url VARCHAR(2048),
+        page_type VARCHAR(50),
+        device_type VARCHAR(100),
+        user_id UUID,
+        answers JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_feedback_responses_page_created ON feedback_responses(page_type, created_at);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_feedback_responses_created ON feedback_responses(created_at);`);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS feedback_settings (
+        key VARCHAR(100) PRIMARY KEY,
+        value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS feedback_questions (
+        id SERIAL PRIMARY KEY,
+        question_text_ar VARCHAR(500) NOT NULL,
+        question_type VARCHAR(50) NOT NULL,
+        options JSONB,
+        is_required BOOLEAN DEFAULT FALSE,
+        sort_order INT DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_feedback_questions_sort ON feedback_questions(sort_order);`);
+    console.log("✅ Feedback system tables initialized");
+
     await db.query(`
       CREATE TABLE IF NOT EXISTS ai_chat_logs (
         id SERIAL PRIMARY KEY,

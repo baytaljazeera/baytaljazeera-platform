@@ -18,6 +18,7 @@ import {
 import ShareButton from "@/components/shared/ShareButton";
 import AdvertiserReputation from "@/components/ratings/AdvertiserReputation";
 import RatingModal from "@/components/ratings/RatingModal";
+import FeedbackBlockSlot from "@/components/feedback/FeedbackBlockSlot";
 import { getImageUrl } from "@/lib/imageUrl";
 
 type ListingDetail = {
@@ -1579,6 +1580,9 @@ export default function ListingDetailPage() {
           </div>
         </div>
       )}
+
+      {/* بلوك التغذية الراجعة (يظهر عند تفعيل الوضع Inline من الإعدادات) */}
+      <FeedbackBlockSlot />
 
       {listing?.user_id && !isOwner && (
         <div className="max-w-6xl mx-auto px-4 pb-8">

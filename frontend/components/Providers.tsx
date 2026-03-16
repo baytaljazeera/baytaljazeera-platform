@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { Toaster } from "sonner";
 import Navbar from "@/components/Navbar";
 import NewsTicker from "@/components/NewsTicker";
@@ -7,6 +8,7 @@ import ChatbotWrapper from "@/components/ChatbotWrapper";
 import GlobalPromotions from "@/components/GlobalPromotions";
 import SiteStatusWrapper from "@/components/SiteStatusWrapper";
 import { Footer } from "@/components/sections/Footer";
+import FeedbackWidgetContainer from "@/components/feedback/FeedbackWidgetContainer";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -18,6 +20,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       <main className="flex-1">{children}</main>
       <Footer />
       <ChatbotWrapper />
+      <Suspense fallback={null}>
+        <FeedbackWidgetContainer />
+      </Suspense>
     </SiteStatusWrapper>
   );
 }

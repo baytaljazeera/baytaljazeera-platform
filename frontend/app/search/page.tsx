@@ -48,6 +48,7 @@ import { useCurrencyStore } from "@/lib/stores/currencyStore";
 import type { PropertyMarker } from "@/components/search/SyncedMapPane";
 import { getImageUrl } from "@/lib/imageUrl";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
+import FeedbackBlockSlot from "@/components/feedback/FeedbackBlockSlot";
 
 // نوع الإعلان القادم من /api/listings
 type Listing = {
@@ -1575,6 +1576,9 @@ function SearchPage() {
 
           {/* النتائج / الخريطة */}
           <div>{content}</div>
+
+          {/* بلوك التغذية الراجعة (يظهر عند تفعيل الوضع Inline من الإعدادات) */}
+          <FeedbackBlockSlot />
 
           {/* 📱 Mobile Filter Sheet */}
           <MobileBottomSheet

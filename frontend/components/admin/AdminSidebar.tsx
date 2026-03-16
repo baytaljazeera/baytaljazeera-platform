@@ -34,6 +34,7 @@ import {
   Cpu,
   Lock,
   RotateCcw,
+  MessageCirclePlus,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
 
@@ -124,6 +125,18 @@ const sidebarSections: SidebarSection[] = [
         icon: MessageSquare,
         permissionKey: 'messages'
       },
+    ]
+  },
+  {
+    id: 'feedback',
+    title: 'تجربة المستخدم',
+    icon: MessageCirclePlus,
+    colorClass: 'text-amber-400',
+    links: [
+      { href: "/admin/feedback/overview", label: "نظرة عامة", icon: LayoutDashboard, permissionKey: 'support' },
+      { href: "/admin/feedback/responses", label: "الردود", icon: MessageSquare, permissionKey: 'support' },
+      { href: "/admin/feedback/settings", label: "إعدادات التغذية الراجعة", icon: Settings, permissionKey: 'support' },
+      { href: "/admin/feedback/questions", label: "إدارة الأسئلة", icon: FileText, permissionKey: 'support' },
     ]
   },
   {
