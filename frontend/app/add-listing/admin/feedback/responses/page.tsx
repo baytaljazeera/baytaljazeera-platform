@@ -51,6 +51,30 @@ export default function FeedbackResponsesPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
+  const startInternalMessage = async (userId?: string | null, userName?: string | null) => {
+    if (!userId) return;
+    const label = userName && userName.trim() ? ` للعميل ${userName}` : "";
+    const msg = window.prompt(`اكتب رسالة${label}:`);
+    if (!msg) return;
+    try {
+      const res = await fetch(`${API_URL}/api/admin-messages/conversations`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({
+          department: "support",
+          subject: "متابعة تغذية راجعة (بيت الجزيرة)",
+          message: msg,
+          participants: [userId],
+        }),
+      });
+      if (!res.ok) throw new Error();
+      window.alert("تم إرسال رسالة داخلية بنجاح");
+    } catch {
+      window.alert("فشل إرسال الرسالة الداخلية");
+    }
+  };
+
   const fetchResponses = useCallback(async () => {
     try {
       setLoading(true);
@@ -237,11 +261,11 @@ export default function FeedbackResponsesPage() {
                       </td>
                     </tr>
                   ) : (
-                    items.map((r) => {
-                      const negative = (r.rating != null && r.rating <= 2) || r.had_issue === true;
-                      const positive = r.rating != null && r.rating >= 4 && r.had_issue !== true;
-                      return (
-                      <tr
+                  items.map((r) => {
+                    const negative = r.rating != null && r.rating <= 2;
+                    const positive = r.rating != null && r.rating >= 4;
+                    return (
+                    <tr
                         key={r.id}
                         className={`border-t border-slate-100 hover:bg-slate-50 ${
                           negative ? "bg-red-50/40" : ""
@@ -266,9 +290,15 @@ export default function FeedbackResponsesPage() {
                         </td>
                         <td className="py-2 px-4">
                           <div className="min-w-[140px]">
-                            <div className="font-medium text-[#002845] truncate" title={r.user_name || ""}>
+                            <button
+                              type="button"
+                              className="font-medium text-[#002845] truncate text-right w-full hover:underline disabled:cursor-default disabled:opacity-70"
+                              title={r.user_name || ""}
+                              onClick={() => startInternalMessage(r.user_id, r.user_name)}
+                              disabled={!r.user_id}
+                            >
                               {r.user_name || "—"}
-                            </div>
+                            </button>
                             <div className="text-xs text-slate-500 truncate" title={r.user_email || ""}>
                               {r.user_email || ""}
                             </div>
