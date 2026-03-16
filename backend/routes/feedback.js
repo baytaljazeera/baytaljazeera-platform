@@ -111,8 +111,8 @@ router.post(
 
     const insertResult = await db.query(
       `INSERT INTO feedback_responses
-       (rating, had_issue, comment, page_url, page_type, device_type, user_id, answers)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (rating, had_issue, comment, page_url, page_type, device_type, user_id, answers, is_read)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false)
        RETURNING id, created_at`,
       [
         rating != null ? Math.min(5, Math.max(1, parseInt(rating, 10))) : null,
@@ -278,18 +278,15 @@ router.post(
       });
     }
 
-    const statsByPage = rows.reduce<Record<string, { total: number; low: number }>>(
-      (acc, r) => {
-        const key = r.page_type || "unknown";
-        if (!acc[key]) acc[key] = { total: 0, low: 0 };
-        acc[key].total += 1;
-        if ((r.rating != null && r.rating <= 2) || r.had_issue === true) {
-          acc[key].low += 1;
-        }
-        return acc;
-      },
-      {}
-    );
+    const statsByPage = rows.reduce((acc, r) => {
+      const key = r.page_type || "unknown";
+      if (!acc[key]) acc[key] = { total: 0, low: 0 };
+      acc[key].total += 1;
+      if ((r.rating != null && r.rating <= 2) || r.had_issue === true) {
+        acc[key].low += 1;
+      }
+      return acc;
+    }, {});
 
     const parts: string[] = [];
     Object.entries(statsByPage).forEach(([page, v]) => {
@@ -390,8 +387,14 @@ router.get(
 
     params.push(limitNum, offset);
     const listResult = await db.query(
-      `SELECT id, rating, had_issue, comment, page_url, page_type, device_type, user_id, created_at
-       FROM feedback_responses ${where}
+      `SELECT
+         fr.id, fr.rating, fr.had_issue, fr.comment, fr.page_url, fr.page_type, fr.device_type, fr.user_id, fr.created_at,
+         u.name as user_name,
+         u.email as user_email,
+         COALESCE(u.whatsapp, u.phone) as user_whatsapp
+       FROM feedback_responses fr
+       LEFT JOIN users u ON u.id = fr.user_id
+       ${where.replace(/\bfeedback_responses\b/g, 'fr')}
        ORDER BY created_at DESC
        LIMIT $${idx++} OFFSET $${idx}`,
       params
@@ -413,7 +416,7 @@ router.post(
   authMiddleware,
   adminFeedback,
   asyncHandler(async (req, res) => {
-    await db.query(`UPDATE feedback_responses SET is_read = true WHERE is_read = false`);
+    await db.query(`UPDATE feedback_responses SET is_read = true WHERE COALESCE(is_read, false) = false`);
     res.json({ ok: true });
   })
 );
@@ -452,20 +455,29 @@ router.get(
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
     const result = await db.query(
-      `SELECT id, rating, had_issue, comment, page_url, page_type, device_type, created_at
-       FROM feedback_responses ${where} ORDER BY created_at DESC`,
+      `SELECT
+         fr.id, fr.rating, fr.had_issue, fr.comment, fr.page_url, fr.page_type, fr.device_type, fr.created_at,
+         u.name as user_name,
+         u.email as user_email,
+         COALESCE(u.whatsapp, u.phone) as user_whatsapp
+       FROM feedback_responses fr
+       LEFT JOIN users u ON u.id = fr.user_id
+       ${where.replace(/\bfeedback_responses\b/g, 'fr')}
+       ORDER BY fr.created_at DESC`,
       params
     );
 
     const rows = result.rows || [];
-    const header = "id,rating,had_issue,comment,page_url,page_type,device_type,created_at";
+    const header = "id,rating,had_issue,comment,page_url,page_type,device_type,created_at,user_name,user_email,user_whatsapp";
     const escape = (v) => {
       if (v == null) return "";
       const s = String(v).replace(/"/g, '""');
       return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s}"` : s;
     };
     const csv = [header, ...rows.map((r) =>
-      [r.id, r.rating, r.had_issue, r.comment, r.page_url, r.page_type, r.device_type, r.created_at].map(escape).join(",")
+      [r.id, r.rating, r.had_issue, r.comment, r.page_url, r.page_type, r.device_type, r.created_at, r.user_name, r.user_email, r.user_whatsapp]
+        .map(escape)
+        .join(",")
     )].join("\n");
 
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
