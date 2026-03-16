@@ -22,6 +22,10 @@ interface ResponseItem {
   page_url: string | null;
   page_type: string | null;
   device_type: string | null;
+  user_id?: string | null;
+  user_name?: string | null;
+  user_email?: string | null;
+  user_whatsapp?: string | null;
   created_at: string;
 }
 
@@ -45,6 +49,7 @@ export default function FeedbackResponsesPage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const fetchResponses = useCallback(async () => {
     try {
@@ -78,7 +83,6 @@ export default function FeedbackResponsesPage() {
   }, [fetchResponses]);
 
   const handleDelete = async (id: number) => {
-    if (!confirm("هل تريد حذف هذا الرد؟")) return;
     setDeletingId(id);
     try {
       const res = await fetch(`${API_URL}/api/feedback/admin/responses/${id}`, {
@@ -219,6 +223,8 @@ export default function FeedbackResponsesPage() {
                     <th className="text-right py-3 px-4">تعليق</th>
                     <th className="text-right py-3 px-4">صفحة</th>
                     <th className="text-right py-3 px-4">نوع الصفحة</th>
+                    <th className="text-right py-3 px-4">العميل</th>
+                    <th className="text-right py-3 px-4">تواصل</th>
                     <th className="text-right py-3 px-4">تاريخ</th>
                     <th className="text-right py-3 px-4">إجراء</th>
                   </tr>
@@ -226,13 +232,14 @@ export default function FeedbackResponsesPage() {
                 <tbody>
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-slate-500">
+                      <td colSpan={9} className="py-12 text-center text-slate-500">
                         لا توجد ردود
                       </td>
                     </tr>
                   ) : (
                     items.map((r) => {
                       const negative = (r.rating != null && r.rating <= 2) || r.had_issue === true;
+                      const positive = r.rating != null && r.rating >= 4 && r.had_issue !== true;
                       return (
                       <tr
                         key={r.id}
@@ -240,10 +247,12 @@ export default function FeedbackResponsesPage() {
                           negative ? "bg-red-50/40" : ""
                         }`}
                       >
-                        <td className={`py-2 px-4 ${negative ? "text-red-600 font-bold" : ""}`}>
+                        <td className={`py-2 px-4 ${
+                          negative ? "text-red-600 font-bold" : positive ? "text-green-700 font-bold" : ""
+                        }`}>
                           {r.rating ?? "—"}
                         </td>
-                        <td className={`py-2 px-4 ${negative ? "text-red-600" : ""}`}>
+                        <td className={`py-2 px-4 ${negative ? "text-red-600" : positive ? "text-green-700" : ""}`}>
                           {r.had_issue === true ? "نعم" : r.had_issue === false ? "لا" : "—"}
                         </td>
                         <td className="py-2 px-4 max-w-[200px] truncate" title={r.comment || ""}>
@@ -255,13 +264,54 @@ export default function FeedbackResponsesPage() {
                         <td className="py-2 px-4">
                           {PAGE_TYPE_LABELS[r.page_type || ""] || r.page_type}
                         </td>
+                        <td className="py-2 px-4">
+                          <div className="min-w-[140px]">
+                            <div className="font-medium text-[#002845] truncate" title={r.user_name || ""}>
+                              {r.user_name || "—"}
+                            </div>
+                            <div className="text-xs text-slate-500 truncate" title={r.user_email || ""}>
+                              {r.user_email || ""}
+                            </div>
+                            <div className="text-xs text-slate-500 truncate" title={r.user_whatsapp || ""}>
+                              {r.user_whatsapp || ""}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-2 px-4">
+                          <div className="flex items-center gap-2">
+                            {r.user_email && (
+                              <a
+                                className="text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-50"
+                                href={`mailto:${encodeURIComponent(r.user_email)}`}
+                              >
+                                Email
+                              </a>
+                            )}
+                            {r.user_whatsapp && (
+                              <a
+                                className="text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-50"
+                                target="_blank"
+                                rel="noreferrer"
+                                href={`https://wa.me/${String(r.user_whatsapp).replace(/[^0-9]/g, "")}`}
+                              >
+                                WhatsApp
+                              </a>
+                            )}
+                            {r.user_id && (
+                              <button
+                                type="button"
+                                className="text-xs px-2 py-1 rounded bg-[#002845] text-white hover:opacity-90"
+                                onClick={async () => {
+                                  const msg = prompt(\"اكتب رسالة للعميل:\");
+                                  if (!msg) return;
+                                  const res = await fetch(`${API_URL}/api/admin-messages/conversations`, {\n                                    method: \"POST\",\n                                    credentials: \"include\",\n                                    headers: { \"Content-Type\": \"application/json\", ...getAuthHeaders() },\n                                    body: JSON.stringify({\n                                      department: \"support\",\n                                      subject: \"متابعة تغذية راجعة (بيت الجزيرة)\",\n                                      message: msg,\n                                      participants: [r.user_id],\n                                    }),\n                                  });\n                                  if (!res.ok) alert(\"فشل إرسال الرسالة الداخلية\");\n                                }}\n                              >\n                                رسالة داخلية\n                              </button>\n                            )}\n                          </div>\n                        </td>\n                         <td className="py-2 px-4 text-slate-600">\n                           {r.created_at ? new Date(r.created_at).toLocaleString(\"ar-SA\") : \"—\"}\n                         </td>\n                         <td className=\"py-2 px-4\">\n                           <button\n                             type=\"button\"\n                             onClick={() => handleDelete(r.id)}\n                             disabled={deletingId === r.id}\n                             className=\"p-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50\"\n                             title=\"حذف\"\n                           >\n                             {deletingId === r.id ? (\n                               <Loader2 className=\"w-4 h-4 animate-spin\" />\n                             ) : (\n                               <Trash2 className=\"w-4 h-4\" />\n                             )}\n                           </button>\n                         </td>\n                       </tr>\n                     )})\n                   )}\n                 </tbody>\n               </table>\n             </div>\n*** End Patch"}]}"}Oops malformed. Need ApplyPatch with proper lines no JSON. Let's do patch carefully smaller. We'll edit file with ApplyPatch in chunks. First update interface and table header/colspan, positive coloring, add columns and contact buttons. Let's apply with correct syntax. We'll patch around interface and table head area with context. We'll include backticks? no. Let's do. We'll call ApplyPatch. Also need import changes? We use prompt and fetch; already has imports for icons. ok. Let's patch. We'll do stepwise.}
                         <td className="py-2 px-4 text-slate-600">
                           {r.created_at ? new Date(r.created_at).toLocaleString("ar-SA") : "—"}
                         </td>
                         <td className="py-2 px-4">
                           <button
                             type="button"
-                            onClick={() => handleDelete(r.id)}
+                            onClick={() => setConfirmDeleteId(r.id)}
                             disabled={deletingId === r.id}
                             className="p-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50"
                             title="حذف"
@@ -279,6 +329,41 @@ export default function FeedbackResponsesPage() {
                 </tbody>
               </table>
             </div>
+            {confirmDeleteId !== null && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 mx-4">
+                  <h3 className="text-lg font-bold text-[#002845] mb-2">تأكيد حذف الرد</h3>
+                  <p className="text-sm text-slate-600 mb-4">
+                    هل أنت متأكد أنك تريد حذف هذا الرد؟ لا يمكن التراجع بعد الحذف.
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50"
+                      onClick={() => setConfirmDeleteId(null)}
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 disabled:opacity-50"
+                      disabled={deletingId === confirmDeleteId}
+                      onClick={() => {
+                        if (confirmDeleteId !== null) {
+                          handleDelete(confirmDeleteId).then(() => setConfirmDeleteId(null));
+                        }
+                      }}
+                    >
+                      {deletingId === confirmDeleteId ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        "حذف الرد"
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             {totalPages > 1 && (
               <div className="flex justify-center gap-2 py-4 border-t border-slate-100">
                 <button
