@@ -325,7 +325,9 @@ export default function FeedbackResponsesPage() {
                             className="py-2 px-4 max-w-[150px] truncate"
                             title={r.page_url || ""}
                           >
-                            {r.page_url || "—"}
+                            {r.page_url
+                              ? r.page_url.replace(/^https?:\/\/[^/]+/i, "") || "/"
+                              : "—"}
                           </td>
                           <td className="py-2 px-4">
                             {PAGE_TYPE_LABELS[r.page_type || ""] || r.page_type}
