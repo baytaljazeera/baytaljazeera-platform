@@ -420,12 +420,15 @@ button.popup-dot-btn,
 .leaflet-popup button.popup-nav-btn,
 .leaflet-popup button.popup-favorite-btn,
 .leaflet-popup button.popup-dot-btn,
+.leaflet-popup button.popup-view-btn,
 .leaflet-popup-content button.popup-nav-btn,
 .leaflet-popup-content button.popup-favorite-btn,
 .leaflet-popup-content button.popup-dot-btn,
+.leaflet-popup-content button.popup-view-btn,
 .leaflet-popup-content-wrapper button.popup-nav-btn,
 .leaflet-popup-content-wrapper button.popup-favorite-btn,
-.leaflet-popup-content-wrapper button.popup-dot-btn {
+.leaflet-popup-content-wrapper button.popup-dot-btn,
+.leaflet-popup-content-wrapper button.popup-view-btn {
   display: flex !important;
   visibility: visible !important;
   opacity: 1 !important;

@@ -166,13 +166,13 @@ function MapComponentInner({
                     {marker.type}
                   </span>
                 </div>
-                <a
-                  href={`/listing/${marker.id}`}
-                  className="mt-3 block w-full text-center text-xs font-bold text-white py-2 rounded-xl"
-                  style={{ background: "linear-gradient(to left, #D4AF37, #B8860B)", textDecoration: "none" }}
+                <button
+                  className="popup-view-btn mt-3 w-full text-center text-xs font-bold text-white py-2 rounded-xl"
+                  style={{ background: "linear-gradient(135deg, #D4AF37 0%, #B8860B 100%)", border: "none", cursor: "pointer", display: "block" }}
+                  onClick={(e) => { e.stopPropagation(); window.open(`/listing/${marker.id}`, "_blank"); }}
                 >
                   🏠 عرض الإعلان كاملاً
-                </a>
+                </button>
               </div>
             </Popup>
           </Marker>

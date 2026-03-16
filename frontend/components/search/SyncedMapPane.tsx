@@ -136,13 +136,13 @@ function PopupContent({ marker }: { marker: PropertyMarker }) {
           {marker.type}
         </span>
       </div>
-      <a
-        href={`/listing/${marker.id}`}
-        className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white transition"
-        style={{ background: "linear-gradient(to left, #D4AF37, #B8860B)", display: "block", textAlign: "center", textDecoration: "none" }}
+      <button
+        className="popup-view-btn mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white"
+        style={{ background: "linear-gradient(135deg, #D4AF37 0%, #B8860B 100%)", border: "none", cursor: "pointer" }}
+        onClick={(e) => { e.stopPropagation(); window.open(`/listing/${marker.id}`, "_blank"); }}
       >
         🏠 عرض الإعلان كاملاً
-      </a>
+      </button>
     </div>
   );
 }
