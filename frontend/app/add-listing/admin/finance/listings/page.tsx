@@ -862,13 +862,23 @@ export default function ListingsPage() {
                           </>
                         )}
                         {listing.status === "approved" && (
-                          <button
-                            onClick={() => handleHide(listing.id)}
-                            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-100 text-yellow-700 rounded-xl hover:bg-yellow-200 transition text-sm font-medium"
-                          >
-                            <EyeOff className="w-4 h-4" />
-                            إخفاء
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleApprove(listing.id)}
+                              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-green-100 text-green-700 rounded-xl hover:bg-green-200 transition text-sm font-medium"
+                              title="تمديد تاريخ انتهاء الإعلان وإعادة تفعيله"
+                            >
+                              <RefreshCw className="w-4 h-4" />
+                              تمديد
+                            </button>
+                            <button
+                              onClick={() => handleHide(listing.id)}
+                              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-100 text-yellow-700 rounded-xl hover:bg-yellow-200 transition text-sm font-medium"
+                            >
+                              <EyeOff className="w-4 h-4" />
+                              إخفاء
+                            </button>
+                          </>
                         )}
                         {listing.status === "hidden" && (
                           <button

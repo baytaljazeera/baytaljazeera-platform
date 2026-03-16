@@ -48,7 +48,6 @@ import { useCurrencyStore } from "@/lib/stores/currencyStore";
 import type { PropertyMarker } from "@/components/search/SyncedMapPane";
 import { getImageUrl } from "@/lib/imageUrl";
 import MobileBottomSheet from "@/components/MobileBottomSheet";
-import FeedbackBlockSlot from "@/components/feedback/FeedbackBlockSlot";
 
 // نوع الإعلان القادم من /api/listings
 type Listing = {
@@ -104,7 +103,7 @@ type Filters = {
 
 // تبويبات
 type PurposeTab = "all" | "sell" | "rent";
-type UsageTab = "residential" | "commercial";
+type UsageTab = "all" | "residential" | "commercial";
 type ActivePanel = "price" | "area" | "beds" | "baths" | "city" | "propertyType" | "usage" | "purpose" | "dealStatus" | "more" | "none";
 type SortOption =
   | "recommended"
@@ -283,7 +282,7 @@ function SearchPage() {
   const [filters, setFilters] = useState<Filters>({ dealStatus: "active" }); // ✅ الديفولت نشط
   const [purposeTab, setPurposeTab] = useState<PurposeTab>("all"); // سيتم تعيينه بناءً على الإعلانات
   const [purposeInitialized, setPurposeInitialized] = useState(false); // لتجنب إعادة التعيين
-  const [usageTab, setUsageTab] = useState<UsageTab>("residential");
+  const [usageTab, setUsageTab] = useState<UsageTab>("all");
   const [activePanel, setActivePanel] = useState<ActivePanel>("none");
   const [sortOption, setSortOption] = useState<SortOption>("recommended");
   const [isLoading, setIsLoading] = useState(true);
@@ -553,13 +552,14 @@ function SearchPage() {
     const results = listings.filter((item) => {
       let ok = true;
 
-      // 1) سكني / تجاري
+      // 1) سكني / تجاري / الكل
       const itemType = item.type || "";
       if (usageTab === "residential") {
         if (isCommercial(itemType)) ok = false;
       } else if (usageTab === "commercial") {
         if (!isCommercial(itemType)) ok = false;
       }
+      // usageTab === "all" → لا فلترة
 
       // 2) بيع / إيجار
       if (purposeTab === "sell" && item.purpose !== "بيع" && item.purpose !== "للبيع") ok = false;
@@ -727,6 +727,27 @@ function SearchPage() {
     () => filteredListings.map(l => ({ ...l, isFavorite: favoritesSet.has(l.id) })),
     [filteredListings, favoritesSet]
   );
+
+  const handleUsageClick = (value: "residential" | "commercial") => {
+    if (usageTab === "all") {
+      setUsageTab(value);
+    } else if (usageTab === value) {
+      setUsageTab("all");
+    } else {
+      setUsageTab("all");
+    }
+    setFilters(prev => ({ ...prev, propertyTypes: undefined }));
+  };
+
+  const handlePurposeClick = (value: "sell" | "rent") => {
+    if (purposeTab === "all") {
+      setPurposeTab(value);
+    } else if (purposeTab === value) {
+      setPurposeTab("all");
+    } else {
+      setPurposeTab("all");
+    }
+  };
 
   async function toggleFavorite(id: string, isFavorite?: boolean): Promise<void> {
     const apiBase = getApiBase();
@@ -1232,8 +1253,8 @@ function SearchPage() {
                     const count = [
                       filters.city,
                       searchInput,
-                      usageTab !== "residential",
-                      purposeTab !== "sell",
+                      usageTab !== "all",
+                      purposeTab !== "all",
                       filters.propertyTypes?.length,
                       filters.minPrice || filters.maxPrice,
                       filters.minLandArea || filters.maxLandArea,
@@ -1282,80 +1303,56 @@ function SearchPage() {
                   />
                 </div>
 
-                {/* طبيعة الاستخدام */}
-                <div className="relative">
-                  <FilterChip
-                    icon="🏢"
-                    label={usageTab === "residential" ? "سكني" : "تجاري"}
-                    title="طبيعة الاستخدام"
-                    active={usageTab !== "residential"}
-                    variant="gold"
-                    onClick={() => setActivePanel(activePanel === "usage" ? "none" : "usage")}
-                  />
-                  {activePanel === "usage" && (
-                    <div className="absolute top-full right-0 mt-1 z-[9999]">
-                      <div className="bg-[#002845] rounded-xl shadow-lg border border-[#D4AF37]/40 p-2">
-                        <div className="flex gap-1.5">
-                          {([
-                            { value: "residential", label: "🏠 سكني" },
-                            { value: "commercial", label: "🏢 تجاري" },
-                          ] as const).map(tab => (
-                            <button
-                              key={tab.value}
-                              onClick={() => { setUsageTab(tab.value); setFilters((prev) => ({ ...prev, propertyTypes: undefined })); setActivePanel("none"); }}
-                              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition ${
-                                usageTab === tab.value 
-                                  ? "bg-[#D4AF37] text-[#002845]" 
-                                  : "bg-white/20 text-white hover:bg-white/30"
-                              }`}
-                            >
-                              {tab.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                {/* طبيعة الاستخدام - Split Chip */}
+                <div className="flex rounded-full overflow-hidden border border-[#D4AF37]/50 shadow-sm" style={{height: "34px"}}>
+                  <button
+                    onClick={() => handleUsageClick("residential")}
+                    className={`flex items-center gap-1 px-3 text-xs font-bold transition touch-manipulation ${
+                      usageTab === "all" || usageTab === "residential"
+                        ? "bg-[#D4AF37] text-[#002845]"
+                        : "bg-[#002845]/80 text-white/60 hover:text-white"
+                    }`}
+                  >
+                    🏠 سكني
+                  </button>
+                  <div className="w-px bg-[#D4AF37]/40 self-stretch" />
+                  <button
+                    onClick={() => handleUsageClick("commercial")}
+                    className={`flex items-center gap-1 px-3 text-xs font-bold transition touch-manipulation ${
+                      usageTab === "all" || usageTab === "commercial"
+                        ? "bg-[#D4AF37] text-[#002845]"
+                        : "bg-[#002845]/80 text-white/60 hover:text-white"
+                    }`}
+                  >
+                    🏢 تجاري
+                  </button>
                 </div>
 
                 {/* نوع العرض + حالة الصفقة - مجموعة واحدة مهمة */}
                 <div className="flex items-center gap-1 bg-gradient-to-l from-[#D4AF37]/20 to-[#D4AF37]/10 px-2 py-1 rounded-xl border border-[#D4AF37]/30">
-                  {/* نوع العرض */}
-                  <div className="relative">
+                  {/* نوع العرض - Split Chip */}
+                  <div className="flex rounded-lg overflow-hidden border border-[#D4AF37]/40" style={{height: "34px"}}>
                     <button
-                      onClick={() => setActivePanel(activePanel === "purpose" ? "none" : "purpose")}
-                      className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-1.5 ${
-                        purposeTab === "sell" 
-                          ? "bg-[#8B0000] text-white" 
-                          : "bg-[#F5DEB3] text-[#002845] border border-[#D4AF37]"
+                      onClick={() => handlePurposeClick("sell")}
+                      className={`flex items-center gap-1 px-3 text-xs font-bold transition touch-manipulation ${
+                        purposeTab === "all" || purposeTab === "sell"
+                          ? "bg-[#8B0000] text-white"
+                          : "bg-transparent text-white/60 hover:text-white"
                       }`}
                     >
-                      {purposeTab === "sell" ? "🏷️ بيع" : "🔑 إيجار"}
+                      🏷️ بيع
                     </button>
-                    {activePanel === "purpose" && (
-                      <div className="absolute top-full right-0 mt-1 z-[9999]">
-                        <div className="bg-[#002845] rounded-xl shadow-lg border border-[#D4AF37]/40 p-2">
-                          <div className="flex gap-1.5">
-                            {([
-                              { value: "rent", label: "🔑 إيجار", color: "bg-[#F5DEB3] text-[#002845] border border-[#D4AF37]" },
-                              { value: "sell", label: "🏷️ بيع", color: "bg-[#8B0000] text-white" },
-                            ] as const).map(tab => (
-                              <button
-                                key={tab.value}
-                                onClick={() => { setPurposeTab(tab.value as PurposeTab); setActivePanel("none"); }}
-                                className={`px-4 py-2 rounded-lg text-sm font-bold transition ${
-                                  purposeTab === tab.value 
-                                    ? tab.color 
-                                    : "bg-white/20 text-white hover:bg-white/30"
-                                }`}
-                              >
-                                {tab.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                    <div className="w-px bg-[#D4AF37]/40 self-stretch" />
+                    <button
+                      onClick={() => handlePurposeClick("rent")}
+                      className={`flex items-center gap-1 px-3 text-xs font-bold transition touch-manipulation ${
+                        purposeTab === "all" || purposeTab === "rent"
+                          ? "bg-[#0B6B4C] text-white"
+                          : "bg-transparent text-white/60 hover:text-white"
+                      }`}
+                    >
+                      🔑 إيجار
+                    </button>
                   </div>
 
                   <span className="text-[#D4AF37]/50 text-xs">|</span>
@@ -1577,9 +1574,6 @@ function SearchPage() {
           {/* النتائج / الخريطة */}
           <div>{content}</div>
 
-          {/* بلوك التغذية الراجعة (يظهر عند تفعيل الوضع Inline من الإعدادات) */}
-          <FeedbackBlockSlot />
-
           {/* 📱 Mobile Filter Sheet */}
           <MobileBottomSheet
             isOpen={showMobileFilters}
@@ -1677,49 +1671,59 @@ function SearchPage() {
                     />
                   </div>
 
-                  {/* نوع الاستخدام */}
+                  {/* نوع الاستخدام - Split Chip */}
                   <div>
                     <h4 className="text-[#003366] text-mobile-base font-bold mb-3">🏢 طبيعة الاستخدام</h4>
-                    <div className="flex gap-3">
-                      {([
-                        { value: "residential" as const, label: "🏠 سكني" },
-                        { value: "commercial" as const, label: "🏢 تجاري" },
-                      ]).map(tab => (
-                        <button
-                          key={tab.value}
-                          onClick={() => { setUsageTab(tab.value); setFilters((prev) => ({ ...prev, propertyTypes: undefined })); }}
-                          className={`flex-1 min-h-[48px] py-3 rounded-xl text-mobile-base font-semibold transition touch-manipulation active:scale-95 ${
-                            usageTab === tab.value 
-                              ? "bg-[#D4AF37] text-[#002845]" 
-                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                          }`}
-                        >
-                          {tab.label}
-                        </button>
-                      ))}
+                    <div className="flex rounded-2xl overflow-hidden border-2 border-[#D4AF37]/40 bg-slate-100" style={{minHeight: "52px"}}>
+                      <button
+                        onClick={() => handleUsageClick("residential")}
+                        className={`flex-1 flex items-center justify-center gap-2 text-mobile-base font-bold transition touch-manipulation active:scale-95 ${
+                          usageTab === "all" || usageTab === "residential"
+                            ? "bg-[#D4AF37] text-[#002845]"
+                            : "text-slate-500"
+                        }`}
+                      >
+                        🏠 سكني
+                      </button>
+                      <div className="w-0.5 bg-[#D4AF37]/40 self-stretch" />
+                      <button
+                        onClick={() => handleUsageClick("commercial")}
+                        className={`flex-1 flex items-center justify-center gap-2 text-mobile-base font-bold transition touch-manipulation active:scale-95 ${
+                          usageTab === "all" || usageTab === "commercial"
+                            ? "bg-[#D4AF37] text-[#002845]"
+                            : "text-slate-500"
+                        }`}
+                      >
+                        🏢 تجاري
+                      </button>
                     </div>
                   </div>
 
-                  {/* نوع العرض */}
+                  {/* نوع العرض - Split Chip */}
                   <div>
                     <h4 className="text-[#003366] text-mobile-base font-bold mb-3">📋 نوع العرض</h4>
-                    <div className="flex gap-3">
-                      {([
-                        { value: "sell" as const, label: "📋 بيع" },
-                        { value: "rent" as const, label: "🔑 إيجار" },
-                      ]).map(tab => (
-                        <button
-                          key={tab.value}
-                          onClick={() => setPurposeTab(tab.value as PurposeTab)}
-                          className={`flex-1 min-h-[48px] py-3 rounded-xl text-mobile-base font-semibold transition touch-manipulation active:scale-95 ${
-                            purposeTab === tab.value 
-                              ? "bg-[#D4AF37] text-[#002845]" 
-                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                          }`}
-                        >
-                          {tab.label}
-                        </button>
-                      ))}
+                    <div className="flex rounded-2xl overflow-hidden border-2 border-[#D4AF37]/40 bg-slate-100" style={{minHeight: "52px"}}>
+                      <button
+                        onClick={() => handlePurposeClick("sell")}
+                        className={`flex-1 flex items-center justify-center gap-2 text-mobile-base font-bold transition touch-manipulation active:scale-95 ${
+                          purposeTab === "all" || purposeTab === "sell"
+                            ? "bg-[#8B0000] text-white"
+                            : "text-slate-500"
+                        }`}
+                      >
+                        🏷️ بيع
+                      </button>
+                      <div className="w-0.5 bg-[#D4AF37]/40 self-stretch" />
+                      <button
+                        onClick={() => handlePurposeClick("rent")}
+                        className={`flex-1 flex items-center justify-center gap-2 text-mobile-base font-bold transition touch-manipulation active:scale-95 ${
+                          purposeTab === "all" || purposeTab === "rent"
+                            ? "bg-[#0B6B4C] text-white"
+                            : "text-slate-500"
+                        }`}
+                      >
+                        🔑 إيجار
+                      </button>
                     </div>
                   </div>
 
@@ -1727,7 +1731,7 @@ function SearchPage() {
                   <div>
                     <h4 className="text-[#003366] text-mobile-base font-bold mb-3">🏠 نوع العقار</h4>
                     <div className="flex flex-wrap gap-2">
-                      {(usageTab === "residential" ? RESIDENTIAL_TYPES : COMMERCIAL_TYPES).map(type => (
+                      {(usageTab === "residential" ? RESIDENTIAL_TYPES : usageTab === "commercial" ? COMMERCIAL_TYPES : [...RESIDENTIAL_TYPES, ...COMMERCIAL_TYPES]).map(type => (
                         <button
                           key={type}
                           onClick={() => {
@@ -1877,8 +1881,8 @@ function SearchPage() {
                   <button
                     onClick={() => {
                       setFilters({ dealStatus: "active" });
-                      setUsageTab("residential");
-                      setPurposeTab("sell");
+                      setUsageTab("all");
+                      setPurposeTab("all");
                       setSearchInput("");
                     }}
                     className="flex-1 min-h-[48px] py-3 rounded-xl border-2 border-slate-300 text-slate-700 text-mobile-base font-semibold active:scale-95 transition touch-manipulation"
