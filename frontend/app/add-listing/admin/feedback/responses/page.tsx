@@ -9,7 +9,6 @@ import {
   Download,
   Trash2,
   Search,
-  Filter,
   AlertCircle,
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
@@ -117,7 +116,7 @@ export default function FeedbackResponsesPage() {
       if (!res.ok) throw new Error("فشل الحذف");
       await fetchResponses();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "فشل الحذف");
+      window.alert(e instanceof Error ? e.message : "فشل الحذف");
     } finally {
       setDeletingId(null);
     }
@@ -261,104 +260,135 @@ export default function FeedbackResponsesPage() {
                       </td>
                     </tr>
                   ) : (
-                  items.map((r) => {
-                    const negative = r.rating != null && r.rating <= 2;
-                    const positive = r.rating != null && r.rating >= 4;
-                    return (
-                    <tr
-                        key={r.id}
-                        className={`border-t border-slate-100 hover:bg-slate-50 ${
-                          negative ? "bg-red-50/40" : ""
-                        }`}
-                      >
-                        <td className={`py-2 px-4 ${
-                          negative ? "text-red-600 font-bold" : positive ? "text-green-700 font-bold" : ""
-                        }`}>
-                          {r.rating ?? "—"}
-                        </td>
-                        <td className={`py-2 px-4 ${negative ? "text-red-600" : positive ? "text-green-700" : ""}`}>
-                          {r.had_issue === true ? "نعم" : r.had_issue === false ? "لا" : "—"}
-                        </td>
-                        <td className="py-2 px-4 max-w-[200px] truncate" title={r.comment || ""}>
-                          {r.comment || "—"}
-                        </td>
-                        <td className="py-2 px-4 max-w-[150px] truncate" title={r.page_url || ""}>
-                          {r.page_url || "—"}
-                        </td>
-                        <td className="py-2 px-4">
-                          {PAGE_TYPE_LABELS[r.page_type || ""] || r.page_type}
-                        </td>
-                        <td className="py-2 px-4">
-                          <div className="min-w-[140px]">
-                            <button
-                              type="button"
-                              className="font-medium text-[#002845] truncate text-right w-full hover:underline disabled:cursor-default disabled:opacity-70"
-                              title={r.user_name || ""}
-                              onClick={() => startInternalMessage(r.user_id, r.user_name)}
-                              disabled={!r.user_id}
-                            >
-                              {r.user_name || "—"}
-                            </button>
-                            <div className="text-xs text-slate-500 truncate" title={r.user_email || ""}>
-                              {r.user_email || ""}
-                            </div>
-                            <div className="text-xs text-slate-500 truncate" title={r.user_whatsapp || ""}>
-                              {r.user_whatsapp || ""}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-2 px-4">
-                          <div className="flex items-center gap-2">
-                            {r.user_email && (
-                              <a
-                                className="text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-50"
-                                href={`mailto:${encodeURIComponent(r.user_email)}`}
-                              >
-                                Email
-                              </a>
-                            )}
-                            {r.user_whatsapp && (
-                              <a
-                                className="text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-50"
-                                target="_blank"
-                                rel="noreferrer"
-                                href={`https://wa.me/${String(r.user_whatsapp).replace(/[^0-9]/g, "")}`}
-                              >
-                                WhatsApp
-                              </a>
-                            )}
-                            {r.user_id && (
+                    items.map((r) => {
+                      const negative = r.rating != null && r.rating <= 2;
+                      const positive = r.rating != null && r.rating >= 4;
+                      return (
+                        <tr
+                          key={r.id}
+                          className={`border-t border-slate-100 hover:bg-slate-50 ${
+                            negative ? "bg-red-50/40" : ""
+                          }`}
+                        >
+                          <td
+                            className={`py-2 px-4 ${
+                              negative
+                                ? "text-red-600 font-bold"
+                                : positive
+                                ? "text-green-700 font-bold"
+                                : ""
+                            }`}
+                          >
+                            {r.rating ?? "—"}
+                          </td>
+                          <td
+                            className={`py-2 px-4 ${
+                              negative
+                                ? "text-red-600"
+                                : positive
+                                ? "text-green-700"
+                                : ""
+                            }`}
+                          >
+                            {r.had_issue === true
+                              ? "نعم"
+                              : r.had_issue === false
+                              ? "لا"
+                              : "—"}
+                          </td>
+                          <td
+                            className="py-2 px-4 max-w-[200px] truncate"
+                            title={r.comment || ""}
+                          >
+                            {r.comment || "—"}
+                          </td>
+                          <td
+                            className="py-2 px-4 max-w-[150px] truncate"
+                            title={r.page_url || ""}
+                          >
+                            {r.page_url || "—"}
+                          </td>
+                          <td className="py-2 px-4">
+                            {PAGE_TYPE_LABELS[r.page_type || ""] || r.page_type}
+                          </td>
+                          <td className="py-2 px-4">
+                            <div className="min-w-[140px]">
                               <button
                                 type="button"
-                                className="text-xs px-2 py-1 rounded bg-[#002845] text-white hover:opacity-90"
-                                onClick={async () => {
-                                  const msg = prompt(\"اكتب رسالة للعميل:\");
-                                  if (!msg) return;
-                                  const res = await fetch(`${API_URL}/api/admin-messages/conversations`, {\n                                    method: \"POST\",\n                                    credentials: \"include\",\n                                    headers: { \"Content-Type\": \"application/json\", ...getAuthHeaders() },\n                                    body: JSON.stringify({\n                                      department: \"support\",\n                                      subject: \"متابعة تغذية راجعة (بيت الجزيرة)\",\n                                      message: msg,\n                                      participants: [r.user_id],\n                                    }),\n                                  });\n                                  if (!res.ok) alert(\"فشل إرسال الرسالة الداخلية\");\n                                }}\n                              >\n                                رسالة داخلية\n                              </button>\n                            )}\n                          </div>\n                        </td>\n                         <td className="py-2 px-4 text-slate-600">\n                           {r.created_at ? new Date(r.created_at).toLocaleString(\"ar-SA\") : \"—\"}\n                         </td>\n                         <td className=\"py-2 px-4\">\n                           <button\n                             type=\"button\"\n                             onClick={() => handleDelete(r.id)}\n                             disabled={deletingId === r.id}\n                             className=\"p-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50\"\n                             title=\"حذف\"\n                           >\n                             {deletingId === r.id ? (\n                               <Loader2 className=\"w-4 h-4 animate-spin\" />\n                             ) : (\n                               <Trash2 className=\"w-4 h-4\" />\n                             )}\n                           </button>\n                         </td>\n                       </tr>\n                     )})\n                   )}\n                 </tbody>\n               </table>\n             </div>\n*** End Patch"}]}"}Oops malformed. Need ApplyPatch with proper lines no JSON. Let's do patch carefully smaller. We'll edit file with ApplyPatch in chunks. First update interface and table header/colspan, positive coloring, add columns and contact buttons. Let's apply with correct syntax. We'll patch around interface and table head area with context. We'll include backticks? no. Let's do. We'll call ApplyPatch. Also need import changes? We use prompt and fetch; already has imports for icons. ok. Let's patch. We'll do stepwise.}
-                        <td className="py-2 px-4 text-slate-600">
-                          {r.created_at ? new Date(r.created_at).toLocaleString("ar-SA") : "—"}
-                        </td>
-                        <td className="py-2 px-4">
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeleteId(r.id)}
-                            disabled={deletingId === r.id}
-                            className="p-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50"
-                            title="حذف"
-                          >
-                            {deletingId === r.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="w-4 h-4" />
-                            )}
-                          </button>
-                        </td>
-                      </tr>
-                    )})
+                                className="font-medium text-[#002845] truncate text-right w-full hover:underline disabled:cursor-default disabled:opacity-70"
+                                title={r.user_name || ""}
+                                onClick={() => startInternalMessage(r.user_id, r.user_name)}
+                                disabled={!r.user_id}
+                              >
+                                {r.user_name || "—"}
+                              </button>
+                              <div
+                                className="text-xs text-slate-500 truncate"
+                                title={r.user_email || ""}
+                              >
+                                {r.user_email || ""}
+                              </div>
+                              <div
+                                className="text-xs text-slate-500 truncate"
+                                title={r.user_whatsapp || ""}
+                              >
+                                {r.user_whatsapp || ""}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-2 px-4">
+                            <div className="flex items-center gap-2">
+                              {r.user_email && (
+                                <a
+                                  className="text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-50"
+                                  href={`mailto:${encodeURIComponent(r.user_email)}`}
+                                >
+                                  Email
+                                </a>
+                              )}
+                              {r.user_whatsapp && (
+                                <a
+                                  className="text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-50"
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  href={`https://wa.me/${String(r.user_whatsapp).replace(
+                                    /[^0-9]/g,
+                                    ""
+                                  )}`}
+                                >
+                                  WhatsApp
+                                </a>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2 px-4 text-slate-600">
+                            {r.created_at
+                              ? new Date(r.created_at).toLocaleString("ar-SA")
+                              : "—"}
+                          </td>
+                          <td className="py-2 px-4">
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(r.id)}
+                              disabled={deletingId === r.id}
+                              className="p-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50"
+                              title="حذف"
+                            >
+                              {deletingId === r.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-4 h-4" />
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
             </div>
+
             {confirmDeleteId !== null && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
                 <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 mx-4">
@@ -394,6 +424,7 @@ export default function FeedbackResponsesPage() {
                 </div>
               </div>
             )}
+
             {totalPages > 1 && (
               <div className="flex justify-center gap-2 py-4 border-t border-slate-100">
                 <button
@@ -423,3 +454,4 @@ export default function FeedbackResponsesPage() {
     </div>
   );
 }
+
