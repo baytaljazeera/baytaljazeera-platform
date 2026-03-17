@@ -341,21 +341,6 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
     return () => clearInterval(t);
   }, [leaflet]);
 
-  /* marker click → navigate directly to listing */
-  const handleMarkerClick = useCallback((marker: PropertyMarker) => {
-    const url = `/listing/${marker.id}`;
-    try {
-      const a = document.createElement("a");
-      a.href = url;
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } catch {
-      window.location.assign(url);
-    }
-  }, []);
-
   /* close sidebar */
   const closeSidebar = useCallback(() => {
     setSelectedMarker(null);
@@ -493,7 +478,19 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
             position={[marker.lat, marker.lng]}
             icon={getIcon(marker.id)}
             eventHandlers={{
-              click: () => handleMarkerClick(marker),
+              click: () => {
+                setSelectedMarker(marker);
+                setActiveListingId(marker.id);
+                onMarkerClick?.(marker);
+                const lat = parseFloat(String(marker.lat));
+                const lng = parseFloat(String(marker.lng));
+                if (mapRef.current && Number.isFinite(lat) && Number.isFinite(lng)) {
+                  mapRef.current.flyTo([lat, lng], 15, { animate: true, duration: 0.8 });
+                }
+              },
+              dblclick: () => {
+                window.location.href = `/listing/${marker.id}`;
+              },
               mouseover: () => { if (!isMobile) { setHoveredListingId(marker.id); setHoveredMarker(marker); } },
               mouseout:  () => { if (!isMobile) { setHoveredListingId(null); setHoveredMarker(null); } },
             }}
