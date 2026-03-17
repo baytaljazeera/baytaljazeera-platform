@@ -432,7 +432,6 @@ function ListingPopupCard({
   const [lastTap, setLastTap] = useState<number>(0);
   const [imgError, setImgError] = useState(false);
   const [isFavorite, setIsFavorite] = useState(listing.isFavorite || false);
-  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const favoriteButtonRef = useRef<HTMLButtonElement>(null);
   const router = useRouter();
   
@@ -558,9 +557,9 @@ function ListingPopupCard({
     e.nativeEvent.stopImmediatePropagation();
   };
 
-  // Double tap/click لعرض نافذة التفاصيل
+  // Double tap/click لفتح صفحة الإعلان الكاملة في وضع الخريطة
   const handleImageDoubleTap = () => {
-    setShowDetailsModal(true);
+    router.push(`/listing/${listing.id}`);
   };
 
   const handleImageClick = (e: React.MouseEvent | React.TouchEvent) => {
