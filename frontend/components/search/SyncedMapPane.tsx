@@ -139,7 +139,7 @@ function PopupContent({ marker }: { marker: PropertyMarker }) {
       <button
         className="popup-view-btn mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white"
         style={{ background: "linear-gradient(135deg, #D4AF37 0%, #B8860B 100%)", border: "none", cursor: "pointer" }}
-        onClick={(e) => { e.stopPropagation(); window.open(`/listing/${marker.id}`, "_blank"); }}
+        onClick={(e) => { e.stopPropagation(); window.location.href = `/listing/${marker.id}`; }}
       >
         🏠 عرض الإعلان كاملاً
       </button>

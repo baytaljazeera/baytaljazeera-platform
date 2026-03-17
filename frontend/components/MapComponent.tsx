@@ -169,7 +169,7 @@ function MapComponentInner({
                 <button
                   className="popup-view-btn mt-3 w-full text-center text-xs font-bold text-white py-2 rounded-xl"
                   style={{ background: "linear-gradient(135deg, #D4AF37 0%, #B8860B 100%)", border: "none", cursor: "pointer", display: "block" }}
-                  onClick={(e) => { e.stopPropagation(); window.open(`/listing/${marker.id}`, "_blank"); }}
+                  onClick={(e) => { e.stopPropagation(); window.location.href = `/listing/${marker.id}`; }}
                 >
                   🏠 عرض الإعلان كاملاً
                 </button>
