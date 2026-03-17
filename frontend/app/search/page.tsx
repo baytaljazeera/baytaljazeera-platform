@@ -2791,12 +2791,26 @@ function PropertyCard({
 }) {
   const priceText = formatListingPrice(listing.price, listing.country);
   const isPromo = listing.is_promotional;
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const imageSrc = getImageUrl(listing.image_url) || `/images/property${(parseInt(String(listing.id).slice(-2), 16) % 5) + 1}.jpg`;
 
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (clickTimer.current) {
+      clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+      window.location.href = `/listing/${listing.id}`;
+    } else {
+      clickTimer.current = setTimeout(() => {
+        clickTimer.current = null;
+        onHover?.();
+      }, 280);
+    }
+  };
+
   return (
-    <Link 
-      href={`/listing/${listing.id}`}
+    <div
       className={`relative rounded-2xl sm:rounded-3xl overflow-hidden shadow-md sm:shadow-[0_10px_25px_-12px_rgba(0,0,0,0.3)] border flex flex-col cursor-pointer active:scale-[0.98] sm:hover:-translate-y-1 sm:hover:shadow-[0_16px_40px_-10px_rgba(0,0,0,0.45)] transition ${
         isPromo 
           ? "bg-gradient-to-br from-[#002845] via-[#003d66] to-[#001830] border-[#D4AF37]/50 ring-1 ring-[#D4AF37]/30" 
@@ -2804,7 +2818,7 @@ function PropertyCard({
       } ${
         isActive ? "ring-2 ring-[#f6d879] border-[#f6d879]" : isPromo ? "" : "border-slate-200 sm:border-[#f6d879]/70"
       }`}
-      onMouseEnter={onHover}
+      onClick={handleClick}
     >
       {/* شارة العرض الترويجي */}
       {isPromo && (
@@ -2918,6 +2932,6 @@ function PropertyCard({
           </div>
         )}
       </div>
-    </Link>
+    </div>
   );
 }
