@@ -341,22 +341,8 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
     return () => clearInterval(t);
   }, [leaflet]);
 
-  /* marker click handler */
+  /* marker click → navigate directly to listing */
   const handleMarkerClick = useCallback((marker: PropertyMarker) => {
-    setSelectedMarker(marker);
-    setActiveListingId(marker.id);
-    onMarkerClick?.(marker);
-    if (mapRef.current) {
-      const lat = parseFloat(String(marker.lat));
-      const lng = parseFloat(String(marker.lng));
-      if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        mapRef.current.flyTo([lat, lng], 15, { animate: true, duration: 0.6 });
-      }
-    }
-  }, [onMarkerClick, setActiveListingId]);
-
-  /* double-click → navigate instantly */
-  const handleMarkerDblClick = useCallback((marker: PropertyMarker) => {
     window.location.href = `/listing/${marker.id}`;
   }, []);
 
@@ -498,7 +484,6 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
             icon={getIcon(marker.id)}
             eventHandlers={{
               click: () => handleMarkerClick(marker),
-              dblclick: () => handleMarkerDblClick(marker),
               mouseover: () => { if (!isMobile) { setHoveredListingId(marker.id); setHoveredMarker(marker); } },
               mouseout:  () => { if (!isMobile) { setHoveredListingId(null); setHoveredMarker(null); } },
             }}
