@@ -2,7 +2,6 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useState, useRef, memo, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { MapPin, Navigation, X, Bed, Bath, Maximize2 } from "lucide-react";
 import { useSearchMapStore } from "@/lib/stores/searchMapStore";
 
@@ -55,7 +54,6 @@ function ListingSidebar({
   onClose: () => void;
   isMobile: boolean;
 }) {
-  const router = useRouter();
   const [imgIdx, setImgIdx] = useState(0);
 
   useEffect(() => { setImgIdx(0); }, [marker?.id]);
@@ -64,8 +62,7 @@ function ListingSidebar({
 
   const imgs = marker.images?.length ? marker.images : marker.image_url ? [marker.image_url] : [];
   const statusCfg = DEAL_STATUS_CONFIG[marker.deal_status || "active"] || DEAL_STATUS_CONFIG.active;
-
-  const handleNavigate = () => router.push(`/listing/${marker.id}`);
+  const listingUrl = `/listing/${marker.id}`;
 
   return (
     <>
@@ -183,13 +180,18 @@ function ListingSidebar({
           </div>
 
           {/* CTA */}
-          <button
-            onClick={handleNavigate}
-            className="w-full py-3 rounded-xl font-bold text-sm text-white mt-auto"
-            style={{ background: "linear-gradient(135deg, #D4AF37 0%, #B8860B 100%)" }}
+          <a
+            href={listingUrl}
+            className="w-full py-3 rounded-xl font-bold text-sm text-white mt-auto flex items-center justify-center"
+            style={{
+              background: "linear-gradient(135deg, #D4AF37 0%, #B8860B 100%)",
+              textDecoration: "none",
+              color: "#fff",
+              display: "flex",
+            }}
           >
             🏠 عرض الإعلان كاملاً
-          </button>
+          </a>
         </div>
       </div>
     </>
@@ -240,8 +242,6 @@ const MapController = memo(function MapController({
 
 /* ─── Main inner component ────────────────────────────────────────────────── */
 function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps) {
-  const router = useRouter();
-
   /* leaflet dynamic imports */
   const [leaflet,       setLeaflet]       = useState<any>(null);
   const [MapContainer,  setMapContainer]  = useState<any>(null);
@@ -357,8 +357,8 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
 
   /* double-click → navigate instantly */
   const handleMarkerDblClick = useCallback((marker: PropertyMarker) => {
-    router.push(`/listing/${marker.id}`);
-  }, [router]);
+    window.location.href = `/listing/${marker.id}`;
+  }, []);
 
   /* close sidebar */
   const closeSidebar = useCallback(() => {
