@@ -343,7 +343,17 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
 
   /* marker click → navigate directly to listing */
   const handleMarkerClick = useCallback((marker: PropertyMarker) => {
-    window.location.href = `/listing/${marker.id}`;
+    const url = `/listing/${marker.id}`;
+    try {
+      const a = document.createElement("a");
+      a.href = url;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      window.location.assign(url);
+    }
   }, []);
 
   /* close sidebar */

@@ -806,7 +806,7 @@ export default function ListingDetailPage() {
                   <div className="w-10 h-10 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full flex items-center justify-center shadow-lg">
                     <PlayCircle className="w-5 h-5 text-white" />
                   </div>
-                  <h3 className="text-lg font-bold text-[#002845]">🎬 فيديو ترويجي بالذكاء الاصطناعي</h3>
+                  <h3 className="text-lg font-bold text-[#002845]">🎬 استكشف أكثر عن عقارنا</h3>
                 </div>
                   
                   {/* الفيديو الجاهز */}
@@ -873,7 +873,7 @@ export default function ListingDetailPage() {
                         <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full flex items-center justify-center shadow-xl animate-pulse">
                           <Video className="w-10 h-10 text-white" />
                         </div>
-                        <h4 className="text-xl font-bold text-[#002845] mb-2">🎬 فيديو ترويجي بالذكاء الاصطناعي</h4>
+                        <h4 className="text-xl font-bold text-[#002845] mb-2">🎬 استكشف أكثر عن عقارنا</h4>
                         <p className="text-slate-700 text-sm mb-2 font-medium">سيتم إنشاء فيديو احترافي من صور العقار</p>
                         <p className="text-slate-500 text-xs">سيظهر هنا عند اكتمال التوليد</p>
                         {isOwner && currentUser && (currentUser.supportLevel || 0) >= 3 && (
