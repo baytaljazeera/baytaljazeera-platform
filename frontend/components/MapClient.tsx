@@ -510,6 +510,10 @@ function ListingPopupCard({
 
   const priceText = formatPriceWithCurrency(listing.price, listing.country, listing.currency_code);
 
+  const openListingPage = useCallback(() => {
+    router.push(`/listing/${listing.id}`);
+  }, [listing.id, router]);
+
   const goPrev = (e?: React.MouseEvent | React.TouchEvent) => {
     e?.stopPropagation();
     e?.preventDefault();
@@ -605,10 +609,12 @@ function ListingPopupCard({
           // لا نفعل شيء - نترك الأحداث تصل إلى الزر
           return;
         }
-        // منع الانتشار فقط للأحداث الأخرى
-        stopPropagation(e);
+        openListingPage();
       }}
-      onDoubleClick={stopPropagation}
+      onDoubleClick={(e) => {
+        stopPropagation(e);
+        openListingPage();
+      }}
       style={{
         width: 300,
         margin: "-8px -12px -10px -12px",
@@ -1301,6 +1307,9 @@ function ListingMarker({
             return;
           }
           onSelectListing?.(listing.id);
+          setTimeout(() => {
+            markerRef.current?.openPopup();
+          }, 0);
         }
       }}
     >
