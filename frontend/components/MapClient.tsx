@@ -1107,9 +1107,7 @@ function ListingMarker({
             return;
           }
           onSelectListing?.(listing.id);
-          setTimeout(() => {
-            markerRef.current?.openPopup();
-          }, 0);
+          (e.target as L.Marker).openPopup();
         }
       }}
     >
