@@ -1106,8 +1106,13 @@ function ListingMarker({
             e.originalEvent.stopImmediatePropagation();
             return;
           }
+          e.originalEvent.preventDefault();
+          e.originalEvent.stopPropagation();
+          e.originalEvent.stopImmediatePropagation();
           onSelectListing?.(listing.id);
-          (e.target as L.Marker).openPopup();
+          setTimeout(() => {
+            (e.target as L.Marker).openPopup();
+          }, 0);
         }
       }}
     >
