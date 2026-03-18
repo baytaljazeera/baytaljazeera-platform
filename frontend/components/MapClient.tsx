@@ -457,7 +457,7 @@ function ListingPopupCard({
     
     // إرسال الطلب في الخلفية
     if (onToggleFavorite) {
-      onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
+      Promise.resolve(onToggleFavorite(listing.id, newFavoriteState)).catch((error) => {
         console.error("Error toggling favorite:", error);
         // Rollback on error
         setIsFavorite(!newFavoriteState);
@@ -714,7 +714,7 @@ function ListingPopupCard({
                 listing.isFavorite = newFavoriteState;
                 // إرسال الطلب في الخلفية
                 if (onToggleFavorite) {
-                  onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
+                  Promise.resolve(onToggleFavorite(listing.id, newFavoriteState)).catch((error) => {
                     console.error("Error toggling favorite:", error);
                     setIsFavorite(!newFavoriteState);
                     listing.isFavorite = !newFavoriteState;
@@ -735,7 +735,7 @@ function ListingPopupCard({
                 listing.isFavorite = newFavoriteState;
                 // إرسال الطلب في الخلفية
                 if (onToggleFavorite) {
-                  onToggleFavorite(listing.id, newFavoriteState).catch((error) => {
+                  Promise.resolve(onToggleFavorite(listing.id, newFavoriteState)).catch((error) => {
                     console.error("Error toggling favorite:", error);
                     setIsFavorite(!newFavoriteState);
                     listing.isFavorite = !newFavoriteState;
@@ -757,9 +757,6 @@ function ListingPopupCard({
                 e.stopPropagation();
                 e.preventDefault();
                 e.nativeEvent.stopImmediatePropagation();
-                if (e.cancelable) {
-                  e.cancelBubble = true;
-                }
                 return false;
               }}
               style={{
