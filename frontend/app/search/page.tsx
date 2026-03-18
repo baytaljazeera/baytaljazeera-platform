@@ -1373,17 +1373,24 @@ function SearchPage() {
                                 : "bg-white/20 text-white"
                       }`}
                     >
-                      {filters.dealStatus === "active" ? "✅ نشط" 
-                        : filters.dealStatus === "negotiating" ? "🤝 قيد التفاوض"
-                        : filters.dealStatus === "sold" ? "✔️ تم البيع"
-                        : filters.dealStatus === "rented" ? "✔️ تم التأجير"
-                        : "📋 الحالة"}
+                      {filters.dealStatus === "active"
+                        ? "✅ نشط"
+                        : filters.dealStatus === "negotiating"
+                          ? "🤝 قيد التفاوض"
+                          : filters.dealStatus === "sold"
+                            ? "✔️ تم البيع"
+                            : filters.dealStatus === "rented"
+                              ? "✔️ تم التأجير"
+                              : filters.dealStatus === "all"
+                                ? "📋 الكل"
+                                : "📋 الحالة"}
                     </button>
                     {activePanel === "dealStatus" && (
                       <div className="absolute top-full right-0 mt-1 z-[9999]">
                         <div className="bg-[#002845] rounded-xl shadow-lg border border-[#D4AF37]/40 p-2">
                           <div className="flex gap-1.5">
                             {([
+                              { value: "all", label: "📋 الكل", color: "bg-[#D4AF37] text-[#002845]" },
                               { value: "active", label: "✅ نشط", color: "bg-emerald-500 text-white" },
                               { value: "negotiating", label: "🤝 قيد التفاوض", color: "bg-amber-500 text-white" },
                               { value: "sold", label: "✔️ تم البيع", color: "bg-red-600 text-white" },
@@ -1724,6 +1731,32 @@ function SearchPage() {
                       >
                         🔑 إيجار
                       </button>
+                    </div>
+                  </div>
+
+                  {/* حالة الصفقة */}
+                  <div>
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">🤝 حالة الصفقة</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {([
+                        { value: "all", label: "📋 الكل" },
+                        { value: "active", label: "✅ نشط" },
+                        { value: "negotiating", label: "🤝 قيد التفاوض" },
+                        { value: "sold", label: "✔️ تم البيع" },
+                        { value: "rented", label: "✔️ تم التأجير" },
+                      ] as const).map((status) => (
+                        <button
+                          key={status.value}
+                          onClick={() => setFilters(prev => ({ ...prev, dealStatus: status.value }))}
+                          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${
+                            filters.dealStatus === status.value
+                              ? "bg-[#D4AF37] text-[#002845]"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          }`}
+                        >
+                          {status.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
