@@ -11,6 +11,10 @@ const generateCSRFToken = () => {
 };
 
 const csrfProtection = (req, res, next) => {
+  if (req.path === '/api/whatsapp/webhook' || req.originalUrl === '/api/whatsapp/webhook') {
+    return next();
+  }
+
   // Skip CSRF for safe methods
   const safeMethods = ['GET', 'HEAD', 'OPTIONS'];
   if (safeMethods.includes(req.method)) {

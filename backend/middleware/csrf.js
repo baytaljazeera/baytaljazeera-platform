@@ -20,6 +20,10 @@ function timingSafeCompare(a, b) {
 }
 
 function csrfProtection(req, res, next) {
+  if (req.path === '/api/whatsapp/webhook' || req.originalUrl === '/api/whatsapp/webhook') {
+    return next();
+  }
+
   const safeMethods = ['GET', 'HEAD', 'OPTIONS'];
   
   if (safeMethods.includes(req.method)) {
@@ -49,6 +53,10 @@ function csrfProtection(req, res, next) {
 }
 
 function setCsrfToken(req, res, next) {
+  if (req.path === '/api/whatsapp/webhook' || req.originalUrl === '/api/whatsapp/webhook') {
+    return next();
+  }
+
   if (!req.cookies?.[CSRF_COOKIE_NAME]) {
     const token = generateCsrfToken();
     const isProduction = process.env.NODE_ENV === 'production';

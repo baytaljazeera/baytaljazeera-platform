@@ -147,6 +147,9 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   }
 });
 
+// 📲 Twilio WhatsApp Webhook - parse urlencoded payloads before global body parsers
+app.use('/api/whatsapp/webhook', express.urlencoded({ extended: true }));
+
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
@@ -154,7 +157,13 @@ app.use(express.urlencoded({ limit: '100mb', extended: true }));
 app.use(sanitizeInput);
 
 // 🔒 CSRF Protection - إعداد token للمتصفح
-app.use(setCsrfToken);
+// Public webhooks should never require browser CSRF cookies/tokens.
+app.use((req, res, next) => {
+  if (req.path === '/api/whatsapp/webhook') {
+    return next();
+  }
+  return setCsrfToken(req, res, next);
+});
 app.get('/api/csrf-token', getCsrfToken);
 
 // 🔧 Site Status Note:

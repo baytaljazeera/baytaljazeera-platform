@@ -2,6 +2,7 @@ const express = require("express");
 const db = require("../db");
 const { authMiddleware, requireRoles } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
+const { logWhatsAppMessage } = require('../services/googleSheetsService');
 
 const router = express.Router();
 
@@ -40,6 +41,40 @@ async function sendWhatsAppMessage(to, message) {
   
   return data;
 }
+
+router.post('/webhook', asyncHandler(async (req, res) => {
+  const { From, Body, MessageSid } = req.body;
+  const cleanPhone = From ? From.replace('whatsapp:', '') : 'Unknown';
+
+  try {
+    console.log(`📩 Inbound WhatsApp from ${cleanPhone}: ${Body}`);
+
+    // 1. Log to Google Sheets
+    await logWhatsAppMessage(cleanPhone, Body || '');
+
+    // 2. Log to PostgreSQL using the existing whatsapp_messages schema
+    await db.query(
+      `INSERT INTO whatsapp_messages (phone, message, status, twilio_sid, created_at)
+       VALUES ($1, $2, $3, $4, NOW())`,
+      [cleanPhone, Body || '', 'received', MessageSid || null]
+    );
+
+    // 3. Auto-reply using the existing Twilio send logic in this file
+    const replyMessage = 'أهلاً بك في بيت الجزيرة! تم استلام استفسارك وسيقوم فريقنا بالتواصل معك قريباً.';
+    const replyResult = await sendWhatsAppMessage(cleanPhone, replyMessage);
+
+    await db.query(
+      `INSERT INTO whatsapp_messages (phone, message, status, twilio_sid, created_at)
+       VALUES ($1, $2, $3, $4, NOW())`,
+      [cleanPhone, replyMessage, 'sent', replyResult.sid]
+    );
+
+    res.status(200).send('<Response></Response>');
+  } catch (error) {
+    console.error('Error in WhatsApp Webhook:', error);
+    res.status(500).send('Internal Server Error');
+  }
+}));
 
 router.post("/send", authMiddleware, requireRoles('super_admin', 'marketing_admin'), asyncHandler(async (req, res) => {
   const { phone, message, userId } = req.body;
