@@ -97,7 +97,7 @@ export default function WhatsAppCommandCenter() {
 
   // Track last known inbound count to detect new messages
   const prevInboundRef = useRef<number>(0);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const replyInputRef = useRef<HTMLTextAreaElement>(null);
 
   // ── Fetch helpers ───────────────────────────────────────────────────────────
@@ -192,9 +192,14 @@ export default function WhatsAppCommandCenter() {
     return () => clearInterval(id);
   }, [selectedPhone, fetchMessages]);
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom when messages change (inside the messages container only)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
   }, [messages]);
 
   // ── Actions ─────────────────────────────────────────────────────────────────
@@ -473,7 +478,10 @@ export default function WhatsAppCommandCenter() {
                   </div>
 
                   {/* Messages — scrolls internally, never pushes reply box down */}
-                  <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-3 bg-[#e5ddd5]/20">
+                  <div
+                    ref={messagesContainerRef}
+                    className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-3 bg-[#e5ddd5]/20"
+                  >
                     {loadingMsgs ? (
                       <div className="flex items-center justify-center h-24">
                         <RefreshCw className="w-5 h-5 animate-spin text-slate-400" />
@@ -514,7 +522,6 @@ export default function WhatsAppCommandCenter() {
                         );
                       })
                     )}
-                    <div ref={messagesEndRef} />
                   </div>
 
                   {/* Reply box — shrink-0 keeps it pinned at the bottom */}
