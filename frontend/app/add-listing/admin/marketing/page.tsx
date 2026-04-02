@@ -36,6 +36,9 @@ import {
   ArrowUpRight,
   Gift,
   Sparkles,
+  Zap,
+  Timer,
+  Radio,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -92,6 +95,14 @@ interface GoogleReviewSettings {
   google_place_id: string;
 }
 
+interface WaCustomer {
+  phone: string;
+  last_inbound_at: string | null;
+  last_snippet: string;
+  window_status: "OPEN" | "CLOSED";
+  remaining_seconds: number;
+}
+
 interface RetargetingData {
   inactiveClients: Array<{ id: string; name: string; email: string; phone?: string; last_listing_date: string | null; total_listings: number }>;
   expiredSubscriptions: Array<{ id: string; name: string; email: string; phone?: string; last_plan: string; expires_at: string }>;
@@ -108,6 +119,7 @@ export default function MarketingPage() {
   const [googleSettings, setGoogleSettings] = useState<GoogleReviewSettings>({ google_review_link: "", google_place_id: "" });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"overview" | "segments" | "email" | "whatsapp" | "google" | "retargeting">("overview");
+  const [waSubTab, setWaSubTab] = useState<"radar" | "templates">("radar");
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [selectedSegment, setSelectedSegment] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -640,68 +652,94 @@ export default function MarketingPage() {
       )}
 
       {activeTab === "whatsapp" && (
-        <div className="space-y-6">
-          <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl p-6 text-white">
-            <div className="flex items-center gap-3 mb-2">
-              <MessageSquare className="w-8 h-8" />
-              <h2 className="text-xl font-bold">مُطلق قوالب واتساب</h2>
-            </div>
-            <p className="text-white/80">
-              أرسل رسائل قالب معتمدة للعملاء الجدد خارج نافذة الـ 24 ساعة
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* ── Template Launcher ── */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-              <div className="flex items-center gap-2 mb-5">
-                <Sparkles className="w-5 h-5 text-green-500" />
-                <h3 className="font-bold text-[#002845]">إرسال قالب</h3>
-              </div>
-              <QuickWhatsappForm segments={segments} onSuccess={() => { fetchWhatsappCampaigns(); setMessage({ type: "success", text: "تم إرسال القالب بنجاح" }); }} />
-            </div>
-
-            {/* ── Recent campaigns + Inbox shortcut ── */}
-            <div className="flex flex-col gap-4">
-              <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex-1">
-                <h3 className="font-bold text-[#002845] mb-4">آخر الحملات</h3>
-                <div className="space-y-3 max-h-64 overflow-y-auto">
-                  {whatsappCampaigns.length === 0 ? (
-                    <p className="text-center text-gray-400 py-4">لا توجد حملات</p>
-                  ) : (
-                    whatsappCampaigns.slice(0, 10).map((campaign) => (
-                      <div key={campaign.id} className="p-3 bg-gray-50 rounded-xl">
-                        <div className="flex justify-between items-start">
-                          <p className="font-medium text-sm">{campaign.name}</p>
-                          <span className={`px-2 py-1 rounded-full text-xs ${
-                            campaign.status === "completed" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
-                          }`}>
-                            {campaign.success_count}/{campaign.total_recipients}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{campaign.message}</p>
-                      </div>
-                    ))
-                  )}
+        <div className="space-y-5">
+          {/* ── Header ── */}
+          <div className="bg-gradient-to-r from-[#002845] via-[#003d5c] to-emerald-800 rounded-2xl p-6 text-white relative overflow-hidden">
+            <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_#D4AF37_0%,_transparent_60%)]" />
+            <div className="relative flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
+                    <Radio className="w-5 h-5 text-[#D4AF37]" />
+                  </div>
+                  <h2 className="text-xl font-bold">رادار الفرص الذكي</h2>
                 </div>
+                <p className="text-white/70 text-sm max-w-md">
+                  استغل نافذة الـ 24 ساعة بذكاء — أرسل رسائل مخصصة بالذكاء الاصطناعي للعملاء النشطين.
+                </p>
               </div>
-
-              {/* shortcut card */}
               <Link
                 href="/add-listing/admin/whatsapp"
-                className="flex items-center gap-4 bg-gradient-to-l from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-5 hover:shadow-md transition group"
+                className="shrink-0 flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-medium transition"
               >
-                <div className="p-3 bg-green-500 rounded-xl text-white shrink-0">
-                  <MessageSquare className="w-6 h-6" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-[#002845] text-sm">صندوق الوارد — مركز الواتساب</p>
-                  <p className="text-xs text-gray-500 mt-0.5">تابع ردود العملاء وأرسل ردوداً يدوية</p>
-                </div>
-                <ArrowUpRight className="w-5 h-5 text-green-500 shrink-0 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                <MessageSquare className="w-4 h-4" />
+                صندوق الوارد
+                <ArrowUpRight className="w-3.5 h-3.5" />
               </Link>
             </div>
           </div>
+
+          {/* ── Sub-tabs ── */}
+          <div className="flex gap-2 bg-white rounded-2xl p-1.5 shadow-sm border border-gray-100 w-fit">
+            {([
+              { key: "radar", label: "رادار الفرص", icon: Radio },
+              { key: "templates", label: "مُطلق القوالب", icon: Sparkles },
+            ] as const).map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => setWaSubTab(key)}
+                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition ${
+                  waSubTab === key
+                    ? "bg-[#002845] text-white shadow"
+                    : "text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Smart Radar tab ── */}
+          {waSubTab === "radar" && (
+            <SmartRadar onSwitchToTemplates={() => setWaSubTab("templates")} />
+          )}
+
+          {/* ── Template Launcher tab ── */}
+          {waSubTab === "templates" && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <div className="flex items-center gap-2 mb-5">
+                  <Sparkles className="w-5 h-5 text-green-500" />
+                  <h3 className="font-bold text-[#002845]">إرسال قالب</h3>
+                </div>
+                <QuickWhatsappForm segments={segments} onSuccess={() => { fetchWhatsappCampaigns(); setMessage({ type: "success", text: "تم إرسال القالب بنجاح" }); }} />
+              </div>
+
+              <div className="flex flex-col gap-4">
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex-1">
+                  <h3 className="font-bold text-[#002845] mb-4">آخر الحملات</h3>
+                  <div className="space-y-3 max-h-64 overflow-y-auto">
+                    {whatsappCampaigns.length === 0 ? (
+                      <p className="text-center text-gray-400 py-4">لا توجد حملات</p>
+                    ) : (
+                      whatsappCampaigns.slice(0, 10).map((campaign) => (
+                        <div key={campaign.id} className="p-3 bg-gray-50 rounded-xl">
+                          <div className="flex justify-between items-start">
+                            <p className="font-medium text-sm">{campaign.name}</p>
+                            <span className={`px-2 py-1 rounded-full text-xs ${campaign.status === "completed" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
+                              {campaign.success_count}/{campaign.total_recipients}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1 line-clamp-2">{campaign.message}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1269,6 +1307,426 @@ function WhatsappModal({ selectedUsers, users, onClose, onSuccess }: { selectedU
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Smart Opportunity Radar components
+// ─────────────────────────────────────────────────────────────────────────────
+
+function Countdown({ seconds: initialSeconds }: { seconds: number }) {
+  const [secs, setSecs] = useState(initialSeconds);
+  useEffect(() => {
+    if (secs <= 0) return;
+    const id = setInterval(() => setSecs((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(id);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (secs <= 0) return <span className="font-mono text-xs text-gray-400">00:00:00</span>;
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  const urgent = secs < 3600;
+  return (
+    <span className={`font-mono text-sm font-bold tabular-nums ${urgent ? "text-red-500" : "text-emerald-600"}`}>
+      {String(h).padStart(2, "0")}:{String(m).padStart(2, "0")}:{String(s).padStart(2, "0")}
+    </span>
+  );
+}
+
+function CustomerCard({
+  customer,
+  selected,
+  onToggleSelect,
+  onAiSuggest,
+  onSendTemplate,
+}: {
+  customer: WaCustomer;
+  selected: boolean;
+  onToggleSelect: (phone: string) => void;
+  onAiSuggest: (phone: string) => void;
+  onSendTemplate: () => void;
+}) {
+  const isOpen = customer.window_status === "OPEN";
+  return (
+    <div
+      className={`relative bg-white rounded-2xl p-4 shadow-sm border transition-all ${
+        isOpen
+          ? selected
+            ? "border-emerald-400 ring-2 ring-emerald-100 shadow-emerald-50"
+            : "border-emerald-200 hover:border-emerald-300 hover:shadow-md"
+          : "border-gray-100 opacity-70"
+      }`}
+    >
+      {/* Checkbox for OPEN windows */}
+      {isOpen && (
+        <button
+          onClick={() => onToggleSelect(customer.phone)}
+          className={`absolute top-3 left-3 w-5 h-5 rounded-md border-2 flex items-center justify-center transition ${
+            selected ? "bg-emerald-500 border-emerald-500" : "border-gray-300 hover:border-emerald-400"
+          }`}
+        >
+          {selected && <Check className="w-3 h-3 text-white" />}
+        </button>
+      )}
+
+      {/* Status badge */}
+      <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold mb-3 ${
+        isOpen ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"
+      }`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? "bg-emerald-500 animate-pulse" : "bg-gray-400"}`} />
+        {isOpen ? "نافذة مفتوحة" : "نافذة مغلقة"}
+      </div>
+
+      {/* Phone */}
+      <p className="font-mono text-sm text-[#002845] font-bold mb-1.5 truncate" dir="ltr">
+        {customer.phone}
+      </p>
+
+      {/* Snippet */}
+      <p className="text-xs text-gray-500 mb-3 line-clamp-2 leading-relaxed" dir="rtl">
+        {customer.last_snippet}
+      </p>
+
+      {/* Countdown / closed notice */}
+      {isOpen ? (
+        <div className="flex items-center gap-1.5 mb-3 bg-emerald-50 rounded-lg px-2.5 py-1.5">
+          <Timer className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+          <span className="text-xs text-gray-500">متبقٍ:</span>
+          <Countdown seconds={customer.remaining_seconds} />
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5 mb-3 bg-gray-50 rounded-lg px-2.5 py-1.5">
+          <AlertCircle className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+          <span className="text-[10px] text-gray-400">استخدم قالباً معتمداً للتواصل</span>
+        </div>
+      )}
+
+      {/* Action button */}
+      {isOpen ? (
+        <button
+          onClick={() => onAiSuggest(customer.phone)}
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-[#002845] to-[#003d5c] text-white text-xs font-bold rounded-xl hover:opacity-90 transition shadow-sm"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
+          اقتراح ذكي بالـ AI
+        </button>
+      ) : (
+        <button
+          onClick={onSendTemplate}
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 border border-gray-200 text-gray-500 text-xs font-medium rounded-xl hover:bg-gray-50 transition"
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+          استخدم قالباً
+        </button>
+      )}
+    </div>
+  );
+}
+
+type AiModalState = { phone: string; suggestion: string; loading: boolean; sendLoading: boolean };
+type BlastModalState = { suggestion: string; loading: boolean; sendLoading: boolean };
+
+function SmartRadar({ onSwitchToTemplates }: { onSwitchToTemplates: () => void }) {
+  const [customers, setCustomers] = useState<WaCustomer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [aiModal, setAiModal] = useState<AiModalState | null>(null);
+  const [blastModal, setBlastModal] = useState<BlastModalState | null>(null);
+  const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
+
+  function showToast(text: string, ok = true) {
+    setToast({ text, ok });
+    setTimeout(() => setToast(null), 4500);
+  }
+
+  const fetchCustomers = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/whatsapp/customers`, {
+        headers: getAuthHeaders(),
+        credentials: "include",
+      });
+      if (res.ok) setCustomers((await res.json()).customers || []);
+    } catch {}
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchCustomers();
+    const id = setInterval(fetchCustomers, 60000);
+    return () => clearInterval(id);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function toggleSelect(phone: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(phone) ? next.delete(phone) : next.add(phone);
+      return next;
+    });
+  }
+
+  function selectAllOpen() {
+    setSelected(new Set(customers.filter((c) => c.window_status === "OPEN").map((c) => c.phone)));
+  }
+
+  async function requestAiSuggest(phone: string) {
+    setAiModal({ phone, suggestion: "", loading: true, sendLoading: false });
+    try {
+      const res = await fetch(`${API_URL}/api/admin/whatsapp/ai-suggest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        credentials: "include",
+        body: JSON.stringify({ phone }),
+      });
+      const data = await res.json();
+      setAiModal((prev) => prev ? { ...prev, suggestion: data.suggestion || "", loading: false } : null);
+    } catch {
+      setAiModal((prev) => prev ? { ...prev, loading: false } : null);
+      showToast("تعذّر الاتصال بخدمة الذكاء الاصطناعي", false);
+    }
+  }
+
+  async function sendDirect(phone: string, message: string) {
+    setAiModal((prev) => prev ? { ...prev, sendLoading: true } : null);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/whatsapp/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        credentials: "include",
+        body: JSON.stringify({ phone, message }),
+      });
+      if (res.ok) {
+        showToast(`تم الإرسال إلى ${phone}`);
+        setAiModal(null);
+        fetchCustomers();
+      } else {
+        const d = await res.json().catch(() => ({}));
+        showToast(d.error || "فشل الإرسال", false);
+        setAiModal((prev) => prev ? { ...prev, sendLoading: false } : null);
+      }
+    } catch {
+      showToast("فشل الاتصال بالخادم", false);
+      setAiModal((prev) => prev ? { ...prev, sendLoading: false } : null);
+    }
+  }
+
+  async function startBlast() {
+    setBlastModal({ suggestion: "", loading: true, sendLoading: false });
+    try {
+      const res = await fetch(`${API_URL}/api/admin/whatsapp/ai-blast-suggest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        credentials: "include",
+      });
+      const data = await res.json();
+      setBlastModal({ suggestion: data.suggestion || "", loading: false, sendLoading: false });
+    } catch {
+      setBlastModal(null);
+      showToast("فشل توليد الرسالة الذكية", false);
+    }
+  }
+
+  async function sendBlast(message: string) {
+    setBlastModal((prev) => prev ? { ...prev, sendLoading: true } : null);
+    const phones = Array.from(selected);
+    let sent = 0;
+    for (const phone of phones) {
+      try {
+        const res = await fetch(`${API_URL}/api/admin/whatsapp/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          credentials: "include",
+          body: JSON.stringify({ phone, message }),
+        });
+        if (res.ok) sent++;
+      } catch {}
+    }
+    showToast(`تم الإرسال إلى ${sent} من ${phones.length} عميل`);
+    setBlastModal(null);
+    setSelected(new Set());
+    fetchCustomers();
+  }
+
+  const openCount = customers.filter((c) => c.window_status === "OPEN").length;
+
+  return (
+    <div className="space-y-4" dir="rtl">
+      {/* Toast notification */}
+      {toast && (
+        <div className={`p-3 rounded-xl text-sm text-center border ${
+          toast.ok ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-red-50 border-red-200 text-red-700"
+        }`}>
+          {toast.text}
+        </div>
+      )}
+
+      {/* Bulk action bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white rounded-2xl px-5 py-3.5 shadow-sm border border-gray-100">
+        <div className="flex items-center gap-3 text-sm">
+          <span className="flex items-center gap-1.5 font-bold text-emerald-600">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            {openCount} نافذة مفتوحة
+          </span>
+          <span className="text-gray-300">|</span>
+          <span className="text-gray-400">{customers.length - openCount} مغلقة</span>
+          {selected.size > 0 && (
+            <>
+              <span className="text-gray-300">|</span>
+              <span className="text-[#002845] font-semibold">{selected.size} محدد</span>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={selectAllOpen}
+            disabled={openCount === 0}
+            className="text-xs px-3 py-1.5 border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 disabled:opacity-40 transition"
+          >
+            اختر كل المفتوحة ({openCount})
+          </button>
+          {selected.size > 0 && (
+            <button
+              onClick={startBlast}
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-gradient-to-r from-[#D4AF37] to-amber-500 text-white text-xs font-bold rounded-lg shadow hover:opacity-90 transition"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              إرسال ذكي ({selected.size})
+            </button>
+          )}
+          <button onClick={fetchCustomers} className="p-1.5 text-gray-400 hover:text-gray-600 transition" title="تحديث">
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Customer grid */}
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <RefreshCw className="w-6 h-6 animate-spin text-gray-300" />
+        </div>
+      ) : customers.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-3">
+          <Radio className="w-12 h-12 opacity-20" />
+          <p className="text-sm">لا توجد بيانات عملاء بعد — ابدأ بتلقي رسائل واتساب</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {customers.map((c) => (
+            <CustomerCard
+              key={c.phone}
+              customer={c}
+              selected={selected.has(c.phone)}
+              onToggleSelect={toggleSelect}
+              onAiSuggest={requestAiSuggest}
+              onSendTemplate={onSwitchToTemplates}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ── AI Suggest Modal ── */}
+      {aiModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-bold text-[#002845] flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-[#D4AF37]" />
+                اقتراح الذكاء الاصطناعي
+              </h3>
+              <button onClick={() => setAiModal(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mb-4 font-mono" dir="ltr">{aiModal.phone}</p>
+            {aiModal.loading ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-3">
+                <div className="relative w-10 h-10">
+                  <div className="absolute inset-0 rounded-full border-2 border-[#D4AF37]/30 animate-ping" />
+                  <div className="absolute inset-0 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" />
+                </div>
+                <p className="text-sm text-gray-500">يحلل الذكاء الاصطناعي اهتمام العميل...</p>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-gray-500 mb-2 font-semibold">الرسالة المقترحة:</p>
+                <div
+                  className="bg-[#dcf8c6] border border-green-100 rounded-2xl rounded-tr-sm p-4 text-sm text-gray-800 leading-relaxed whitespace-pre-wrap mb-1 shadow-sm min-h-[80px]"
+                  dir="rtl"
+                >
+                  {aiModal.suggestion || "لم يتمكن الذكاء الاصطناعي من توليد اقتراح."}
+                </div>
+                <p className="text-[10px] text-gray-400 mb-5 text-left">مولّد بواسطة Gemini AI</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setAiModal(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm hover:bg-gray-50 transition">
+                    إغلاق
+                  </button>
+                  <button
+                    onClick={() => sendDirect(aiModal.phone, aiModal.suggestion)}
+                    disabled={!aiModal.suggestion || aiModal.sendLoading}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-[#002845] text-white rounded-xl text-sm font-bold disabled:opacity-50 hover:bg-[#003d5c] transition"
+                  >
+                    {aiModal.sendLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    إرسال الآن
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Smart Blast Modal ── */}
+      {blastModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-[#002845] flex items-center gap-2">
+                <Zap className="w-5 h-5 text-[#D4AF37]" />
+                الإرسال الذكي — {selected.size} عميل
+              </h3>
+              <button onClick={() => setBlastModal(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            {blastModal.loading ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-3">
+                <div className="relative w-10 h-10">
+                  <div className="absolute inset-0 rounded-full border-2 border-[#D4AF37]/30 animate-ping" />
+                  <div className="absolute inset-0 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" />
+                </div>
+                <p className="text-sm text-gray-500">يصيغ الذكاء الاصطناعي عرضاً فاخراً مخصصاً...</p>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-gray-500 mb-2 font-semibold">الرسالة المقترحة (يمكنك التعديل):</p>
+                <textarea
+                  value={blastModal.suggestion}
+                  onChange={(e) => setBlastModal((prev) => prev ? { ...prev, suggestion: e.target.value } : null)}
+                  rows={6}
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm mb-1 focus:outline-none focus:border-[#D4AF37] resize-none leading-relaxed"
+                  dir="rtl"
+                />
+                <p className="text-[10px] text-gray-400 mb-5">سيُرسل إلى {selected.size} عميل لديهم نافذة مفتوحة</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setBlastModal(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm hover:bg-gray-50 transition">
+                    إلغاء
+                  </button>
+                  <button
+                    onClick={() => sendBlast(blastModal.suggestion)}
+                    disabled={!blastModal.suggestion.trim() || blastModal.sendLoading}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-[#D4AF37] to-amber-500 text-white rounded-xl text-sm font-bold disabled:opacity-50 hover:opacity-90 transition shadow"
+                  >
+                    {blastModal.sendLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                    إرسال إلى {selected.size} عميل
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
