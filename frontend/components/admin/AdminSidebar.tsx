@@ -280,8 +280,8 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
         
         if (loadingVisibility || visibleSections.length === 0) return true;
         const sectionKey = getSectionKeyFromHref(link.href);
-        // Always show feedback-related links even إذا لم تُضف بعد لإعدادات الظهور
-        if (sectionKey === 'feedback') return true;
+        // Always show feedback + whatsapp even if not yet registered in sidebar visibility settings
+        if (sectionKey === 'feedback' || sectionKey === 'whatsapp') return true;
         return visibleSections.includes(sectionKey);
       });
       return { ...section, links: filteredLinks };
