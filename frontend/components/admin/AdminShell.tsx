@@ -16,10 +16,12 @@ export default function AdminShell({ children }: AdminShellProps) {
   return (
     <AdminGuard>
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 overflow-x-hidden" dir="rtl">
-        <div className="flex min-h-screen overflow-hidden">
-          <div className="flex min-h-screen flex-1 flex-col">
+        <div className="flex min-h-screen w-full overflow-hidden">
+          {/* Desktop sidebar: AdminSidebar uses `hidden md:flex` when not isMobile */}
+          <AdminSidebar />
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <AdminTopbar onMenuClick={() => setWorkCenterOpen(true)} />
-            <main className="flex min-h-0 flex-1 flex-col px-3 pb-6 pt-3 md:px-6 md:pb-8 md:pt-4 overflow-x-hidden">
+            <main className="flex min-h-0 flex-1 flex-col overflow-x-hidden px-3 pb-6 pt-3 md:px-6 md:pb-8 md:pt-4">
               {children}
             </main>
           </div>
