@@ -265,8 +265,7 @@ export default function WhatsAppCommandCenter() {
      * content area stretches to fill all remaining space.
      */
     <div
-      className="flex flex-col bg-[#f0f4f8] px-4 pt-4 pb-0 md:px-6 md:pt-6"
-      style={{ minHeight: "calc(100vh - 80px)" }}
+      className="h-full min-h-0 flex flex-col overflow-hidden bg-[#f0f4f8] px-4 pt-4 pb-0 md:px-6 md:pt-6"
       dir="rtl"
     >
       {/* ── Header — shrink-0 so it never grows or scrolls ─────────────── */}
