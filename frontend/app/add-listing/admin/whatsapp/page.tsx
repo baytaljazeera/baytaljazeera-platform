@@ -170,9 +170,6 @@ export default function WhatsAppCommandCenter() {
     []
   );
 
-  // Layout is handled by layout.tsx which patches AdminShell's <main> for this
-  // route. No fixed positioning or body-scroll-lock needed here.
-
   // ── Effects ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     fetchSettings();
@@ -261,16 +258,11 @@ export default function WhatsAppCommandCenter() {
   const totalUnread = conversations.reduce((s, c) => s + c.unread_count, 0);
 
   return (
-    /*
-     * Root: fills exactly the remaining viewport below the admin topbar.
-     * overflow-hidden stops any child from pushing the page down or into the
-     * global footer. flex-col lets header/tabs stay fixed-height while the
-     * content area stretches to fill all remaining space.
-     */
-    <div
-      className="h-full min-h-0 flex flex-col overflow-hidden bg-[#f0f4f8] px-4 pt-4 pb-0 md:px-6 md:pt-6"
-      dir="rtl"
-    >
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        className="absolute inset-0 z-10 flex flex-col overflow-hidden bg-[#f0f4f8] px-4 pb-4 pt-4 md:px-6 md:pb-6 md:pt-6"
+        dir="rtl"
+      >
       {/* ── Header — shrink-0 so it never grows or scrolls ─────────────── */}
       <div className="shrink-0 mb-4 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
@@ -452,7 +444,7 @@ export default function WhatsAppCommandCenter() {
             </div>
 
             {/* Right pane — chat thread */}
-            <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
               {!selectedPhone ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-3">
                   <MessageCircle className="w-14 h-14 opacity-20" />
@@ -482,7 +474,7 @@ export default function WhatsAppCommandCenter() {
                   {/* Messages — scrolls internally, never pushes reply box down */}
                   <div
                     ref={messagesContainerRef}
-                    className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-3 bg-[#e5ddd5]/20"
+                    className="min-h-0 flex-1 overflow-y-auto space-y-3 bg-[#e5ddd5]/20 px-5 py-4"
                   >
                     {loadingMsgs ? (
                       <div className="flex items-center justify-center h-24">
@@ -541,7 +533,7 @@ export default function WhatsAppCommandCenter() {
                         }}
                         placeholder="اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
                         rows={2}
-                        className="flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#002845]/30 font-tajawal"
+                        className="pointer-events-auto flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#002845]/30 font-tajawal"
                         dir="rtl"
                       />
                       <button
@@ -565,6 +557,7 @@ export default function WhatsAppCommandCenter() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
