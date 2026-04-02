@@ -2,6 +2,25 @@ const express = require('express');
 const db = require('../db');
 const { authMiddleware, requireRoles } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
+const { GoogleGenAI } = require('@google/genai');
+
+// Lazy-init Gemini — same key priority as ai.js
+function getGenAI() {
+  const key = process.env.GEMINI_API_KEY || process.env.Gemeni2 || process.env.Gemeni;
+  if (!key) return null;
+  return new GoogleGenAI({ apiKey: key });
+}
+
+async function geminiText(prompt, opts = {}) {
+  const genAI = getGenAI();
+  if (!genAI) throw new Error('Gemini API key not configured');
+  const result = await genAI.models.generateContent({
+    model: 'gemini-2.0-flash',
+    contents: prompt,
+    config: { temperature: 0.85, maxOutputTokens: 300, ...opts },
+  });
+  return (result.text || '').trim();
+}
 
 const router = express.Router();
 
@@ -209,6 +228,117 @@ router.get('/unread-count', ...adminAuth, asyncHandler(async (req, res) => {
   `);
 
   res.json({ count: result.rows[0]?.count || 0 });
+}));
+
+// ─── GET /customers — 24-hour window radar ───────────────────────────────────
+router.get('/customers', ...adminAuth, asyncHandler(async (req, res) => {
+  const { rows } = await db.query(`
+    WITH last_inbound AS (
+      SELECT
+        phone,
+        MAX(created_at) FILTER (WHERE direction = 'inbound') AS last_inbound_at
+      FROM whatsapp_messages
+      GROUP BY phone
+    ),
+    last_msg AS (
+      SELECT DISTINCT ON (phone)
+        phone,
+        message AS last_snippet
+      FROM whatsapp_messages
+      ORDER BY phone, created_at DESC
+    )
+    SELECT
+      li.phone,
+      li.last_inbound_at,
+      lm.last_snippet,
+      CASE
+        WHEN li.last_inbound_at IS NOT NULL
+             AND li.last_inbound_at > NOW() - INTERVAL '24 hours'
+        THEN 'OPEN'
+        ELSE 'CLOSED'
+      END AS window_status,
+      GREATEST(
+        COALESCE(
+          EXTRACT(EPOCH FROM (li.last_inbound_at + INTERVAL '24 hours' - NOW()))::int,
+          0
+        ),
+        0
+      ) AS remaining_seconds
+    FROM last_inbound li
+    JOIN last_msg lm ON lm.phone = li.phone
+    ORDER BY
+      CASE WHEN li.last_inbound_at > NOW() - INTERVAL '24 hours' THEN 0 ELSE 1 END,
+      li.last_inbound_at DESC NULLS LAST
+  `);
+  res.json({ customers: rows });
+}));
+
+// ─── POST /ai-suggest — Gemini suggestion for a specific customer ─────────────
+router.post('/ai-suggest', ...adminAuth, asyncHandler(async (req, res) => {
+  const { phone } = req.body;
+  if (!phone) return res.status(400).json({ error: 'رقم الهاتف مطلوب' });
+
+  if (!getGenAI()) {
+    return res.status(503).json({ error: 'خدمة الذكاء الاصطناعي غير متاحة حالياً' });
+  }
+
+  const { rows: msgs } = await db.query(
+    `SELECT message, direction
+     FROM whatsapp_messages
+     WHERE phone = $1
+     ORDER BY created_at DESC LIMIT 5`,
+    [phone]
+  );
+
+  const contextLines = msgs
+    .reverse()
+    .map(m => `${m.direction === 'inbound' ? 'العميل' : 'بيت الجزيرة'}: ${m.message}`)
+    .join('\n');
+
+  const prompt = `أنت خبير تسويق عقارات فاخرة في السعودية تعمل لصالح منصة "بيت الجزيرة".
+
+آخر رسائل هذا العميل:
+${contextLines}
+
+المطلوب: اكتب رسالة واتساب قصيرة ومقنعة (3 جمل كحد أقصى) بالعربية للمتابعة خلال نافذة الـ 24 ساعة.
+- ركّز على اهتمام العميل المحدد المستنبط من المحادثة
+- أنشئ إحساساً خفياً بالفرصة الحصرية
+- لا تستخدم إيموجي
+- أرجع نص الرسالة فقط بدون أي مقدمة`;
+
+  try {
+    const suggestion = await geminiText(prompt);
+    if (!suggestion) return res.status(500).json({ error: 'فشل توليد الاقتراح' });
+    res.json({ suggestion });
+  } catch (err) {
+    console.error('[ai-suggest]', err.message);
+    res.status(500).json({ error: 'فشل توليد الاقتراح' });
+  }
+}));
+
+// ─── POST /ai-blast-suggest — generic luxury blast message ───────────────────
+router.post('/ai-blast-suggest', ...adminAuth, asyncHandler(async (req, res) => {
+  if (!getGenAI()) {
+    return res.status(503).json({ error: 'خدمة الذكاء الاصطناعي غير متاحة حالياً' });
+  }
+
+  const prompt = `أنت خبير تسويق عقارات فاخرة في السعودية تعمل لصالح منصة "بيت الجزيرة".
+
+اكتب رسالة واتساب تسويقية راقية (3-4 جمل) لمجموعة عملاء مهتمين بالعقارات الفاخرة في المملكة.
+- ابدأ بعبارة ترحيبية راقية تعكس هوية بيت الجزيرة
+- أبرز عرضاً حصرياً أو فرصة استثمارية متميزة
+- أضف حافزاً للتصرف الفوري (محدودية العرض أو الوقت)
+- لا تستخدم إيموجي
+- أرجع نص الرسالة فقط`;
+
+  try {
+    const suggestion = await geminiText(prompt, { temperature: 0.9 });
+    if (!suggestion) return res.status(500).json({ error: 'فشل توليد الرسالة' });
+    res.json({ suggestion });
+  } catch (err) {
+    console.error('[ai-blast-suggest]', err.message);
+    res.status(500).json({ error: 'فشل توليد الرسالة' });
+  }
 }));
 
 module.exports = router;
