@@ -194,13 +194,16 @@ export default function WhatsAppCommandCenter() {
 
   // Scroll to bottom when messages change (inside the messages container only)
   useEffect(() => {
-    if (messagesContainerRef.current) {
-      messagesContainerRef.current.scrollTo({
-        top: messagesContainerRef.current.scrollHeight,
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const raf = requestAnimationFrame(() => {
+      el.scrollTo({
+        top: el.scrollHeight,
         behavior: "smooth",
       });
-    }
-  }, [messages]);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [messages, selectedPhone]);
 
   // ── Actions ─────────────────────────────────────────────────────────────────
   async function handleSelectConversation(phone: string) {
