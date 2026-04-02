@@ -6,14 +6,10 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import {
   MessageCircle,
-  Settings,
   Send,
   CheckCheck,
   RefreshCw,
-  Phone,
   Clock,
-  Save,
-  Inbox,
   AlertCircle,
   User,
 } from "lucide-react";
@@ -258,34 +254,23 @@ export default function WhatsAppCommandCenter() {
   const totalUnread = conversations.reduce((s, c) => s + c.unread_count, 0);
 
   return (
-    <>
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-      body { overflow: hidden !important; }
-      footer, [id*='footer'], .global-footer { display: none !important; }
-      main { padding: 0 !important; overflow: hidden !important; }
-    `,
-        }}
-      />
-
-      <div
-        className="flex min-h-0 w-full flex-1 flex-col bg-[#f0f4f8] p-4 md:p-6"
-        dir="rtl"
-      >
-      {/* ── Header — shrink-0 so it never grows or scrolls ─────────────── */}
-      <div className="shrink-0 mb-4 flex items-center justify-between flex-wrap gap-3">
+    <div
+      className="flex flex-col h-[calc(100vh-90px)] w-full bg-[#f0f4f8] overflow-hidden rounded-xl border border-slate-200"
+      dir="rtl"
+    >
+      {/* 1. Header Area - MUST NOT SHRINK OR GROW */}
+      <div className="shrink-0 flex items-center justify-between p-4 bg-white border-b border-slate-200">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-lg">
-            <MessageCircle className="w-6 h-6 text-white" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-md">
+            <MessageCircle className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-[#002845]">
+            <h1 className="text-xl font-black text-[#002845]">
               مركز القيادة — واتساب
             </h1>
-            <p className="text-sm text-slate-500">
+            <p className="text-xs text-slate-500">
               {totalUnread > 0 ? (
-                <span className="text-emerald-600 font-semibold">
+                <span className="text-emerald-600 font-bold">
                   {totalUnread} رسالة غير مقروءة
                 </span>
               ) : (
@@ -294,154 +279,110 @@ export default function WhatsAppCommandCenter() {
             </p>
           </div>
         </div>
-        <button
-          onClick={() => fetchConversations(false)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium shadow-sm transition"
-        >
-          <RefreshCw className="w-4 h-4" />
-          تحديث
-        </button>
+        <div className="flex gap-2">
+          {(["inbox", "settings"] as const).map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
+                tab === key
+                  ? "bg-[#002845] text-white"
+                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              {key === "inbox" ? "صندوق الوارد" : "الإعدادات"}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* ── Tabs — shrink-0 ──────────────────────────────────────────────── */}
-      <div className="shrink-0 flex gap-2 mb-4">
-        {(
-          [
-            { key: "inbox", label: "صندوق الوارد", icon: Inbox },
-            { key: "settings", label: "الإعدادات", icon: Settings },
-          ] as const
-        ).map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-              tab === key
-                ? "bg-[#002845] text-white shadow-md"
-                : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-            }`}
-          >
-            <Icon className="w-4 h-4" />
-            {label}
-            {key === "inbox" && totalUnread > 0 && (
-              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                {totalUnread > 99 ? "99+" : totalUnread}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/*
-       * ── Content area — flex-1 min-h-0 ────────────────────────────────────
-       * min-h-0 overrides the default min-height:auto so this div can shrink
-       * below its content height and give the split-pane a real boundary.
-       */}
-      <div className="flex-1 min-h-0">
-
-        {/* ── Settings Tab ───────────────────────────────────────────────── */}
+      {/* 2. Main Content Area - MUST HAVE min-h-0 to force internal scroll */}
+      <div className="flex-1 flex min-h-0 overflow-hidden">
         {tab === "settings" && (
-          <div className="h-full overflow-y-auto pb-6">
+          <div className="flex-1 overflow-y-auto p-6">
             <div className="max-w-2xl bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-              <h2 className="text-lg font-bold text-[#002845] mb-1 flex items-center gap-2">
-                <Settings className="w-5 h-5 text-[#D4AF37]" />
+              <h2 className="text-lg font-bold text-[#002845] mb-4">
                 الرسالة الترحيبية التلقائية
               </h2>
-              <p className="text-sm text-slate-500 mb-4">
-                تُرسل تلقائياً لكل عميل يتواصل معكم عبر واتساب لأول مرة.
-              </p>
               <textarea
                 value={welcomeMsg}
                 onChange={(e) => setWelcomeMsg(e.target.value)}
                 rows={7}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#002845]/30 resize-y font-tajawal"
-                placeholder="اكتب الرسالة الترحيبية هنا..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#002845]/30 resize-y font-sans tracking-normal leading-relaxed"
                 dir="rtl"
-                lang="ar"
               />
-              <div className="mt-4 flex items-center justify-between">
-                <span className="text-xs text-slate-400">
-                  {welcomeMsg.length} حرف
-                </span>
+              <div className="mt-4 text-left">
                 <button
+                  type="button"
                   onClick={handleSaveSettings}
                   disabled={savingSettings}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#002845] text-white font-semibold text-sm hover:bg-[#003d5c] disabled:opacity-60 transition shadow"
+                  className="px-5 py-2.5 rounded-xl bg-[#002845] text-white font-semibold text-sm"
                 >
                   {savingSettings ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <RefreshCw className="inline h-4 w-4 animate-spin" />
                   ) : (
-                    <Save className="w-4 h-4" />
+                    "حفظ الرسالة"
                   )}
-                  حفظ الرسالة
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* ── Inbox Tab ──────────────────────────────────────────────────── */}
         {tab === "inbox" && (
-          /*
-           * h-full fills the flex-1 content area exactly.
-           * Both child panes are flex-col with overflow-hidden so they
-           * never spill outside this boundary.
-           */
-          <div className="flex gap-4 h-full">
-
-            {/* Left pane — conversation list */}
-            <div className="w-80 shrink-0 flex flex-col bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              {/* Fixed header */}
-              <div className="shrink-0 px-4 py-3 border-b border-slate-100 bg-slate-50">
-                <h3 className="text-sm font-bold text-[#002845] flex items-center gap-2">
-                  <Phone className="w-4 h-4 text-emerald-500" />
+          <div className="flex-1 flex min-h-0 w-full">
+            {/* LEFT PANE: Conversations List */}
+            <div className="w-80 flex flex-col shrink-0 bg-slate-50 border-l border-slate-200 overflow-hidden">
+              <div className="shrink-0 p-3 bg-white border-b border-slate-100">
+                <h3 className="text-sm font-bold text-[#002845]">
                   المحادثات ({conversations.length})
                 </h3>
               </div>
-
-              {/* Scrollable list */}
-              <div className="flex-1 min-h-0 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto min-h-0">
                 {loadingConvos ? (
-                  <div className="flex items-center justify-center h-32">
-                    <RefreshCw className="w-5 h-5 animate-spin text-slate-400" />
+                  <div className="flex h-32 items-center justify-center">
+                    <RefreshCw className="h-5 w-5 animate-spin text-slate-400" />
                   </div>
                 ) : conversations.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-32 text-slate-400 gap-2">
-                    <MessageCircle className="w-8 h-8 opacity-30" />
+                  <div className="flex h-32 flex-col items-center justify-center gap-2 text-slate-400">
+                    <MessageCircle className="h-8 w-8 opacity-30" />
                     <p className="text-sm">لا توجد محادثات بعد</p>
                   </div>
                 ) : (
                   conversations.map((conv) => (
                     <button
                       key={conv.phone}
+                      type="button"
                       onClick={() => handleSelectConversation(conv.phone)}
-                      className={`w-full text-right px-4 py-3 border-b border-slate-50 transition-colors ${
+                      className={`w-full border-b border-slate-50 px-4 py-3 text-right transition-colors ${
                         selectedPhone === conv.phone
-                          ? "bg-[#002845]/5 border-r-2 border-r-[#002845]"
+                          ? "border-r-2 border-r-[#002845] bg-[#002845]/5"
                           : "hover:bg-slate-50"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center shrink-0">
-                              <User className="w-4 h-4 text-white" />
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-green-600">
+                              <User className="h-4 w-4 text-white" />
                             </div>
-                            <span className="text-sm font-bold text-[#002845] truncate">
+                            <span className="truncate text-sm font-bold text-[#002845]">
                               {conv.phone}
                             </span>
                           </div>
-                          <p className="text-xs text-slate-500 mt-1 truncate pr-10">
+                          <p className="mt-1 truncate pr-10 text-xs text-slate-500">
                             {conv.last_direction === "inbound" ? "← " : "→ "}
                             {conv.last_message}
                           </p>
                         </div>
-                        <div className="flex flex-col items-end gap-1 shrink-0">
-                          <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
-                            <Clock className="w-2.5 h-2.5" />
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <span className="flex items-center gap-0.5 text-[10px] text-slate-400">
+                            <Clock className="h-2.5 w-2.5" />
                             {timeAgo(conv.last_message_at)}
                           </span>
                           {conv.unread_count > 0 && (
-                            <span className="min-w-[18px] h-[18px] flex items-center justify-center bg-emerald-500 text-white text-[10px] font-bold rounded-full px-1">
+                            <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white">
                               {conv.unread_count}
                             </span>
                           )}
@@ -453,46 +394,29 @@ export default function WhatsAppCommandCenter() {
               </div>
             </div>
 
-            {/* Right pane — chat thread */}
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+            {/* RIGHT PANE: Chat Thread */}
+            <div className="flex-1 flex flex-col bg-white min-h-0 overflow-hidden relative">
               {!selectedPhone ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-3">
-                  <MessageCircle className="w-14 h-14 opacity-20" />
-                  <p className="text-base font-medium">اختر محادثة للبدء</p>
-                  <p className="text-sm opacity-70">
-                    اضغط على أي محادثة من القائمة اليسار
-                  </p>
+                <div className="flex-1 flex items-center justify-center text-slate-400">
+                  اختر محادثة للبدء
                 </div>
               ) : (
                 <>
-                  {/* Thread header — pinned, never scrolls */}
-                  <div className="shrink-0 px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center">
-                      <User className="w-4 h-4 text-white" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-[#002845]">
-                        {selectedPhone}
-                      </p>
-                      <p className="text-xs text-emerald-600 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-                        واتساب
-                      </p>
-                    </div>
+                  <div className="shrink-0 flex items-center p-4 bg-slate-50 border-b border-slate-100">
+                    <p className="font-bold text-[#002845]">{selectedPhone}</p>
                   </div>
 
-                  {/* Messages — scrolls internally, never pushes reply box down */}
                   <div
                     ref={messagesContainerRef}
-                    className="min-h-0 flex-1 overflow-y-auto space-y-3 bg-[#e5ddd5]/20 px-5 py-4"
+                    className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4 bg-[#e5ddd5]/20"
                   >
                     {loadingMsgs ? (
-                      <div className="flex items-center justify-center h-24">
-                        <RefreshCw className="w-5 h-5 animate-spin text-slate-400" />
+                      <div className="flex h-24 items-center justify-center">
+                        <RefreshCw className="h-5 w-5 animate-spin text-slate-400" />
                       </div>
                     ) : messages.length === 0 ? (
-                      <div className="flex items-center justify-center h-24 text-slate-400 gap-2">
-                        <AlertCircle className="w-4 h-4" />
+                      <div className="flex h-24 items-center justify-center gap-2 text-slate-400">
+                        <AlertCircle className="h-4 w-4" />
                         <span className="text-sm">لا توجد رسائل</span>
                       </div>
                     ) : (
@@ -504,22 +428,22 @@ export default function WhatsAppCommandCenter() {
                             className={`flex ${isOutbound ? "justify-start" : "justify-end"}`}
                           >
                             <div
-                              className={`max-w-[72%] px-4 py-2.5 rounded-2xl shadow-sm text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                              className={`max-w-[72%] whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm ${
                                 isOutbound
-                                  ? "bg-white text-slate-800 rounded-tl-sm"
-                                  : "bg-[#002845] text-white rounded-tr-sm"
+                                  ? "rounded-tl-sm bg-white text-slate-800"
+                                  : "rounded-tr-sm bg-[#002845] text-white"
                               }`}
                             >
                               {msg.message}
                               <div
-                                className={`flex items-center gap-1 mt-1 text-[10px] ${
+                                className={`mt-1 flex items-center gap-1 text-[10px] ${
                                   isOutbound
-                                    ? "text-slate-400 justify-start"
-                                    : "text-white/60 justify-end"
+                                    ? "justify-start text-slate-400"
+                                    : "justify-end text-white/60"
                                 }`}
                               >
                                 {formatTime(msg.created_at)}
-                                {isOutbound && <CheckCheck className="w-3 h-3" />}
+                                {isOutbound && <CheckCheck className="h-3 w-3" />}
                               </div>
                             </div>
                           </div>
@@ -528,9 +452,8 @@ export default function WhatsAppCommandCenter() {
                     )}
                   </div>
 
-                  {/* Reply box — shrink-0 keeps it pinned at the bottom */}
-                  <div className="shrink-0 border-t border-slate-100 px-4 py-3 bg-white">
-                    <div className="flex items-end gap-3">
+                  <div className="shrink-0 p-3 bg-white border-t border-slate-200">
+                    <div className="flex gap-2">
                       <textarea
                         ref={replyInputRef}
                         value={replyText}
@@ -541,26 +464,24 @@ export default function WhatsAppCommandCenter() {
                             handleSendReply();
                           }
                         }}
-                        placeholder="اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
                         rows={2}
-                        className="flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#002845]/30 font-tajawal"
+                        className="flex-1 resize-none rounded-xl border border-slate-200 p-3 text-sm focus:outline-none font-sans tracking-normal leading-relaxed"
+                        placeholder="اكتب ردك هنا..."
                         dir="rtl"
                       />
                       <button
+                        type="button"
                         onClick={handleSendReply}
                         disabled={sending || !replyText.trim()}
-                        className="w-11 h-11 rounded-xl bg-[#002845] text-white flex items-center justify-center hover:bg-[#003d5c] disabled:opacity-40 transition shadow shrink-0 mb-0.5"
+                        className="w-12 rounded-xl bg-[#002845] text-white flex items-center justify-center hover:bg-[#003d5c]"
                       >
                         {sending ? (
-                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <RefreshCw className="h-5 w-5 animate-spin" />
                         ) : (
-                          <Send className="w-4 h-4" />
+                          <Send className="h-5 w-5" />
                         )}
                       </button>
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-1 text-right">
-                      سيُرسل الرد من رقم واتساب الرسمي لبيت الجزيرة
-                    </p>
                   </div>
                 </>
               )}
@@ -569,6 +490,5 @@ export default function WhatsAppCommandCenter() {
         )}
       </div>
     </div>
-    </>
   );
 }
