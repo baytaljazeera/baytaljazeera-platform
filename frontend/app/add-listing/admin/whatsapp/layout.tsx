@@ -31,10 +31,12 @@ export default function WhatsAppAdminLayout({
       const vh = window.visualViewport?.height || window.innerHeight || 0;
       const safeVh = vh || document.documentElement.clientHeight || 0;
 
-      mainEl.style.padding = "0";
-      mainEl.style.height = `calc(${safeVh}px - ${topH}px)`;
-      mainEl.style.overflow = "hidden";
-      mainEl.style.flex = "none";
+      if (mainEl) {
+        mainEl.style.padding = "0";
+        mainEl.style.height = `calc(${safeVh}px - ${topH}px)`;
+        mainEl.style.overflow = "hidden";
+        mainEl.style.flex = "none";
+      }
 
       // Lock body and hide footer
       document.body.style.overflow = "hidden";
@@ -55,10 +57,12 @@ export default function WhatsAppAdminLayout({
       window.removeEventListener("resize", apply);
       window.clearTimeout(t);
       if (ro && headerEl) ro.unobserve(headerEl);
-      mainEl.style.padding = orig.padding;
-      mainEl.style.height = orig.height;
-      mainEl.style.overflow = orig.overflow;
-      mainEl.style.flex = orig.flex;
+      if (mainEl) {
+        mainEl.style.padding = orig.padding;
+        mainEl.style.height = orig.height;
+        mainEl.style.overflow = orig.overflow;
+        mainEl.style.flex = orig.flex;
+      }
 
       document.body.style.overflow = origBodyOverflow;
       if (footerEl) footerEl.style.display = origFooterDisplay;
