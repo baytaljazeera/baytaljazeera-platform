@@ -9,11 +9,14 @@ const router = express.Router();
 async function sendWhatsAppMessage(to, message) {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const fromNumber = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
-  
+  const rawFrom = process.env.TWILIO_PHONE_NUMBER;
   if (!accountSid || !authToken) {
     throw new Error('Twilio credentials not configured');
   }
+  if (!rawFrom) {
+    throw new Error('TWILIO_PHONE_NUMBER environment variable is not set');
+  }
+  const fromNumber = rawFrom.startsWith('whatsapp:') ? rawFrom : `whatsapp:${rawFrom}`;
   
   const toNumber = to.startsWith('whatsapp:') ? to : `whatsapp:${to.startsWith('+') ? to : '+' + to}`;
   
