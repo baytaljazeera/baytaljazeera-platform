@@ -170,26 +170,8 @@ export default function WhatsAppCommandCenter() {
     []
   );
 
-  // ── Measure the sticky topbar height so we can position the panel exactly ──
-  const [topbarH, setTopbarH] = useState(0);
-  useEffect(() => {
-    function measure() {
-      const header = document.querySelector("header");
-      if (header) setTopbarH(header.getBoundingClientRect().height);
-    }
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, []);
-
-  // ── Lock body scroll so the global footer never peeks below the chat UI ────
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
+  // Layout is handled by layout.tsx which patches AdminShell's <main> for this
+  // route. No fixed positioning or body-scroll-lock needed here.
 
   // ── Effects ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -278,8 +260,7 @@ export default function WhatsAppCommandCenter() {
      * content area stretches to fill all remaining space.
      */
     <div
-      className="fixed inset-x-0 bottom-0 z-20 flex flex-col overflow-hidden bg-[#f0f4f8] px-4 pt-4 md:px-6 md:pt-6"
-      style={{ top: topbarH || 0 }}
+      className="h-full flex flex-col overflow-hidden bg-[#f0f4f8] px-4 pt-4 md:px-6 md:pt-6"
       dir="rtl"
     >
       {/* ── Header — shrink-0 so it never grows or scrolls ─────────────── */}
