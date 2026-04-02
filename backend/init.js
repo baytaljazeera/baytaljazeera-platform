@@ -1474,6 +1474,16 @@ async function initializeDatabase() {
     await db.query(`CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_campaign ON whatsapp_messages(campaign_id);`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_status ON whatsapp_messages(status);`);
 
+    // WhatsApp Command Center migrations — idempotent
+    await db.query(`ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS direction VARCHAR(10) DEFAULT 'outbound'`);
+    await db.query(`ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_direction ON whatsapp_messages(direction)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_phone ON whatsapp_messages(phone)`);
+    // Backfill direction from legacy status values
+    await db.query(`UPDATE whatsapp_messages SET direction = 'inbound' WHERE status = 'received' AND direction = 'outbound'`);
+    await db.query(`UPDATE whatsapp_messages SET direction = 'outbound' WHERE status IN ('sent','failed') AND direction IS NULL`);
+    console.log("✅ whatsapp_messages direction + is_read columns ensured");
+
     await db.query(`
       CREATE TABLE IF NOT EXISTS app_settings (
         key VARCHAR(100) PRIMARY KEY,
@@ -1492,6 +1502,16 @@ async function initializeDatabase() {
 
     await db.query(`
       INSERT INTO app_settings (key, value) VALUES ('ai_support_enabled', 'true')
+      ON CONFLICT (key) DO NOTHING;
+    `);
+
+    await db.query(`
+      INSERT INTO app_settings (key, value)
+      VALUES ('whatsapp_welcome_message', 'أهلاً وسهلاً بكم في بيت الجزيرة 🏠
+
+شكراً لتواصلكم معنا. سيقوم أحد ممثلي خدمة العملاء بالرد عليكم في أقرب وقت ممكن.
+
+نحن هنا لمساعدتكم في جميع استفساراتكم العقارية.')
       ON CONFLICT (key) DO NOTHING;
     `);
 

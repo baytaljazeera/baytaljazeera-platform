@@ -45,37 +45,55 @@ async function sendWhatsAppMessage(to, message) {
   return data;
 }
 
+const WELCOME_FALLBACK = 'أهلاً وسهلاً بكم في بيت الجزيرة 🏠\n\nسيقوم فريقنا بالتواصل معكم قريباً.';
+
 router.post('/webhook', asyncHandler(async (req, res) => {
   const { From, Body, MessageSid } = req.body;
   const cleanPhone = From ? From.replace('whatsapp:', '') : 'Unknown';
 
+  // Always respond 200 to Twilio — never let internal errors cause retries
   try {
     console.log(`📩 Inbound WhatsApp from ${cleanPhone}: ${Body}`);
 
-    // 1. Log to Google Sheets
-    await logWhatsAppMessage(cleanPhone, Body || '');
-
-    // 2. Log to PostgreSQL using the existing whatsapp_messages schema
-    await db.query(
-      `INSERT INTO whatsapp_messages (phone, message, status, twilio_sid, created_at)
-       VALUES ($1, $2, $3, $4, NOW())`,
-      [cleanPhone, Body || '', 'received', MessageSid || null]
+    // 1. Log to Google Sheets (non-blocking)
+    logWhatsAppMessage(cleanPhone, Body || '').catch(err =>
+      console.error('⚠️ Sheets log failed:', err.message)
     );
 
-    // 3. Auto-reply using the existing Twilio send logic in this file
-    const replyMessage = 'أهلاً بك في بيت الجزيرة! تم استلام استفسارك وسيقوم فريقنا بالتواصل معك قريباً.';
+    // 2. Log inbound message to PostgreSQL
+    await db.query(
+      `INSERT INTO whatsapp_messages (phone, message, status, direction, is_read, twilio_sid, created_at)
+       VALUES ($1, $2, 'received', 'inbound', false, $3, NOW())`,
+      [cleanPhone, Body || '', MessageSid || null]
+    );
+
+    // 3. Fetch welcome message from DB — hardcoded fallback if DB fails
+    let replyMessage = WELCOME_FALLBACK;
+    try {
+      const settingRow = await db.query(
+        `SELECT value FROM app_settings WHERE key = 'whatsapp_welcome_message'`
+      );
+      if (settingRow.rows[0]?.value) {
+        replyMessage = settingRow.rows[0].value;
+      }
+    } catch (dbErr) {
+      console.error('⚠️ Could not fetch welcome message from DB, using fallback:', dbErr.message);
+    }
+
+    // 4. Auto-reply
     const replyResult = await sendWhatsAppMessage(cleanPhone, replyMessage);
 
     await db.query(
-      `INSERT INTO whatsapp_messages (phone, message, status, twilio_sid, created_at)
-       VALUES ($1, $2, $3, $4, NOW())`,
-      [cleanPhone, replyMessage, 'sent', replyResult.sid]
+      `INSERT INTO whatsapp_messages (phone, message, status, direction, is_read, twilio_sid, created_at)
+       VALUES ($1, $2, 'sent', 'outbound', true, $3, NOW())`,
+      [cleanPhone, replyMessage, replyResult.sid]
     );
 
     res.status(200).send('<Response></Response>');
   } catch (error) {
     console.error('Error in WhatsApp Webhook:', error);
-    res.status(500).send('Internal Server Error');
+    // Still return 200 so Twilio does not retry indefinitely
+    res.status(200).send('<Response></Response>');
   }
 }));
 
@@ -90,15 +108,15 @@ router.post("/send", authMiddleware, requireRoles('super_admin', 'marketing_admi
     const result = await sendWhatsAppMessage(phone, message);
     
     await db.query(`
-      INSERT INTO whatsapp_messages (user_id, phone, message, status, twilio_sid, sent_by, created_at)
-      VALUES ($1, $2, $3, 'sent', $4, $5, NOW())
+      INSERT INTO whatsapp_messages (user_id, phone, message, status, direction, is_read, twilio_sid, sent_by, created_at)
+      VALUES ($1, $2, $3, 'sent', 'outbound', true, $4, $5, NOW())
     `, [userId || null, phone, message, result.sid, req.user.id]);
     
     res.json({ ok: true, message: "تم إرسال الرسالة بنجاح", sid: result.sid });
   } catch (err) {
     await db.query(`
-      INSERT INTO whatsapp_messages (user_id, phone, message, status, error_message, sent_by, created_at)
-      VALUES ($1, $2, $3, 'failed', $4, $5, NOW())
+      INSERT INTO whatsapp_messages (user_id, phone, message, status, direction, is_read, error_message, sent_by, created_at)
+      VALUES ($1, $2, $3, 'failed', 'outbound', true, $4, $5, NOW())
     `, [userId || null, phone, message, err.message, req.user.id]);
     
     return res.status(500).json({ error: "فشل في إرسال الرسالة: " + err.message });
@@ -135,15 +153,15 @@ router.post("/send-bulk", authMiddleware, requireRoles('super_admin', 'marketing
       const twilioResult = await sendWhatsAppMessage(recipient.phone, message);
       
       await db.query(`
-        INSERT INTO whatsapp_messages (user_id, phone, message, status, twilio_sid, campaign_id, sent_by, created_at)
-        VALUES ($1, $2, $3, 'sent', $4, $5, $6, NOW())
+        INSERT INTO whatsapp_messages (user_id, phone, message, status, direction, is_read, twilio_sid, campaign_id, sent_by, created_at)
+        VALUES ($1, $2, $3, 'sent', 'outbound', true, $4, $5, $6, NOW())
       `, [recipient.userId || null, recipient.phone, message, twilioResult.sid, campaignId, req.user.id]);
       
       results.success++;
     } catch (err) {
       await db.query(`
-        INSERT INTO whatsapp_messages (user_id, phone, message, status, error_message, campaign_id, sent_by, created_at)
-        VALUES ($1, $2, $3, 'failed', $4, $5, $6, NOW())
+        INSERT INTO whatsapp_messages (user_id, phone, message, status, direction, is_read, error_message, campaign_id, sent_by, created_at)
+        VALUES ($1, $2, $3, 'failed', 'outbound', true, $4, $5, $6, NOW())
       `, [recipient.userId || null, recipient.phone, message, err.message, campaignId, req.user.id]);
       
       results.failed++;
