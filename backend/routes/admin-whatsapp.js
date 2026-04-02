@@ -28,7 +28,7 @@ const ALLOWED_ROLES = ['super_admin', 'marketing_admin', 'support_admin'];
 const adminAuth = [authMiddleware, requireRoles(...ALLOWED_ROLES)];
 
 const WELCOME_FALLBACK =
-  'أهلاً وسهلاً بكم في بيت الجزيرة 🏠\n\nسيقوم فريقنا بالتواصل معكم قريباً.';
+  'أهلاً وسهلاً بكم في بيت الجزيرة 🏠\n\nشكراً لتواصلكم معنا. سيقوم أحد ممثلي خدمة العملاء بالرد عليكم في أقرب وقت ممكن.\n\nنحن هنا لمساعدتكم في جميع استفساراتكم العقارية.';
 
 // ─── Twilio send helper (mirrors whatsapp.js, kept local to avoid circular deps) ───
 async function sendWhatsAppMessage(to, message) {

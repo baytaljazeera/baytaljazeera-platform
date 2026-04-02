@@ -362,9 +362,10 @@ export default function WhatsAppCommandCenter() {
                 value={welcomeMsg}
                 onChange={(e) => setWelcomeMsg(e.target.value)}
                 rows={7}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#002845]/30 resize-y font-['Tajawal',_sans-serif]"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#002845]/30 resize-y font-tajawal"
                 placeholder="اكتب الرسالة الترحيبية هنا..."
                 dir="rtl"
+                lang="ar"
               />
               <div className="mt-4 flex items-center justify-between">
                 <span className="text-xs text-slate-400">
@@ -549,7 +550,7 @@ export default function WhatsAppCommandCenter() {
                         }}
                         placeholder="اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
                         rows={2}
-                        className="flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#002845]/30 font-['Tajawal',_sans-serif]"
+                        className="flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#002845]/30 font-tajawal"
                         dir="rtl"
                       />
                       <button
