@@ -19,7 +19,7 @@ export function Footer() {
     fetchSettings();
   }, [fetchSettings]);
   
-  const hideFooterPaths = ['/admin', '/admin-login', '/request-access'];
+  const hideFooterPaths = ['/admin', '/admin-login', '/request-access', '/add-listing/admin'];
   const shouldHideFooter = hideFooterPaths.some(path => pathname?.startsWith(path));
   
   if (shouldHideFooter) {

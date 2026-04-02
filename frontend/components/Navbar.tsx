@@ -65,7 +65,7 @@ function NavbarContent() {
     ambassadorRewards: 0
   });
   
-  const hideNavbarPaths = ['/admin', '/admin-login', '/request-access'];
+  const hideNavbarPaths = ['/admin', '/admin-login', '/request-access', '/add-listing/admin'];
   const shouldHideNavbar = hideNavbarPaths.some(path => pathname?.startsWith(path));
 
   useEffect(() => {

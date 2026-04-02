@@ -42,7 +42,7 @@ export default function NewsTicker() {
   const [isPaused, setIsPaused] = useState(false);
   const tickerRef = useRef<HTMLDivElement>(null);
 
-  const hideTickerPaths = ['/admin', '/admin-login', '/request-access'];
+  const hideTickerPaths = ['/admin', '/admin-login', '/request-access', '/add-listing/admin'];
   const shouldHideTicker = hideTickerPaths.some(path => pathname?.startsWith(path));
 
   useEffect(() => {
