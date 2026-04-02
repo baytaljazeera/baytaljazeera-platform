@@ -258,9 +258,19 @@ export default function WhatsAppCommandCenter() {
   const totalUnread = conversations.reduce((s, c) => s + c.unread_count, 0);
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+      body { overflow: hidden !important; }
+      footer, [id*='footer'], .global-footer { display: none !important; }
+      main { padding: 0 !important; overflow: hidden !important; }
+    `,
+        }}
+      />
+
       <div
-        className="absolute inset-0 z-10 flex flex-col overflow-hidden bg-[#f0f4f8] px-4 pb-4 pt-4 md:px-6 md:pb-6 md:pt-6"
+        className="flex min-h-0 w-full flex-1 flex-col bg-[#f0f4f8] p-4 md:p-6"
         dir="rtl"
       >
       {/* ── Header — shrink-0 so it never grows or scrolls ─────────────── */}
@@ -533,7 +543,7 @@ export default function WhatsAppCommandCenter() {
                         }}
                         placeholder="اكتب ردك هنا... (Enter للإرسال، Shift+Enter لسطر جديد)"
                         rows={2}
-                        className="pointer-events-auto flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#002845]/30 font-tajawal"
+                        className="flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#002845]/30 font-tajawal"
                         dir="rtl"
                       />
                       <button
@@ -558,7 +568,7 @@ export default function WhatsAppCommandCenter() {
           </div>
         )}
       </div>
-      </div>
     </div>
+    </>
   );
 }
