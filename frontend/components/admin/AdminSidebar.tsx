@@ -4,241 +4,25 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import {
-  LayoutDashboard,
-  FileText,
-  AlertCircle,
-  Headset,
-  Users,
-  Newspaper,
-  UserPlus2,
-  BrainCircuit,
-  Settings,
   Crown,
-  LogOut,
-  CreditCard,
-  Flag,
-  MessageSquare,
-  Shield,
-  Wallet,
-  Megaphone,
   DoorOpen,
   Loader2,
-  Eye,
-  MapPin,
-  Building2,
+  Shield,
   ChevronDown,
-  ChevronLeft,
   Home,
-  Briefcase,
-  HeartHandshake,
-  Cpu,
-  Lock,
-  RotateCcw,
-  MessageCirclePlus,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
+import {
+  adminSections,
+  normalizeAdminPath,
+  resolveAdminHref,
+  type AdminLink,
+  type AdminSection,
+} from "./adminNavigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://baytaljazeera-backend.onrender.com';
 
-type LinkItem = {
-  href: string;
-  label: string;
-  icon: typeof LayoutDashboard;
-  isReport?: boolean;
-  permissionKey: string;
-  childRoutes?: string[];
-};
-
-type SidebarSection = {
-  id: string;
-  title: string;
-  icon: typeof LayoutDashboard;
-  colorClass: string;
-  links: LinkItem[];
-};
-
-const sidebarSections: SidebarSection[] = [
-  {
-    id: 'executive',
-    title: 'نظرة تنفيذية',
-    icon: LayoutDashboard,
-    colorClass: 'text-[#D4AF37]',
-    links: [
-      { 
-        href: "/admin/dashboard", 
-        label: "لوحة التحكم", 
-        icon: LayoutDashboard,
-        permissionKey: 'dashboard'
-      },
-    ]
-  },
-  {
-    id: 'properties',
-    title: 'إدارة العقارات',
-    icon: Home,
-    colorClass: 'text-blue-400',
-    links: [
-      { 
-        href: "/admin/listings", 
-        label: "الإعلانات", 
-        icon: FileText,
-        permissionKey: 'listings',
-        childRoutes: ['/admin/elite-slots', '/admin/finance/listings']
-      },
-      { 
-        href: "/admin/reports", 
-        label: "بلاغات الإعلانات", 
-        icon: Flag, 
-        isReport: true,
-        permissionKey: 'reports'
-      },
-      { 
-        href: "/admin/featured-cities", 
-        label: "المدن الأكثر طلبًا", 
-        icon: MapPin,
-        permissionKey: 'settings'
-      },
-    ]
-  },
-  {
-    id: 'support',
-    title: 'خدمة العملاء',
-    icon: HeartHandshake,
-    colorClass: 'text-emerald-400',
-    links: [
-      { 
-        href: "/admin/customer-service", 
-        label: "الشكاوى والدعم", 
-        icon: Headset,
-        permissionKey: 'support',
-        childRoutes: ['/admin/complaints', '/admin/support']
-      },
-      { 
-        href: "/admin/customer-conversations", 
-        label: "مراقبة المحادثات", 
-        icon: Eye,
-        permissionKey: 'support'
-      },
-      { 
-        href: "/admin/messages", 
-        label: "المراسلات الداخلية", 
-        icon: MessageSquare,
-        permissionKey: 'messages'
-      },
-    ]
-  },
-  {
-    id: 'feedback',
-    title: 'تجربة المستخدم',
-    icon: MessageCirclePlus,
-    colorClass: 'text-amber-400',
-    links: [
-      { href: "/admin/feedback/overview", label: "نظرة عامة", icon: LayoutDashboard, permissionKey: 'support' },
-      { href: "/admin/feedback/responses", label: "الردود", icon: MessageSquare, permissionKey: 'support' },
-      { href: "/admin/feedback/settings", label: "إعدادات التغذية الراجعة", icon: Settings, permissionKey: 'support' },
-      { href: "/admin/feedback/questions", label: "إدارة الأسئلة", icon: FileText, permissionKey: 'support' },
-    ]
-  },
-  {
-    id: 'finance',
-    title: 'المالية والاشتراكات',
-    icon: Wallet,
-    colorClass: 'text-green-400',
-    links: [
-      { 
-        href: "/admin/finance", 
-        label: "المالية والمدفوعات", 
-        icon: Wallet,
-        permissionKey: 'finance'
-      },
-      { 
-        href: "/admin/plans", 
-        label: "إدارة الباقات", 
-        icon: CreditCard,
-        permissionKey: 'plans',
-        childRoutes: ['/admin/plans/country-pricing']
-      },
-    ]
-  },
-  {
-    id: 'marketing',
-    title: 'النمو والتسويق',
-    icon: Megaphone,
-    colorClass: 'text-purple-400',
-    links: [
-      { 
-        href: "/admin/marketing", 
-        label: "التسويق والدعاية", 
-        icon: Megaphone,
-        permissionKey: 'marketing'
-      },
-      { 
-        href: "/admin/news", 
-        label: "شريط الأخبار", 
-        icon: Newspaper,
-        permissionKey: 'news'
-      },
-      { 
-        href: "/admin/ambassador", 
-        label: "سفراء البيت", 
-        icon: Building2,
-        permissionKey: 'ambassador'
-      },
-    ]
-  },
-  {
-    id: 'system',
-    title: 'النظام والحوكمة',
-    icon: Lock,
-    colorClass: 'text-slate-400',
-    links: [
-      { 
-        href: "/admin/feedback/overview", 
-        label: "تغذية راجعة المستخدمين", 
-        icon: MessageCirclePlus,
-        permissionKey: 'support'
-      },
-      { 
-        href: "/admin/roles?tab=applications", 
-        label: "طلبات الإدارة", 
-        icon: UserPlus2,
-        permissionKey: 'membership'
-      },
-      { 
-        href: "/admin/ai-center", 
-        label: "مركز الذكاء الاصطناعي", 
-        icon: BrainCircuit,
-        permissionKey: 'ai_center'
-      },
-      { 
-        href: "/admin/users", 
-        label: "إدارة العملاء", 
-        icon: Users,
-        permissionKey: 'users'
-      },
-      { 
-        href: "/admin/roles", 
-        label: "إدارة الصلاحيات", 
-        icon: Shield,
-        permissionKey: 'roles'
-      },
-      { 
-        href: "/admin/settings", 
-        label: "الإعدادات", 
-        icon: Settings,
-        permissionKey: 'settings'
-      },
-      { 
-        href: "/admin/reset-data", 
-        label: "تصفير التجارب", 
-        icon: RotateCcw,
-        permissionKey: 'settings'
-      },
-    ]
-  },
-];
-
-const allLinks: LinkItem[] = sidebarSections.flatMap(section => section.links);
+const allLinks: AdminLink[] = adminSections.flatMap(section => section.links);
 
 const ROLE_NAMES: Record<string, string> = {
   super_admin: 'المدير العام',
@@ -279,11 +63,12 @@ type PendingCounts = {
   complaintsInProgress: number;
   supportInProgress: number;
   feedbackNew: number;
+  whatsappUnread: number;
 };
 
 export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSidebarProps) {
   const rawPathname = usePathname();
-  const pathname = rawPathname?.replace('/add-listing/admin', '/admin') || rawPathname;
+  const pathname = normalizeAdminPath(rawPathname) || rawPathname || "";
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [userRole, setUserRole] = useState<string>('');
@@ -303,7 +88,8 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     messagesNew: 0,
     ambassadorPending: 0,
     ambassadorWithdrawals: 0,
-    feedbackNew: 0
+    feedbackNew: 0,
+    whatsappUnread: 0,
   });
   const [visibleSections, setVisibleSections] = useState<string[]>([]);
   const [loadingVisibility, setLoadingVisibility] = useState(true);
@@ -321,15 +107,21 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     fetchCurrentUser();
     fetchPendingCounts();
     fetchVisibleSections();
+    fetchWhatsAppUnread();
     const interval = setInterval(fetchPendingCounts, 30000);
-    return () => clearInterval(interval);
+    const waInterval = setInterval(fetchWhatsAppUnread, 10000);
+    return () => {
+      clearInterval(interval);
+      clearInterval(waInterval);
+    };
   }, []);
 
   useEffect(() => {
-    for (const section of sidebarSections) {
+    for (const section of adminSections) {
       const hasActiveLink = section.links.some(link => {
+        const linkPath = link.href.split("?")[0];
         const isChildRoute = link.childRoutes?.some(route => pathname === route || pathname.startsWith(route + "/"));
-        const isDirectMatch = pathname === link.href || pathname.startsWith(link.href + "/");
+        const isDirectMatch = pathname === linkPath || pathname.startsWith(linkPath + "/");
         return isChildRoute || isDirectMatch;
       });
       if (hasActiveLink && !expandedSections.includes(section.id)) {
@@ -359,6 +151,19 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     } finally {
       setLoadingVisibility(false);
     }
+  }
+
+  async function fetchWhatsAppUnread() {
+    try {
+      const token = localStorage.getItem("token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${API_URL}/api/admin/whatsapp/unread-count`, { credentials: 'include', headers });
+      if (res.ok) {
+        const data = await res.json();
+        setPendingCounts(prev => ({ ...prev, whatsappUnread: data.count || 0 }));
+      }
+    } catch {}
   }
 
   async function fetchPendingCounts() {
@@ -438,13 +243,6 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     }
   }
 
-  function resolveAdminHref(href: string): string {
-    if (href.startsWith('/admin/') || href === '/admin') {
-      return `/add-listing${href}`;
-    }
-    return href;
-  }
-
   function handleNavigation(href: string) {
     if (pathname === href) {
       onNavigate?.();
@@ -475,7 +273,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
   };
 
   const getFilteredSections = () => {
-    return sidebarSections.map(section => {
+    return adminSections.map(section => {
       const filteredLinks = section.links.filter(link => {
         const hasPermission = isSuperAdmin || userPermissions.includes(link.permissionKey);
         if (!hasPermission) return false;
@@ -500,10 +298,11 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     if (href === '/admin/finance') return { newCount: pendingCounts.refundsNew + pendingCounts.ambassadorWithdrawals, inProgressCount: pendingCounts.refundsInProgress };
     if (href === '/admin/ambassador') return { newCount: pendingCounts.ambassadorPending + pendingCounts.ambassadorWithdrawals, inProgressCount: 0 };
     if (href === '/admin/feedback/responses') return { newCount: pendingCounts.feedbackNew, inProgressCount: 0 };
+    if (href === '/admin/whatsapp') return { newCount: pendingCounts.whatsappUnread, inProgressCount: 0 };
     return { newCount: 0, inProgressCount: 0 };
   };
 
-  const getSectionTotalCount = (section: SidebarSection): number => {
+  const getSectionTotalCount = (section: AdminSection): number => {
     return section.links.reduce((total, link) => {
       const { newCount, inProgressCount } = getCounts(link.href);
       return total + newCount + inProgressCount;
@@ -585,12 +384,13 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
                     <div className="pr-2 space-y-0.5 pb-2">
                       {section.links.map((item) => {
                         const Icon = item.icon;
+                        const itemPath = item.href.split("?")[0];
                         const isChildRoute = item.childRoutes?.some(route => pathname === route || pathname.startsWith(route + "/"));
                         const belongsToOtherItem = allLinks.some(other => 
                           other.href !== item.href && 
                           other.childRoutes?.some(route => pathname === route || pathname.startsWith(route + "/"))
                         );
-                        const isDirectMatch = pathname === item.href || pathname.startsWith(item.href + "/");
+                        const isDirectMatch = pathname === itemPath || pathname.startsWith(itemPath + "/");
                         const active = isChildRoute || (isDirectMatch && !belongsToOtherItem);
                         const isNavigating = navigatingTo === item.href;
 
