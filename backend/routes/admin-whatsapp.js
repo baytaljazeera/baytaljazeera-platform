@@ -147,6 +147,59 @@ router.put('/read/:phone', ...adminAuth, asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ─── POST /send-template — Template Launcher ─────────────────────────────────
+const WA_TEMPLATES = [
+  {
+    id: 'hook_1',
+    label: 'رسالة استكشاف أولى',
+    text: 'مرحباً {{1}}، لاحظنا بحثك عن عقارات مؤخراً. لدينا عروض جديدة تناسبك، هل ترغب بالاطلاع عليها؟',
+  },
+  {
+    id: 'hook_2',
+    label: 'عرض حصري قبل النشر',
+    text: 'أهلاً {{1}}، تم إدراج عقار مميز في {{2}} قبل نشره للعامة. هل أنت مهتم بالتفاصيل؟',
+  },
+  {
+    id: 'hook_3',
+    label: 'تذكير بحث الإيجار',
+    text: 'تذكير من بيت الجزيرة: هل ما زلت تبحث عن عقار للإيجار؟ أرسل "نعم" لمساعدتك.',
+  },
+];
+
+router.get('/templates', ...adminAuth, asyncHandler(async (req, res) => {
+  res.json({ templates: WA_TEMPLATES });
+}));
+
+router.post('/send-template', ...adminAuth, asyncHandler(async (req, res) => {
+  const { phone, templateId, variables = [] } = req.body;
+
+  if (!phone || !templateId) {
+    return res.status(400).json({ error: 'رقم الهاتف ومعرّف القالب مطلوبان' });
+  }
+
+  const template = WA_TEMPLATES.find((t) => t.id === templateId);
+  if (!template) {
+    return res.status(400).json({ error: 'القالب غير موجود' });
+  }
+
+  // Replace {{1}}, {{2}}, … with the provided variables array
+  let finalMessage = template.text;
+  variables.forEach((val, idx) => {
+    finalMessage = finalMessage.replace(`{{${idx + 1}}}`, val || '');
+  });
+
+  const result = await sendWhatsAppMessage(phone, finalMessage);
+
+  await db.query(
+    `INSERT INTO whatsapp_messages
+       (phone, message, status, direction, is_read, twilio_sid, sent_by, created_at)
+     VALUES ($1, $2, 'sent', 'outbound', true, $3, $4, NOW())`,
+    [phone, finalMessage, result.sid, req.user.id]
+  );
+
+  res.json({ ok: true, sid: result.sid, finalMessage });
+}));
+
 // ─── GET /unread-count — total unread conversations (for sidebar badge) ───────
 router.get('/unread-count', ...adminAuth, asyncHandler(async (req, res) => {
   const result = await db.query(`

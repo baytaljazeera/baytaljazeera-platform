@@ -641,41 +641,65 @@ export default function MarketingPage() {
 
       {activeTab === "whatsapp" && (
         <div className="space-y-6">
-          <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-2xl p-6 text-white">
+          <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl p-6 text-white">
             <div className="flex items-center gap-3 mb-2">
               <MessageSquare className="w-8 h-8" />
-              <h2 className="text-xl font-bold">رسائل واتساب</h2>
+              <h2 className="text-xl font-bold">مُطلق قوالب واتساب</h2>
             </div>
-            <p className="text-white/80">أرسل رسائل تذكير وتسويقية عبر واتساب</p>
+            <p className="text-white/80">
+              أرسل رسائل قالب معتمدة للعملاء الجدد خارج نافذة الـ 24 ساعة
+            </p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* ── Template Launcher ── */}
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-              <h3 className="font-bold text-[#002845] mb-4">إرسال رسالة سريعة</h3>
-              <QuickWhatsappForm segments={segments} onSuccess={() => { fetchWhatsappCampaigns(); setMessage({ type: "success", text: "تم إرسال الرسائل" }); }} />
+              <div className="flex items-center gap-2 mb-5">
+                <Sparkles className="w-5 h-5 text-green-500" />
+                <h3 className="font-bold text-[#002845]">إرسال قالب</h3>
+              </div>
+              <QuickWhatsappForm segments={segments} onSuccess={() => { fetchWhatsappCampaigns(); setMessage({ type: "success", text: "تم إرسال القالب بنجاح" }); }} />
             </div>
 
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-              <h3 className="font-bold text-[#002845] mb-4">آخر الحملات</h3>
-              <div className="space-y-3 max-h-80 overflow-y-auto">
-                {whatsappCampaigns.length === 0 ? (
-                  <p className="text-center text-gray-400 py-4">لا توجد حملات</p>
-                ) : (
-                  whatsappCampaigns.slice(0, 10).map((campaign) => (
-                    <div key={campaign.id} className="p-3 bg-gray-50 rounded-xl">
-                      <div className="flex justify-between items-start">
-                        <p className="font-medium text-sm">{campaign.name}</p>
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          campaign.status === "completed" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
-                        }`}>
-                          {campaign.success_count}/{campaign.total_recipients}
-                        </span>
+            {/* ── Recent campaigns + Inbox shortcut ── */}
+            <div className="flex flex-col gap-4">
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex-1">
+                <h3 className="font-bold text-[#002845] mb-4">آخر الحملات</h3>
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {whatsappCampaigns.length === 0 ? (
+                    <p className="text-center text-gray-400 py-4">لا توجد حملات</p>
+                  ) : (
+                    whatsappCampaigns.slice(0, 10).map((campaign) => (
+                      <div key={campaign.id} className="p-3 bg-gray-50 rounded-xl">
+                        <div className="flex justify-between items-start">
+                          <p className="font-medium text-sm">{campaign.name}</p>
+                          <span className={`px-2 py-1 rounded-full text-xs ${
+                            campaign.status === "completed" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
+                          }`}>
+                            {campaign.success_count}/{campaign.total_recipients}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{campaign.message}</p>
                       </div>
-                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">{campaign.message}</p>
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </div>
+
+              {/* shortcut card */}
+              <Link
+                href="/add-listing/admin/whatsapp"
+                className="flex items-center gap-4 bg-gradient-to-l from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-5 hover:shadow-md transition group"
+              >
+                <div className="p-3 bg-green-500 rounded-xl text-white shrink-0">
+                  <MessageSquare className="w-6 h-6" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-[#002845] text-sm">صندوق الوارد — مركز الواتساب</p>
+                  <p className="text-xs text-gray-500 mt-0.5">تابع ردود العملاء وأرسل ردوداً يدوية</p>
+                </div>
+                <ArrowUpRight className="w-5 h-5 text-green-500 shrink-0 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+              </Link>
             </div>
           </div>
         </div>
@@ -932,88 +956,185 @@ function RetargetingCard({ title, subtitle, icon: Icon, color, clients, onSendEm
   );
 }
 
-function QuickWhatsappForm({ segments, onSuccess }: { segments: Segment[]; onSuccess: () => void }) {
-  const [selectedSegment, setSelectedSegment] = useState<number | null>(null);
-  const [message, setMessage] = useState("");
-  const [campaignName, setCampaignName] = useState("");
+// ─── Hardcoded template definitions (mirrors backend WA_TEMPLATES) ────────────
+const WA_TEMPLATES_FE = [
+  {
+    id: "hook_1",
+    label: "رسالة استكشاف أولى",
+    text: "مرحباً {{1}}، لاحظنا بحثك عن عقارات مؤخراً. لدينا عروض جديدة تناسبك، هل ترغب بالاطلاع عليها؟",
+  },
+  {
+    id: "hook_2",
+    label: "عرض حصري قبل النشر",
+    text: "أهلاً {{1}}، تم إدراج عقار مميز في {{2}} قبل نشره للعامة. هل أنت مهتم بالتفاصيل؟",
+  },
+  {
+    id: "hook_3",
+    label: "تذكير بحث الإيجار",
+    text: 'تذكير من بيت الجزيرة: هل ما زلت تبحث عن عقار للإيجار؟ أرسل "نعم" لمساعدتك.',
+  },
+];
+
+function buildPreview(template: string, variables: string[]): string {
+  let out = template;
+  variables.forEach((v, i) => {
+    out = out.replace(`{{${i + 1}}}`, v || `[المتغير ${i + 1}]`);
+  });
+  return out;
+}
+
+function countPlaceholders(template: string): number {
+  const matches = template.match(/\{\{\d+\}\}/g);
+  if (!matches) return 0;
+  const indices = matches.map((m) => parseInt(m.replace(/\D/g, ""), 10));
+  return Math.max(...indices);
+}
+
+function QuickWhatsappForm({ onSuccess }: { segments: Segment[]; onSuccess: () => void }) {
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [variables, setVariables] = useState<string[]>([]);
+  const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const template = WA_TEMPLATES_FE.find((t) => t.id === selectedTemplateId) ?? null;
+  const varCount = template ? countPlaceholders(template.text) : 0;
+  const preview = template ? buildPreview(template.text, variables) : "";
+
+  function handleTemplateChange(id: string) {
+    setSelectedTemplateId(id);
+    setVariables([]);
+  }
+
+  function setVar(idx: number, val: string) {
+    setVariables((prev) => {
+      const next = [...prev];
+      next[idx] = val;
+      return next;
+    });
+  }
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 4000);
+  }
 
   async function handleSend() {
-    if (!selectedSegment || !message) return;
+    if (!template || !phone.trim()) return;
     setLoading(true);
     try {
-      const usersRes = await fetch(`/api/marketing/segments/${selectedSegment}/users?limit=100`, { credentials: "include", headers: getAuthHeaders() });
-      const usersData = await usersRes.json();
-      const recipients = usersData.users?.filter((u: any) => u.phone || u.whatsapp).map((u: any) => ({ userId: u.id, phone: u.whatsapp || u.phone })) || [];
-      
-      if (recipients.length === 0) {
-        alert("لا يوجد عملاء بأرقام هواتف");
-        setLoading(false);
-        return;
-      }
-
-      const res = await fetch(`${API_URL}/api/whatsapp/send-bulk`, {
+      const res = await fetch(`${API_URL}/api/admin/whatsapp/send-template`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
-        body: JSON.stringify({ recipients, message, campaign_name: campaignName || "حملة واتساب" }),
+        body: JSON.stringify({ phone: phone.trim(), templateId: selectedTemplateId, variables }),
       });
 
       if (res.ok) {
+        showToast("تم إرسال القالب بنجاح. يمكنك متابعة رد العميل في صندوق الوارد.");
+        setPhone("");
+        setSelectedTemplateId("");
+        setVariables([]);
         onSuccess();
-        setMessage("");
-        setCampaignName("");
-        setSelectedSegment(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error || "حدث خطأ أثناء الإرسال");
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      showToast("تعذّر الاتصال بالخادم");
     }
     setLoading(false);
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5 relative">
+      {/* Success / error toast */}
+      {toast && (
+        <div className="absolute -top-2 left-0 right-0 z-10 p-3 bg-green-50 border border-green-200 rounded-xl text-green-800 text-sm text-center shadow">
+          {toast}
+        </div>
+      )}
+
+      {/* Phone number */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">اسم الحملة</label>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          رقم الهاتف (مع رمز الدولة)
+        </label>
         <input
-          type="text"
-          value={campaignName}
-          onChange={(e) => setCampaignName(e.target.value)}
-          placeholder="حملة تذكير..."
-          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500"
+          type="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="+966501234567"
+          dir="ltr"
+          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500 font-mono"
         />
       </div>
+
+      {/* Template selector */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">تصنيف العملاء</label>
+        <label className="block text-sm font-medium text-gray-700 mb-2">اختر القالب</label>
         <select
-          value={selectedSegment || ""}
-          onChange={(e) => setSelectedSegment(Number(e.target.value) || null)}
-          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500"
+          value={selectedTemplateId}
+          onChange={(e) => handleTemplateChange(e.target.value)}
+          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500 bg-white"
         >
-          <option value="">اختر تصنيف...</option>
-          {segments.map((s) => (
-            <option key={s.id} value={s.id}>{s.name_ar} ({s.user_count})</option>
+          <option value="">— اختر قالباً —</option>
+          {WA_TEMPLATES_FE.map((t) => (
+            <option key={t.id} value={t.id}>{t.label}</option>
           ))}
         </select>
       </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">الرسالة</label>
-        <textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          rows={4}
-          placeholder="مرحباً {name}، نفتقدك في بيت الجزيرة..."
-          className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500 resize-none"
-        />
-      </div>
+
+      {/* Dynamic variable inputs */}
+      {template && varCount > 0 && (
+        <div className="space-y-3">
+          {Array.from({ length: varCount }).map((_, i) => (
+            <div key={i}>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {i === 0 ? "المتغير الأول" : i === 1 ? "المتغير الثاني" : `المتغير ${i + 1}`}
+              </label>
+              <input
+                type="text"
+                value={variables[i] ?? ""}
+                onChange={(e) => setVar(i, e.target.value)}
+                placeholder={i === 0 ? "مثال: أحمد" : "مثال: الرياض"}
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Live preview */}
+      {template && (
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-2">معاينة مباشرة</p>
+          <div className="bg-[#dcf8c6] rounded-2xl rounded-tr-sm p-4 text-sm text-gray-800 leading-relaxed shadow-sm border border-green-100 min-h-[60px]" dir="rtl">
+            {preview}
+          </div>
+          <p className="text-xs text-gray-400 mt-1 text-left">كما سيظهر في واتساب العميل</p>
+        </div>
+      )}
+
+      {/* Send button */}
       <button
         onClick={handleSend}
-        disabled={loading || !selectedSegment || !message}
-        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-500 text-white rounded-xl font-bold disabled:opacity-50"
+        disabled={loading || !selectedTemplateId || !phone.trim()}
+        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-500 text-white rounded-xl font-bold disabled:opacity-50 hover:bg-green-600 transition"
       >
         {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
         إرسال
       </button>
+
+      {/* Link to inbox */}
+      {selectedTemplateId && (
+        <p className="text-center text-xs text-gray-400">
+          بعد الإرسال تابع ردود العملاء في{" "}
+          <Link href="/add-listing/admin/whatsapp" className="text-green-600 underline font-medium">
+            صندوق الوارد
+          </Link>
+        </p>
+      )}
     </div>
   );
 }
