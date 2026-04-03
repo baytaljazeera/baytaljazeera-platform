@@ -109,9 +109,11 @@ router.get('/messages', ...adminAuth, asyncHandler(async (req, res) => {
       l.last_message,
       l.last_direction,
       l.last_message_at,
-      COALESCE(u.unread_count, 0)::int AS unread_count
+      COALESCE(u.unread_count, 0)::int AS unread_count,
+      COALESCE(wc.status, 'open') AS status
     FROM latest l
     LEFT JOIN unread u ON u.phone = l.phone
+    LEFT JOIN whatsapp_conversations wc ON wc.phone = l.phone
     ORDER BY l.last_message_at DESC
   `);
 
@@ -147,6 +149,13 @@ router.post('/send', ...adminAuth, asyncHandler(async (req, res) => {
     `INSERT INTO whatsapp_messages (phone, message, status, direction, is_read, twilio_sid, sent_by, created_at)
      VALUES ($1, $2, 'sent', 'outbound', true, $3, $4, NOW())`,
     [phone, message.trim(), result.sid, req.user.id]
+  );
+
+  await db.query(
+    `INSERT INTO whatsapp_conversations (phone, status, updated_at)
+     VALUES ($1, 'pending', NOW())
+     ON CONFLICT (phone) DO UPDATE SET status = 'pending', updated_at = NOW()`,
+    [phone]
   );
 
   res.json({ ok: true, sid: result.sid });
@@ -214,6 +223,13 @@ router.post('/send-template', ...adminAuth, asyncHandler(async (req, res) => {
        (phone, message, status, direction, is_read, twilio_sid, sent_by, created_at)
      VALUES ($1, $2, 'sent', 'outbound', true, $3, $4, NOW())`,
     [phone, finalMessage, result.sid, req.user.id]
+  );
+
+  await db.query(
+    `INSERT INTO whatsapp_conversations (phone, status, updated_at)
+     VALUES ($1, 'pending', NOW())
+     ON CONFLICT (phone) DO UPDATE SET status = 'pending', updated_at = NOW()`,
+    [phone]
   );
 
   res.json({ ok: true, sid: result.sid, finalMessage });

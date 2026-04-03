@@ -1485,6 +1485,23 @@ async function initializeDatabase() {
     console.log("✅ whatsapp_messages direction + is_read columns ensured");
 
     await db.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_conversations (
+        phone VARCHAR(50) PRIMARY KEY,
+        status VARCHAR(20) NOT NULL DEFAULT 'open'
+          CHECK (status IN ('open', 'pending', 'resolved')),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_whatsapp_conversations_status ON whatsapp_conversations(status);`);
+    await db.query(`
+      INSERT INTO whatsapp_conversations (phone, status, updated_at)
+      SELECT DISTINCT phone, 'open', NOW()
+      FROM whatsapp_messages
+      ON CONFLICT (phone) DO NOTHING
+    `);
+    console.log("✅ whatsapp_conversations ticket status table ensured");
+
+    await db.query(`
       CREATE TABLE IF NOT EXISTS app_settings (
         key VARCHAR(100) PRIMARY KEY,
         value TEXT,

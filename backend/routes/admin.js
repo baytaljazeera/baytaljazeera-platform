@@ -1494,6 +1494,16 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
     return res.status(400).json({ ok: false, error: "يجب تحديد فئة واحدة على الأقل" });
   }
 
+  // منع التصفير في الإنتاج إلا بموافقة صريحة عبر متغير البيئة (طوارئ فقط)
+  const isProduction = process.env.NODE_ENV === 'production';
+  const allowResetInProd = String(process.env.ALLOW_RESET_TEST_DATA || '').toLowerCase() === 'true';
+  if (isProduction && !allowResetInProd) {
+    return res.status(403).json({
+      ok: false,
+      error: 'تصفير بيانات التجارب غير مسموح في بيئة الإنتاج. للطوارئ فقط: ضبط ALLOW_RESET_TEST_DATA=true في بيئة الخادم ثم إعادة التشغيل.',
+    });
+  }
+
   const validCategories = ['financial', 'messages', 'ambassador', 'ai_logs', 'whatsapp', 'notifications', 'customers'];
   const invalid = categories.filter(c => !validCategories.includes(c));
   if (invalid.length > 0) {
@@ -1555,9 +1565,11 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
     }
 
     if (categories.includes('whatsapp')) {
+      const r0 = await client.query('DELETE FROM whatsapp_conversations');
       const r1 = await client.query('DELETE FROM whatsapp_messages');
       const r2 = await client.query('DELETE FROM whatsapp_campaigns');
       results.whatsapp = {
+        conversation_status: r0.rowCount,
         messages: r1.rowCount,
         campaigns: r2.rowCount,
       };
@@ -1573,6 +1585,8 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
     }
 
     if (categories.includes('customers')) {
+      // شكاوى الحساب: user_id قد يصبح NULL عند حذف المستخدم (ON DELETE SET NULL) — نحذف الجدول بالكامل مع تصفير العملاء لضمان عدم بقاء سجلات تجريبية
+      const rComplaints = await client.query('DELETE FROM account_complaints');
       await client.query('DELETE FROM messages');
       await client.query('DELETE FROM conversations');
       await client.query('DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
@@ -1595,6 +1609,7 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
       await client.query('DELETE FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
       const r1 = await client.query('DELETE FROM users WHERE role = $1', ['user']);
       results.customers = {
+        account_complaints: rComplaints.rowCount,
         deleted_users: r1.rowCount,
       };
     }
@@ -1639,6 +1654,7 @@ router.get("/reset-test-data/stats", authMiddleware, requireRoles('super_admin')
     ]},
     { key: 'whatsapp', queries: [
       { name: 'messages', q: 'SELECT COUNT(*) FROM whatsapp_messages' },
+      { name: 'conversations', q: 'SELECT COUNT(*) FROM whatsapp_conversations' },
       { name: 'campaigns', q: 'SELECT COUNT(*) FROM whatsapp_campaigns' },
     ]},
     { key: 'notifications', queries: [

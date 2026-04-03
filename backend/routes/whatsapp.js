@@ -67,6 +67,13 @@ router.post('/webhook', asyncHandler(async (req, res) => {
       [cleanPhone, Body || '', MessageSid || null]
     );
 
+    await db.query(
+      `INSERT INTO whatsapp_conversations (phone, status, updated_at)
+       VALUES ($1, 'open', NOW())
+       ON CONFLICT (phone) DO UPDATE SET status = 'open', updated_at = NOW()`,
+      [cleanPhone]
+    );
+
     // 3. Fetch welcome message from DB — hardcoded fallback if DB fails
     let replyMessage = WELCOME_FALLBACK;
     try {
