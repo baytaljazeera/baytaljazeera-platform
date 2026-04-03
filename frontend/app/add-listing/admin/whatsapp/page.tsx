@@ -12,6 +12,7 @@ import {
   Clock,
   AlertCircle,
   User,
+  Bell,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -90,6 +91,11 @@ export default function WhatsAppCommandCenter() {
   const [sending, setSending] = useState(false);
   const [loadingConvos, setLoadingConvos] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
+  const [notifyPermission, setNotifyPermission] = useState(
+    typeof window !== "undefined" && "Notification" in window
+      ? Notification.permission
+      : "default"
+  );
 
   // Track last known inbound count to detect new messages
   const prevInboundRef = useRef<number>(0);
@@ -108,29 +114,6 @@ export default function WhatsAppCommandCenter() {
         setWelcomeMsg(data.welcome_message || "");
       }
     } catch {}
-  }, []);
-
-  const fetchConversations = useCallback(async (silent = false) => {
-    if (!silent) setLoadingConvos(true);
-    try {
-      const res = await fetch(`${API_URL}/api/admin/whatsapp/messages`, {
-        headers: getAuthHeaders(),
-        credentials: "include",
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const convos: Conversation[] = data.conversations || [];
-
-        // Detect new inbound messages across all conversations
-        const totalUnread = convos.reduce((s, c) => s + c.unread_count, 0);
-        if (silent && totalUnread > prevInboundRef.current) {
-          playDing();
-        }
-        prevInboundRef.current = totalUnread;
-        setConversations(convos);
-      }
-    } catch {}
-    if (!silent) setLoadingConvos(false);
   }, []);
 
   const fetchMessages = useCallback(
@@ -166,6 +149,66 @@ export default function WhatsAppCommandCenter() {
     []
   );
 
+  const handleSelectConversation = useCallback(
+    async (phone: string) => {
+      setSelectedPhone(phone);
+      await fetchMessages(phone);
+      replyInputRef.current?.focus();
+    },
+    [fetchMessages]
+  );
+
+  const fetchConversations = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoadingConvos(true);
+      try {
+        const res = await fetch(`${API_URL}/api/admin/whatsapp/messages`, {
+          headers: getAuthHeaders(),
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const convos: Conversation[] = data.conversations || [];
+
+          const totalUnread = convos.reduce((s, c) => s + c.unread_count, 0);
+          if (silent && totalUnread > prevInboundRef.current) {
+            playDing();
+
+            if (
+              document.visibilityState === "hidden" &&
+              "Notification" in window &&
+              Notification.permission === "granted"
+            ) {
+              const newMsgConvo = convos.find((c) => c.unread_count > 0);
+              if (newMsgConvo) {
+                const notification = new Notification(
+                  "بيت الجزيرة — رسالة جديدة 🏠",
+                  {
+                    body: `من: ${newMsgConvo.phone}\n${newMsgConvo.last_message}`,
+                    icon: "/favicon.ico",
+                    tag: "new-whatsapp-msg",
+                  }
+                );
+
+                setTimeout(() => notification.close(), 5000);
+
+                notification.onclick = () => {
+                  window.focus();
+                  void handleSelectConversation(newMsgConvo.phone);
+                  notification.close();
+                };
+              }
+            }
+          }
+          prevInboundRef.current = totalUnread;
+          setConversations(convos);
+        }
+      } catch {}
+      if (!silent) setLoadingConvos(false);
+    },
+    [handleSelectConversation]
+  );
+
   // ── Effects ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     fetchSettings();
@@ -185,25 +228,39 @@ export default function WhatsAppCommandCenter() {
     return () => clearInterval(id);
   }, [selectedPhone, fetchMessages]);
 
-  // Scroll to bottom when messages change (inside the messages container only)
+  // Scroll to bottom when messages change (double rAF so layout is final before scroll)
   useEffect(() => {
-    const el = messagesContainerRef.current;
-    if (!el) return;
-    const raf = requestAnimationFrame(() => {
-      el.scrollTo({
-        top: el.scrollHeight,
-        behavior: "smooth",
+    const container = messagesContainerRef.current;
+    if (!container || messages.length === 0) return;
+
+    let rafId: number;
+
+    const scrollToBottom = () => {
+      rafId = requestAnimationFrame(() => {
+        rafId = requestAnimationFrame(() => {
+          container.scrollTo({
+            top: container.scrollHeight,
+            behavior: selectedPhone ? "auto" : "smooth",
+          });
+        });
       });
-    });
-    return () => cancelAnimationFrame(raf);
+    };
+
+    scrollToBottom();
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+    };
   }, [messages, selectedPhone]);
 
   // ── Actions ─────────────────────────────────────────────────────────────────
-  async function handleSelectConversation(phone: string) {
-    setSelectedPhone(phone);
-    await fetchMessages(phone);
-    replyInputRef.current?.focus();
-  }
+  const requestNotificationPermission = async () => {
+    if (!("Notification" in window)) return;
+    const permission = await Notification.requestPermission();
+    setNotifyPermission(permission);
+    if (permission === "granted") {
+      toast.success("تم تفعيل إشعارات سطح المكتب");
+    }
+  };
 
   async function handleSaveSettings() {
     if (!welcomeMsg.trim()) {
@@ -279,7 +336,28 @@ export default function WhatsAppCommandCenter() {
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => fetchConversations(false)}
+            disabled={loadingConvos}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${loadingConvos ? "animate-spin" : ""}`}
+            />
+            تحديث
+          </button>
+          {notifyPermission === "default" && (
+            <button
+              type="button"
+              onClick={() => void requestNotificationPermission()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50"
+            >
+              <Bell className="h-4 w-4" />
+              تفعيل الإشعارات
+            </button>
+          )}
           {(["inbox", "settings"] as const).map((key) => (
             <button
               key={key}
