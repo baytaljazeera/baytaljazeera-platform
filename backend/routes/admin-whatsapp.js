@@ -120,6 +120,29 @@ router.get('/messages', ...adminAuth, asyncHandler(async (req, res) => {
   res.json({ conversations: result.rows });
 }));
 
+// ─── PATCH /conversations/:phone/status — ticket workflow (open / pending / resolved) ─
+router.patch(
+  '/conversations/:phone/status',
+  ...adminAuth,
+  asyncHandler(async (req, res) => {
+    const { phone } = req.params;
+    const { status } = req.body || {};
+    const allowed = ['open', 'pending', 'resolved'];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ error: 'حالة غير صالحة' });
+    }
+
+    await db.query(
+      `INSERT INTO whatsapp_conversations (phone, status, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (phone) DO UPDATE SET status = $2, updated_at = NOW()`,
+      [phone, status]
+    );
+
+    res.json({ ok: true, status });
+  })
+);
+
 // ─── GET /messages/:phone — full thread ──────────────────────────────────────
 router.get('/messages/:phone', ...adminAuth, asyncHandler(async (req, res) => {
   const { phone } = req.params;

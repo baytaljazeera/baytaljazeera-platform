@@ -2,7 +2,13 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import {
   MessageCircle,
@@ -23,6 +29,14 @@ interface Conversation {
   last_direction: "inbound" | "outbound";
   last_message_at: string;
   unread_count: number;
+  status: "open" | "pending" | "resolved";
+}
+
+function normalizeConversationStatus(
+  s: unknown
+): Conversation["status"] {
+  if (s === "open" || s === "pending" || s === "resolved") return s;
+  return "open";
 }
 
 interface Message {
@@ -91,6 +105,9 @@ export default function WhatsAppCommandCenter() {
   const [sending, setSending] = useState(false);
   const [loadingConvos, setLoadingConvos] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "open" | "pending"
+  >("all");
   const [notifyPermission, setNotifyPermission] = useState(
     typeof window !== "undefined" && "Notification" in window
       ? Notification.permission
@@ -168,14 +185,18 @@ export default function WhatsAppCommandCenter() {
         });
         if (res.ok) {
           const data = await res.json();
-          const convos: Conversation[] = data.conversations || [];
+          const raw = data.conversations || [];
+          const convos: Conversation[] = raw.map((c: Record<string, unknown>) => ({
+            ...c,
+            status: normalizeConversationStatus(c.status),
+          }));
 
           const totalUnread = convos.reduce((s, c) => s + c.unread_count, 0);
           if (silent && totalUnread > prevInboundRef.current) {
             playDing();
 
             if (
-              document.visibilityState === "hidden" &&
+              !document.hasFocus() &&
               "Notification" in window &&
               Notification.permission === "granted"
             ) {
@@ -253,15 +274,6 @@ export default function WhatsAppCommandCenter() {
   }, [messages, selectedPhone]);
 
   // ── Actions ─────────────────────────────────────────────────────────────────
-  const requestNotificationPermission = async () => {
-    if (!("Notification" in window)) return;
-    const permission = await Notification.requestPermission();
-    setNotifyPermission(permission);
-    if (permission === "granted") {
-      toast.success("تم تفعيل إشعارات سطح المكتب");
-    }
-  };
-
   async function handleSaveSettings() {
     if (!welcomeMsg.trim()) {
       toast.error("الرسالة الترحيبية لا يمكن أن تكون فارغة");
@@ -284,6 +296,38 @@ export default function WhatsAppCommandCenter() {
     setSavingSettings(false);
   }
 
+  const handleUpdateStatus = async (phone: string, newStatus: string) => {
+    try {
+      const res = await fetch(
+        `${API_URL}/api/admin/whatsapp/conversations/${encodeURIComponent(phone)}/status`,
+        {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+          credentials: "include",
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
+      if (res.ok) {
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.phone === phone
+              ? {
+                  ...c,
+                  status: normalizeConversationStatus(newStatus),
+                }
+              : c
+          )
+        );
+        toast.success("تم تحديث حالة المحادثة");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error((err as { error?: string }).error || "فشل التحديث");
+      }
+    } catch {
+      toast.error("فشل الاتصال بالخادم");
+    }
+  };
+
   async function handleSendReply() {
     if (!selectedPhone || !replyText.trim()) return;
     setSending(true);
@@ -297,6 +341,11 @@ export default function WhatsAppCommandCenter() {
       const data = await res.json();
       if (res.ok) {
         setReplyText("");
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.phone === selectedPhone ? { ...c, status: "pending" } : c
+          )
+        );
         await fetchMessages(selectedPhone, true);
       } else {
         toast.error(data.error || "فشل الإرسال");
@@ -309,6 +358,16 @@ export default function WhatsAppCommandCenter() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   const totalUnread = conversations.reduce((s, c) => s + c.unread_count, 0);
+
+  const filteredConversations = useMemo(() => {
+    if (statusFilter === "all") return conversations;
+    return conversations.filter((c) => c.status === statusFilter);
+  }, [conversations, statusFilter]);
+
+  const selectedConversation = useMemo(
+    () => conversations.find((c) => c.phone === selectedPhone),
+    [conversations, selectedPhone]
+  );
 
   return (
     <div
@@ -348,14 +407,31 @@ export default function WhatsAppCommandCenter() {
             />
             تحديث
           </button>
-          {notifyPermission === "default" && (
+          {notifyPermission !== "denied" && (
             <button
               type="button"
-              onClick={() => void requestNotificationPermission()}
+              onClick={async () => {
+                if (!("Notification" in window)) return;
+                if (Notification.permission === "default") {
+                  const permission = await Notification.requestPermission();
+                  setNotifyPermission(permission);
+                  if (permission === "granted") {
+                    toast.success("تم تفعيل إشعارات سطح المكتب");
+                  }
+                } else if (Notification.permission === "granted") {
+                  const testNotif = new Notification("تجربة ناجحة 🎉", {
+                    body: "إشعارات بيت الجزيرة تعمل بشكل ممتاز!",
+                    icon: "/favicon.ico",
+                  });
+                  setTimeout(() => testNotif.close(), 4000);
+                }
+              }}
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50"
             >
               <Bell className="h-4 w-4" />
-              تفعيل الإشعارات
+              {notifyPermission === "granted"
+                ? "تجربة الإشعار"
+                : "تفعيل الإشعارات"}
             </button>
           )}
           {(["inbox", "settings"] as const).map((key) => (
@@ -414,8 +490,34 @@ export default function WhatsAppCommandCenter() {
             <div className="w-80 flex flex-col shrink-0 bg-slate-50 border-l border-slate-200 overflow-hidden">
               <div className="shrink-0 p-3 bg-white border-b border-slate-100">
                 <h3 className="text-sm font-bold text-[#002845]">
-                  المحادثات ({conversations.length})
+                  المحادثات ({filteredConversations.length}
+                  {statusFilter !== "all"
+                    ? ` / ${conversations.length}`
+                    : ""}
+                  )
                 </h3>
+              </div>
+              <div className="shrink-0 flex flex-wrap gap-1 border-b border-slate-100 bg-white px-2 py-2">
+                {(
+                  [
+                    { key: "all" as const, label: "الكل" },
+                    { key: "open" as const, label: "مفتوحة" },
+                    { key: "pending" as const, label: "في الانتظار" },
+                  ] as const
+                ).map(({ key, label }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setStatusFilter(key)}
+                    className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
+                      statusFilter === key
+                        ? "bg-[#002845] text-white"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
               <div className="flex-1 overflow-y-auto min-h-0">
                 {loadingConvos ? (
@@ -427,47 +529,74 @@ export default function WhatsAppCommandCenter() {
                     <MessageCircle className="h-8 w-8 opacity-30" />
                     <p className="text-sm">لا توجد محادثات بعد</p>
                   </div>
+                ) : filteredConversations.length === 0 ? (
+                  <div className="flex h-32 flex-col items-center justify-center gap-2 px-3 text-center text-slate-400">
+                    <p className="text-sm">لا توجد محادثات ضمن هذا التصفية</p>
+                  </div>
                 ) : (
-                  conversations.map((conv) => (
-                    <button
-                      key={conv.phone}
-                      type="button"
-                      onClick={() => handleSelectConversation(conv.phone)}
-                      className={`w-full border-b border-slate-50 px-4 py-3 text-right transition-colors ${
-                        selectedPhone === conv.phone
-                          ? "border-r-2 border-r-[#002845] bg-[#002845]/5"
-                          : "hover:bg-slate-50"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-green-600">
-                              <User className="h-4 w-4 text-white" />
+                  filteredConversations.map((conv) => {
+                    const isResolved = conv.status === "resolved";
+                    return (
+                      <button
+                        key={conv.phone}
+                        type="button"
+                        onClick={() => handleSelectConversation(conv.phone)}
+                        className={`w-full border-b border-slate-50 px-4 py-3 text-right transition-colors ${
+                          selectedPhone === conv.phone
+                            ? "border-r-2 border-r-[#002845] bg-[#002845]/5"
+                            : "hover:bg-slate-50"
+                        } ${isResolved ? "opacity-60" : ""}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                                  conv.status === "open"
+                                    ? "bg-rose-500"
+                                    : conv.status === "pending"
+                                      ? "bg-amber-400"
+                                      : "bg-emerald-600"
+                                }`}
+                                title={
+                                  conv.status === "open"
+                                    ? "مفتوحة — تحتاج متابعة"
+                                    : conv.status === "pending"
+                                      ? "في الانتظار — ردّ الأدمن، بانتظار العميل"
+                                      : "مغلقة"
+                                }
+                              />
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-green-600">
+                                <User className="h-4 w-4 text-white" />
+                              </div>
+                              <span
+                                className={`truncate text-sm font-bold text-[#002845] ${isResolved ? "text-slate-500" : ""}`}
+                              >
+                                {conv.phone}
+                              </span>
                             </div>
-                            <span className="truncate text-sm font-bold text-[#002845]">
-                              {conv.phone}
-                            </span>
+                            <p
+                              className={`mt-1 truncate pr-10 text-xs ${isResolved ? "text-slate-400" : "text-slate-500"}`}
+                            >
+                              {conv.last_direction === "inbound" ? "← " : "→ "}
+                              {conv.last_message}
+                            </p>
                           </div>
-                          <p className="mt-1 truncate pr-10 text-xs text-slate-500">
-                            {conv.last_direction === "inbound" ? "← " : "→ "}
-                            {conv.last_message}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-1">
-                          <span className="flex items-center gap-0.5 text-[10px] text-slate-400">
-                            <Clock className="h-2.5 w-2.5" />
-                            {timeAgo(conv.last_message_at)}
-                          </span>
-                          {conv.unread_count > 0 && (
-                            <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white">
-                              {conv.unread_count}
+                          <div className="flex shrink-0 flex-col items-end gap-1">
+                            <span className="flex items-center gap-0.5 text-[10px] text-slate-400">
+                              <Clock className="h-2.5 w-2.5" />
+                              {timeAgo(conv.last_message_at)}
                             </span>
-                          )}
+                            {conv.unread_count > 0 && (
+                              <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white">
+                                {conv.unread_count}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </button>
-                  ))
+                      </button>
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -480,8 +609,37 @@ export default function WhatsAppCommandCenter() {
                 </div>
               ) : (
                 <>
-                  <div className="shrink-0 flex items-center p-4 bg-slate-50 border-b border-slate-100">
-                    <p className="font-bold text-[#002845]">{selectedPhone}</p>
+                  <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 p-4 bg-slate-50 border-b border-slate-100">
+                    <p className="min-w-0 font-bold text-[#002845]">
+                      {selectedPhone}
+                    </p>
+                    <div
+                      className="flex flex-wrap items-center gap-1"
+                      dir="ltr"
+                    >
+                      {(
+                        [
+                          { v: "open" as const, label: "مفتوحة" },
+                          { v: "pending" as const, label: "في الانتظار" },
+                          { v: "resolved" as const, label: "مغلقة" },
+                        ] as const
+                      ).map(({ v, label }) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() =>
+                            void handleUpdateStatus(selectedPhone, v)
+                          }
+                          className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
+                            (selectedConversation?.status ?? "open") === v
+                              ? "bg-[#002845] text-white"
+                              : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <div
