@@ -109,6 +109,12 @@ export const adminSections: AdminSection[] = [
         icon: MessageSquare,
         permissionKey: "messages",
       },
+      {
+        href: "/admin/whatsapp",
+        label: "واتساب",
+        icon: MessageCircle,
+        permissionKey: "marketing",
+      },
     ],
   },
   {
@@ -154,12 +160,6 @@ export const adminSections: AdminSection[] = [
         href: "/admin/marketing",
         label: "التسويق والدعاية",
         icon: Megaphone,
-        permissionKey: "marketing",
-      },
-      {
-        href: "/admin/whatsapp",
-        label: "واتساب",
-        icon: MessageCircle,
         permissionKey: "marketing",
       },
       {
