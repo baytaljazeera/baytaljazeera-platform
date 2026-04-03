@@ -1493,6 +1493,9 @@ async function initializeDatabase() {
       );
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_whatsapp_conversations_status ON whatsapp_conversations(status);`);
+    await db.query(
+      `ALTER TABLE whatsapp_conversations ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN NOT NULL DEFAULT false`
+    );
     await db.query(`
       INSERT INTO whatsapp_conversations (phone, status, updated_at)
       SELECT DISTINCT phone, 'open', NOW()

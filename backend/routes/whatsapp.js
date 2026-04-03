@@ -53,6 +53,14 @@ router.post('/webhook', asyncHandler(async (req, res) => {
 
   // Always respond 200 to Twilio — never let internal errors cause retries
   try {
+    const blockedRow = await db.query(
+      `SELECT is_blocked FROM whatsapp_conversations WHERE phone = $1`,
+      [cleanPhone]
+    );
+    if (blockedRow.rows[0]?.is_blocked === true) {
+      return res.status(200).send('<Response></Response>');
+    }
+
     console.log(`📩 Inbound WhatsApp from ${cleanPhone}: ${Body}`);
 
     // 1. Log to Google Sheets (non-blocking)

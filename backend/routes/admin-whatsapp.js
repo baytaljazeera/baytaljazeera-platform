@@ -110,7 +110,8 @@ router.get('/messages', ...adminAuth, asyncHandler(async (req, res) => {
       l.last_direction,
       l.last_message_at,
       COALESCE(u.unread_count, 0)::int AS unread_count,
-      COALESCE(wc.status, 'open') AS status
+      COALESCE(wc.status, 'open') AS status,
+      COALESCE(wc.is_blocked, false) AS is_blocked
     FROM latest l
     LEFT JOIN unread u ON u.phone = l.phone
     LEFT JOIN whatsapp_conversations wc ON wc.phone = l.phone
@@ -140,6 +141,44 @@ router.patch(
     );
 
     res.json({ ok: true, status });
+  })
+);
+
+// ─── PATCH /conversations/:phone/block — toggle blocked flag ─────────────────
+router.patch(
+  '/conversations/:phone/block',
+  ...adminAuth,
+  asyncHandler(async (req, res) => {
+    const { phone } = req.params;
+
+    const result = await db.query(
+      `INSERT INTO whatsapp_conversations (phone, status, is_blocked, updated_at)
+       VALUES ($1, 'open', true, NOW())
+       ON CONFLICT (phone) DO UPDATE SET
+         is_blocked = NOT COALESCE(whatsapp_conversations.is_blocked, false),
+         updated_at = NOW()
+       RETURNING is_blocked`,
+      [phone]
+    );
+
+    const is_blocked = result.rows[0]?.is_blocked === true;
+    res.json({ ok: true, is_blocked });
+  })
+);
+
+// ─── DELETE /conversations/:phone — remove thread + CRM row ──────────────────
+router.delete(
+  '/conversations/:phone',
+  ...adminAuth,
+  asyncHandler(async (req, res) => {
+    const { phone } = req.params;
+
+    await db.query(`DELETE FROM whatsapp_messages WHERE phone = $1`, [phone]);
+    await db.query(`DELETE FROM whatsapp_conversations WHERE phone = $1`, [
+      phone,
+    ]);
+
+    res.json({ ok: true, message: 'تم حذف المحادثة' });
   })
 );
 
