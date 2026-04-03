@@ -19,6 +19,8 @@ import {
   AlertCircle,
   User,
   Bell,
+  Ban,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,6 +32,7 @@ interface Conversation {
   last_message_at: string;
   unread_count: number;
   status?: "open" | "pending" | "resolved";
+  is_blocked?: boolean;
 }
 
 function normalizeConversationStatus(
@@ -188,7 +191,8 @@ export default function WhatsAppCommandCenter() {
           const raw = data.conversations || [];
           const convos: Conversation[] = raw.map((c: Record<string, unknown>) => {
             const status = normalizeConversationStatus(c.status);
-            return { ...c, status } as Conversation;
+            const is_blocked = c.is_blocked === true;
+            return { ...c, status, is_blocked } as Conversation;
           });
 
           const totalUnread = convos.reduce((s, c) => s + c.unread_count, 0);
@@ -384,6 +388,61 @@ export default function WhatsAppCommandCenter() {
           )
         );
         toast.success("تم تحديث حالة المحادثة");
+      }
+    } catch {}
+  };
+
+  const handleToggleBlock = async (
+    phone: string,
+    _currentBlockStatus: boolean
+  ) => {
+    try {
+      const res = await fetch(
+        `${API_URL}/api/admin/whatsapp/conversations/${encodeURIComponent(phone)}/block`,
+        {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+          credentials: "include",
+        }
+      );
+      if (res.ok) {
+        const data = (await res.json()) as { is_blocked?: boolean };
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.phone === phone ? { ...c, is_blocked: data.is_blocked === true } : c
+          )
+        );
+        toast.success(
+          data.is_blocked ? "تم حظر العميل 🚫" : "تم فك الحظر ✅"
+        );
+      }
+    } catch {}
+  };
+
+  const handleDeleteConversation = async (phone: string) => {
+    if (
+      !confirm(
+        "هل أنت متأكد من حذف هذه المحادثة بالكامل؟ لا يمكن التراجع عن هذا الإجراء."
+      )
+    ) {
+      return;
+    }
+    try {
+      const res = await fetch(
+        `${API_URL}/api/admin/whatsapp/conversations/${encodeURIComponent(phone)}`,
+        {
+          method: "DELETE",
+          headers: getAuthHeaders(),
+          credentials: "include",
+        }
+      );
+      if (res.ok) {
+        setConversations((prev) => prev.filter((c) => c.phone !== phone));
+        if (selectedPhone === phone) {
+          setSelectedPhone(null);
+          setMessages([]);
+        }
+        toast.success("تم حذف المحادثة 🗑️");
       }
     } catch {}
   };
@@ -627,9 +686,12 @@ export default function WhatsAppCommandCenter() {
                                 <User className="h-4 w-4 text-white" />
                               </div>
                               <span
-                                className={`truncate text-sm font-bold text-[#002845] ${isResolved ? "text-slate-500" : ""}`}
+                                className={`flex min-w-0 items-center gap-1 truncate text-sm font-bold text-[#002845] ${isResolved ? "text-slate-500" : ""}`}
                               >
                                 {conv.phone}
+                                {conv.is_blocked && (
+                                  <Ban className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                                )}
                               </span>
                             </div>
                             <p
@@ -670,8 +732,11 @@ export default function WhatsAppCommandCenter() {
                     <p className="min-w-0 font-bold text-[#002845]">
                       {selectedPhone}
                     </p>
-                    {selectedConversation && (
-                      <div className="flex flex-wrap gap-2" dir="rtl">
+                    {selectedConversation && selectedPhone && (
+                      <div
+                        className="flex flex-wrap items-center gap-2"
+                        dir="rtl"
+                      >
                         <button
                           type="button"
                           onClick={() => void handleUpdateStatus("open")}
@@ -704,6 +769,34 @@ export default function WhatsAppCommandCenter() {
                           }`}
                         >
                           إغلاق 🟢
+                        </button>
+                        <div className="mx-1 h-6 w-px bg-slate-200" />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void handleToggleBlock(
+                              selectedPhone,
+                              !!selectedConversation.is_blocked
+                            )
+                          }
+                          className={`flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-bold transition-colors ${
+                            selectedConversation.is_blocked
+                              ? "border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
+                              : "border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100"
+                          }`}
+                        >
+                          <Ban className="h-3.5 w-3.5" />
+                          {selectedConversation.is_blocked ? "محظور" : "حظر"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void handleDeleteConversation(selectedPhone)
+                          }
+                          className="flex items-center gap-1 rounded-full border border-transparent px-3 py-1 text-xs font-bold text-red-500 transition-colors hover:bg-red-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          مسح
                         </button>
                       </div>
                     )}
