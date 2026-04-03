@@ -29,12 +29,12 @@ interface Conversation {
   last_direction: "inbound" | "outbound";
   last_message_at: string;
   unread_count: number;
-  status: "open" | "pending" | "resolved";
+  status?: "open" | "pending" | "resolved";
 }
 
 function normalizeConversationStatus(
   s: unknown
-): Conversation["status"] {
+): NonNullable<Conversation["status"]> {
   if (s === "open" || s === "pending" || s === "resolved") return s;
   return "open";
 }
@@ -186,10 +186,10 @@ export default function WhatsAppCommandCenter() {
         if (res.ok) {
           const data = await res.json();
           const raw = data.conversations || [];
-          const convos: Conversation[] = raw.map((c: Record<string, unknown>) => ({
-            ...c,
-            status: normalizeConversationStatus(c.status),
-          }));
+          const convos: Conversation[] = raw.map((c: Record<string, unknown>) => {
+            const status = normalizeConversationStatus(c.status);
+            return { ...c, status } as Conversation;
+          });
 
           const totalUnread = convos.reduce((s, c) => s + c.unread_count, 0);
           if (silent && totalUnread > prevInboundRef.current) {
@@ -421,13 +421,20 @@ export default function WhatsAppCommandCenter() {
 
   const filteredConversations = useMemo(() => {
     if (filterStatus === "all") return conversations;
-    return conversations.filter((c) => c.status === filterStatus);
+    return conversations.filter((c) => {
+      const s = c.status ?? "open";
+      return s === filterStatus;
+    });
   }, [conversations, filterStatus]);
 
-  const activeStatus: Conversation["status"] = useMemo(
-    () =>
-      conversations.find((c) => c.phone === selectedPhone)?.status ?? "open",
+  const selectedConversation = useMemo(
+    () => conversations.find((c) => c.phone === selectedPhone),
     [conversations, selectedPhone]
+  );
+
+  const selectedHeaderStatus = useMemo(
+    () => selectedConversation?.status ?? "open",
+    [selectedConversation]
   );
 
   return (
@@ -547,9 +554,9 @@ export default function WhatsAppCommandCenter() {
                 {(
                   [
                     { key: "all" as const, label: "الكل" },
-                    { key: "open" as const, label: "مفتوحة 🔴" },
-                    { key: "pending" as const, label: "في الانتظار 🟡" },
-                    { key: "resolved" as const, label: "مغلقة 🟢" },
+                    { key: "open" as const, label: "مفتوحة" },
+                    { key: "pending" as const, label: "في الانتظار" },
+                    { key: "resolved" as const, label: "مغلقة" },
                   ] as const
                 ).map(({ key, label }) => (
                   <button
@@ -582,7 +589,8 @@ export default function WhatsAppCommandCenter() {
                   </div>
                 ) : (
                   filteredConversations.map((conv) => {
-                    const isResolved = conv.status === "resolved";
+                    const st = conv.status ?? "open";
+                    const isResolved = st === "resolved";
                     return (
                       <button
                         key={conv.phone}
@@ -597,21 +605,21 @@ export default function WhatsAppCommandCenter() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                              {conv.status === "open" && (
+                              {st === "open" && (
                                 <span
-                                  className="h-2 w-2 shrink-0 rounded-full bg-rose-500"
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full bg-rose-500 shadow-sm"
                                   title="مفتوحة"
                                 />
                               )}
-                              {conv.status === "pending" && (
+                              {st === "pending" && (
                                 <span
-                                  className="h-2 w-2 shrink-0 rounded-full bg-amber-500"
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500 shadow-sm"
                                   title="في الانتظار"
                                 />
                               )}
-                              {conv.status === "resolved" && (
+                              {st === "resolved" && (
                                 <span
-                                  className="h-2 w-2 shrink-0 rounded-full bg-emerald-500"
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full bg-slate-300 shadow-sm"
                                   title="مغلقة"
                                 />
                               )}
@@ -662,41 +670,43 @@ export default function WhatsAppCommandCenter() {
                     <p className="min-w-0 font-bold text-[#002845]">
                       {selectedPhone}
                     </p>
-                    <div className="flex flex-wrap gap-2" dir="rtl">
-                      <button
-                        type="button"
-                        onClick={() => void handleUpdateStatus("open")}
-                        className={`rounded-full px-3 py-1 text-xs font-bold ${
-                          activeStatus === "open"
-                            ? "border border-rose-200 bg-rose-100 text-rose-700"
-                            : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                        }`}
-                      >
-                        مفتوحة 🔴
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleUpdateStatus("pending")}
-                        className={`rounded-full px-3 py-1 text-xs font-bold ${
-                          activeStatus === "pending"
-                            ? "border border-amber-200 bg-amber-100 text-amber-700"
-                            : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                        }`}
-                      >
-                        في الانتظار 🟡
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleUpdateStatus("resolved")}
-                        className={`rounded-full px-3 py-1 text-xs font-bold ${
-                          activeStatus === "resolved"
-                            ? "border border-emerald-200 bg-emerald-100 text-emerald-700"
-                            : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                        }`}
-                      >
-                        إغلاق 🟢
-                      </button>
-                    </div>
+                    {selectedConversation && (
+                      <div className="flex flex-wrap gap-2" dir="rtl">
+                        <button
+                          type="button"
+                          onClick={() => void handleUpdateStatus("open")}
+                          className={`rounded-full px-3 py-1 text-xs font-bold ${
+                            selectedHeaderStatus === "open"
+                              ? "border border-rose-200 bg-rose-100 text-rose-700"
+                              : "border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100"
+                          }`}
+                        >
+                          مفتوحة 🔴
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleUpdateStatus("pending")}
+                          className={`rounded-full px-3 py-1 text-xs font-bold ${
+                            selectedHeaderStatus === "pending"
+                              ? "border border-amber-200 bg-amber-100 text-amber-700"
+                              : "border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100"
+                          }`}
+                        >
+                          في الانتظار 🟡
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleUpdateStatus("resolved")}
+                          className={`rounded-full px-3 py-1 text-xs font-bold ${
+                            selectedHeaderStatus === "resolved"
+                              ? "border border-emerald-200 bg-emerald-100 text-emerald-700"
+                              : "border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100"
+                          }`}
+                        >
+                          إغلاق 🟢
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div
