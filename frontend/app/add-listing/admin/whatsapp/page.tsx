@@ -195,13 +195,26 @@ export default function WhatsAppCommandCenter() {
           if (silent && totalUnread > prevInboundRef.current) {
             playDing();
 
-            if (
-              !document.hasFocus() &&
-              "Notification" in window &&
-              Notification.permission === "granted"
-            ) {
-              const newMsgConvo = convos.find((c) => c.unread_count > 0);
-              if (newMsgConvo) {
+            const newMsgConvo = convos.find((c) => c.unread_count > 0);
+            if (newMsgConvo) {
+              toast(`رسالة جديدة من ${newMsgConvo.phone}`, {
+                icon: "📩",
+                duration: 5000,
+                position: "top-right",
+                style: {
+                  borderRadius: "10px",
+                  background: "#333",
+                  color: "#fff",
+                  padding: "16px",
+                  fontWeight: "bold",
+                },
+              });
+
+              if (
+                !document.hasFocus() &&
+                "Notification" in window &&
+                Notification.permission === "granted"
+              ) {
                 const notification = new Notification(
                   "بيت الجزيرة — رسالة جديدة 🏠",
                   {
