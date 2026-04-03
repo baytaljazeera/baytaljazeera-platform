@@ -249,6 +249,19 @@ export default function WhatsAppCommandCenter() {
     return () => clearInterval(id);
   }, [selectedPhone, fetchMessages]);
 
+  // Keep UI label in sync with real Notification.permission (fixes hydration / settings changes)
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    const sync = () => setNotifyPermission(Notification.permission);
+    sync();
+    window.addEventListener("focus", sync);
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      window.removeEventListener("focus", sync);
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, []);
+
   // Scroll to bottom when messages change (double rAF so layout is final before scroll)
   useEffect(() => {
     const container = messagesContainerRef.current;
@@ -295,6 +308,48 @@ export default function WhatsAppCommandCenter() {
     }
     setSavingSettings(false);
   }
+
+  const handleBellNotificationClick = useCallback(async () => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      toast.error("المتصفح لا يدعم إشعارات سطح المكتب");
+      return;
+    }
+    if (!window.isSecureContext) {
+      toast.error("الإشعارات تعمل على اتصال آمن (HTTPS)");
+      return;
+    }
+
+    let perm = Notification.permission;
+    setNotifyPermission(perm);
+
+    if (perm === "default") {
+      try {
+        perm = await Notification.requestPermission();
+        setNotifyPermission(perm);
+      } catch {
+        toast.error("فشل طلب إذن الإشعارات");
+        return;
+      }
+    }
+
+    if (perm === "granted") {
+      try {
+        const testNotif = new Notification("تجربة ناجحة 🎉", {
+          body: "إشعارات بيت الجزيرة تعمل بشكل ممتاز!",
+          icon: "/favicon.ico",
+        });
+        setTimeout(() => testNotif.close(), 4000);
+        toast.success("تم إرسال إشعار تجريبي");
+      } catch {
+        toast.error("تعذر عرض الإشعار — جرّب إعدادات الموقع في المتصفح");
+      }
+      return;
+    }
+
+    toast.error(
+      "تم رفض الإشعارات. افتح إعدادات الموقع في المتصفح واسمح بالإشعارات لبيت الجزيرة."
+    );
+  }, []);
 
   const handleUpdateStatus = async (phone: string, newStatus: string) => {
     try {
@@ -410,22 +465,7 @@ export default function WhatsAppCommandCenter() {
           {notifyPermission !== "denied" && (
             <button
               type="button"
-              onClick={async () => {
-                if (!("Notification" in window)) return;
-                if (Notification.permission === "default") {
-                  const permission = await Notification.requestPermission();
-                  setNotifyPermission(permission);
-                  if (permission === "granted") {
-                    toast.success("تم تفعيل إشعارات سطح المكتب");
-                  }
-                } else if (Notification.permission === "granted") {
-                  const testNotif = new Notification("تجربة ناجحة 🎉", {
-                    body: "إشعارات بيت الجزيرة تعمل بشكل ممتاز!",
-                    icon: "/favicon.ico",
-                  });
-                  setTimeout(() => testNotif.close(), 4000);
-                }
-              }}
+              onClick={() => void handleBellNotificationClick()}
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50"
             >
               <Bell className="h-4 w-4" />
