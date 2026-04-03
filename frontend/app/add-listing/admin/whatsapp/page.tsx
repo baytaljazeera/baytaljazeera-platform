@@ -105,8 +105,8 @@ export default function WhatsAppCommandCenter() {
   const [sending, setSending] = useState(false);
   const [loadingConvos, setLoadingConvos] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<
-    "all" | "open" | "pending"
+  const [filterStatus, setFilterStatus] = useState<
+    "all" | "open" | "pending" | "resolved"
   >("all");
   const [notifyPermission, setNotifyPermission] = useState(
     typeof window !== "undefined" && "Notification" in window
@@ -351,10 +351,13 @@ export default function WhatsAppCommandCenter() {
     );
   }, []);
 
-  const handleUpdateStatus = async (phone: string, newStatus: string) => {
+  const handleUpdateStatus = async (
+    newStatus: "open" | "pending" | "resolved"
+  ) => {
+    if (!selectedPhone) return;
     try {
       const res = await fetch(
-        `${API_URL}/api/admin/whatsapp/conversations/${encodeURIComponent(phone)}/status`,
+        `${API_URL}/api/admin/whatsapp/conversations/${encodeURIComponent(selectedPhone)}/status`,
         {
           method: "PATCH",
           headers: getAuthHeaders(),
@@ -365,22 +368,12 @@ export default function WhatsAppCommandCenter() {
       if (res.ok) {
         setConversations((prev) =>
           prev.map((c) =>
-            c.phone === phone
-              ? {
-                  ...c,
-                  status: normalizeConversationStatus(newStatus),
-                }
-              : c
+            c.phone === selectedPhone ? { ...c, status: newStatus } : c
           )
         );
         toast.success("تم تحديث حالة المحادثة");
-      } else {
-        const err = await res.json().catch(() => ({}));
-        toast.error((err as { error?: string }).error || "فشل التحديث");
       }
-    } catch {
-      toast.error("فشل الاتصال بالخادم");
-    }
+    } catch {}
   };
 
   async function handleSendReply() {
@@ -415,12 +408,13 @@ export default function WhatsAppCommandCenter() {
   const totalUnread = conversations.reduce((s, c) => s + c.unread_count, 0);
 
   const filteredConversations = useMemo(() => {
-    if (statusFilter === "all") return conversations;
-    return conversations.filter((c) => c.status === statusFilter);
-  }, [conversations, statusFilter]);
+    if (filterStatus === "all") return conversations;
+    return conversations.filter((c) => c.status === filterStatus);
+  }, [conversations, filterStatus]);
 
-  const selectedConversation = useMemo(
-    () => conversations.find((c) => c.phone === selectedPhone),
+  const activeStatus: Conversation["status"] = useMemo(
+    () =>
+      conversations.find((c) => c.phone === selectedPhone)?.status ?? "open",
     [conversations, selectedPhone]
   );
 
@@ -531,7 +525,7 @@ export default function WhatsAppCommandCenter() {
               <div className="shrink-0 p-3 bg-white border-b border-slate-100">
                 <h3 className="text-sm font-bold text-[#002845]">
                   المحادثات ({filteredConversations.length}
-                  {statusFilter !== "all"
+                  {filterStatus !== "all"
                     ? ` / ${conversations.length}`
                     : ""}
                   )
@@ -541,16 +535,17 @@ export default function WhatsAppCommandCenter() {
                 {(
                   [
                     { key: "all" as const, label: "الكل" },
-                    { key: "open" as const, label: "مفتوحة" },
-                    { key: "pending" as const, label: "في الانتظار" },
+                    { key: "open" as const, label: "مفتوحة 🔴" },
+                    { key: "pending" as const, label: "في الانتظار 🟡" },
+                    { key: "resolved" as const, label: "مغلقة 🟢" },
                   ] as const
                 ).map(({ key, label }) => (
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setStatusFilter(key)}
+                    onClick={() => setFilterStatus(key)}
                     className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
-                      statusFilter === key
+                      filterStatus === key
                         ? "bg-[#002845] text-white"
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                     }`}
@@ -590,22 +585,24 @@ export default function WhatsAppCommandCenter() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                              <span
-                                className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                                  conv.status === "open"
-                                    ? "bg-rose-500"
-                                    : conv.status === "pending"
-                                      ? "bg-amber-400"
-                                      : "bg-emerald-600"
-                                }`}
-                                title={
-                                  conv.status === "open"
-                                    ? "مفتوحة — تحتاج متابعة"
-                                    : conv.status === "pending"
-                                      ? "في الانتظار — ردّ الأدمن، بانتظار العميل"
-                                      : "مغلقة"
-                                }
-                              />
+                              {conv.status === "open" && (
+                                <span
+                                  className="h-2 w-2 shrink-0 rounded-full bg-rose-500"
+                                  title="مفتوحة"
+                                />
+                              )}
+                              {conv.status === "pending" && (
+                                <span
+                                  className="h-2 w-2 shrink-0 rounded-full bg-amber-500"
+                                  title="في الانتظار"
+                                />
+                              )}
+                              {conv.status === "resolved" && (
+                                <span
+                                  className="h-2 w-2 shrink-0 rounded-full bg-emerald-500"
+                                  title="مغلقة"
+                                />
+                              )}
                               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-green-600">
                                 <User className="h-4 w-4 text-white" />
                               </div>
@@ -653,32 +650,40 @@ export default function WhatsAppCommandCenter() {
                     <p className="min-w-0 font-bold text-[#002845]">
                       {selectedPhone}
                     </p>
-                    <div
-                      className="flex flex-wrap items-center gap-1"
-                      dir="ltr"
-                    >
-                      {(
-                        [
-                          { v: "open" as const, label: "مفتوحة" },
-                          { v: "pending" as const, label: "في الانتظار" },
-                          { v: "resolved" as const, label: "مغلقة" },
-                        ] as const
-                      ).map(({ v, label }) => (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() =>
-                            void handleUpdateStatus(selectedPhone, v)
-                          }
-                          className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
-                            (selectedConversation?.status ?? "open") === v
-                              ? "bg-[#002845] text-white"
-                              : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
+                    <div className="flex flex-wrap gap-2" dir="rtl">
+                      <button
+                        type="button"
+                        onClick={() => void handleUpdateStatus("open")}
+                        className={`rounded-full px-3 py-1 text-xs font-bold ${
+                          activeStatus === "open"
+                            ? "border border-rose-200 bg-rose-100 text-rose-700"
+                            : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                        }`}
+                      >
+                        مفتوحة 🔴
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleUpdateStatus("pending")}
+                        className={`rounded-full px-3 py-1 text-xs font-bold ${
+                          activeStatus === "pending"
+                            ? "border border-amber-200 bg-amber-100 text-amber-700"
+                            : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                        }`}
+                      >
+                        في الانتظار 🟡
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleUpdateStatus("resolved")}
+                        className={`rounded-full px-3 py-1 text-xs font-bold ${
+                          activeStatus === "resolved"
+                            ? "border border-emerald-200 bg-emerald-100 text-emerald-700"
+                            : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                        }`}
+                      >
+                        إغلاق 🟢
+                      </button>
                     </div>
                   </div>
 
