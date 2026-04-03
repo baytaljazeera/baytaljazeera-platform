@@ -275,7 +275,11 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
   const getFilteredSections = () => {
     return adminSections.map(section => {
       const filteredLinks = section.links.filter(link => {
-        const hasPermission = isSuperAdmin || userPermissions.includes(link.permissionKey);
+        const hasPermission =
+          isSuperAdmin ||
+          userPermissions.includes(link.permissionKey) ||
+          (link.permissionKey === "support_internal" &&
+            userPermissions.includes("messages"));
         if (!hasPermission) return false;
         
         if (loadingVisibility || visibleSections.length === 0) return true;

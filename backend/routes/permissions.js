@@ -4,13 +4,30 @@ const db = require("../db");
 const { authMiddleware, requireRoles } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
 
+/** One-time data fix: canonical key for internal team messaging (Customer Service). */
+async function ensureSupportInternalPermissionMigrated() {
+  try {
+    await db.query(`
+      INSERT INTO role_permissions (role, permission_key, is_granted, updated_at)
+      SELECT role, 'support_internal', is_granted, CURRENT_TIMESTAMP
+      FROM role_permissions WHERE permission_key = 'messages'
+      ON CONFLICT (role, permission_key) DO UPDATE SET
+        is_granted = role_permissions.is_granted OR EXCLUDED.is_granted,
+        updated_at = CURRENT_TIMESTAMP
+    `);
+    await db.query(`DELETE FROM role_permissions WHERE permission_key = 'messages'`);
+  } catch (err) {
+    console.warn("ensureSupportInternalPermissionMigrated:", err.message);
+  }
+}
+
 const ALL_PERMISSIONS = [
   { key: 'dashboard', label: 'لوحة التحكم' },
   { key: 'listings', label: 'الإعلانات' },
   { key: 'reports', label: 'البلاغات' },
   { key: 'complaints', label: 'الشكاوى' },
   { key: 'support', label: 'الدعم الفني' },
-  { key: 'messages', label: 'المراسلات الداخلية' },
+  { key: 'support_internal', label: 'المراسلات الداخلية' },
   { key: 'news', label: 'شريط الأخبار' },
   { key: 'finance', label: 'المالية والاشتراكات' },
   { key: 'membership', label: 'طلبات العضوية' },
@@ -68,6 +85,7 @@ async function getAllRoles() {
 }
 
 router.get("/list", authMiddleware, requireRoles('super_admin', 'admin'), asyncHandler(async (req, res) => {
+  await ensureSupportInternalPermissionMigrated();
   const roles = await getAllRoles();
   res.json({
     permissions: ALL_PERMISSIONS,
@@ -76,6 +94,7 @@ router.get("/list", authMiddleware, requireRoles('super_admin', 'admin'), asyncH
 }));
 
 router.get("/role/:role", authMiddleware, requireRoles('super_admin', 'admin'), asyncHandler(async (req, res) => {
+  await ensureSupportInternalPermissionMigrated();
   const { role } = req.params;
   
   const result = await db.query(
@@ -97,6 +116,7 @@ router.get("/role/:role", authMiddleware, requireRoles('super_admin', 'admin'), 
 }));
 
 router.get("/my-permissions", authMiddleware, asyncHandler(async (req, res) => {
+  await ensureSupportInternalPermissionMigrated();
   const userRole = req.user.role;
   
   if (userRole === 'super_admin' || userRole === 'admin') {

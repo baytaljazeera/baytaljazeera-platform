@@ -23,6 +23,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { playDing, adminToastStyle } from "@/lib/adminNotifications";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Conversation {
@@ -51,28 +52,6 @@ interface Message {
   status: string;
   twilio_sid: string | null;
   created_at: string;
-}
-
-// ─── Audio helper (Web Audio API — no external file needed) ──────────────────
-function playDing() {
-  try {
-    const AudioCtx =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext })
-        .webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = "sine";
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.6);
-  } catch {}
 }
 
 function timeAgo(iso: string) {
@@ -205,13 +184,7 @@ export default function WhatsAppCommandCenter() {
                 icon: "📩",
                 duration: 5000,
                 position: "top-right",
-                style: {
-                  borderRadius: "10px",
-                  background: "#333",
-                  color: "#fff",
-                  padding: "16px",
-                  fontWeight: "bold",
-                },
+                style: adminToastStyle,
               });
 
               if (

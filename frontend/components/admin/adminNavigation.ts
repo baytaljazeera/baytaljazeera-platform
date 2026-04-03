@@ -107,7 +107,7 @@ export const adminSections: AdminSection[] = [
         href: "/admin/messages",
         label: "المراسلات الداخلية",
         icon: MessageSquare,
-        permissionKey: "messages",
+        permissionKey: "support_internal",
       },
       {
         href: "/admin/whatsapp",

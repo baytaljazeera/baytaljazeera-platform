@@ -1,16 +1,28 @@
 "use client";
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { playDing, adminToastStyle } from "@/lib/adminNotifications";
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  MessageCircle, Send, Plus, Clock, CheckCircle2,
-  Loader2, X, ChevronLeft, Users, Bell
+  MessageCircle,
+  Send,
+  Plus,
+  Clock,
+  CheckCircle2,
+  Loader2,
+  X,
+  ChevronLeft,
+  Users,
+  Bell,
+  RefreshCw,
+  CheckCheck,
 } from "lucide-react";
+import { toast } from "sonner";
 
 type Department = {
   id: string;
@@ -76,75 +88,75 @@ type Admin = {
 };
 
 const ROLE_NAMES: Record<string, string> = {
-  super_admin: 'المدير العام',
-  finance_admin: 'المالية',
-  support_admin: 'الدعم الفني',
-  content_admin: 'المحتوى',
-  admin: 'مدير',
+  super_admin: "المدير العام",
+  finance_admin: "المالية",
+  support_admin: "الدعم الفني",
+  content_admin: "المحتوى",
+  admin: "مدير",
 };
 
-const ROLE_COLORS: Record<string, string> = {
-  super_admin: '#FFD700',
-  finance_admin: '#10B981',
-  support_admin: '#3B82F6',
-  content_admin: '#8B5CF6',
-  admin: '#D4AF37',
-};
+const JSON_HEADERS = () => ({
+  ...getAuthHeaders(),
+  "Content-Type": "application/json",
+});
 
 export default function AdminMessagesPage() {
   const router = useRouter();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const replyInputRef = useRef<HTMLTextAreaElement>(null);
+  const prevUnreadTotalRef = useRef(-1);
 
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingConvos, setLoadingConvos] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selectedConversation, setSelectedConversation] = useState<ConversationWithMessages | null>(null);
+  const [selectedConversation, setSelectedConversation] =
+    useState<ConversationWithMessages | null>(null);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [admins, setAdmins] = useState<Admin[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [currentUserId, setCurrentUserId] = useState<string>("");
 
   const [newConvDepartment, setNewConvDepartment] = useState("");
   const [newConvSubject, setNewConvSubject] = useState("");
   const [newConvMessage, setNewConvMessage] = useState("");
-  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
+  const [selectedParticipants, setSelectedParticipants] = useState<string[]>(
+    []
+  );
   const [replyMessage, setReplyMessage] = useState("");
   const [sending, setSending] = useState(false);
 
-  useEffect(() => {
-    fetchConversations();
-    fetchDepartments();
-    fetchCurrentUser();
+  const [notifyPermission, setNotifyPermission] = useState(
+    typeof window !== "undefined" && "Notification" in window
+      ? Notification.permission
+      : "default"
+  );
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [selectedConversation?.messages]);
-
-  useEffect(() => {
-    if (newConvDepartment) {
-      fetchAdmins(newConvDepartment);
-    }
-  }, [newConvDepartment]);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  async function fetchCurrentUser() {
+  const fetchCurrentUser = useCallback(async () => {
     try {
-      const res = await fetch('/api/auth/me', { credentials: 'include' });
+      const res = await fetch(`${API_URL}/api/auth/me`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
       if (res.ok) {
         const data = await res.json();
-        setCurrentUserId(data.user?.id || data.id || '');
+        setCurrentUserId(data.user?.id || data.id || "");
       }
     } catch (err) {
-      console.error('Error fetching user:', err);
+      console.error("Error fetching user:", err);
     }
-  }
+  }, []);
 
-  async function fetchDepartments() {
+  const fetchDepartments = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/admin-messages/departments`, { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/admin-messages/departments`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
       if (res.ok) {
         const data = await res.json();
         setDepartments(data);
@@ -152,11 +164,14 @@ export default function AdminMessagesPage() {
     } catch (err) {
       console.error("Error fetching departments:", err);
     }
-  }
+  }, []);
 
-  async function fetchAdmins(department: string) {
+  const fetchAdmins = useCallback(async (department: string) => {
     try {
-      const res = await fetch(`/api/admin-messages/admins?department=${department}`, { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(
+        `${API_URL}/api/admin-messages/admins?department=${encodeURIComponent(department)}`,
+        { credentials: "include", headers: getAuthHeaders() }
+      );
       if (res.ok) {
         const data = await res.json();
         setAdmins(data);
@@ -164,50 +179,207 @@ export default function AdminMessagesPage() {
     } catch (err) {
       console.error("Error fetching admins:", err);
     }
-  }
+  }, []);
 
-  async function fetchConversations() {
-    try {
-      setIsLoading(true);
-      const res = await fetch(`${API_URL}/api/admin-messages/conversations`, { credentials: "include", headers: getAuthHeaders() });
-      if (res.status === 401 || res.status === 403) {
-        router.push("/admin-login");
-        return;
+  const fetchConversations = useCallback(
+    async (silent = false) => {
+      if (!silent) {
+        setIsLoading(true);
+        setLoadingConvos(true);
       }
-      if (res.ok) {
-        const data = await res.json();
-        setConversations(data);
+      try {
+        const res = await fetch(`${API_URL}/api/admin-messages/conversations`, {
+          credentials: "include",
+          headers: getAuthHeaders(),
+        });
+        if (res.status === 401 || res.status === 403) {
+          router.push("/admin-login");
+          return;
+        }
+        if (res.ok) {
+          const data: Conversation[] = await res.json();
+          const totalUnread = data.reduce((s, c) => s + (c.unread_count || 0), 0);
+          if (
+            silent &&
+            prevUnreadTotalRef.current >= 0 &&
+            totalUnread > prevUnreadTotalRef.current
+          ) {
+            playDing();
+            const hot = data.find((c) => (c.unread_count || 0) > 0);
+            if (hot) {
+              toast(`رسالة داخلية جديدة — ${hot.subject}`, {
+                icon: "💬",
+                duration: 5000,
+                position: "top-right",
+                style: adminToastStyle,
+              });
+              if (
+                !document.hasFocus() &&
+                "Notification" in window &&
+                Notification.permission === "granted"
+              ) {
+                const notification = new Notification(
+                  "بيت الجزيرة — مراسلة داخلية",
+                  {
+                    body: `${hot.last_message?.content?.slice(0, 120) || "محادثة فريق الإدارة"}`,
+                    icon: "/favicon.ico",
+                    tag: `internal-msg-${hot.id}`,
+                    requireInteraction: true,
+                  }
+                );
+                notification.onclick = () => {
+                  window.focus();
+                  notification.close();
+                };
+              }
+            }
+          }
+          prevUnreadTotalRef.current = totalUnread;
+          setConversations(data);
+        }
+      } catch (err) {
+        console.error("Error fetching conversations:", err);
+      } finally {
+        if (!silent) {
+          setIsLoading(false);
+          setLoadingConvos(false);
+        }
       }
-    } catch (err) {
-      console.error("Error fetching conversations:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }
+    },
+    [router]
+  );
 
-  async function fetchConversation(id: number) {
+  const fetchConversation = useCallback(async (id: number) => {
     try {
-      const res = await fetch(`/api/admin-messages/conversations/${id}`, { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(
+        `${API_URL}/api/admin-messages/conversations/${id}`,
+        { credentials: "include", headers: getAuthHeaders() }
+      );
       if (res.ok) {
         const data = await res.json();
         setSelectedConversation(data);
-        setConversations(prev =>
-          prev.map(c => c.id === id ? { ...c, unread_count: 0 } : c)
-        );
+        setConversations((prev) => {
+          const next = prev.map((c) =>
+            c.id === id ? { ...c, unread_count: 0 } : c
+          );
+          prevUnreadTotalRef.current = next.reduce(
+            (s, c) => s + (c.unread_count || 0),
+            0
+          );
+          return next;
+        });
       }
     } catch (err) {
       console.error("Error fetching conversation:", err);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    void fetchConversations(false);
+    void fetchDepartments();
+    void fetchCurrentUser();
+  }, [fetchConversations, fetchDepartments, fetchCurrentUser]);
+
+  useEffect(() => {
+    const id = setInterval(() => void fetchConversations(true), 10000);
+    return () => clearInterval(id);
+  }, [fetchConversations]);
+
+  useEffect(() => {
+    const cid = selectedConversation?.id;
+    if (!cid) return;
+    const id = setInterval(() => {
+      void fetch(`${API_URL}/api/admin-messages/conversations/${cid}`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.messages) {
+            setSelectedConversation((prev) =>
+              prev && prev.id === cid
+                ? {
+                    ...prev,
+                    ...data,
+                    messages: data.messages,
+                    participants: data.participants ?? prev.participants,
+                  }
+                : prev
+            );
+          }
+        })
+        .catch(() => {});
+    }, 10000);
+    return () => clearInterval(id);
+  }, [selectedConversation?.id]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [selectedConversation?.messages, scrollToBottom]);
+
+  useEffect(() => {
+    if (newConvDepartment) fetchAdmins(newConvDepartment);
+  }, [newConvDepartment, fetchAdmins]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    const sync = () => setNotifyPermission(Notification.permission);
+    sync();
+    window.addEventListener("focus", sync);
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      window.removeEventListener("focus", sync);
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, []);
+
+  const handleBellNotificationClick = useCallback(async () => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      toast.error("المتصفح لا يدعم إشعارات سطح المكتب");
+      return;
+    }
+    if (!window.isSecureContext) {
+      toast.error("الإشعارات تعمل على اتصال آمن (HTTPS)");
+      return;
+    }
+    let perm = Notification.permission;
+    setNotifyPermission(perm);
+    if (perm === "default") {
+      try {
+        perm = await Notification.requestPermission();
+        setNotifyPermission(perm);
+      } catch {
+        toast.error("فشل طلب إذن الإشعارات");
+        return;
+      }
+    }
+    if (perm === "granted") {
+      try {
+        const testNotif = new Notification("تجربة ناجحة 🎉", {
+          body: "إشعارات المراسلات الداخلية جاهزة.",
+          icon: "/favicon.ico",
+        });
+        setTimeout(() => testNotif.close(), 4000);
+        toast.success("تم إرسال إشعار تجريبي");
+      } catch {
+        toast.error("تعذر عرض الإشعار");
+      }
+      return;
+    }
+    toast.error(
+      "تم رفض الإشعارات. اسمح بالإشعارات من إعدادات المتصفح لهذا الموقع."
+    );
+  }, []);
 
   async function handleCreateConversation() {
-    if (!newConvDepartment || !newConvSubject.trim() || !newConvMessage.trim()) return;
+    if (!newConvDepartment || !newConvSubject.trim() || !newConvMessage.trim())
+      return;
 
     try {
       setSending(true);
       const res = await fetch(`${API_URL}/api/admin-messages/conversations`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: JSON_HEADERS(),
         credentials: "include",
         body: JSON.stringify({
           department: newConvDepartment,
@@ -219,13 +391,13 @@ export default function AdminMessagesPage() {
 
       if (res.ok) {
         const newConv = await res.json();
-        setConversations(prev => [newConv, ...prev]);
+        setConversations((prev) => [newConv, ...prev]);
         setShowNewMessage(false);
         setNewConvDepartment("");
         setNewConvSubject("");
         setNewConvMessage("");
         setSelectedParticipants([]);
-        fetchConversation(newConv.id);
+        void fetchConversation(newConv.id);
       }
     } catch (err) {
       console.error("Error creating conversation:", err);
@@ -239,19 +411,23 @@ export default function AdminMessagesPage() {
 
     try {
       setSending(true);
-      const res = await fetch(`/api/admin-messages/conversations/${selectedConversation.id}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ content: replyMessage.trim() }),
-      });
+      const res = await fetch(
+        `${API_URL}/api/admin-messages/conversations/${selectedConversation.id}/messages`,
+        {
+          method: "POST",
+          headers: JSON_HEADERS(),
+          credentials: "include",
+          body: JSON.stringify({ content: replyMessage.trim() }),
+        }
+      );
 
       if (res.ok) {
         const newMessage = await res.json();
-        setSelectedConversation(prev => prev ? {
-          ...prev,
-          messages: [...prev.messages, newMessage],
-        } : null);
+        setSelectedConversation((prev) =>
+          prev
+            ? { ...prev, messages: [...prev.messages, newMessage] }
+            : null
+        );
         setReplyMessage("");
       }
     } catch (err) {
@@ -278,118 +454,209 @@ export default function AdminMessagesPage() {
 
   const formatTime = (dateStr: string) => {
     const date = new Date(dateStr);
-    return date.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+    return date.toLocaleTimeString("ar-SA", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
   const toggleParticipant = (id: string) => {
-    setSelectedParticipants(prev =>
-      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
+    setSelectedParticipants((prev) =>
+      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
     );
   };
 
-  if (isLoading) {
+  const previewLine = (text: string, max = 52) => {
+    const t = (text || "").trim();
+    if (t.length <= max) return t;
+    return `${t.slice(0, max)}…`;
+  };
+
+  const totalUnread = conversations.reduce(
+    (s, c) => s + (c.unread_count || 0),
+    0
+  );
+
+  const selectThread = (id: number) => {
+    void fetchConversation(id);
+    replyInputRef.current?.focus();
+  };
+
+  if (isLoading && conversations.length === 0) {
     return (
       <div className="flex items-center justify-center h-96" dir="rtl">
-        <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37]" />
+        <Loader2 className="w-8 h-8 animate-spin text-[#002845]" />
       </div>
     );
   }
 
   return (
-    <div className="p-6" dir="rtl">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-[#002845]">المراسلات الداخلية</h1>
-          <p className="text-slate-500 mt-1">تواصل مع فريق الإدارة</p>
+    <div
+      className="flex flex-col h-[calc(100vh-90px)] w-full max-w-[1600px] mx-auto bg-[#f0f4f8] overflow-hidden rounded-xl border border-slate-200"
+      dir="rtl"
+    >
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 p-4 bg-white border-b border-slate-200">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#002845] to-[#003d5c] flex items-center justify-center shadow-md shrink-0">
+            <MessageCircle className="w-5 h-5 text-white" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-xl font-black text-[#002845] truncate">
+              المراسلات الداخلية
+            </h1>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              {totalUnread > 0 ? (
+                <span className="text-emerald-600 font-bold">
+                  {totalUnread} غير مقروء — بين زملاء الإدارة فقط
+                </span>
+              ) : (
+                "لا توجد رسائل غير مقروءة في فريقك"
+              )}
+            </p>
+            <p className="text-[11px] text-slate-400 mt-1 max-w-xl">
+              يختلف عن «مراقبة المحادثات»: هناك تتابع رسائل المستخدمين على
+              الإعلانات؛ هنا محادثات الموظفين داخل لوحة التحكم.
+            </p>
+          </div>
         </div>
-        <button
-          onClick={() => setShowNewMessage(true)}
-          className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all"
-        >
-          <Plus className="w-5 h-5" />
-          <span>رسالة جديدة</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void fetchConversations(false)}
+            disabled={loadingConvos}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${loadingConvos ? "animate-spin" : ""}`}
+            />
+            تحديث
+          </button>
+          {notifyPermission !== "denied" && (
+            <button
+              type="button"
+              onClick={() => void handleBellNotificationClick()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50"
+            >
+              <Bell className="h-4 w-4" />
+              {notifyPermission === "granted"
+                ? "تجربة الإشعار"
+                : "تفعيل الإشعارات"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowNewMessage(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-[#002845] text-white px-4 py-2 text-sm font-bold hover:bg-[#003d5c] shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            رسالة جديدة
+          </button>
+        </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1">
-          <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-gradient-to-r from-[#002845] to-[#003d5c]">
-              <h2 className="text-lg font-bold text-white">المحادثات</h2>
-            </div>
-
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+        <div
+          className={`w-full md:w-80 flex flex-col shrink-0 bg-slate-50 border-l border-slate-200 overflow-hidden ${
+            selectedConversation ? "max-md:hidden" : ""
+          }`}
+        >
+          <div className="shrink-0 p-3 bg-white border-b border-slate-100">
+            <h2 className="text-sm font-bold text-[#002845]">
+              المحادثات ({conversations.length})
+            </h2>
+          </div>
+          <div className="flex-1 overflow-y-auto min-h-0">
             {conversations.length === 0 ? (
               <div className="p-8 text-center">
                 <MessageCircle className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                <p className="text-slate-500">لا توجد محادثات</p>
-                <p className="text-sm text-slate-400 mt-1">ابدأ محادثة جديدة مع فريق الإدارة</p>
+                <p className="text-slate-500 text-sm">لا توجد محادثات</p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
+              <div className="divide-y divide-slate-100">
                 {conversations.map((conv) => {
                   const isSelected = selectedConversation?.id === conv.id;
                   const recipients = conv.other_participants || [];
-                  const recipientNames = recipients.map(p => p.name || ROLE_NAMES[p.role] || 'مدير').join('، ');
+                  const recipientNames = recipients
+                    .map((p) => p.name || ROLE_NAMES[p.role] || "مدير")
+                    .join("، ");
+                  const unread = conv.unread_count || 0;
+                  const awaiting = conv.awaiting_reply_count || 0;
 
                   return (
                     <button
                       key={conv.id}
-                      onClick={() => fetchConversation(conv.id)}
-                      className={`w-full p-4 text-right transition-all hover:bg-slate-50 ${
-                        isSelected ? "bg-[#D4AF37]/10 border-r-4 border-[#D4AF37]" : ""
+                      type="button"
+                      onClick={() => selectThread(conv.id)}
+                      className={`w-full p-3 text-right transition-colors border-b border-slate-50 ${
+                        isSelected
+                          ? "border-r-2 border-r-[#002845] bg-[#002845]/5"
+                          : "hover:bg-slate-50"
                       }`}
                     >
-                      <div className="flex items-start gap-3">
-                        <div className="relative">
+                      <div className="flex items-start gap-2">
+                        <div className="relative shrink-0">
                           <div
-                            className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg"
-                            style={{ backgroundColor: conv.department_info?.color || "#4CAF50" }}
+                            className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-base"
+                            style={{
+                              backgroundColor:
+                                conv.department_info?.color || "#4CAF50",
+                            }}
                           >
                             {conv.department_info?.icon || "📢"}
                           </div>
-                          {conv.initiated_by_me && (
-                            <div className="absolute -top-1 -left-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                              <Send className="w-2.5 h-2.5 text-white" />
-                            </div>
+                          {unread > 0 && (
+                            <span
+                              className="absolute -top-0.5 -left-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white"
+                              title="غير مقروء"
+                            />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="font-semibold text-[#002845] truncate">
-                                {conv.subject}
-                              </span>
-                              {conv.initiated_by_me && (
-                                <span className="bg-blue-100 text-blue-700 text-xs px-1.5 py-0.5 rounded shrink-0">
-                                  أرسلته
+                            <span className="font-bold text-sm text-[#002845] truncate">
+                              {conv.subject}
+                            </span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {awaiting > 0 && (
+                                <span
+                                  className="bg-rose-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full"
+                                  title="بانتظار ردك"
+                                >
+                                  {awaiting}
+                                </span>
+                              )}
+                              {unread > 0 && (
+                                <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white">
+                                  {unread}
                                 </span>
                               )}
                             </div>
-                            {conv.awaiting_reply_count > 0 && (
-                              <span className="bg-red-500 text-white text-xs font-bold min-w-[22px] h-[22px] flex items-center justify-center rounded-full shrink-0 animate-pulse shadow-lg shadow-red-500/30">
-                                {conv.awaiting_reply_count}
-                              </span>
-                            )}
                           </div>
-                          <div className="flex items-center gap-1 mt-1 text-xs">
-                            <span className="text-slate-400">
-                              {conv.initiated_by_me ? 'إلى:' : 'من:'}
-                            </span>
-                            <span className="text-slate-600 font-medium truncate">
-                              {conv.initiated_by_me ? recipientNames || 'المدراء' : conv.creator_name}
+                          <div className="flex items-center gap-1 mt-0.5 text-[11px] text-slate-500">
+                            <span>{conv.initiated_by_me ? "إلى:" : "من:"}</span>
+                            <span className="truncate font-medium">
+                              {conv.initiated_by_me
+                                ? recipientNames || "المدراء"
+                                : conv.creator_name}
                             </span>
                           </div>
                           {conv.last_message && (
-                            <p className="text-xs text-slate-400 truncate mt-1">
-                              {conv.last_message_by_me ? 'أنت: ' : `${conv.last_message.sender_name || 'مدير'}: `}
-                              {conv.last_message.content?.slice(0, 50)}...
+                            <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                              {conv.last_message_by_me ? "أنت: " : ""}
+                              {previewLine(conv.last_message.content || "")}
                             </p>
                           )}
                           <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: conv.department_info?.color + '20', color: conv.department_info?.color }}>
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded"
+                              style={{
+                                backgroundColor: `${conv.department_info?.color || "#4CAF50"}20`,
+                                color: conv.department_info?.color || "#4CAF50",
+                              }}
+                            >
                               {conv.department_info?.name_ar || "عام"}
                             </span>
-                            <span className="text-xs text-slate-400">
+                            <span className="text-[10px] text-slate-400">
                               {formatDate(conv.last_message_at)}
                             </span>
                           </div>
@@ -403,101 +670,114 @@ export default function AdminMessagesPage() {
           </div>
         </div>
 
-        <div className="lg:col-span-2">
+        <div
+          className={`flex-1 flex flex-col min-h-0 overflow-hidden bg-white ${
+            !selectedConversation ? "max-md:hidden" : ""
+          }`}
+        >
           {selectedConversation ? (
-            <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden h-[600px] flex flex-col">
-              <div className="p-4 border-b border-slate-100 bg-gradient-to-r from-[#002845] to-[#003d5c]">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setSelectedConversation(null)}
-                      className="lg:hidden p-2 rounded-lg hover:bg-white/10"
-                    >
-                      <ChevronLeft className="w-5 h-5 text-white" />
-                    </button>
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg"
-                      style={{ backgroundColor: selectedConversation.department_info?.color || "#4CAF50" }}
-                    >
-                      {selectedConversation.department_info?.icon || "📢"}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-white">
-                        {selectedConversation.subject}
-                      </h3>
-                      <p className="text-xs text-white/70">
-                        {selectedConversation.department_info?.name_ar || "عام"}
-                      </p>
-                    </div>
+            <>
+              <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-50 border-b border-slate-100">
+                <div className="flex items-center gap-2 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedConversation(null)}
+                    className="md:hidden p-2 rounded-lg hover:bg-slate-200 shrink-0"
+                    aria-label="رجوع للقائمة"
+                  >
+                    <ChevronLeft className="w-5 h-5 text-[#002845]" />
+                  </button>
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-base shrink-0"
+                    style={{
+                      backgroundColor:
+                        selectedConversation.department_info?.color || "#4CAF50",
+                    }}
+                  >
+                    {selectedConversation.department_info?.icon || "📢"}
                   </div>
-                  <div className="text-left">
-                    {(() => {
-                      const otherParticipants = selectedConversation.participants?.filter(
-                        p => String(p.user_id) !== String(currentUserId)
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-[#002845] text-sm truncate">
+                      {selectedConversation.subject}
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      {selectedConversation.department_info?.name_ar || "عام"}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-left text-[11px] text-slate-500">
+                  {(() => {
+                    const otherParticipants =
+                      selectedConversation.participants?.filter(
+                        (p) => String(p.user_id) !== String(currentUserId)
                       ) || [];
-                      return (
-                        <>
-                          <div className="flex items-center gap-2">
-                            <Users className="w-4 h-4 text-white/60" />
-                            <span className="text-xs text-white/60">
-                              {otherParticipants.length > 0 ? `${otherParticipants.length} طرف آخر` : 'أنت فقط'}
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-1 mt-1 justify-end max-w-[200px]">
-                            {otherParticipants.slice(0, 3).map((p, idx) => (
-                              <span 
-                                key={idx}
-                                className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/20 text-white/90"
-                              >
-                                {p.name || ROLE_NAMES[p.role] || 'مدير'}
-                              </span>
-                            ))}
-                            {otherParticipants.length > 3 && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/20 text-white/90">
-                                +{otherParticipants.length - 3}
-                              </span>
-                            )}
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
+                    return (
+                      <div className="flex items-center gap-1 justify-end flex-wrap">
+                        <Users className="w-3.5 h-3.5 shrink-0" />
+                        <span>
+                          {otherParticipants.length > 0
+                            ? `${otherParticipants.length} مشارك`
+                            : "أنت فقط"}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
+              <div
+                ref={messagesContainerRef}
+                className="flex-1 overflow-y-auto min-h-0 p-4 space-y-3 bg-[#e5ddd5]/20"
+              >
                 {selectedConversation.messages.map((msg) => {
                   const isMe = String(msg.sender_id) === String(currentUserId);
-                  const roleColor = ROLE_COLORS[msg.sender_role] || '#6B7280';
-                  
+
                   return (
                     <div
                       key={msg.id}
-                      className={`flex ${isMe ? "justify-end" : "justify-start"}`}
+                      className={`flex ${isMe ? "justify-start" : "justify-end"}`}
                     >
                       <div
-                        className={`max-w-[80%] rounded-2xl px-4 py-3 shadow-sm ${
+                        className={`max-w-[72%] whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm ${
                           isMe
-                            ? "bg-gradient-to-r from-[#FCA5A5] to-[#F87171] text-gray-800 rounded-bl-md"
-                            : "bg-gradient-to-r from-[#16A34A] to-[#15803D] text-white rounded-br-md"
+                            ? "rounded-tl-sm bg-white text-slate-800"
+                            : "rounded-tr-sm bg-[#002845] text-white"
                         }`}
                       >
-                        <div className={`flex items-center gap-2 mb-1 ${isMe ? "justify-end" : ""}`}>
-                          <span className={`text-xs font-medium ${isMe ? "text-gray-700" : "text-white/90"}`}>
-                            {isMe ? 'أنت' : msg.sender_name}
+                        <div
+                          className={`flex items-center gap-2 mb-1 flex-wrap ${isMe ? "" : "justify-end"}`}
+                        >
+                          <span
+                            className={`text-[11px] font-bold ${isMe ? "text-slate-700" : "text-white/90"}`}
+                          >
+                            {isMe ? "أنت" : msg.sender_name}
                           </span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${isMe ? "bg-white/50 text-gray-600" : "bg-white/20 text-white/80"}`}>
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded ${
+                              isMe
+                                ? "bg-slate-100 text-slate-600"
+                                : "bg-white/15 text-white/85"
+                            }`}
+                          >
                             {ROLE_NAMES[msg.sender_role] || msg.sender_role}
                           </span>
                         </div>
-                        <p className={`text-sm leading-relaxed ${isMe ? "text-gray-800" : "text-white"}`}>
+                        <p
+                          className={
+                            isMe ? "text-slate-800" : "text-white"
+                          }
+                        >
                           {msg.content}
                         </p>
-                        <div className={`flex items-center gap-1 mt-2 ${isMe ? "justify-end" : ""}`}>
-                          <Clock className={`w-3 h-3 ${isMe ? "text-gray-500" : "text-white/60"}`} />
-                          <span className={`text-[10px] ${isMe ? "text-gray-500" : "text-white/60"}`}>
-                            {formatTime(msg.created_at)}
-                          </span>
+                        <div
+                          className={`mt-1 flex items-center gap-1 text-[10px] ${
+                            isMe
+                              ? "justify-start text-slate-400"
+                              : "justify-end text-white/60"
+                          }`}
+                        >
+                          {formatTime(msg.created_at)}
+                          {isMe && <CheckCheck className="h-3 w-3" />}
                         </div>
                       </div>
                     </div>
@@ -506,20 +786,28 @@ export default function AdminMessagesPage() {
                 <div ref={messagesEndRef} />
               </div>
 
-              <div className="p-4 border-t border-slate-100 bg-white">
-                <div className="flex gap-3">
-                  <input
-                    type="text"
+              <div className="shrink-0 p-3 bg-white border-t border-slate-200">
+                <div className="flex gap-2">
+                  <textarea
+                    ref={replyInputRef}
                     value={replyMessage}
                     onChange={(e) => setReplyMessage(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSendReply()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void handleSendReply();
+                      }
+                    }}
+                    rows={2}
                     placeholder="اكتب ردك هنا..."
-                    className="flex-1 px-4 py-3 border border-slate-200 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none"
+                    className="flex-1 resize-none rounded-xl border border-slate-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#002845]/25 font-sans leading-relaxed"
+                    dir="rtl"
                   />
                   <button
-                    onClick={handleSendReply}
+                    type="button"
+                    onClick={() => void handleSendReply()}
                     disabled={sending || !replyMessage.trim()}
-                    className="px-5 py-3 bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-white rounded-xl font-semibold shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-12 rounded-xl bg-[#002845] text-white flex items-center justify-center hover:bg-[#003d5c] disabled:opacity-50"
                   >
                     {sending ? (
                       <Loader2 className="w-5 h-5 animate-spin" />
@@ -529,13 +817,15 @@ export default function AdminMessagesPage() {
                   </button>
                 </div>
               </div>
-            </div>
+            </>
           ) : (
-            <div className="bg-white rounded-2xl shadow-lg border border-slate-100 h-[600px] flex items-center justify-center">
-              <div className="text-center">
-                <MessageCircle className="w-16 h-16 text-slate-200 mx-auto mb-4" />
-                <h3 className="text-xl font-bold text-slate-400">اختر محادثة</h3>
-                <p className="text-slate-400 mt-2">أو ابدأ محادثة جديدة مع فريق الإدارة</p>
+            <div className="flex-1 flex items-center justify-center text-slate-400 p-6">
+              <div className="text-center max-w-sm">
+                <MessageCircle className="w-14 h-14 text-slate-200 mx-auto mb-3" />
+                <p className="font-bold text-slate-500">اختر محادثة</p>
+                <p className="text-sm mt-1">
+                  أو ابدأ رسالة جديدة مع فريق الإدارة
+                </p>
               </div>
             </div>
           )}
@@ -558,9 +848,10 @@ export default function AdminMessagesPage() {
               onClick={(e: React.MouseEvent) => e.stopPropagation()}
               className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col"
             >
-              <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-[#002845] to-[#003d5c] flex items-center justify-between">
+              <div className="p-5 border-b border-slate-100 bg-[#002845] flex items-center justify-between">
                 <h3 className="text-xl font-bold text-white">رسالة جديدة</h3>
                 <button
+                  type="button"
                   onClick={() => setShowNewMessage(false)}
                   className="p-2 rounded-lg hover:bg-white/10 text-white"
                 >
@@ -575,14 +866,15 @@ export default function AdminMessagesPage() {
                   </label>
                   <div className="grid grid-cols-3 gap-3">
                     {departments.map((dept) => {
-                      const isSelected = newConvDepartment === dept.id;
+                      const sel = newConvDepartment === dept.id;
                       return (
                         <button
                           key={dept.id}
+                          type="button"
                           onClick={() => setNewConvDepartment(dept.id)}
                           className={`p-3 rounded-xl border-2 transition-all text-center ${
-                            isSelected
-                              ? "border-[#D4AF37] bg-[#D4AF37]/10"
+                            sel
+                              ? "border-[#002845] bg-[#002845]/5"
                               : "border-slate-200 hover:border-slate-300"
                           }`}
                         >
@@ -592,7 +884,9 @@ export default function AdminMessagesPage() {
                           >
                             {dept.icon}
                           </div>
-                          <span className={`text-xs font-medium ${isSelected ? "text-[#D4AF37]" : "text-slate-600"}`}>
+                          <span
+                            className={`text-xs font-medium ${sel ? "text-[#002845]" : "text-slate-600"}`}
+                          >
                             {dept.name_ar}
                           </span>
                         </button>
@@ -608,29 +902,31 @@ export default function AdminMessagesPage() {
                     </label>
                     <div className="space-y-2 max-h-32 overflow-y-auto">
                       {admins.map((admin) => {
-                        const isSelected = selectedParticipants.includes(admin.id);
+                        const sel = selectedParticipants.includes(admin.id);
                         return (
                           <button
                             key={admin.id}
+                            type="button"
                             onClick={() => toggleParticipant(admin.id)}
                             className={`w-full p-3 rounded-xl border transition-all text-right flex items-center gap-3 ${
-                              isSelected
-                                ? "border-[#D4AF37] bg-[#D4AF37]/10"
+                              sel
+                                ? "border-[#002845] bg-[#002845]/5"
                                 : "border-slate-200 hover:border-slate-300"
                             }`}
                           >
-                            <div 
-                              className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
-                              style={{ backgroundColor: ROLE_COLORS[admin.role] || '#6B7280' }}
-                            >
-                              {admin.name?.charAt(0) || '؟'}
+                            <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-sm font-bold text-slate-600">
+                              {admin.name?.charAt(0) || "؟"}
                             </div>
-                            <div className="flex-1">
-                              <p className="text-sm font-medium text-slate-700">{admin.name}</p>
-                              <p className="text-xs text-slate-400">{ROLE_NAMES[admin.role]}</p>
+                            <div className="flex-1 text-right">
+                              <p className="text-sm font-medium text-slate-700">
+                                {admin.name}
+                              </p>
+                              <p className="text-xs text-slate-400">
+                                {ROLE_NAMES[admin.role]}
+                              </p>
                             </div>
-                            {isSelected && (
-                              <CheckCircle2 className="w-5 h-5 text-[#D4AF37]" />
+                            {sel && (
+                              <CheckCircle2 className="w-5 h-5 text-[#002845]" />
                             )}
                           </button>
                         );
@@ -648,7 +944,7 @@ export default function AdminMessagesPage() {
                     value={newConvSubject}
                     onChange={(e) => setNewConvSubject(e.target.value)}
                     placeholder="مثال: استفسار عن الباقات"
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none"
+                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:border-[#002845] focus:ring-2 focus:ring-[#002845]/20 outline-none"
                   />
                 </div>
 
@@ -661,22 +957,29 @@ export default function AdminMessagesPage() {
                     onChange={(e) => setNewConvMessage(e.target.value)}
                     placeholder="اكتب رسالتك هنا..."
                     rows={4}
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none resize-none"
+                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:border-[#002845] focus:ring-2 focus:ring-[#002845]/20 outline-none resize-none"
                   />
                 </div>
               </div>
 
               <div className="p-5 border-t border-slate-100 flex gap-3">
                 <button
+                  type="button"
                   onClick={() => setShowNewMessage(false)}
                   className="flex-1 px-5 py-3 border border-slate-200 text-slate-600 rounded-xl font-semibold hover:bg-slate-50 transition"
                 >
                   إلغاء
                 </button>
                 <button
-                  onClick={handleCreateConversation}
-                  disabled={sending || !newConvDepartment || !newConvSubject.trim() || !newConvMessage.trim()}
-                  className="flex-1 px-5 py-3 bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-white rounded-xl font-semibold shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  type="button"
+                  onClick={() => void handleCreateConversation()}
+                  disabled={
+                    sending ||
+                    !newConvDepartment ||
+                    !newConvSubject.trim() ||
+                    !newConvMessage.trim()
+                  }
+                  className="flex-1 px-5 py-3 bg-[#002845] text-white rounded-xl font-semibold shadow-md hover:bg-[#003d5c] transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {sending ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
