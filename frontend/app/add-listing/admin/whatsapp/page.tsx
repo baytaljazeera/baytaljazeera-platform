@@ -221,10 +221,9 @@ export default function WhatsAppCommandCenter() {
                     body: `من: ${newMsgConvo.phone}\n${newMsgConvo.last_message}`,
                     icon: "/favicon.ico",
                     tag: "new-whatsapp-msg",
+                    requireInteraction: true,
                   }
                 );
-
-                setTimeout(() => notification.close(), 5000);
 
                 notification.onclick = () => {
                   window.focus();
