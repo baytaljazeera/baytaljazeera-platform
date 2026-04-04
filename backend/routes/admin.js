@@ -1348,6 +1348,25 @@ router.patch("/flag-conversation/:id", authMiddleware, requireRoles('super_admin
   res.json({ ok: true, flag: result.rows[0] });
 }));
 
+/** Hard-delete AI flag row only (does not delete listing_messages). super_admin / admin only. */
+router.delete("/flag-conversation/:id", authMiddleware, requireRoles('super_admin', 'admin'), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const result = await db.query(
+    `DELETE FROM flagged_conversations WHERE id = $1 RETURNING id, listing_id, user1_id, user2_id`,
+    [id]
+  );
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: "الوسم غير موجود" });
+  }
+  const row = result.rows[0];
+  await logAdminAction(req, AUDIT_ACTIONS.CONVERSATION_FLAG_DELETE, 'flagged_conversation', String(row.id), {
+    listing_id: row.listing_id,
+    user1_id: row.user1_id,
+    user2_id: row.user2_id,
+  });
+  res.json({ ok: true, deletedId: row.id });
+}));
+
 router.get("/flagged-conversations", authMiddleware, requireRoles('super_admin', 'support_admin'), asyncHandler(async (req, res) => {
   const { status } = req.query;
   
@@ -1387,9 +1406,38 @@ router.get("/conversation-stats", authMiddleware, requireRoles('super_admin', 's
       COUNT(*) as total_messages,
       COUNT(DISTINCT sender_id) as unique_senders,
       COUNT(DISTINCT listing_id) as listings_with_messages,
-      (SELECT COUNT(*) FROM flagged_conversations WHERE status = 'pending') as pending_flags,
-      (SELECT COUNT(*) FROM flagged_conversations WHERE status = 'investigating') as investigating_flags,
-      (SELECT COUNT(*) FROM flagged_conversations) as total_flags
+      (
+        SELECT COUNT(*) FROM flagged_conversations fc
+        WHERE fc.status = 'pending'
+        AND fc.listing_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM listing_messages lm
+          WHERE lm.listing_id = fc.listing_id
+          AND LEAST(lm.sender_id, lm.recipient_id) = LEAST(fc.user1_id, fc.user2_id)
+          AND GREATEST(lm.sender_id, lm.recipient_id) = GREATEST(fc.user1_id, fc.user2_id)
+        )
+      ) as pending_flags,
+      (
+        SELECT COUNT(*) FROM flagged_conversations fc
+        WHERE fc.status = 'investigating'
+        AND fc.listing_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM listing_messages lm
+          WHERE lm.listing_id = fc.listing_id
+          AND LEAST(lm.sender_id, lm.recipient_id) = LEAST(fc.user1_id, fc.user2_id)
+          AND GREATEST(lm.sender_id, lm.recipient_id) = GREATEST(fc.user1_id, fc.user2_id)
+        )
+      ) as investigating_flags,
+      (
+        SELECT COUNT(*) FROM flagged_conversations fc
+        WHERE fc.listing_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM listing_messages lm
+          WHERE lm.listing_id = fc.listing_id
+          AND LEAST(lm.sender_id, lm.recipient_id) = LEAST(fc.user1_id, fc.user2_id)
+          AND GREATEST(lm.sender_id, lm.recipient_id) = GREATEST(fc.user1_id, fc.user2_id)
+        )
+      ) as total_flags
     FROM listing_messages
   `);
   

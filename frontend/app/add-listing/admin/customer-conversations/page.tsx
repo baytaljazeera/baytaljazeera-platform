@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { 
   MessageCircle, Search, Eye, Building, User, ChevronLeft, ChevronRight, 
   Filter, X, Flag, AlertTriangle, Shield, Brain, History, BarChart3,
-  CheckCircle, Clock, XCircle, UserX
+  CheckCircle, Clock, XCircle, UserX, Trash2
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -123,7 +123,27 @@ export default function AdminCustomerConversationsPage() {
   const [updatingFlagId, setUpdatingFlagId] = useState<number | null>(null);
   const [showActionModal, setShowActionModal] = useState(false);
   const [selectedFlag, setSelectedFlag] = useState<(ConversationFlag & { user1_id: string; user2_id: string; user1_name: string; user2_name: string }) | null>(null);
-  const [adminNote, setAdminNote] = useState('');;
+  const [adminNote, setAdminNote] = useState('');
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [showDeleteFlagModal, setShowDeleteFlagModal] = useState(false);
+  const [flagIdPendingDelete, setFlagIdPendingDelete] = useState<number | null>(null);
+  const [deletingFlagId, setDeletingFlagId] = useState<number | null>(null);
+
+  const canHardDeleteFlag =
+    currentUserRole === "super_admin" || currentUserRole === "admin";
+
+  const fetchCurrentUser = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/me`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        const u = data.user || data;
+        setCurrentUserRole(u?.role ?? null);
+      }
+    } catch {
+      setCurrentUserRole(null);
+    }
+  }, []);
 
   const fetchConversations = useCallback(async () => {
     try {
@@ -272,14 +292,19 @@ export default function AdminCustomerConversationsPage() {
       });
       
       if (res.ok) {
+        toast.success(newStatus === "dismissed" ? "تم تجاهل الوسم" : "تم تحديث حالة الوسم");
         fetchFlaggedConversations();
         fetchStats();
+        fetchConversations();
         if (selectedConvId) {
           fetchConversationDetail(selectedConvId);
         }
         setShowActionModal(false);
         setAdminNote('');
         setSelectedFlag(null);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "فشل التحديث");
       }
     } catch (err) {
       console.error("Error updating flag status:", err);
@@ -292,6 +317,41 @@ export default function AdminCustomerConversationsPage() {
     setSelectedFlag(flag);
     setAdminNote(flag?.admin_note || '');
     setShowActionModal(true);
+  };
+
+  const openDeleteFlagModal = (flagId: number) => {
+    setFlagIdPendingDelete(flagId);
+    setShowDeleteFlagModal(true);
+  };
+
+  const deleteFlagHard = async () => {
+    if (flagIdPendingDelete == null) return;
+    setDeletingFlagId(flagIdPendingDelete);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/flag-conversation/${flagIdPendingDelete}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (res.ok) {
+        toast.success("تم مسح الوسم نهائياً من السجل");
+        setShowDeleteFlagModal(false);
+        setFlagIdPendingDelete(null);
+        fetchFlaggedConversations();
+        fetchStats();
+        fetchConversations();
+        if (selectedConvId) {
+          fetchConversationDetail(selectedConvId);
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "فشل مسح الوسم");
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("خطأ في الاتصال بالخادم");
+    } finally {
+      setDeletingFlagId(null);
+    }
   };
 
   const sendWarningAlert = async (userId: string, userName: string) => {
@@ -336,7 +396,8 @@ export default function AdminCustomerConversationsPage() {
     fetchConversations();
     fetchStats();
     fetchFlaggedConversations();
-  }, [fetchConversations]);
+    fetchCurrentUser();
+  }, [fetchConversations, fetchCurrentUser]);
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -588,7 +649,7 @@ export default function AdminCustomerConversationsPage() {
                             {FLAG_STATUSES.find(s => s.value === selectedConversation.flag?.status)?.label}
                           </span>
                         </div>
-                        <div className="flex gap-2 mt-2">
+                        <div className="flex flex-wrap gap-2 mt-2">
                           {selectedConversation.flag.status === 'pending' && (
                             <>
                               <button
@@ -601,10 +662,21 @@ export default function AdminCustomerConversationsPage() {
                               <button
                                 onClick={() => updateFlagStatus(selectedConversation.flag!.id, 'dismissed')}
                                 disabled={updatingFlagId === selectedConversation.flag.id}
-                                className="px-3 py-1.5 bg-gray-400 text-white text-xs rounded-lg hover:bg-gray-500 transition disabled:opacity-50"
+                                className="px-3 py-1.5 bg-slate-500 text-white text-xs rounded-lg hover:bg-slate-600 transition disabled:opacity-50"
                               >
-                                رفض البلاغ
+                                تجاهل الوسم
                               </button>
+                              {canHardDeleteFlag && (
+                                <button
+                                  type="button"
+                                  onClick={() => openDeleteFlagModal(selectedConversation.flag!.id)}
+                                  disabled={deletingFlagId === selectedConversation.flag.id}
+                                  className="px-3 py-1.5 border border-red-300 bg-red-50 text-red-700 text-xs rounded-lg hover:bg-red-100 transition disabled:opacity-50 flex items-center gap-1"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  مسح نهائي للوسم
+                                </button>
+                              )}
                             </>
                           )}
                           {selectedConversation.flag.status === 'investigating' && (
@@ -629,10 +701,41 @@ export default function AdminCustomerConversationsPage() {
                               >
                                 تحذير/حظر
                               </button>
+                              <button
+                                onClick={() => updateFlagStatus(selectedConversation.flag!.id, 'dismissed')}
+                                disabled={updatingFlagId === selectedConversation.flag.id}
+                                className="px-3 py-1.5 bg-slate-500 text-white text-xs rounded-lg hover:bg-slate-600 transition disabled:opacity-50"
+                              >
+                                تجاهل الوسم
+                              </button>
+                              {canHardDeleteFlag && (
+                                <button
+                                  type="button"
+                                  onClick={() => openDeleteFlagModal(selectedConversation.flag!.id)}
+                                  disabled={deletingFlagId === selectedConversation.flag.id}
+                                  className="px-3 py-1.5 border border-red-300 bg-red-50 text-red-700 text-xs rounded-lg hover:bg-red-100 transition disabled:opacity-50 flex items-center gap-1"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  مسح نهائي للوسم
+                                </button>
+                              )}
                             </>
                           )}
                           {(selectedConversation.flag.status === 'resolved' || selectedConversation.flag.status === 'dismissed') && (
-                            <span className="text-xs text-slate-500">تم الإغلاق</span>
+                            <>
+                              <span className="text-xs text-slate-500 self-center">تم الإغلاق</span>
+                              {canHardDeleteFlag && (
+                                <button
+                                  type="button"
+                                  onClick={() => openDeleteFlagModal(selectedConversation.flag!.id)}
+                                  disabled={deletingFlagId === selectedConversation.flag.id}
+                                  className="px-3 py-1.5 border border-red-300 bg-red-50 text-red-700 text-xs rounded-lg hover:bg-red-100 transition disabled:opacity-50 flex items-center gap-1"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  مسح نهائي للوسم
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                         {selectedConversation.flag.admin_note && (
@@ -746,10 +849,21 @@ export default function AdminCustomerConversationsPage() {
                           <button
                             onClick={() => updateFlagStatus(flag.id, 'dismissed')}
                             disabled={updatingFlagId === flag.id}
-                            className="px-3 py-1.5 bg-gray-400 text-white text-xs rounded-lg hover:bg-gray-500 transition disabled:opacity-50"
+                            className="px-3 py-1.5 bg-slate-500 text-white text-xs rounded-lg hover:bg-slate-600 transition disabled:opacity-50"
                           >
-                            رفض البلاغ
+                            تجاهل الوسم
                           </button>
+                          {canHardDeleteFlag && (
+                            <button
+                              type="button"
+                              onClick={() => openDeleteFlagModal(flag.id)}
+                              disabled={deletingFlagId === flag.id}
+                              className="px-3 py-1.5 border border-red-300 bg-red-50 text-red-700 text-xs rounded-lg hover:bg-red-100 transition disabled:opacity-50 flex items-center justify-center gap-1"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                              مسح نهائي للوسم
+                            </button>
+                          )}
                         </>
                       )}
                       {flag.status === 'investigating' && (
@@ -766,10 +880,40 @@ export default function AdminCustomerConversationsPage() {
                           >
                             تحذير/حظر
                           </button>
+                          <button
+                            onClick={() => updateFlagStatus(flag.id, 'dismissed')}
+                            disabled={updatingFlagId === flag.id}
+                            className="px-3 py-1.5 bg-slate-500 text-white text-xs rounded-lg hover:bg-slate-600 transition disabled:opacity-50"
+                          >
+                            تجاهل الوسم
+                          </button>
+                          {canHardDeleteFlag && (
+                            <button
+                              type="button"
+                              onClick={() => openDeleteFlagModal(flag.id)}
+                              disabled={deletingFlagId === flag.id}
+                              className="px-3 py-1.5 border border-red-300 bg-red-50 text-red-700 text-xs rounded-lg hover:bg-red-100 transition disabled:opacity-50 flex items-center justify-center gap-1"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                              مسح نهائي للوسم
+                            </button>
+                          )}
                         </>
                       )}
                       {(flag.status === 'resolved' || flag.status === 'dismissed') && (
-                        <span className="text-xs text-slate-400">تم الإغلاق</span>
+                        canHardDeleteFlag ? (
+                          <button
+                            type="button"
+                            onClick={() => openDeleteFlagModal(flag.id)}
+                            disabled={deletingFlagId === flag.id}
+                            className="px-3 py-1.5 border border-red-300 bg-red-50 text-red-700 text-xs rounded-lg hover:bg-red-100 transition disabled:opacity-50 flex items-center justify-center gap-1"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                            مسح نهائي للوسم
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400">تم الإغلاق</span>
+                        )
                       )}
                     </div>
                   </div>
@@ -908,6 +1052,55 @@ export default function AdminCustomerConversationsPage() {
         </div>
       )}
 
+      {showDeleteFlagModal && flagIdPendingDelete != null && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-flag-modal-title"
+        >
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
+            <div className="p-6 text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-100">
+                <AlertTriangle className="h-7 w-7 text-red-600" />
+              </div>
+              <h3 id="delete-flag-modal-title" className="text-lg font-bold text-[#002845] mb-2">
+                مسح نهائي للوسم؟
+              </h3>
+              <p className="text-sm text-slate-600 mb-6">
+                سيتم حذف سجل الوسم من قاعدة البيانات بشكل دائم. لن تُحذف رسائل المحادثة.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDeleteFlagModal(false);
+                    setFlagIdPendingDelete(null);
+                  }}
+                  disabled={deletingFlagId != null}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-200 transition disabled:opacity-50"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteFlagHard}
+                  disabled={deletingFlagId != null}
+                  className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {deletingFlagId != null ? (
+                    <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  تأكيد المسح
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showActionModal && selectedFlag && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-md">
@@ -945,11 +1138,11 @@ export default function AdminCustomerConversationsPage() {
                   <button
                     onClick={() => updateFlagStatus(selectedFlag.id, 'dismissed', adminNote)}
                     disabled={updatingFlagId === selectedFlag.id}
-                    className="p-3 bg-gray-400 text-white rounded-xl text-sm font-medium hover:bg-gray-500 transition disabled:opacity-50 flex flex-col items-center gap-1"
+                    className="p-3 bg-slate-500 text-white rounded-xl text-sm font-medium hover:bg-slate-600 transition disabled:opacity-50 flex flex-col items-center gap-1"
                   >
                     <XCircle className="w-5 h-5" />
-                    رفض البلاغ
-                    <span className="text-[10px] opacity-75">بلاغ غير صحيح</span>
+                    تجاهل الوسم
+                    <span className="text-[10px] opacity-75">إزالة من قائمة المتابعة</span>
                   </button>
                 </div>
               </div>

@@ -85,6 +85,7 @@ const AUDIT_ACTIONS = {
   ELITE_SLOT_APPROVE: 'elite_slot.approve',
   ELITE_SLOT_REJECT: 'elite_slot.reject',
   CONVERSATION_FLAG: 'conversation.flag',
+  CONVERSATION_FLAG_DELETE: 'conversation.flag_delete',
   USER_WARNING: 'user.warning',
   UPDATE_SIDEBAR_SETTINGS: 'sidebar.update',
 };
