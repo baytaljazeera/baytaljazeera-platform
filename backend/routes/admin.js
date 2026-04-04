@@ -1304,25 +1304,31 @@ router.get("/customer-history/:userId", authMiddleware, requireRoles('super_admi
 }));
 
 router.post("/flag-conversation", authMiddleware, requireRoles('super_admin', 'support_admin'), asyncHandler(async (req, res) => {
-  const { user1_id, user2_id, listing_id, flag_type, flag_reason, ai_analysis, ai_risk_score } = req.body;
+  const { user1_id, user2_id, listing_id, flag_type, flag_reason, ai_analysis, ai_risk_score, intent_category } = req.body;
   const flaggedBy = req.user.id;
   
   const existingFlag = await db.query(
     `SELECT id FROM flagged_conversations 
-     WHERE user1_id = $1 AND user2_id = $2 AND listing_id = $3 AND status != 'resolved'`,
+     WHERE user1_id = LEAST($1::uuid, $2::uuid) AND user2_id = GREATEST($1::uuid, $2::uuid)
+     AND listing_id = $3 AND status != 'resolved'`,
     [user1_id, user2_id, listing_id]
   );
   
   if (existingFlag.rows.length > 0) {
     return res.status(400).json({ error: "هذه المحادثة موسومة مسبقاً" });
   }
+
+  const intent =
+    intent_category && typeof intent_category === "string"
+      ? intent_category.trim().toLowerCase().replace(/[\s-]+/g, "_").slice(0, 100) || null
+      : null;
   
   const result = await db.query(
     `INSERT INTO flagged_conversations 
-     (user1_id, user2_id, listing_id, flag_type, flag_reason, ai_analysis, ai_risk_score, flagged_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     (user1_id, user2_id, listing_id, flag_type, intent_category, flag_reason, ai_analysis, ai_risk_score, flagged_by)
+     VALUES (LEAST($1::uuid, $2::uuid), GREATEST($1::uuid, $2::uuid), $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
-    [user1_id, user2_id, listing_id, flag_type || 'suspicious', flag_reason, ai_analysis, ai_risk_score || 0, flaggedBy]
+    [user1_id, user2_id, listing_id, flag_type || 'suspicious', intent, flag_reason, ai_analysis, ai_risk_score || 0, flaggedBy]
   );
   
   res.json({ ok: true, flag: result.rows[0] });

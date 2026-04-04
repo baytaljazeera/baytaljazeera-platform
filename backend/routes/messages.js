@@ -21,6 +21,13 @@ const SUSPICIOUS_PATTERNS = [
   { pattern: /\+966\s?\d{9}|\b05\d{8}\b/g, flag: "phone_number", name: "رقم سعودي" },
 ];
 
+/** Normalize LLM intent label for storage (snake_case, max 100 chars). */
+function normalizeIntentCategory(value) {
+  if (value == null || typeof value !== "string") return null;
+  const s = value.trim().toLowerCase().replace(/[\s-]+/g, "_").slice(0, 100);
+  return s || null;
+}
+
 async function autoAnalyzeMessage(senderId, recipientId, listingId, messageText) {
   try {
     const detectedPatterns = [];
@@ -43,14 +50,23 @@ async function autoAnalyzeMessage(senderId, recipientId, listingId, messageText)
 
 **أنماط مكتشفة:** ${detectedPatterns.map(p => p.name).join(', ')}
 
-**حلل وأجب بـ JSON فقط:**
+**حلل وأجب بـ JSON فقط (بدون نص خارج JSON):**
 {
-  "risk_score": (0-100),
-  "risk_level": ("safe"|"low"|"medium"|"high"|"critical"),
-  "primary_flag": ("suspicious"|"fraud"|"spam"|"inappropriate"|"external_contact"),
+  "risk_score": <0-100>,
+  "risk_level": "safe"|"low"|"medium"|"high"|"critical",
+  "primary_flag": "suspicious"|"fraud"|"spam"|"inappropriate"|"external_contact",
+  "intent_category": "<معرّف إنجليزي واحد بصيغة snake_case يصف النية الأساسية>",
   "analysis": "شرح مختصر",
   "recommendation": "التوصية"
-}`;
+}
+
+**intent_category** يجب أن يكون واحداً من القيم التالية عندما ينطبق، أو الأقرب منها:
+commission_bypass | harassment | scam | external_communication | spam | inappropriate | money_request | phone_share | other
+
+- commission_bypass: محاولة إتمام الصفقة أو دفع العمولة خارج المنصة
+- external_communication: دعوة للتواصل خارج المنصة (واتساب، تليجرام، إلخ)
+- scam | money_request | phone_share: حسب السياق
+- other: إذا لم يتطابق أي تصنيف بوضوح`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -68,13 +84,24 @@ async function autoAnalyzeMessage(senderId, recipientId, listingId, messageText)
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       analysis = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
     } catch (parseError) {
-      analysis = { risk_score: 30, risk_level: 'low', primary_flag: detectedPatterns[0]?.flag || 'suspicious', analysis: 'تحليل تلقائي', recommendation: 'مراقبة' };
+      analysis = {
+        risk_score: 30,
+        risk_level: "low",
+        primary_flag: detectedPatterns[0]?.flag || "suspicious",
+        intent_category: "other",
+        analysis: "تحليل تلقائي",
+        recommendation: "مراقبة",
+      };
+    }
+
+    if (analysis) {
+      analysis.intent_category = normalizeIntentCategory(analysis.intent_category);
     }
     
     if (analysis && analysis.risk_score >= 30) {
       const existingFlag = await db.query(
         `SELECT id FROM flagged_conversations 
-         WHERE ((user1_id = $1 AND user2_id = $2) OR (user1_id = $2 AND user2_id = $1))
+         WHERE user1_id = LEAST($1::uuid, $2::uuid) AND user2_id = GREATEST($1::uuid, $2::uuid)
          AND listing_id = $3 AND status IN ('pending', 'investigating')`,
         [senderId, recipientId, listingId]
       );
@@ -82,19 +109,20 @@ async function autoAnalyzeMessage(senderId, recipientId, listingId, messageText)
       if (existingFlag.rows.length === 0) {
         await db.query(
           `INSERT INTO flagged_conversations 
-           (user1_id, user2_id, listing_id, flag_type, flag_reason, ai_analysis, ai_risk_score, status, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW())`,
+           (user1_id, user2_id, listing_id, flag_type, intent_category, flag_reason, ai_analysis, ai_risk_score, status, created_at)
+           VALUES (LEAST($1::uuid, $2::uuid), GREATEST($1::uuid, $2::uuid), $3, $4, $5, $6, $7, $8, 'pending', NOW())`,
           [
             senderId,
             recipientId,
             listingId,
-            analysis.primary_flag || 'suspicious',
-            `تحليل تلقائي: ${detectedPatterns.map(p => p.name).join(', ')}`,
+            analysis.primary_flag || "suspicious",
+            analysis.intent_category || null,
+            `تحليل تلقائي: ${detectedPatterns.map(p => p.name).join(", ")}`,
             JSON.stringify(analysis),
-            analysis.risk_score
+            analysis.risk_score,
           ]
         );
-        console.log(`[Auto-Analyze] Conversation flagged automatically (risk: ${analysis.risk_score}%)`);
+        console.log(`[Auto-Analyze] Conversation flagged automatically (risk: ${analysis.risk_score}%, intent: ${analysis.intent_category || "n/a"})`);
       }
     }
     
@@ -382,6 +410,9 @@ router.post("/to-advertiser", authMiddlewareWithEmailCheck, asyncHandler(async (
   const recipient = recipientResult.rows[0];
   const senderName = sender.name || sender.email || "مستخدم";
 
+  // TODO [SUPERHUMAN AI]: Implement Pre-Send Blocking (Wait for AI score before inserting message to DB).
+  // TODO [SUPERHUMAN AI]: Implement Vision/OCR for image attachments.
+
   const msgResult = await db.query(
     `INSERT INTO listing_messages 
      (listing_id, sender_id, recipient_id, sender_name, message, is_read, created_at)
@@ -576,6 +607,9 @@ router.post("/customer-conversations/:id/reply", authMiddlewareWithEmailCheck, a
 
   const userResult = await db.query("SELECT name, email FROM users WHERE id = $1", [userId]);
   const senderName = userResult.rows[0]?.name || userResult.rows[0]?.email || "مستخدم";
+
+  // TODO [SUPERHUMAN AI]: Implement Pre-Send Blocking (Wait for AI score before inserting message to DB).
+  // TODO [SUPERHUMAN AI]: Implement Vision/OCR for image attachments.
 
   const msgResult = await db.query(
     `INSERT INTO listing_messages 

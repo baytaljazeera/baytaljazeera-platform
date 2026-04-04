@@ -1614,6 +1614,7 @@ async function initializeDatabase() {
         user2_id UUID REFERENCES users(id) ON DELETE CASCADE,
         listing_id UUID REFERENCES properties(id) ON DELETE SET NULL,
         flag_type VARCHAR(50) NOT NULL DEFAULT 'suspicious',
+        intent_category VARCHAR(100),
         flag_reason TEXT,
         ai_analysis TEXT,
         ai_risk_score INTEGER DEFAULT 0,
@@ -1624,6 +1625,17 @@ async function initializeDatabase() {
         reviewed_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+    `);
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'flagged_conversations' AND column_name = 'intent_category'
+        ) THEN
+          ALTER TABLE flagged_conversations ADD COLUMN intent_category VARCHAR(100);
+        END IF;
+      END $$;
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_flagged_conv_status ON flagged_conversations(status);`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_flagged_conv_user1 ON flagged_conversations(user1_id);`);
