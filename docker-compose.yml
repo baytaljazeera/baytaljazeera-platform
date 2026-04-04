@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: baytaljazeera_dev
+    volumes:
+      - pgdata_baytaljazeera:/var/lib/postgresql/data
+
+volumes:
+  pgdata_baytaljazeera:

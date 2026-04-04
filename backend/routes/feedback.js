@@ -598,7 +598,7 @@ router.post(
           row.user_id,
           "رد من الدعم — متابعة تغذية راجعة",
           `لديك رد على تذكرتك ${ticketNumber}. افتح صفحة الدعم لقراءة الرسالة.`,
-          `/account/support/${ticket.id}`,
+          `/account/my-tickets?open=${ticket.id}`,
         ]
       );
     } catch (e) {

@@ -333,8 +333,16 @@ router.post("/:id/reply", authMiddleware, asyncHandler(async (req, res) => {
   const result = await db.query(
     `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
      VALUES ($1, $2, $3, $4)
-     RETURNING *`,
+     RETURNING id`,
     [id, senderId, senderType, message.trim()]
+  );
+
+  const replyWithName = await db.query(
+    `SELECT r.*, u.name as sender_name
+     FROM support_ticket_replies r
+     LEFT JOIN users u ON r.sender_id = u.id
+     WHERE r.id = $1`,
+    [result.rows[0].id]
   );
   
   await db.query(
@@ -347,11 +355,11 @@ router.post("/:id/reply", authMiddleware, asyncHandler(async (req, res) => {
     await db.query(
       `INSERT INTO notifications (user_id, title, body, type, link, created_at)
        VALUES ($1, 'رد جديد على تذكرتك', $2, 'support_reply', $3, NOW())`,
-      [ticket.user_id, `تم الرد على تذكرة "${ticket.subject}"`, `/account/support/${id}`]
+      [ticket.user_id, `تم الرد على تذكرة "${ticket.subject}"`, `/account/my-tickets?open=${id}`]
     );
   }
   
-  res.status(201).json({ ok: true, reply: result.rows[0], message: "تم إرسال الرد بنجاح" });
+  res.status(201).json({ ok: true, reply: replyWithName.rows[0], message: "تم إرسال الرد بنجاح" });
 }));
 
 router.patch("/:id/status", authMiddleware, requireRoles('super_admin', 'admin', 'support_admin', 'finance_admin', 'content_admin', 'admin_manager'), asyncHandler(async (req, res) => {
@@ -391,7 +399,7 @@ router.patch("/:id/status", authMiddleware, requireRoles('super_admin', 'admin',
   await db.query(
     `INSERT INTO notifications (user_id, title, body, type, link, created_at)
      VALUES ($1, 'تحديث حالة التذكرة', $2, 'support_status', $3, NOW())`,
-    [ticket.user_id, `تم تحديث حالة تذكرتك "${ticket.subject}" إلى: ${statusLabels[status] || status}`, `/account/support/${id}`]
+    [ticket.user_id, `تم تحديث حالة تذكرتك "${ticket.subject}" إلى: ${statusLabels[status] || status}`, `/account/my-tickets?open=${id}`]
   );
   
   res.json({ ok: true, ticket: result.rows[0], message: "تم تحديث الحالة" });

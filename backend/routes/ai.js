@@ -2282,6 +2282,21 @@ router.post("/escalate", authMiddleware, asyncHandler(async (req, res) => {
 
     const ticket = result.rows[0];
 
+    try {
+      await db.query(
+        `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+         VALUES ($1, $2, $3, 'support_ticket_created', $4, NOW())`,
+        [
+          userId,
+          "تم فتح طلب دعم",
+          `تم تسجيل تذكرة ${ticketNumber} بعد التصعيد من الدعم الآلي. يمكنك متابعة رد فريق الدعم من صفحة طلبات الدعم.`,
+          `/account/my-tickets?open=${ticket.id}`,
+        ]
+      );
+    } catch (e) {
+      console.error("[ai escalate] customer notification:", e.message);
+    }
+
     // Add the first reply with the conversation context
     await db.query(
       `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)

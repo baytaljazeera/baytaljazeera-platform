@@ -9,7 +9,7 @@ import {
   PlusCircle, Package, Map, List, 
   User, LogOut, Heart, Bell, FileText, Menu, X,
   ChevronDown, Settings, Crown, MessageCircle, Receipt, Check, CheckCheck,
-  Mail, CreditCard, AlertCircle, Home, Loader2, AlertTriangle, Building2
+  Mail, CreditCard, AlertCircle, Home, Loader2, AlertTriangle, Building2, Ticket
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { useSiteSettingsStore } from "@/lib/stores/siteSettingsStore";
@@ -286,11 +286,17 @@ function NavbarContent() {
     { href: "/favorites", label: "المفضلة", icon: Heart, badge: favoritesCount },
     { href: "/my-listings", label: "إعلاناتي", icon: FileText, badgeRejected: userBadges.listingsRejected, badgeApproved: userBadges.listingsApproved, badgePending: userBadges.listingsPending },
     { href: "/invoices", label: "فواتيري", icon: Receipt, badgeNew: userBadges.invoicesNew },
+    { href: "/account/my-tickets", label: "طلبات الدعم", icon: Ticket },
     { href: "/my-complaints", label: "شكاواي", icon: AlertTriangle, badgeNew: userBadges.complaintsNew, badgePending: userBadges.complaintsPending },
     { href: "/messages", label: "المراسلات", icon: MessageCircle, badge: unreadMessages },
     { href: "/inbox", label: "الإشعارات", icon: Bell, badge: unreadNotifications },
     ...(ambassadorEnabled ? [{ href: "/referral", label: "سفراء البيت", icon: Building2, badgeNew: userBadges.ambassadorRewards }] : []),
   ];
+
+  const isUserMenuItemActive = (href: string) => {
+    if (href === "/account/my-tickets") return pathname.startsWith("/account/my-tickets");
+    return pathname === href;
+  };
 
   const getTierName = (tier?: string) => {
     if (!tier) return null;
@@ -470,7 +476,7 @@ function NavbarContent() {
                       href={href}
                       onClick={() => setShowUserMenu(false)}
                       className={`flex items-center justify-between px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition ${
-                        pathname === href ? 'bg-slate-50 text-[#003366] font-medium' : ''
+                        isUserMenuItemActive(href) ? 'bg-slate-50 text-[#003366] font-medium' : ''
                       }`}
                     >
                       <div className="flex items-center gap-3">
@@ -569,7 +575,9 @@ function NavbarContent() {
                 key={href}
                 href={href}
                 onClick={closeMobileMenu}
-                className="flex items-center justify-between px-4 py-3 rounded-xl hover:bg-slate-50 transition"
+                className={`flex items-center justify-between px-4 py-3 rounded-xl hover:bg-slate-50 transition ${
+                  isUserMenuItemActive(href) ? "bg-slate-100 text-[#003366] font-semibold" : ""
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <Icon className="w-5 h-5 text-[#D4AF37]" />

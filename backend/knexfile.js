@@ -1,9 +1,18 @@
 const path = require('path');
 
+function pgConnection() {
+  const url = process.env.DATABASE_URL;
+  if (!url) return url;
+  if (url.includes('render.com') || url.includes('neon.tech') || url.includes('supabase.co')) {
+    return { connectionString: url, ssl: { rejectUnauthorized: false } };
+  }
+  return url;
+}
+
 module.exports = {
   development: {
     client: 'pg',
-    connection: process.env.DATABASE_URL,
+    connection: pgConnection(),
     pool: {
       min: 2,
       max: 20,
@@ -22,7 +31,7 @@ module.exports = {
 
   production: {
     client: 'pg',
-    connection: process.env.DATABASE_URL,
+    connection: pgConnection(),
     pool: {
       min: 2,
       max: 20,

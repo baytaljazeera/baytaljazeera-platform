@@ -353,7 +353,7 @@ router.post(
               customerId,
               "رد جديد من الدعم",
               `تم الرد على «${sub}»`,
-              `/account/support/${ticketId}`,
+              `/account/my-tickets?open=${ticketId}`,
             ]
           );
         } catch (e) {
