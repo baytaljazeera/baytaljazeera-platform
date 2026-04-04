@@ -9,6 +9,11 @@ const { ROLE_LABELS, VALID_ROLES, VALID_USER_STATUSES, CACHE_KEYS } = require(".
 const { logAdminAction, AUDIT_ACTIONS } = require("../services/auditService");
 const { buildSearchClause, buildWhereClause, paginatedQuery, handleDatabaseError } = require("../utils/queryHelpers");
 const emailService = require("../services/emailService");
+const {
+  hasFullCustomerServiceAccess,
+  getSupportTicketScope,
+  getAccountComplaintScope,
+} = require("../utils/customerServiceScope");
 
 const router = express.Router();
 
@@ -94,8 +99,41 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
     FROM counts
   `, [], 30000);
   
-  const row = cached.rows[0] || {};
-  
+  const row = { ...(cached.rows[0] || {}) };
+  const role = req.user.role;
+  const uid = req.user.id;
+
+  if (!hasFullCustomerServiceAccess(role)) {
+    const sScope = getSupportTicketScope(role, uid, 1);
+    const sSql = sScope.clause ? ` AND ${sScope.clause}` : "";
+    const cScope = getAccountComplaintScope(role, uid, 1);
+    const cSql = cScope.clause ? ` AND ${cScope.clause}` : "";
+
+    const [sn, sip, cn, cip] = await Promise.all([
+      db.query(
+        `SELECT COUNT(*)::int AS c FROM support_tickets st WHERE st.status IN ('new', 'open')${sSql}`,
+        sScope.params
+      ),
+      db.query(
+        `SELECT COUNT(*)::int AS c FROM support_tickets st WHERE st.status = 'in_progress'${sSql}`,
+        sScope.params
+      ),
+      db.query(
+        `SELECT COUNT(*)::int AS c FROM account_complaints c WHERE c.status IN ('new', 'pending')${cSql}`,
+        cScope.params
+      ),
+      db.query(
+        `SELECT COUNT(*)::int AS c FROM account_complaints c WHERE c.status IN ('in_review', 'in_progress')${cSql}`,
+        cScope.params
+      ),
+    ]);
+
+    row.support_new = sn.rows[0]?.c ?? 0;
+    row.support_in_progress = sip.rows[0]?.c ?? 0;
+    row.complaints_new = cn.rows[0]?.c ?? 0;
+    row.complaints_in_progress = cip.rows[0]?.c ?? 0;
+  }
+
   res.json({
     listingsNew: row.listings_new || 0,
     listingsInProgress: row.listings_in_progress || 0,

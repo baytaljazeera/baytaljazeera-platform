@@ -2,6 +2,10 @@ const express = require("express");
 const db = require("../db");
 const { authMiddleware, adminMiddleware, requireRoles } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
+const {
+  getSupportTicketScope,
+  hasFullCustomerServiceAccess,
+} = require("../utils/customerServiceScope");
 
 const router = express.Router();
 
@@ -65,30 +69,43 @@ function getSmartRouting(department, priority) {
 }
 
 router.get("/count", authMiddleware, asyncHandler(async (req, res) => {
-  const isAdmin = ['super_admin', 'admin', 'support_admin', 'finance_admin'].includes(req.user.role);
-  
-  if (!isAdmin) {
+  if (req.user.role === "user") {
     return res.json({ count: 0 });
   }
-  
-  const result = await db.query(`
-    SELECT COUNT(*) as count 
-    FROM support_tickets 
-    WHERE status IN ('new', 'in_progress')
-  `);
-  
-  res.json({ count: parseInt(result.rows[0].count) || 0 });
+
+  const { clause, params } = getSupportTicketScope(req.user.role, req.user.id, 1);
+  const where = clause
+    ? `FROM support_tickets st WHERE status IN ('new', 'in_progress') AND ${clause}`
+    : `FROM support_tickets WHERE status IN ('new', 'in_progress')`;
+
+  const result = await db.query(`SELECT COUNT(*)::int as count ${where}`, params);
+  res.json({ count: parseInt(result.rows[0].count, 10) || 0 });
 }));
 
 router.get("/", authMiddleware, asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const isAdmin = ['super_admin', 'admin', 'support_admin'].includes(req.user.role);
-  
-  let query;
-  let params = [];
-  
-  if (isAdmin) {
-    query = `
+  const role = req.user.role;
+
+  if (role === "user") {
+    const result = await db.query(
+      `
+      SELECT 
+        st.*,
+        (SELECT COUNT(*) FROM support_ticket_replies WHERE ticket_id = st.id) as reply_count
+      FROM support_tickets st
+      WHERE st.user_id = $1
+      ORDER BY st.created_at DESC
+    `,
+      [userId]
+    );
+    return res.json({ tickets: result.rows });
+  }
+
+  const { clause, params } = getSupportTicketScope(role, userId, 1);
+  const whereSql = clause ? `WHERE ${clause}` : "";
+
+  const result = await db.query(
+    `
       SELECT 
         st.*,
         u.name as user_name,
@@ -99,6 +116,7 @@ router.get("/", authMiddleware, asyncHandler(async (req, res) => {
       FROM support_tickets st
       LEFT JOIN users u ON st.user_id = u.id
       LEFT JOIN users a ON st.assigned_to = a.id
+      ${whereSql}
       ORDER BY 
         CASE st.status 
           WHEN 'new' THEN 1 
@@ -106,20 +124,9 @@ router.get("/", authMiddleware, asyncHandler(async (req, res) => {
           ELSE 3 
         END,
         st.created_at DESC
-    `;
-  } else {
-    query = `
-      SELECT 
-        st.*,
-        (SELECT COUNT(*) FROM support_ticket_replies WHERE ticket_id = st.id) as reply_count
-      FROM support_tickets st
-      WHERE st.user_id = $1
-      ORDER BY st.created_at DESC
-    `;
-    params = [userId];
-  }
-  
-  const result = await db.query(query, params);
+    `,
+    params
+  );
   res.json({ tickets: result.rows });
 }));
 
@@ -137,16 +144,23 @@ router.get("/categories", asyncHandler(async (req, res) => {
 }));
 
 router.get("/stats", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
-  const result = await db.query(`
+  const { clause, params } = getSupportTicketScope(req.user.role, req.user.id, 1);
+  const whereSql = clause ? `WHERE ${clause}` : "";
+
+  const result = await db.query(
+    `
     SELECT 
       COUNT(*)::int as total,
-      COUNT(*) FILTER (WHERE status = 'new')::int as new,
-      COUNT(*) FILTER (WHERE status = 'in_progress')::int as in_progress,
-      COUNT(*) FILTER (WHERE status = 'resolved')::int as resolved,
-      COUNT(*) FILTER (WHERE status = 'closed')::int as closed,
-      COUNT(*) FILTER (WHERE priority = 'high')::int as high_priority
-    FROM support_tickets
-  `);
+      COUNT(*) FILTER (WHERE st.status = 'new')::int as new,
+      COUNT(*) FILTER (WHERE st.status = 'in_progress')::int as in_progress,
+      COUNT(*) FILTER (WHERE st.status = 'resolved')::int as resolved,
+      COUNT(*) FILTER (WHERE st.status = 'closed')::int as closed,
+      COUNT(*) FILTER (WHERE st.priority = 'high')::int as high_priority
+    FROM support_tickets st
+    ${whereSql}
+  `,
+    params
+  );
   res.json(result.rows[0]);
 }));
 
@@ -233,8 +247,8 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
 router.get("/:id", authMiddleware, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
-  const isAdmin = ['super_admin', 'admin', 'support_admin'].includes(req.user.role);
-  
+  const role = req.user.role;
+
   let query = `
     SELECT 
       st.*,
@@ -248,12 +262,18 @@ router.get("/:id", authMiddleware, asyncHandler(async (req, res) => {
     WHERE st.id = $1
   `;
   const params = [id];
-  
-  if (!isAdmin) {
+
+  if (role === "user") {
     query += " AND st.user_id = $2";
     params.push(userId);
+  } else {
+    const sc = getSupportTicketScope(role, userId, 2);
+    if (sc.clause) {
+      query += ` AND ${sc.clause}`;
+      params.push(...sc.params);
+    }
   }
-  
+
   const ticketResult = await db.query(query, params);
   
   if (ticketResult.rows.length === 0) {
@@ -282,26 +302,33 @@ router.post("/:id/reply", authMiddleware, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { message } = req.body;
   const senderId = req.user.id;
-  const isAdmin = ['super_admin', 'admin', 'support_admin'].includes(req.user.role);
-  
+  const role = req.user.role;
+  const isStaff = role !== "user";
+
   if (!message || message.trim() === '') {
     return res.status(400).json({ error: "الرسالة مطلوبة" });
   }
-  
-  let ticketQuery = "SELECT * FROM support_tickets WHERE id = $1";
+
+  let ticketQuery = "SELECT * FROM support_tickets st WHERE st.id = $1";
   const ticketParams = [id];
-  
-  if (!isAdmin) {
-    ticketQuery += " AND user_id = $2";
+
+  if (role === "user") {
+    ticketQuery += " AND st.user_id = $2";
     ticketParams.push(senderId);
+  } else {
+    const sc = getSupportTicketScope(role, senderId, 2);
+    if (sc.clause) {
+      ticketQuery += ` AND ${sc.clause}`;
+      ticketParams.push(...sc.params);
+    }
   }
-  
+
   const ticketCheck = await db.query(ticketQuery, ticketParams);
   if (ticketCheck.rows.length === 0) {
     return res.status(404).json({ error: "التذكرة غير موجودة" });
   }
-  
-  const senderType = isAdmin ? 'admin' : 'user';
+
+  const senderType = isStaff ? "admin" : "user";
   
   const result = await db.query(
     `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
@@ -316,7 +343,7 @@ router.post("/:id/reply", authMiddleware, asyncHandler(async (req, res) => {
   );
   
   const ticket = ticketCheck.rows[0];
-  if (isAdmin && ticket.user_id !== senderId) {
+  if (isStaff && ticket.user_id !== senderId) {
     await db.query(
       `INSERT INTO notifications (user_id, title, body, type, link, created_at)
        VALUES ($1, 'رد جديد على تذكرتك', $2, 'support_reply', $3, NOW())`,
@@ -327,25 +354,28 @@ router.post("/:id/reply", authMiddleware, asyncHandler(async (req, res) => {
   res.status(201).json({ ok: true, reply: result.rows[0], message: "تم إرسال الرد بنجاح" });
 }));
 
-router.patch("/:id/status", authMiddleware, requireRoles('support_admin'), asyncHandler(async (req, res) => {
+router.patch("/:id/status", authMiddleware, requireRoles('super_admin', 'admin', 'support_admin', 'finance_admin', 'content_admin', 'admin_manager'), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
-  
+  const role = req.user.role;
+
   const validStatuses = ['new', 'in_progress', 'resolved', 'closed'];
   if (!validStatuses.includes(status)) {
     return res.status(400).json({ error: "الحالة غير صالحة" });
   }
-  
+
+  const sc = getSupportTicketScope(role, req.user.id, 3);
+  const scopeSql = sc.clause ? ` AND ${sc.clause}` : "";
   const resolvedAt = (status === 'resolved' || status === 'closed') ? 'NOW()' : 'NULL';
-  
+
   const result = await db.query(
-    `UPDATE support_tickets 
+    `UPDATE support_tickets st
      SET status = $1, resolved_at = ${resolvedAt}, updated_at = NOW()
-     WHERE id = $2
+     WHERE st.id = $2${scopeSql}
      RETURNING *`,
-    [status, id]
+    [status, id, ...sc.params]
   );
-  
+
   if (result.rows.length === 0) {
     return res.status(404).json({ error: "التذكرة غير موجودة" });
   }
@@ -367,18 +397,21 @@ router.patch("/:id/status", authMiddleware, requireRoles('support_admin'), async
   res.json({ ok: true, ticket: result.rows[0], message: "تم تحديث الحالة" });
 }));
 
-router.patch("/:id/assign", authMiddleware, requireRoles('support_admin'), asyncHandler(async (req, res) => {
+router.patch("/:id/assign", authMiddleware, requireRoles('super_admin', 'admin', 'support_admin', 'finance_admin', 'content_admin', 'admin_manager'), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { assigned_to } = req.body;
-  
+  const role = req.user.role;
+  const sc = getSupportTicketScope(role, req.user.id, 3);
+  const scopeSql = sc.clause ? ` AND ${sc.clause}` : "";
+
   const result = await db.query(
-    `UPDATE support_tickets 
+    `UPDATE support_tickets st
      SET assigned_to = $1, updated_at = NOW()
-     WHERE id = $2
+     WHERE st.id = $2${scopeSql}
      RETURNING *`,
-    [assigned_to || null, id]
+    [assigned_to || null, id, ...sc.params]
   );
-  
+
   if (result.rows.length === 0) {
     return res.status(404).json({ error: "التذكرة غير موجودة" });
   }
@@ -386,23 +419,26 @@ router.patch("/:id/assign", authMiddleware, requireRoles('support_admin'), async
   res.json({ ok: true, ticket: result.rows[0], message: "تم تعيين المسؤول" });
 }));
 
-router.patch("/:id/priority", authMiddleware, requireRoles('support_admin'), asyncHandler(async (req, res) => {
+router.patch("/:id/priority", authMiddleware, requireRoles('super_admin', 'admin', 'support_admin', 'finance_admin', 'content_admin', 'admin_manager'), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { priority } = req.body;
-  
+  const role = req.user.role;
+  const sc = getSupportTicketScope(role, req.user.id, 3);
+  const scopeSql = sc.clause ? ` AND ${sc.clause}` : "";
+
   const validPriorities = ['low', 'medium', 'high', 'urgent'];
   if (!validPriorities.includes(priority)) {
     return res.status(400).json({ error: "الأولوية غير صالحة" });
   }
-  
+
   const result = await db.query(
-    `UPDATE support_tickets 
+    `UPDATE support_tickets st
      SET priority = $1, updated_at = NOW()
-     WHERE id = $2
+     WHERE st.id = $2${scopeSql}
      RETURNING *`,
-    [priority, id]
+    [priority, id, ...sc.params]
   );
-  
+
   if (result.rows.length === 0) {
     return res.status(404).json({ error: "التذكرة غير موجودة" });
   }

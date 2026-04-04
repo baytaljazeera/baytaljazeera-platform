@@ -160,8 +160,16 @@ router.post(
 
 // ----- Admin endpoints -----
 
+// Product-wide feedback: no per-row department on feedback_responses; same aggregates for all service admins.
 const adminFeedback = (req, res, next) => {
-  return requireRoles("super_admin", "admin", "support_admin")(req, res, next);
+  return requireRoles(
+    "super_admin",
+    "admin",
+    "support_admin",
+    "finance_admin",
+    "content_admin",
+    "admin_manager"
+  )(req, res, next);
 };
 
 // GET /api/feedback/admin/settings

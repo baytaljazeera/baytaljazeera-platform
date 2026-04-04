@@ -132,6 +132,7 @@ export default function CustomerServicePage() {
   const [submitting, setSubmitting] = useState(false);
   
   const [loading, setLoading] = useState(true);
+  const [complaintsTotalRows, setComplaintsTotalRows] = useState(0);
 
   const fetchTickets = useCallback(async () => {
     try {
@@ -159,7 +160,7 @@ export default function CustomerServicePage() {
 
   const fetchTicketDetails = useCallback(async (ticketId: number) => {
     try {
-      const res = await fetch(`/api/support/${ticketId}`, { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/support/${ticketId}`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setReplies(data.replies || []);
@@ -169,38 +170,65 @@ export default function CustomerServicePage() {
     }
   }, []);
 
-  const fetchComplaints = async () => {
+  const fetchComplaintStats = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/account-complaints`, { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/account-complaints/stats`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setComplaintStats({
+          new: data.new ?? 0,
+          in_review: data.in_review ?? 0,
+          closed: data.closed ?? 0,
+          dismissed: data.dismissed ?? 0,
+          total: data.total ?? 0,
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching complaint stats:", error);
+    }
+  }, []);
+
+  const fetchComplaints = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/account-complaints?limit=100`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
       if (res.ok) {
         const data = await res.json();
         setComplaints(data.complaints || []);
-        
-        const newStats = { new: 0, in_review: 0, closed: 0, dismissed: 0, total: data.complaints?.length || 0 };
-        data.complaints?.forEach((c: AccountComplaint) => {
-          if (c.status in newStats) {
-            (newStats as Record<string, number>)[c.status]++;
-          }
-        });
-        setComplaintStats(newStats);
+        setComplaintsTotalRows(data.pagination?.total ?? data.complaints?.length ?? 0);
       }
     } catch (error) {
       console.error("Error fetching complaints:", error);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([fetchTickets(), fetchSupportStats(), fetchComplaints()]);
+      await Promise.all([
+        fetchTickets(),
+        fetchSupportStats(),
+        fetchComplaints(),
+        fetchComplaintStats(),
+      ]);
       setLoading(false);
     };
     loadData();
-  }, [fetchTickets, fetchSupportStats]);
+  }, [fetchTickets, fetchSupportStats, fetchComplaints, fetchComplaintStats]);
 
   const handleRefresh = async () => {
     setLoading(true);
-    await Promise.all([fetchTickets(), fetchSupportStats(), fetchComplaints()]);
+    await Promise.all([
+      fetchTickets(),
+      fetchSupportStats(),
+      fetchComplaints(),
+      fetchComplaintStats(),
+    ]);
     setLoading(false);
   };
 
@@ -214,9 +242,9 @@ export default function CustomerServicePage() {
     if (!selectedTicket || !reply.trim()) return;
     setSending(true);
     try {
-      const res = await fetch(`/api/support/${selectedTicket.id}/reply`, {
+      const res = await fetch(`${API_URL}/api/support/${selectedTicket.id}/reply`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
         body: JSON.stringify({ message: reply }),
       });
@@ -235,9 +263,9 @@ export default function CustomerServicePage() {
   const handleUpdateTicketStatus = async (status: string) => {
     if (!selectedTicket) return;
     try {
-      const res = await fetch(`/api/support/${selectedTicket.id}/status`, {
+      const res = await fetch(`${API_URL}/api/support/${selectedTicket.id}/status`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
         body: JSON.stringify({ status }),
       });
@@ -262,16 +290,16 @@ export default function CustomerServicePage() {
     if (!selectedComplaint) return;
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/account-complaints/${selectedComplaint.id}`, {
+      const res = await fetch(`${API_URL}/api/account-complaints/${selectedComplaint.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
         body: JSON.stringify({ status: actionType, adminNote }),
       });
       if (res.ok) {
         setShowActionModal(false);
         setSelectedComplaint(null);
-        await fetchComplaints();
+        await Promise.all([fetchComplaints(), fetchComplaintStats()]);
       }
     } catch (error) {
       console.error("Error updating status:", error);
@@ -601,6 +629,14 @@ export default function CustomerServicePage() {
 
       {activeTab === "complaints" && (
         <div className="space-y-4">
+          {complaintsTotalRows > 0 && (
+            <p className="text-xs text-slate-500">
+              إجمالي الشكاوى المطابقة لصلاحياتك: {complaintsTotalRows}
+              {complaints.length < complaintsTotalRows
+                ? ` — يُعرض حتى ${complaints.length} في هذه الصفحة (حد أقصى 100)`
+                : ""}
+            </p>
+          )}
           <div className="flex flex-col md:flex-row gap-4">
             <div className="relative flex-1">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
