@@ -10,6 +10,36 @@ const { asyncHandler } = require("../middleware/asyncHandler");
 
 const router = express.Router();
 
+/** Stable key for deduplicating feedback follow-up tickets (see support_tickets.source_ref). */
+function feedbackSourceRef(feedbackId) {
+  return `feedback:${feedbackId}`;
+}
+
+function generateFeedbackTicketNumber() {
+  const y = new Date().getFullYear();
+  const random = Math.floor(100000 + Math.random() * 900000);
+  return `TKT-${y}-${random}`;
+}
+
+function buildFeedbackTicketDescription(row) {
+  let answersLine = "";
+  if (row.answers) {
+    try {
+      const a = typeof row.answers === "string" ? JSON.parse(row.answers) : row.answers;
+      answersLine = `\nإجابات إضافية: ${JSON.stringify(a)}`;
+    } catch {
+      answersLine = "";
+    }
+  }
+  return [
+    `مرجع تغذية راجعة #${row.id}`,
+    `التقييم: ${row.rating ?? "—"}`,
+    `واجه مشكلة: ${row.had_issue === true ? "نعم" : row.had_issue === false ? "لا" : "—"}`,
+    `الصفحة: ${row.page_type || "—"} — ${row.page_url || "—"}`,
+    `التعليق: ${row.comment || "—"}${answersLine}`,
+  ].join("\n");
+}
+
 const DEFAULT_SETTINGS = {
   enabled: true,
   showOnHomepage: true,
@@ -414,6 +444,172 @@ router.get(
       total,
       page: pageNum,
       limit: limitNum,
+    });
+  })
+);
+
+/**
+ * Omnichannel Phase 1: follow-up creates/links a support ticket + omni timeline (public to customer via ticket).
+ * Replaces the old pattern of POST /api/admin-messages/conversations with a hardcoded subject.
+ *
+ * TODO Phase 2 (Frontend): Point "رسالة داخلية" modal to this endpoint; show ticket link; optional omni timeline UI.
+ */
+router.post(
+  "/admin/responses/:id/follow-up",
+  authMiddleware,
+  adminFeedback,
+  asyncHandler(async (req, res) => {
+    const feedbackId = parseInt(req.params.id, 10);
+    if (Number.isNaN(feedbackId)) {
+      return res.status(400).json({ error: "معرف التغذية الراجعة غير صالح" });
+    }
+    const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+    if (!message) {
+      return res.status(400).json({ error: "نص الرسالة مطلوب" });
+    }
+
+    const fr = await db.query(
+      `SELECT fr.*, u.name AS user_name, u.email AS user_email
+       FROM feedback_responses fr
+       LEFT JOIN users u ON u.id = fr.user_id
+       WHERE fr.id = $1`,
+      [feedbackId]
+    );
+    if (fr.rows.length === 0) {
+      return res.status(404).json({ error: "الرد غير موجود" });
+    }
+    const row = fr.rows[0];
+    if (!row.user_id) {
+      return res.status(400).json({
+        error: "لا يمكن المتابعة: التغذية الراجعة غير مرتبطة بحساب مستخدم (زائر)",
+      });
+    }
+
+    const sourceRef = feedbackSourceRef(feedbackId);
+    const department = "account";
+    const routing = { role: "support_admin", sla_hours: 48 };
+
+    let omniConvoId;
+    const omniExisting = await db.query(
+      `SELECT id FROM omni_conversations WHERE source_type = 'feedback' AND source_id = $1`,
+      [feedbackId]
+    );
+    if (omniExisting.rows.length === 0) {
+      const oc = await db.query(
+        `INSERT INTO omni_conversations (source_type, source_id, status, created_at, updated_at)
+         VALUES ('feedback', $1, 'open', NOW(), NOW())
+         RETURNING id`,
+        [feedbackId]
+      );
+      omniConvoId = oc.rows[0].id;
+    } else {
+      omniConvoId = omniExisting.rows[0].id;
+    }
+
+    await db.query(
+      `INSERT INTO omni_messages (conversation_id, sender_type, sender_id, content, visibility, created_at)
+       VALUES ($1, 'admin', $2, $3, 'public'::omni_message_visibility, NOW())`,
+      [omniConvoId, req.user.id, message]
+    );
+
+    const ticketExisting = await db.query(
+      `SELECT * FROM support_tickets
+       WHERE user_id = $1 AND source_ref = $2
+       AND status NOT IN ('resolved', 'closed')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [row.user_id, sourceRef]
+    );
+
+    let ticket;
+    let ticketNumber;
+    const isNewTicket = ticketExisting.rows.length === 0;
+
+    if (!isNewTicket) {
+      ticket = ticketExisting.rows[0];
+      ticketNumber = ticket.ticket_number;
+      await db.query(
+        `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
+         VALUES ($1, $2, 'admin', $3)`,
+        [ticket.id, req.user.id, message]
+      );
+      await db.query(`UPDATE support_tickets SET updated_at = NOW() WHERE id = $1`, [ticket.id]);
+    } else {
+      ticketNumber = generateFeedbackTicketNumber();
+      const subject = `متابعة تغذية راجعة #${feedbackId}`;
+      const description = buildFeedbackTicketDescription(row);
+      const ins = await db.query(
+        `INSERT INTO support_tickets
+         (user_id, ticket_number, department, subcategory, category, priority, subject, description, auto_assigned_role, sla_hours, status, source, source_ref)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new', 'feedback_followup', $11)
+         RETURNING *`,
+        [
+          row.user_id,
+          ticketNumber,
+          department,
+          "feedback",
+          department,
+          "medium",
+          subject,
+          description,
+          routing.role,
+          routing.sla_hours,
+          sourceRef,
+        ]
+      );
+      ticket = ins.rows[0];
+      await db.query(
+        `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
+         VALUES ($1, $2, 'admin', $3)`,
+        [ticket.id, req.user.id, message]
+      );
+
+      try {
+        const targetAdmins = await db.query(
+          `SELECT id FROM users WHERE role IN ('super_admin', 'admin', $1)`,
+          [routing.role]
+        );
+        for (const admin of targetAdmins.rows) {
+          try {
+            await db.query(
+              `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+               VALUES ($1, $2, $3, 'feedback_followup_ticket', $4, NOW())`,
+              [
+                admin.id,
+                "تذكرة متابعة تغذية راجعة",
+                `تذكرة جديدة: ${subject} (${ticketNumber})`,
+                `/admin/support`,
+              ]
+            );
+          } catch (e) {
+            console.error(`[feedback follow-up] notify admin ${admin.id}:`, e.message);
+          }
+        }
+      } catch (e) {
+        console.error("[feedback follow-up] notify admins:", e.message);
+      }
+    }
+
+    try {
+      await db.query(
+        `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+         VALUES ($1, $2, $3, 'support_reply', $4, NOW())`,
+        [
+          row.user_id,
+          "رد من الدعم — متابعة تغذية راجعة",
+          `لديك رد على تذكرتك ${ticketNumber}. افتح صفحة الدعم لقراءة الرسالة.`,
+          `/account/support/${ticket.id}`,
+        ]
+      );
+    } catch (e) {
+      console.error("[feedback follow-up] customer notification:", e.message);
+    }
+
+    res.json({
+      ok: true,
+      ticket: { id: ticket.id, ticket_number: ticketNumber },
+      omni_conversation_id: omniConvoId,
+      created_new_ticket: isNewTicket,
     });
   })
 );

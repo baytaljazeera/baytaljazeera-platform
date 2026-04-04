@@ -2261,10 +2261,11 @@ router.post("/escalate", authMiddleware, asyncHandler(async (req, res) => {
     }
     
     const ticketNumber = `TKT-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-    
+    // source_ref stores ai_session_id for joining ai_chat_logs / future admin UI (Omnichannel Phase 1).
+    // TODO Phase 2 (Frontend): Admin support detail — show "عرض سجل المحادثة" by session id from source_ref.
     const result = await db.query(
-      `INSERT INTO support_tickets (user_id, ticket_number, category, priority, subject, description, status, source)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO support_tickets (user_id, ticket_number, category, priority, subject, description, status, source, source_ref)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
         userId,
@@ -2274,7 +2275,8 @@ router.post("/escalate", authMiddleware, asyncHandler(async (req, res) => {
         'تصعيد من الدعم الآلي',
         `سبب التصعيد: ${reason}\n\nآخر رسالة: ${lastMessage}`,
         'new',
-        'ai_chatbot'
+        'ai_chatbot',
+        sessionId || null,
       ]
     );
 

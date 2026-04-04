@@ -51,13 +51,16 @@ export default function FeedbackResponsesPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [messageUserId, setMessageUserId] = useState<string | null>(null);
   const [messageUserName, setMessageUserName] = useState<string | null>(null);
+  /** Feedback row id — required for Omnichannel follow-up API (Phase 1 backend). */
+  const [messageFeedbackId, setMessageFeedbackId] = useState<number | null>(null);
   const [messageText, setMessageText] = useState("");
   const [sendingMessage, setSendingMessage] = useState(false);
 
-  const openMessageModal = (userId?: string | null, userName?: string | null) => {
+  const openMessageModal = (userId?: string | null, userName?: string | null, feedbackId?: number) => {
     if (!userId) return;
     setMessageUserId(userId);
     setMessageUserName(userName || null);
+    setMessageFeedbackId(feedbackId ?? null);
     setMessageText("");
   };
 
@@ -65,29 +68,39 @@ export default function FeedbackResponsesPage() {
     if (sendingMessage) return;
     setMessageUserId(null);
     setMessageUserName(null);
+    setMessageFeedbackId(null);
     setMessageText("");
   };
 
   const submitInternalMessage = async () => {
-    if (!messageUserId || !messageText.trim()) return;
+    if (!messageUserId || !messageText.trim() || messageFeedbackId == null) return;
     setSendingMessage(true);
     try {
-      const res = await fetch(`${API_URL}/api/admin-messages/conversations`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({
-          department: "support",
-          subject: "متابعة تغذية راجعة (بيت الجزيرة)",
-          message: messageText.trim(),
-          participants: [messageUserId],
-        }),
-      });
-      if (!res.ok) throw new Error();
-      window.alert("تم إرسال رسالة داخلية بنجاح. يمكنك متابعة المحادثة من صفحة الرسائل.");
+      // Omnichannel Phase 1: opens/links a customer-visible support ticket + omni timeline (not admin-only thread).
+      // TODO Phase 2 (UI): Show ticket number + link to /admin/support; optional omni_messages timeline.
+      const res = await fetch(
+        `${API_URL}/api/feedback/admin/responses/${messageFeedbackId}/follow-up`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          body: JSON.stringify({ message: messageText.trim() }),
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "فشل الإرسال");
+      }
+      const data = await res.json();
+      const tn = data.ticket?.ticket_number || "";
+      window.alert(
+        tn
+          ? `تم إنشاء/تحديث تذكرة الدعم ${tn}. سيصل إشعار للعميل ويمكنه المتابعة من حسابه.`
+          : "تم إرسال المتابعة بنجاح."
+      );
       closeMessageModal();
-    } catch {
-      window.alert("فشل إرسال الرسالة الداخلية");
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "فشل إرسال المتابعة");
     } finally {
       setSendingMessage(false);
     }
@@ -384,9 +397,9 @@ export default function FeedbackResponsesPage() {
                                 <button
                                   type="button"
                                   className="text-xs px-2 py-1 rounded bg-[#002845] text-white hover:opacity-90"
-                                  onClick={() => openMessageModal(r.user_id, r.user_name)}
+                                  onClick={() => openMessageModal(r.user_id, r.user_name, r.id)}
                                 >
-                                  رسالة داخلية
+                                  متابعة عبر الدعم
                                 </button>
                               )}
                             </div>
@@ -419,18 +432,16 @@ export default function FeedbackResponsesPage() {
               </table>
             </div>
 
-            {messageUserId && (
+            {messageUserId && messageFeedbackId != null && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
                 <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 mx-4">
                   <h3 className="text-lg font-bold text-[#002845] mb-2">
-                    إرسال رسالة داخلية
+                    متابعة التغذية الراجعة
                   </h3>
                   <p className="text-sm text-slate-600 mb-3">
-                    سيتم إنشاء محادثة في نظام المراسلات مع{" "}
-                    <span className="font-semibold">
-                      {messageUserName || "هذا العميل"}
-                    </span>{" "}
-                    تحت قسم الدعم الفني.
+                    سيتم فتح أو تحديث{" "}
+                    <span className="font-semibold">تذكرة دعم</span> يظهرها العميل في حسابه، مع إشعار
+                    بالرد. يمكنك متابعة التذكرة من صفحة خدمة العملاء.
                   </p>
                   <textarea
                     className="w-full h-32 rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#D4AF37]"
@@ -440,7 +451,8 @@ export default function FeedbackResponsesPage() {
                     disabled={sendingMessage}
                   />
                   <p className="text-[11px] text-slate-500 mt-2">
-                    بعد الإرسال يمكنك متابعة المحادثة من صفحة المراسلات في لوحة التحكم.
+                    {/* TODO Phase 2: Deep-link to ticket in admin support UI from API response. */}
+                    بعد الإرسال راجع التذكرة من «خدمة العملاء» في لوحة التحكم.
                   </p>
                   <div className="flex justify-end gap-2 mt-4">
                     <button

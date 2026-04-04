@@ -913,6 +913,53 @@ async function initializeDatabase() {
     // فهرس للقسم لتسريع الفلترة
     await db.query(`CREATE INDEX IF NOT EXISTS idx_support_tickets_department ON support_tickets(department);`);
 
+    // Omnichannel: link tickets to AI session or feedback ref (mirrors migration 20260406000000)
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'support_tickets' AND column_name = 'source_ref'
+        ) THEN
+          ALTER TABLE support_tickets ADD COLUMN source_ref VARCHAR(255);
+        END IF;
+      END $$;
+    `);
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'omni_message_visibility') THEN
+          CREATE TYPE omni_message_visibility AS ENUM ('public', 'internal_note');
+        END IF;
+      END $$;
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS omni_conversations (
+        id SERIAL PRIMARY KEY,
+        source_type VARCHAR(50) NOT NULL,
+        source_id INTEGER,
+        status VARCHAR(40) NOT NULL DEFAULT 'open',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_omni_conv_source ON omni_conversations (source_type, source_id);`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS omni_messages (
+        id SERIAL PRIMARY KEY,
+        conversation_id INTEGER NOT NULL REFERENCES omni_conversations(id) ON DELETE CASCADE,
+        sender_type VARCHAR(20) NOT NULL,
+        sender_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        content TEXT NOT NULL,
+        visibility omni_message_visibility NOT NULL DEFAULT 'public'::omni_message_visibility,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_omni_messages_conv ON omni_messages (conversation_id);`);
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS idx_support_tickets_source_ref ON support_tickets (source_ref) WHERE source_ref IS NOT NULL;
+    `);
+
     // Add status_changed_at column to account_complaints
     await db.query(`
       DO $$ 
