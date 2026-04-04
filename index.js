@@ -654,6 +654,8 @@ app.use("/api/favorites", favoritesRoutes);
 app.use("/api/notifications", notificationsRoutes);
 app.use("/api/account", accountRoutes);
 app.use("/api/plans", plansRoutes);
+/* Must be before /api/admin — same router as /api/finance (DELETE /reset-invoices, etc.) */
+app.use("/api/admin/finance", financeRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/membership", membershipRoutes);
 app.use("/api/messages", messagesRoutes);

@@ -232,13 +232,14 @@ function createApp() {
   app.use("/api/notifications", notificationsRoutes);
   app.use("/api/account", accountRoutes);
   app.use("/api/plans", plansRoutes);
+  /* Mount specific /api/admin/* sub-routers BEFORE /api/admin so paths like
+   * DELETE /api/admin/finance/reset-invoices are not swallowed by the admin router. */
+  app.use("/api/admin/finance", financeRoutes);
+  app.use("/api/admin/messages", adminMessagesRoutes);
   app.use("/api/admin", adminRoutes);
   app.use("/api/membership", membershipRoutes);
   app.use("/api/messages", messagesRoutes);
-  app.use("/api/admin/messages", adminMessagesRoutes);
   app.use("/api/finance", financeRoutes);
-  /* Alias for admin-scoped finance tools (same router; e.g. DELETE /api/admin/finance/reset-invoices) */
-  app.use("/api/admin/finance", financeRoutes);
   app.use("/api/marketing", marketingRoutes);
   app.use("/api/permissions", permissionsRoutes);
   app.use("/api/payments", paymentsRoutes);
