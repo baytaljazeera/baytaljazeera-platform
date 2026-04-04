@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { resolveAdminHref } from "@/components/admin/adminNavigation";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Inbox,
@@ -20,6 +20,7 @@ import {
   User,
   Headset,
   Bot,
+  Radio,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -74,6 +75,87 @@ const DEPT_LABEL: Record<string, string> = {
   account: "حسابي/إداري",
   technical: "تقنية",
 };
+
+function OmniInboxSidebarSkeleton() {
+  return (
+    <div className="space-y-0 animate-pulse" aria-hidden>
+      {Array.from({ length: 7 }).map((_, i) => (
+        <div key={i} className="border-b border-slate-100 px-4 py-3 min-h-[5.25rem]">
+          <div className="h-3.5 bg-slate-200/90 rounded w-[72%] mb-2" />
+          <div className="h-2.5 bg-slate-100 rounded w-[55%] mb-2" />
+          <div className="h-2.5 bg-slate-100 rounded w-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OmniThreadSkeleton() {
+  return (
+    <div className="flex-1 flex flex-col min-h-[280px] w-full p-4 gap-3" aria-hidden>
+      <div className="h-10 bg-white/80 rounded-xl border border-slate-100 shadow-sm animate-pulse" />
+      <div className="flex-1 space-y-3 pt-2">
+        <div className="h-16 rounded-2xl bg-slate-200/70 max-w-[85%] mr-auto animate-pulse" />
+        <div className="h-20 rounded-2xl bg-[#002845]/10 max-w-[78%] ml-auto animate-pulse" />
+        <div className="h-14 rounded-2xl bg-slate-200/60 max-w-[70%] mr-auto animate-pulse" />
+      </div>
+      <div className="h-24 rounded-2xl bg-white border border-slate-200 animate-pulse shrink-0" />
+    </div>
+  );
+}
+
+const OmniInboxRow = memo(function OmniInboxRow({
+  item,
+  active,
+  onSelect,
+}: {
+  item: InboxItem;
+  active: boolean;
+  onSelect: (item: InboxItem) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item)}
+      className={`group w-full text-right px-4 py-3 border-b border-slate-100 min-h-[5.25rem] transition-all duration-300 ease-out motion-reduce:transition-none hover:bg-slate-50/90 hover:shadow-[inset_-3px_0_0_0_rgba(212,175,55,0.35)] active:scale-[0.995] ${
+        active
+          ? "bg-[#002845]/[0.06] border-r-[3px] border-r-[#D4AF37] shadow-sm"
+          : ""
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <span className="font-bold text-[#002845] text-sm line-clamp-1 group-hover:text-[#01456d] transition-colors duration-300">
+          {item.title}
+        </span>
+        {item.kind === "ticket_pending" && (
+          <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 transition-transform duration-300 group-hover:scale-105">
+            جديد
+          </span>
+        )}
+      </div>
+      <p className="text-[11px] text-slate-500 line-clamp-1">{item.subtitle}</p>
+      {item.last_snippet ? (
+        <p className="text-xs text-slate-600 mt-1 line-clamp-2">{item.last_snippet}</p>
+      ) : null}
+    </button>
+  );
+}, areInboxRowsEqual);
+
+function areInboxRowsEqual(
+  prev: { item: InboxItem; active: boolean; onSelect: (item: InboxItem) => void },
+  next: { item: InboxItem; active: boolean; onSelect: (item: InboxItem) => void }
+) {
+  return (
+    prev.active === next.active &&
+    prev.item.omni_id === next.item.omni_id &&
+    prev.item.ticket_id === next.item.ticket_id &&
+    prev.item.updated_at === next.item.updated_at &&
+    prev.item.title === next.item.title &&
+    prev.item.subtitle === next.item.subtitle &&
+    prev.item.last_snippet === next.item.last_snippet &&
+    prev.item.kind === next.item.kind
+  );
+}
 
 export default function OmniInboxPage() {
   const router = useRouter();
@@ -233,14 +315,20 @@ export default function OmniInboxPage() {
           omni_id: oid,
           kind: "omni",
         });
-        void fetchInbox();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "خطأ");
       } finally {
         setLoadingThread(false);
       }
     },
-    [fetchAiContext, fetchInbox]
+    [fetchAiContext]
+  );
+
+  const selectThread = useCallback(
+    (item: InboxItem) => {
+      void loadThread(item);
+    },
+    [loadThread]
   );
 
   const transferToFinance = useCallback(async () => {
@@ -364,39 +452,34 @@ export default function OmniInboxPage() {
           </div>
           <div className="flex-1 overflow-y-auto">
             {loadingList && items.length === 0 ? (
-              <div className="flex justify-center py-16">
-                <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37]" />
-              </div>
+              <OmniInboxSidebarSkeleton />
             ) : items.length === 0 ? (
-              <p className="p-6 text-sm text-slate-500 text-center">لا توجد عناصر بعد. تظهر هنا متابعات التغذية الراجعة والتذاكر المربوطة.</p>
+              <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
+                <div className="relative mb-4">
+                  <div className="absolute inset-0 rounded-2xl bg-[#D4AF37]/15 blur-xl" />
+                  <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-200/80 bg-white shadow-md">
+                    <Inbox className="h-8 w-8 text-[#002845]/40" />
+                  </div>
+                </div>
+                <p className="text-sm font-bold text-[#002845]">صندوق الوارد هادئ الآن</p>
+                <p className="text-xs text-slate-500 mt-2 max-w-[260px] leading-relaxed">
+                  عند وصول تذاكر جديدة أو تصعيد من الذكاء الاصطناعي، ستظهر هنا فوراً مع شارة «جديد».
+                </p>
+              </div>
             ) : (
               items.map((it) => {
-                const active =
+                const active = !!(
                   selected &&
                   ((it.omni_id && it.omni_id === selected.omni_id) ||
-                    (it.ticket_id && it.ticket_id === selected.ticket_id && it.kind === selected.kind));
+                    (it.ticket_id && it.ticket_id === selected.ticket_id && it.kind === selected.kind))
+                );
                 return (
-                  <button
+                  <OmniInboxRow
                     key={`${it.kind}-${it.omni_id ?? "x"}-${it.ticket_id ?? "n"}-${it.updated_at}`}
-                    type="button"
-                    onClick={() => void loadThread(it)}
-                    className={`w-full text-right px-4 py-3 border-b border-slate-100 transition hover:bg-slate-50/90 ${
-                      active ? "bg-[#002845]/[0.06] border-r-[3px] border-r-[#D4AF37]" : ""
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="font-bold text-[#002845] text-sm line-clamp-1">{it.title}</span>
-                      {it.kind === "ticket_pending" && (
-                        <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
-                          جديد
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-500 line-clamp-1">{it.subtitle}</p>
-                    {it.last_snippet ? (
-                      <p className="text-xs text-slate-600 mt-1 line-clamp-2">{it.last_snippet}</p>
-                    ) : null}
-                  </button>
+                    item={it}
+                    active={active}
+                    onSelect={selectThread}
+                  />
                 );
               })
             )}
@@ -406,17 +489,23 @@ export default function OmniInboxPage() {
         {/* Main chat */}
         <main className="flex-1 flex flex-col min-w-0 bg-[#f4f7fb]">
           {!selected ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8">
-              <Inbox className="w-16 h-16 mb-4 opacity-30" />
-              <p className="text-lg font-medium text-slate-500">اختر محادثة من القائمة</p>
+            <div className="flex-1 flex flex-col items-center justify-center p-8 min-h-[320px]">
+              <div className="relative mb-5">
+                <span className="absolute inset-0 rounded-full bg-cyan-400/20 blur-2xl scale-150 animate-pulse" />
+                <div className="relative flex h-20 w-20 items-center justify-center rounded-3xl border border-white/80 bg-white shadow-xl ring-1 ring-slate-200/80">
+                  <Radio className="h-9 w-9 text-[#002845]/35" />
+                </div>
+              </div>
+              <p className="text-lg font-black text-[#002845]/90">اختر محادثة من القائمة</p>
+              <p className="text-sm text-slate-500 mt-2 max-w-md text-center leading-relaxed">
+                التسلسل الزمني الموحّد يظهر هنا بمجرد الاختيار — بدون قفزات في التخطيط.
+              </p>
             </div>
           ) : loadingThread ? (
-            <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="w-10 h-10 animate-spin text-[#002845]" />
-            </div>
+            <OmniThreadSkeleton />
           ) : (
             <>
-              <div className="shrink-0 px-4 py-3 bg-white/95 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+              <div className="shrink-0 px-4 py-3 bg-white/95 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 min-h-[4.5rem] transition-all duration-300 ease-out">
                 <div className="min-w-0 flex-1">
                   <h2 className="font-bold text-[#002845] truncate">{selected.title}</h2>
                   {ticketMeta && (
@@ -440,7 +529,7 @@ export default function OmniInboxPage() {
                         type="button"
                         onClick={() => void transferToFinance()}
                         disabled={transferLoading}
-                        className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                        className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-900 transition-all duration-300 ease-out hover:bg-emerald-100 hover:shadow-md hover:shadow-emerald-200/50 active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none"
                       >
                         {transferLoading ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -503,7 +592,7 @@ export default function OmniInboxPage() {
 
                       return (
                         <div key={`${m.entry_kind}-${m.id}`} className={`flex flex-col max-w-[min(92%,720px)] ${bubbleSide}`}>
-                          <div className={`rounded-2xl px-4 py-3 ${bubbleStyle}`}>
+                          <div className={`rounded-2xl px-4 py-3 ${bubbleStyle} transition-all duration-200 ease-out`}>
                             <div className="flex items-center gap-2 mb-1 text-[11px] opacity-90">
                               {isTicket ? (
                                 <span className="font-bold">تذكرة · {isUser ? "العميل" : "الدعم"}</span>
@@ -611,7 +700,12 @@ export default function OmniInboxPage() {
                           <Loader2 className="w-7 h-7 animate-spin text-cyan-400" />
                         </div>
                       ) : aiLogs.length === 0 ? (
-                        <p className="text-xs text-white/50 text-center py-6">لا يوجد سجل جلسة محفوظ لهذا التصعيد.</p>
+                        <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+                          <Bot className="w-10 h-10 text-cyan-500/40 mb-3" />
+                          <p className="text-xs text-white/55 leading-relaxed">
+                            لا يوجد سجل جلسة محفوظ لهذا التصعيد.
+                          </p>
+                        </div>
                       ) : (
                         aiLogs.map((log) => (
                           <div

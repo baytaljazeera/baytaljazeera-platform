@@ -516,7 +516,11 @@ function NavbarContent() {
                     )}
                     {/* شارة عادية (للرسائل والإشعارات) */}
                     {badge !== undefined && badge > 0 && (
-                      <span className="bg-red-500 text-white text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center">
+                      <span
+                        className={`bg-red-500 text-white text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center ${
+                          href === "/account/my-tickets" ? "unread-badge-breathe" : ""
+                        }`}
+                      >
                         {badge > 99 ? '99+' : badge}
                       </span>
                     )}

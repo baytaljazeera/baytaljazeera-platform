@@ -425,7 +425,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
                             <span className="flex-1 text-right truncate">{item.label}</span>
                             <div className="flex items-center gap-1.5 md:gap-1 shrink-0">
                               {newCount > 0 && (
-                                <span className="min-w-[22px] h-[22px] md:min-w-[18px] md:h-[18px] flex items-center justify-center text-xs md:text-[10px] font-bold bg-red-500 text-white rounded-full px-1.5 md:px-1 shadow-lg shadow-red-500/30">
+                                <span className="unread-badge-breathe min-w-[22px] h-[22px] md:min-w-[18px] md:h-[18px] flex items-center justify-center text-xs md:text-[10px] font-bold bg-red-500 text-white rounded-full px-1.5 md:px-1 shadow-lg shadow-red-500/30">
                                   {newCount > 99 ? '99+' : newCount}
                                 </span>
                               )}

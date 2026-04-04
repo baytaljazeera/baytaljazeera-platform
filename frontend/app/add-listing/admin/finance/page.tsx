@@ -4,7 +4,7 @@ import { API_URL, getAuthHeaders } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DollarSign,
   Users,
@@ -730,10 +730,64 @@ export default function FinancePage() {
     }
   }
 
+  const financeTabs = useMemo(() => {
+    const pendingCount = allRefunds.filter((r) => r.status === "pending").length;
+    const awaitingPayoutCount = allRefunds.filter(
+      (r) => r.status === "approved" && !r.payout_confirmed_at
+    ).length;
+    const withdrawalPendingCount = stats?.revenue?.pendingWithdrawalRequestsCount || 0;
+    return [
+      { id: "overview" as const, label: "نظرة عامة", icon: TrendingUp },
+      { id: "payments" as const, label: "المدفوعات", icon: CreditCard },
+      { id: "invoices" as const, label: "الفواتير", icon: PiggyBank },
+      { id: "subscribers" as const, label: "المشتركون", icon: Users },
+      {
+        id: "refunds" as const,
+        label: "الاستردادات",
+        icon: Wallet,
+        pendingCount,
+        awaitingPayoutCount,
+      },
+      {
+        id: "withdrawals" as const,
+        label: "طلبات سحب السفراء",
+        icon: DollarSign,
+        withdrawalPending: withdrawalPendingCount,
+      },
+      { id: "messages" as const, label: "مراسلات المالية", icon: MessageSquare },
+    ];
+  }, [allRefunds, stats?.revenue?.pendingWithdrawalRequestsCount]);
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-10 h-10 border-4 border-[#D4AF37] border-t-transparent rounded-full animate-spin" />
+      <div className="space-y-6 min-h-[60vh] max-w-7xl mx-auto" dir="rtl">
+        <div className="flex flex-wrap justify-between gap-4 items-start">
+          <div className="space-y-2 flex-1 min-w-[200px]">
+            <div className="h-9 bg-slate-200/90 rounded-xl w-56 max-w-full animate-pulse" />
+            <div className="h-4 bg-slate-100 rounded-lg w-80 max-w-full animate-pulse" />
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <div className="h-11 w-36 bg-slate-100 rounded-xl animate-pulse" />
+            <div className="h-11 w-28 bg-slate-200/80 rounded-xl animate-pulse" />
+          </div>
+        </div>
+        <div className="flex gap-2 border-b border-gray-200 overflow-x-auto pb-1">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div key={i} className="h-12 min-w-[100px] bg-slate-100 rounded-lg animate-pulse shrink-0" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-36 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm animate-pulse"
+            >
+              <div className="h-3 bg-slate-100 rounded w-2/3 mb-4" />
+              <div className="h-9 bg-slate-200/80 rounded-lg w-1/2" />
+            </div>
+          ))}
+        </div>
+        <div className="h-52 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-50 border border-slate-100 animate-pulse" />
       </div>
     );
   }
@@ -753,7 +807,7 @@ export default function FinancePage() {
                 setResetPhrase("");
                 setResetInvoiceOpen(true);
               }}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition border border-red-800 shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all duration-300 ease-out border border-red-800 shadow-sm active:scale-[0.98]"
             >
               <Trash2 className="w-4 h-4" />
               تصفير الفواتير التجريبية
@@ -766,7 +820,7 @@ export default function FinancePage() {
               fetchRefunds();
               fetchAllRefunds();
             }}
-            className="flex items-center gap-2 px-4 py-2 bg-[#002845] text-white rounded-xl hover:bg-[#003d5c] transition"
+            className="flex items-center gap-2 px-4 py-2 bg-[#002845] text-white rounded-xl hover:bg-[#003d5c] transition-all duration-300 ease-out shadow-sm hover:shadow-md active:scale-[0.98]"
           >
             <RefreshCw className="w-4 h-4" />
             تحديث
@@ -774,55 +828,42 @@ export default function FinancePage() {
         </div>
       </div>
 
-      <div className="flex gap-2 border-b border-gray-200">
-        {(() => {
-          const pendingCount = allRefunds.filter(r => r.status === 'pending').length;
-          const awaitingPayoutCount = allRefunds.filter(r => r.status === 'approved' && !r.payout_confirmed_at).length;
-          
-          const withdrawalPendingCount = stats?.revenue?.pendingWithdrawalRequestsCount || 0;
-          
-          return [
-            { id: "overview", label: "نظرة عامة", icon: TrendingUp },
-            { id: "payments", label: "المدفوعات", icon: CreditCard },
-            { id: "invoices", label: "الفواتير", icon: PiggyBank },
-            { id: "subscribers", label: "المشتركون", icon: Users },
-            { id: "refunds", label: "الاستردادات", icon: Wallet, pendingCount, awaitingPayoutCount },
-            { id: "withdrawals", label: "طلبات سحب السفراء", icon: DollarSign, pendingCount: withdrawalPendingCount },
-            { id: "messages", label: "مراسلات المالية", icon: MessageSquare },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as typeof activeTab)}
-              className={`flex items-center gap-2 px-4 py-3 border-b-2 transition ${
-                activeTab === tab.id
-                  ? "border-[#D4AF37] text-[#D4AF37] font-bold"
-                  : "border-transparent text-gray-500 hover:text-[#002845]"
-              }`}
-            >
-              <tab.icon className="w-4 h-4" />
-              {tab.label}
-              {tab.id === 'refunds' && (pendingCount > 0 || awaitingPayoutCount > 0) && (
+      <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
+        {financeTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id as typeof activeTab)}
+            className={`group flex items-center gap-2 px-4 py-3 border-b-2 transition-all duration-300 ease-out shrink-0 rounded-t-lg ${
+              activeTab === tab.id
+                ? "border-[#D4AF37] text-[#D4AF37] font-bold bg-[#D4AF37]/5"
+                : "border-transparent text-gray-500 hover:text-[#002845] hover:bg-slate-50/90"
+            }`}
+          >
+            <tab.icon className="w-4 h-4 transition-transform duration-300 ease-out group-hover:scale-110" />
+            {tab.label}
+            {tab.id === "refunds" &&
+              (tab.pendingCount > 0 || tab.awaitingPayoutCount > 0) && (
                 <span className="flex items-center gap-1 mr-1">
-                  {pendingCount > 0 && (
-                    <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center">
-                      {pendingCount}
+                  {tab.pendingCount > 0 && (
+                    <span className="unread-badge-breathe bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center shadow-md">
+                      {tab.pendingCount}
                     </span>
                   )}
-                  {awaitingPayoutCount > 0 && (
+                  {tab.awaitingPayoutCount > 0 && (
                     <span className="bg-blue-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center">
-                      {awaitingPayoutCount}
+                      {tab.awaitingPayoutCount}
                     </span>
                   )}
                 </span>
               )}
-              {tab.id === 'withdrawals' && (tab.pendingCount || 0) > 0 && (
-                <span className="bg-amber-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center">
-                  {tab.pendingCount || 0}
-                </span>
-              )}
-            </button>
-          ));
-        })()}
+            {tab.id === "withdrawals" && tab.withdrawalPending > 0 && (
+              <span className="bg-amber-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                {tab.withdrawalPending}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {activeTab === "overview" && stats && (

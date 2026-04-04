@@ -13,9 +13,10 @@ import {
   Plus,
   ArrowRight,
   Send,
-  AlertCircle,
   X,
   Bot,
+  Inbox,
+  Sparkles,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { API_URL, getAuthHeaders } from "@/lib/api";
@@ -302,8 +303,21 @@ function MyTicketsContent() {
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-[#002845] to-[#001830] flex items-center justify-center">
-        <div className="text-white text-xl">جاري التحميل...</div>
+      <div className="min-h-screen bg-gradient-to-b from-[#002845] to-[#001830] py-8" dir="rtl">
+        <div className="container mx-auto px-4 max-w-4xl space-y-4 animate-pulse">
+          <div className="flex justify-between gap-4">
+            <div className="space-y-2 flex-1">
+              <div className="h-8 bg-white/10 rounded-lg w-48" />
+              <div className="h-4 bg-white/5 rounded w-72 max-w-full" />
+            </div>
+            <div className="h-10 w-32 bg-[#D4AF37]/20 rounded-xl shrink-0" />
+          </div>
+          <div className="space-y-3">
+            {[1, 2, 3].map((k) => (
+              <div key={k} className="h-28 rounded-xl bg-white/10 border border-white/5" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -596,10 +610,19 @@ function MyTicketsContent() {
         ) : (
           <div className="space-y-3">
             {tickets.length === 0 ? (
-              <div className="bg-white/10 rounded-2xl p-8 text-center">
-                <AlertCircle className="w-12 h-12 text-white/30 mx-auto mb-3" />
-                <p className="text-white/60">لا توجد طلبات دعم بعد</p>
-                <p className="text-white/40 text-sm mt-1">بعد تصعيد الدعم الآلي أو عند فتح تذكرة، ستظهر هنا.</p>
+              <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.07] p-10 text-center backdrop-blur-sm">
+                <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-[#D4AF37]/10 blur-3xl" />
+                <div className="relative inline-flex h-16 w-16 items-center justify-center rounded-2xl border border-white/15 bg-white/10 shadow-lg mb-4">
+                  <Inbox className="w-8 h-8 text-[#D4AF37]/90" />
+                </div>
+                <p className="text-white font-bold text-lg">لا توجد طلبات دعم بعد</p>
+                <p className="text-white/55 text-sm mt-2 max-w-md mx-auto leading-relaxed">
+                  عند تصعيد المحادثة من الدعم الآلي أو عند فتح تذكرة جديدة، ستظهر هنا مع تحديثات فورية — بأسلوب يشبه تطبيقات الدعم العالمية.
+                </p>
+                <div className="mt-5 flex items-center justify-center gap-2 text-[11px] text-white/35">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>واجهة جاهزة للتوسّع</span>
+                </div>
               </div>
             ) : (
               tickets.map((t) => {
@@ -612,7 +635,7 @@ function MyTicketsContent() {
                     setSelected(t);
                     router.replace(`/account/my-tickets?open=${t.id}`);
                   }}
-                  className="w-full min-w-0 max-w-full text-right bg-white rounded-xl p-4 cursor-pointer hover:shadow-lg transition overflow-hidden"
+                  className="group w-full min-w-0 max-w-full text-right bg-white rounded-xl p-4 cursor-pointer border border-transparent transition-all duration-300 ease-out hover:shadow-xl hover:border-[#D4AF37]/25 hover:-translate-y-0.5 active:scale-[0.995] overflow-hidden"
                 >
                   <div className="flex items-start justify-between gap-3 w-full min-w-0">
                     <div className="flex items-start gap-3 flex-1 min-w-0 overflow-hidden">
@@ -670,8 +693,12 @@ export default function MyTicketsPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-gradient-to-b from-[#002845] to-[#001830] flex items-center justify-center">
-          <div className="text-white text-xl">جاري التحميل...</div>
+        <div className="min-h-screen bg-gradient-to-b from-[#002845] to-[#001830] flex items-center justify-center px-4">
+          <div className="w-full max-w-md space-y-3 animate-pulse">
+            <div className="h-10 bg-white/10 rounded-xl" />
+            <div className="h-24 bg-white/5 rounded-xl" />
+            <div className="h-24 bg-white/5 rounded-xl" />
+          </div>
         </div>
       }
     >

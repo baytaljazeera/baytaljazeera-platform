@@ -43,6 +43,7 @@ import {
   Line,
   Legend
 } from "recharts";
+import { PlatformPulse } from "@/components/admin/PlatformPulse";
 
 interface DashboardStats {
   totalListings: number;
@@ -331,6 +332,10 @@ export default function AdminDashboard() {
             </div>
           );
         })}
+      </div>
+
+      <div className="my-2 md:my-1">
+        <PlatformPulse />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
