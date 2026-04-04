@@ -175,6 +175,9 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
   if (!department || !['financial', 'account', 'technical'].includes(department)) {
     return res.status(400).json({ error: "يرجى اختيار نوع المشكلة (مالية/حسابي/تقنية)" });
   }
+
+  const allowedSources = new Set(["manual", "complaint_page", "ai_chatbot", "feedback_followup"]);
+  const source = allowedSources.has(req.body?.source) ? req.body.source : "manual";
   
   const ticketNumber = generateTicketNumber();
   const routing = getSmartRouting(department, priority || 'medium');
@@ -182,8 +185,8 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
   
   const result = await db.query(
     `INSERT INTO support_tickets 
-     (user_id, ticket_number, department, subcategory, category, priority, subject, description, auto_assigned_role, sla_hours)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     (user_id, ticket_number, department, subcategory, category, priority, subject, description, auto_assigned_role, sla_hours, source)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`,
     [
       userId, 
@@ -195,11 +198,25 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
       subject, 
       description,
       routing.role,
-      routing.sla_hours
+      routing.sla_hours,
+      source
     ]
   );
   
   const ticket = result.rows[0];
+
+  try {
+    await db.query(
+      `INSERT INTO omni_conversations (source_type, source_id, status, created_at, updated_at)
+       SELECT 'ticket', $1, 'open', NOW(), NOW()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM omni_conversations WHERE source_type = 'ticket' AND source_id = $1
+       )`,
+      [ticket.id]
+    );
+  } catch (omniErr) {
+    console.warn("[support POST] omni_conversations:", omniErr.message);
+  }
   
   try {
     const targetAdmins = await db.query(

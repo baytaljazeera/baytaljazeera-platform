@@ -9,6 +9,12 @@ const { getSupportTicketScope } = require("../utils/customerServiceScope");
 
 const router = express.Router();
 
+const DEPT_AR = {
+  financial: "مالية",
+  account: "حسابي/إداري",
+  technical: "تقنية",
+};
+
 const OMNI_ROLES = [
   "super_admin",
   "admin",
@@ -122,13 +128,21 @@ async function buildInboxList() {
       }
     } else if (r.source_type === "ticket" && r.source_id) {
       const st = await db.query(
-        `SELECT id, subject, source, source_ref FROM support_tickets WHERE id = $1`,
+        `SELECT id, subject, source, source_ref, department FROM support_tickets WHERE id = $1`,
         [r.source_id]
       );
       if (st.rows[0]) {
         ticketId = st.rows[0].id;
         title = st.rows[0].subject || `تذكرة #${st.rows[0].id}`;
-        subtitle = st.rows[0].source === "ai_chatbot" ? "تصعيد من الدعم الآلي" : "تذكرة دعم";
+        const dept = st.rows[0].department;
+        const deptTag = dept ? (DEPT_AR[dept] || dept) : "دعم";
+        if (st.rows[0].source === "complaint_page") {
+          subtitle = `شكوى — ${deptTag} · البريد الموحد`;
+        } else if (st.rows[0].source === "ai_chatbot") {
+          subtitle = `${deptTag} · تصعيد من الدعم الآلي`;
+        } else {
+          subtitle = `${deptTag} · تذكرة دعم`;
+        }
         if (st.rows[0].source === "ai_chatbot" && st.rows[0].source_ref) {
           aiSessionId = st.rows[0].source_ref;
         }
@@ -152,7 +166,7 @@ async function buildInboxList() {
   }
 
   const pendingTickets = await db.query(`
-    SELECT st.id, st.subject, st.source, st.source_ref, st.updated_at, st.user_id
+    SELECT st.id, st.subject, st.source, st.source_ref, st.updated_at, st.user_id, st.department
     FROM support_tickets st
     WHERE st.source = 'ai_chatbot'
       AND st.status NOT IN ('resolved', 'closed')
@@ -174,7 +188,7 @@ async function buildInboxList() {
       updated_at: t.updated_at,
       created_at: t.updated_at,
       title: t.subject || `تذكرة #${t.id}`,
-      subtitle: "تصعيد من الدعم الآلي — لم تُفتح بعد في البريد الموحد",
+      subtitle: `${t.department ? (DEPT_AR[t.department] || t.department) + " · " : ""}تصعيد من الدعم الآلي — لم تُفتح بعد في البريد الموحد`,
       last_snippet: "",
       ticket_id: t.id,
       ai_session_id: t.source_ref || null,

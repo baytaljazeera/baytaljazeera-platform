@@ -33,6 +33,7 @@ import {
   Download,
   Printer,
   X,
+  Trash2,
 } from "lucide-react";
 
 interface FinanceStats {
@@ -175,8 +176,31 @@ export default function FinancePage() {
   const [withdrawalFilter, setWithdrawalFilter] = useState<"all" | "finance_review" | "in_progress" | "completed" | "rejected">("finance_review");
   const [plans, setPlans] = useState<any[]>([]);
 
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
+  const [resetInvoiceOpen, setResetInvoiceOpen] = useState(false);
+  const [resetPhrase, setResetPhrase] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const RESET_INVOICES_PHRASE = "تصفير الفواتير التجريبية";
+
   useEffect(() => {
     fetchPlans();
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/auth/me`, {
+          credentials: "include",
+          headers: getAuthHeaders(),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setSessionRole(data.user?.role ?? null);
+        }
+      } catch {
+        setSessionRole(null);
+      }
+    })();
   }, []);
 
   async function fetchPlans() {
@@ -659,6 +683,53 @@ export default function FinancePage() {
     }).format(amount);
   };
 
+  async function handleResetTestInvoices() {
+    if (resetPhrase.trim() !== RESET_INVOICES_PHRASE) {
+      setSuccessModal({
+        isOpen: true,
+        message: "يجب كتابة العبارة المطلوبة حرفياً للتأكيد",
+        type: "error",
+      });
+      return;
+    }
+    setResetLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/finance/reset-invoices`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error || "فشل تصفير الفواتير");
+      }
+      setResetInvoiceOpen(false);
+      setResetPhrase("");
+      setSuccessModal({
+        isOpen: true,
+        message:
+          (data as { message?: string }).message || "تم حذف جميع الفواتير التجريبية وإعادة ضبط الترقيم",
+        type: "success",
+      });
+      await Promise.all([
+        fetchInvoices(),
+        fetchPaymentStats(),
+        fetchStats(),
+        fetchRefunds(refundFilter),
+        fetchAllRefunds(),
+      ]);
+    } catch (e) {
+      setSuccessModal({
+        isOpen: true,
+        message: e instanceof Error ? e.message : "حدث خطأ",
+        type: "error",
+      });
+    } finally {
+      setResetLoading(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -669,18 +740,38 @@ export default function FinancePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-[#002845]">المالية والاشتراكات</h1>
           <p className="text-sm text-gray-500 mt-1">إدارة المدفوعات والاشتراكات والاستردادات</p>
         </div>
-        <button
-          onClick={() => { fetchStats(); fetchSubscribers(); fetchRefunds(); fetchAllRefunds(); }}
-          className="flex items-center gap-2 px-4 py-2 bg-[#002845] text-white rounded-xl hover:bg-[#003d5c] transition"
-        >
-          <RefreshCw className="w-4 h-4" />
-          تحديث
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {sessionRole === "super_admin" && (
+            <button
+              type="button"
+              onClick={() => {
+                setResetPhrase("");
+                setResetInvoiceOpen(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition border border-red-800 shadow-sm"
+            >
+              <Trash2 className="w-4 h-4" />
+              تصفير الفواتير التجريبية
+            </button>
+          )}
+          <button
+            onClick={() => {
+              fetchStats();
+              fetchSubscribers();
+              fetchRefunds();
+              fetchAllRefunds();
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-[#002845] text-white rounded-xl hover:bg-[#003d5c] transition"
+          >
+            <RefreshCw className="w-4 h-4" />
+            تحديث
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-2 border-b border-gray-200">
@@ -2052,6 +2143,63 @@ export default function FinancePage() {
               >
                 إلغاء
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resetInvoiceOpen && sessionRole === "super_admin" && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4" dir="rtl">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-red-200">
+            <div className="bg-red-50 p-5 border-b border-red-100">
+              <div className="flex items-center gap-2 text-red-900 font-bold text-lg">
+                <AlertTriangle className="w-6 h-6 shrink-0" />
+                تصفير الفواتير التجريبية (ما قبل الإطلاق)
+              </div>
+              <p className="text-sm text-red-800 mt-3 leading-relaxed">
+                سيتم حذف <span className="font-black">جميع</span> سجلات جدول الفواتير نهائياً وإعادة ترقيم المعرفات إلى الصفر.
+                لا يمكن التراجع. استخدم فقط على بيئة اختبار أو قبل الإطلاق الرسمي بعد أخذ نسخة احتياطية.
+              </p>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-700">
+                للتأكيد، اكتب العبارة التالية حرفياً في الحقل:
+              </p>
+              <code className="block text-center text-sm font-mono bg-gray-100 py-2 px-3 rounded-lg border border-gray-200 select-all">
+                {RESET_INVOICES_PHRASE}
+              </code>
+              <input
+                type="text"
+                value={resetPhrase}
+                onChange={(e) => setResetPhrase(e.target.value)}
+                placeholder="اكتب العبارة هنا"
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-red-400 focus:outline-none"
+                autoComplete="off"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetInvoiceOpen(false);
+                    setResetPhrase("");
+                  }}
+                  disabled={resetLoading}
+                  className="flex-1 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 disabled:opacity-50"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleResetTestInvoices()}
+                  disabled={
+                    resetLoading ||
+                    resetPhrase.trim() !== RESET_INVOICES_PHRASE
+                  }
+                  className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {resetLoading ? "جاري التنفيذ…" : "تنفيذ التصفير"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

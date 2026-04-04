@@ -1395,4 +1395,37 @@ router.get("/chargebacks/:id", authMiddleware, requireRoles('finance_admin'), as
   res.json({ chargeback: result.rows[0] });
 }));
 
+/**
+ * Pre-launch only: wipe all invoices and reset SERIAL (super_admin + body confirm).
+ * Clears FK references from dependent tables first.
+ */
+router.delete(
+  "/reset-invoices",
+  authMiddleware,
+  requireRoles("super_admin"),
+  asyncHandler(async (req, res) => {
+    if (!req.body || req.body.confirm !== true) {
+      return res.status(400).json({ error: "يجب إرسال { confirm: true } للتأكيد" });
+    }
+    const client = await db.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(`UPDATE refunds SET invoice_id = NULL WHERE invoice_id IS NOT NULL`);
+      await client.query(`UPDATE account_complaints SET invoice_id = NULL WHERE invoice_id IS NOT NULL`);
+      await client.query(`UPDATE chargebacks SET invoice_id = NULL WHERE invoice_id IS NOT NULL`);
+      await client.query(`UPDATE elite_slot_reservations SET invoice_id = NULL WHERE invoice_id IS NOT NULL`);
+      await client.query(`UPDATE elite_extension_requests SET invoice_id = NULL WHERE invoice_id IS NOT NULL`);
+      await client.query(`TRUNCATE TABLE invoices RESTART IDENTITY`);
+      await client.query("COMMIT");
+      res.json({ ok: true, message: "تم حذف جميع الفواتير وإعادة ضبط الترقيم" });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error("[finance reset-invoices]", err);
+      res.status(500).json({ error: err.message || "فشل تصفير الفواتير" });
+    } finally {
+      client.release();
+    }
+  })
+);
+
 module.exports = router;

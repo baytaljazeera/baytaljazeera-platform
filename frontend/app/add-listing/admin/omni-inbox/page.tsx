@@ -63,6 +63,18 @@ const JSON_HEADERS = () => ({
   "Content-Type": "application/json",
 });
 
+function isFinanceDepartment(d: string | null | undefined) {
+  return String(d ?? "")
+    .trim()
+    .toLowerCase() === "financial";
+}
+
+const DEPT_LABEL: Record<string, string> = {
+  financial: "مالية",
+  account: "حسابي/إداري",
+  technical: "تقنية",
+};
+
 export default function OmniInboxPage() {
   const router = useRouter();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -185,6 +197,28 @@ export default function OmniInboxPage() {
             user_email: data.ticket.user_email,
             department: data.ticket.department ?? null,
           });
+        } else if (item.ticket_id) {
+          try {
+            const tr = await fetch(`${API_URL}/api/support/${item.ticket_id}`, {
+              credentials: "include",
+              headers: getAuthHeaders(),
+            });
+            if (tr.ok) {
+              const td = await tr.json();
+              const t = td.ticket;
+              if (t) {
+                setTicketMeta({
+                  id: t.id,
+                  subject: t.subject,
+                  user_name: t.user_name,
+                  user_email: t.user_email,
+                  department: t.department ?? null,
+                });
+              }
+            }
+          } catch {
+            /* ignore */
+          }
         }
         const sid = data.ai_session_id as string | null;
         setAiSessionId(sid || null);
@@ -210,10 +244,11 @@ export default function OmniInboxPage() {
   );
 
   const transferToFinance = useCallback(async () => {
-    if (!ticketMeta?.id) return;
+    const tid = ticketMeta?.id ?? selected?.ticket_id ?? null;
+    if (tid == null) return;
     setTransferLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/support/${ticketMeta.id}/transfer`, {
+      const res = await fetch(`${API_URL}/api/support/${tid}/transfer`, {
         method: "PATCH",
         credentials: "include",
         headers: JSON_HEADERS(),
@@ -231,7 +266,7 @@ export default function OmniInboxPage() {
     } finally {
       setTransferLoading(false);
     }
-  }, [ticketMeta?.id, selected, omniId, loadThread, fetchInbox]);
+  }, [ticketMeta?.id, selected?.ticket_id, selected, omniId, loadThread, fetchInbox]);
 
   useEffect(() => {
     void fetchInbox();
@@ -390,17 +425,17 @@ export default function OmniInboxPage() {
                       <span className="truncate">
                         {ticketMeta.user_name || "عميل"} {ticketMeta.user_email ? `· ${ticketMeta.user_email}` : ""}
                       </span>
-                      {ticketMeta.department && (
+                      {ticketMeta.department != null && ticketMeta.department !== "" && (
                         <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
-                          القسم: {ticketMeta.department === "financial" ? "مالية" : ticketMeta.department}
+                          القسم: {DEPT_LABEL[ticketMeta.department] || ticketMeta.department}
                         </span>
                       )}
                     </p>
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  {ticketMeta &&
-                    String(ticketMeta.department || "").toLowerCase() !== "financial" && (
+                  {(ticketMeta || selected?.ticket_id) &&
+                    !isFinanceDepartment(ticketMeta?.department) && (
                       <button
                         type="button"
                         onClick={() => void transferToFinance()}

@@ -19,6 +19,16 @@ const categories = [
   { value: "account_issue", label: "مشكلة في الحساب", icon: User, description: "تسجيل الدخول، استعادة كلمة السر، تفعيل الحساب" },
 ];
 
+/** Maps legacy complaint categories → support_tickets.department + subcategory (Omni-Inbox routing). */
+const CATEGORY_TO_SUPPORT: Record<
+  string,
+  { department: string; subcategory: string; labelAr: string }
+> = {
+  billing: { department: "financial", subcategory: "refund", labelAr: "مالية" },
+  technical: { department: "technical", subcategory: "app_error", labelAr: "تقنية" },
+  account_issue: { department: "account", subcategory: "profile_update", labelAr: "حسابي/إداري" },
+};
+
 function ComplaintPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -69,29 +79,57 @@ function ComplaintPageContent() {
       return;
     }
 
+    const mapping = CATEGORY_TO_SUPPORT[category];
+    if (!mapping) {
+      toast.error("نوع الشكوى غير صالح");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_URL}/api/account-complaints`, {
+      const me = await fetch(`${API_URL}/api/auth/me`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (!me.ok) {
+        toast.error("يجب تسجيل الدخول لإرسال الشكوى عبر نظام التذاكر الموحد (البريد الموحد)");
+        router.push("/login?redirect=/complaint");
+        return;
+      }
+
+      const description = [
+        `[شكوى — صفحة /complaint]`,
+        `تصنيف العميل: ${mapping.labelAr} (${category})`,
+        ``,
+        details.trim(),
+        ``,
+        `— بيانات التواصل —`,
+        `الاسم: ${userName || "—"}`,
+        `البريد: ${userEmail || "—"}`,
+        `الجوال: ${userPhone || "—"}`,
+      ].join("\n");
+
+      const res = await fetch(`${API_URL}/api/support`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
         body: JSON.stringify({
-          category,
-          subject,
-          details,
-          userName,
-          userEmail,
-          userPhone,
+          department: mapping.department,
+          subcategory: mapping.subcategory,
+          priority: "medium",
+          subject: subject.trim(),
+          description,
+          source: "complaint_page",
         }),
       });
 
       if (res.ok) {
         setSent(true);
-        toast.success("تم إرسال شكواك بنجاح");
+        toast.success("تم إرسال شكواك — ستُعالج عبر البريد الموحد لخدمة العملاء");
       } else {
-        const data = await res.json();
-        toast.error(data.errorAr || data.error || "حدث خطأ في إرسال الشكوى");
+        const data = await res.json().catch(() => ({}));
+        toast.error((data as { error?: string }).error || "حدث خطأ في إرسال الشكوى");
       }
     } catch (error) {
       console.error("Error submitting complaint:", error);
@@ -111,7 +149,7 @@ function ComplaintPageContent() {
             </div>
             <h1 className="text-2xl font-bold text-[#002845] mb-3">تم استلام شكواك</h1>
             <p className="text-slate-600 mb-6">
-              شكراً لتواصلك معنا. سيقوم فريق الدعم بمراجعة شكواك والرد عليك في أقرب وقت ممكن.
+              شكراً لتواصلك معنا. تم تسجيل طلبك كتذكرة في البريد الموحد لخدمة العملاء مع تصنيف القسم الذي اخترته، وسيتابعه الفريق هناك.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Link
@@ -282,7 +320,7 @@ function ComplaintPageContent() {
           </button>
 
           <p className="text-xs text-slate-500 text-center">
-            سيتم مراجعة شكواك والرد عليك في أقرب وقت ممكن عبر البريد الإلكتروني أو رقم الجوال المسجل.
+            يتطلب الإرسال تسجيل الدخول. تُسجَّل الشكوى كتذكرة دعم موحّدة مع قسم واضح في البريد الموحد لخدمة العملاء.
           </p>
         </form>
       </div>
