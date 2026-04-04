@@ -907,6 +907,9 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'first_response_at') THEN
           ALTER TABLE support_tickets ADD COLUMN first_response_at TIMESTAMPTZ;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'user_last_read_at') THEN
+          ALTER TABLE support_tickets ADD COLUMN user_last_read_at TIMESTAMPTZ;
+        END IF;
       END $$;
     `);
     

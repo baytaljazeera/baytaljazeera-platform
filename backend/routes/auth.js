@@ -3,6 +3,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const db = require("../db");
+const { getCustomerUnreadAdminReplyCount } = require("../utils/supportTicketUnread");
 const { JWT_SECRET, JWT_CONFIG, JWT_VERIFY_OPTIONS, optionalAuth } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { validatePassword, PASSWORD_POLICY, sanitizeInput, strictAuthLimiter } = require("../config/security");
@@ -525,6 +526,11 @@ router.get("/me", asyncHandler(async (req, res) => {
     [user.id]
   );
 
+  let ticketsUnread = 0;
+  if (user.role === "user") {
+    ticketsUnread = await getCustomerUnreadAdminReplyCount(db, user.id);
+  }
+
   res.json({
     user: {
       ...user,
@@ -532,6 +538,7 @@ router.get("/me", asyncHandler(async (req, res) => {
       phoneVerified: !!user.phone_verified_at,
     },
     plan: planResult.rows[0] || null,
+    ticketsUnread,
   });
 }));
 

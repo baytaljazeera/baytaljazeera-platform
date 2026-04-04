@@ -244,6 +244,28 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
   });
 }));
 
+/** Customer marks ticket as read (clears unread admin-reply count for this ticket in the navbar). */
+router.patch("/:id/mark-read", authMiddleware, asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) {
+    return res.status(400).json({ error: "معرف غير صالح" });
+  }
+  if (req.user.role !== "user") {
+    return res.status(403).json({ error: "غير مصرح" });
+  }
+  const result = await db.query(
+    `UPDATE support_tickets
+     SET user_last_read_at = NOW()
+     WHERE id = $1 AND user_id = $2
+     RETURNING id`,
+    [id, req.user.id]
+  );
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: "التذكرة غير موجودة" });
+  }
+  res.json({ ok: true });
+}));
+
 router.get("/:id", authMiddleware, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
@@ -291,6 +313,17 @@ router.get("/:id", authMiddleware, asyncHandler(async (req, res) => {
      ORDER BY r.created_at ASC`,
     [id]
   );
+
+  if (role === "user") {
+    try {
+      await db.query(
+        `UPDATE support_tickets SET user_last_read_at = NOW() WHERE id = $1 AND user_id = $2`,
+        [id, userId]
+      );
+    } catch (e) {
+      console.warn("[support GET :id] user_last_read_at:", e.message);
+    }
+  }
   
   res.json({
     ticket: ticketResult.rows[0],

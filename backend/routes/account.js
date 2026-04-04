@@ -4,6 +4,7 @@ const bcrypt = require("bcrypt");
 const db = require("../db");
 const { authMiddleware } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
+const { getCustomerUnreadAdminReplyCount } = require("../utils/supportTicketUnread");
 
 const router = express.Router();
 
@@ -385,16 +386,16 @@ router.get("/pending-counts", authMiddleware, asyncHandler(async (req, res) => {
       // If it's a foreign key error (23503), user doesn't exist - return defaults
       if (badgeErr.code === '23503') {
         console.warn(`[Account] User ${userId} does not exist, skipping badge state creation`);
-        return res.json({ listings: 0, invoices: 0, complaints: 0, messages: 0, refunds: 0 });
+        return res.json({ listings: 0, invoices: 0, complaints: 0, messages: 0, refunds: 0, ticketsNew: 0 });
       }
       console.error(`[Account] Error creating badge state for user ${userId}:`, badgeErr.message);
       // Return default counts if badge state creation fails
-      return res.json({ listings: 0, invoices: 0, complaints: 0, messages: 0, refunds: 0 });
+      return res.json({ listings: 0, invoices: 0, complaints: 0, messages: 0, refunds: 0, ticketsNew: 0 });
     }
     
     // If still no badge state after insert attempt, return defaults
     if (badgeState.rows.length === 0) {
-      return res.json({ listings: 0, invoices: 0, complaints: 0, messages: 0, refunds: 0 });
+      return res.json({ listings: 0, invoices: 0, complaints: 0, messages: 0, refunds: 0, ticketsNew: 0 });
     }
   }
   
@@ -467,6 +468,9 @@ router.get("/pending-counts", authMiddleware, asyncHandler(async (req, res) => {
     WHERE user_id = $1 AND type = 'ambassador' AND read_at IS NULL
   `, [userId]);
   
+  // طلبات الدعم: ردود الفريق غير المقروءة
+  const ticketsNew = await getCustomerUnreadAdminReplyCount(db, userId);
+  
   res.json({
     // إعلاناتي
     listingsRejected: parseInt(listingsRejected.rows[0]?.count) || 0,
@@ -483,7 +487,9 @@ router.get("/pending-counts", authMiddleware, asyncHandler(async (req, res) => {
     // الرسائل
     messagesNew: parseInt(messagesNew.rows[0]?.count) || 0,
     // مكافآت السفير
-    ambassadorRewards: parseInt(ambassadorRewards.rows[0]?.count) || 0
+    ambassadorRewards: parseInt(ambassadorRewards.rows[0]?.count) || 0,
+    // طلبات الدعم — ردود إدارية جديدة
+    ticketsNew
   });
 }));
 

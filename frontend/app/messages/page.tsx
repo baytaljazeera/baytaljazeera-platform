@@ -230,7 +230,7 @@ export default function MessagesPage() {
           <div>
             <h1 className="text-3xl font-bold text-[#002845] flex items-center gap-3">
               <MessageCircle className="w-8 h-8 text-[#D4AF37]" />
-              المراسلات
+              الاستفسارات العقارية
             </h1>
             <p className="text-slate-500 mt-1">محادثاتك مع المعلنين الآخرين</p>
           </div>

@@ -47,10 +47,25 @@ interface SupportTicketRow {
 
 const statusColors: Record<string, { bg: string; text: string; label: string }> = {
   new: { bg: "bg-red-100", text: "text-red-700", label: "جديد" },
+  open: { bg: "bg-red-100", text: "text-red-700", label: "جديد" },
   in_progress: { bg: "bg-amber-100", text: "text-amber-700", label: "قيد المعالجة" },
   resolved: { bg: "bg-green-100", text: "text-green-700", label: "تم الحل" },
   closed: { bg: "bg-slate-100", text: "text-slate-700", label: "مغلق" },
 };
+
+function normalizeStatusKey(status: string) {
+  return (status || "").toLowerCase().trim();
+}
+
+function isTicketClosedStatus(status: string) {
+  const s = normalizeStatusKey(status);
+  return s === "resolved" || s === "closed";
+}
+
+function getStatusStyle(status: string) {
+  const s = normalizeStatusKey(status);
+  return statusColors[s] || { bg: "bg-slate-100", text: "text-slate-700", label: status || "—" };
+}
 
 const DEPARTMENTS = {
   financial: {
@@ -148,20 +163,40 @@ function MyTicketsContent() {
     }
   }, []);
 
-  const fetchTicketDetail = useCallback(async (ticketId: number) => {
+  const markTicketRead = useCallback(async (ticketId: number) => {
     try {
-      const res = await fetch(`${API_URL}/api/support/${ticketId}`, {
+      const res = await fetch(`${API_URL}/api/support/${ticketId}/mark-read`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
-        headers: getAuthHeaders(),
+        body: JSON.stringify({}),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setReplies(data.replies || []);
+      if (res.ok && typeof window !== "undefined") {
+        window.dispatchEvent(new Event("notificationsUpdated"));
       }
-    } catch (err) {
-      console.error("fetch ticket detail:", err);
+    } catch {
+      /* ignore */
     }
   }, []);
+
+  const fetchTicketDetail = useCallback(
+    async (ticketId: number) => {
+      try {
+        const res = await fetch(`${API_URL}/api/support/${ticketId}`, {
+          credentials: "include",
+          headers: getAuthHeaders(),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setReplies(data.replies || []);
+          await markTicketRead(ticketId);
+        }
+      } catch (err) {
+        console.error("fetch ticket detail:", err);
+      }
+    },
+    [markTicketRead]
+  );
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -235,6 +270,7 @@ function MyTicketsContent() {
 
   const sendReply = async () => {
     if (!selected || !reply.trim()) return;
+    if (isTicketClosedStatus(selected.status)) return;
     setSending(true);
     try {
       const res = await fetch(`${API_URL}/api/support/${selected.id}/reply`, {
@@ -287,7 +323,7 @@ function MyTicketsContent() {
               </h1>
               <p className="text-white/60 text-sm mt-1">
                 محادثتك مع فريق الدعم بعد تذكرة الدعم أو تصعيد الدعم الآلي — منفصلة عن{" "}
-                <span className="text-white/90">المراسلات</span> بين المستخدمين وعن{" "}
+                <span className="text-white/90">الاستفسارات العقارية</span> بين المستخدمين وعن{" "}
                 <span className="text-white/90">شكاواي</span> على الحساب.
               </p>
             </div>
@@ -460,24 +496,29 @@ function MyTicketsContent() {
 
         {selected ? (
           <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-              <div className="flex items-center gap-3 flex-wrap">
+            <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-start justify-between gap-3 min-w-0">
+              <div className="flex items-start gap-3 flex-1 min-w-0">
                 {(() => {
                   const dept = selected.department || selected.complaint_type || "technical";
                   const TypeIcon = getDepartmentInfo(dept).icon;
-                  return <TypeIcon className="w-5 h-5" style={{ color: getDepartmentInfo(dept).color }} />;
+                  return <TypeIcon className="w-5 h-5 shrink-0" style={{ color: getDepartmentInfo(dept).color }} />;
                 })()}
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-bold text-[#002845]">{selected.subject}</h3>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <h3 className="font-bold text-[#002845] break-words">{selected.subject}</h3>
                     {isAiHandoff(selected) && (
-                      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-800">
+                      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 shrink-0">
                         <Bot className="w-3 h-3" />
                         تصعيد من الدعم الآلي
                       </span>
                     )}
+                    <span
+                      className={`text-xs font-medium px-2.5 py-0.5 rounded-full shrink-0 whitespace-nowrap ${getStatusStyle(selected.status).bg} ${getStatusStyle(selected.status).text}`}
+                    >
+                      {getStatusStyle(selected.status).label}
+                    </span>
                   </div>
-                  <span className="text-xs text-slate-400 font-mono">{selected.ticket_number}</span>
+                  <span className="text-xs text-slate-400 font-mono block mt-1">{selected.ticket_number}</span>
                 </div>
               </div>
               <button
@@ -519,21 +560,33 @@ function MyTicketsContent() {
               ))}
               <div ref={messagesEndRef} />
             </div>
-            {selected.status !== "resolved" && selected.status !== "closed" && (
-              <div className="p-4 border-t border-slate-100 flex gap-2">
+            {isTicketClosedStatus(selected.status) ? (
+              <div
+                className="p-4 border-t border-slate-200 bg-gradient-to-l from-slate-50 to-slate-100 flex items-center justify-center gap-2 text-slate-700"
+                role="status"
+              >
+                <span className="text-lg leading-none shrink-0" aria-hidden>
+                  🔒
+                </span>
+                <p className="text-sm font-medium text-center leading-relaxed">
+                  هذه التذكرة مغلقة. لا يمكن الرد عليها.
+                </p>
+              </div>
+            ) : (
+              <div className="p-4 border-t border-slate-100 flex gap-2 min-w-0">
                 <input
                   type="text"
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && sendReply()}
                   placeholder="اكتب رسالتك لفريق الدعم..."
-                  className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-[#D4AF37] focus:outline-none"
+                  className="flex-1 min-w-0 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-[#D4AF37] focus:outline-none"
                 />
                 <button
                   type="button"
                   onClick={sendReply}
                   disabled={sending || !reply.trim()}
-                  className="p-2 bg-[#D4AF37] text-[#002845] rounded-xl hover:bg-[#c9a432] transition disabled:opacity-50"
+                  className="p-2 shrink-0 bg-[#D4AF37] text-[#002845] rounded-xl hover:bg-[#c9a432] transition disabled:opacity-50"
                 >
                   <Send className={`w-4 h-4 ${sending ? "animate-pulse" : ""}`} />
                 </button>
@@ -549,7 +602,9 @@ function MyTicketsContent() {
                 <p className="text-white/40 text-sm mt-1">بعد تصعيد الدعم الآلي أو عند فتح تذكرة، ستظهر هنا.</p>
               </div>
             ) : (
-              tickets.map((t) => (
+              tickets.map((t) => {
+                const st = getStatusStyle(t.status);
+                return (
                 <button
                   key={t.id}
                   type="button"
@@ -557,37 +612,37 @@ function MyTicketsContent() {
                     setSelected(t);
                     router.replace(`/account/my-tickets?open=${t.id}`);
                   }}
-                  className="w-full text-right bg-white rounded-xl p-4 cursor-pointer hover:shadow-lg transition"
+                  className="w-full min-w-0 max-w-full text-right bg-white rounded-xl p-4 cursor-pointer hover:shadow-lg transition overflow-hidden"
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-3 w-full min-w-0">
+                    <div className="flex items-start gap-3 flex-1 min-w-0 overflow-hidden">
                       {(() => {
                         const dept = t.department || t.complaint_type || "technical";
                         const TypeIcon = getDepartmentInfo(dept).icon;
                         return (
                           <div
-                            className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                            className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                             style={{ backgroundColor: `${getDepartmentInfo(dept).color}20` }}
                           >
                             <TypeIcon className="w-5 h-5" style={{ color: getDepartmentInfo(dept).color }} />
                           </div>
                         );
                       })()}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-semibold text-[#002845] truncate">{t.subject}</h3>
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <h3 className="font-semibold text-[#002845] truncate min-w-0">{t.subject}</h3>
                           {isAiHandoff(t) && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-800 shrink-0">
                               دعم آلي → بشري
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-slate-500 mt-1 line-clamp-1">{t.description}</p>
-                        <div className="flex items-center gap-3 mt-2">
-                          <span className="text-xs text-slate-400">{new Date(t.created_at).toLocaleDateString("ar-SA")}</span>
+                        <p className="text-sm text-slate-500 mt-1 line-clamp-1 break-words">{t.description}</p>
+                        <div className="flex items-center gap-3 mt-2 min-w-0 flex-wrap">
+                          <span className="text-xs text-slate-400 shrink-0">{new Date(t.created_at).toLocaleDateString("ar-SA")}</span>
                           {t.reply_count > 0 && (
-                            <span className="text-xs text-blue-600 flex items-center gap-1">
-                              <MessageCircle className="w-3 h-3" />
+                            <span className="text-xs text-blue-600 flex items-center gap-1 shrink-0">
+                              <MessageCircle className="w-3 h-3 shrink-0" />
                               {t.reply_count} رسالة
                             </span>
                           )}
@@ -595,15 +650,14 @@ function MyTicketsContent() {
                       </div>
                     </div>
                     <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium flex-shrink-0 ${
-                        statusColors[t.status]?.bg || "bg-slate-100"
-                      } ${statusColors[t.status]?.text || "text-slate-700"}`}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium shrink-0 whitespace-nowrap self-center ${st.bg} ${st.text}`}
                     >
-                      {statusColors[t.status]?.label || t.status}
+                      {st.label}
                     </span>
                   </div>
                 </button>
-              ))
+              );
+              })
             )}
           </div>
         )}

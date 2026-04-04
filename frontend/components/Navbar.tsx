@@ -62,7 +62,8 @@ function NavbarContent() {
     complaintsNew: 0, complaintsPending: 0,
     refundsNew: 0, refundsPending: 0,
     messagesNew: 0,
-    ambassadorRewards: 0
+    ambassadorRewards: 0,
+    ticketsNew: 0
   });
   
   const hideNavbarPaths = ['/admin', '/admin-login', '/request-access', '/add-listing/admin'];
@@ -124,7 +125,7 @@ function NavbarContent() {
         setUnreadMessages(totalMessages);
         if (badgesRes.ok) {
           const badgesData = await badgesRes.json();
-          setUserBadges(badgesData);
+          setUserBadges((prev) => ({ ...prev, ...badgesData }));
         }
         if (favRes.ok) {
           const favData = await favRes.json();
@@ -286,9 +287,14 @@ function NavbarContent() {
     { href: "/favorites", label: "المفضلة", icon: Heart, badge: favoritesCount },
     { href: "/my-listings", label: "إعلاناتي", icon: FileText, badgeRejected: userBadges.listingsRejected, badgeApproved: userBadges.listingsApproved, badgePending: userBadges.listingsPending },
     { href: "/invoices", label: "فواتيري", icon: Receipt, badgeNew: userBadges.invoicesNew },
-    { href: "/account/my-tickets", label: "طلبات الدعم", icon: Ticket },
+    {
+      href: "/account/my-tickets",
+      label: "طلبات الدعم",
+      icon: Ticket,
+      badge: Number(userBadges.ticketsNew) || 0,
+    },
     { href: "/my-complaints", label: "شكاواي", icon: AlertTriangle, badgeNew: userBadges.complaintsNew, badgePending: userBadges.complaintsPending },
-    { href: "/messages", label: "المراسلات", icon: MessageCircle, badge: unreadMessages },
+    { href: "/messages", label: "الاستفسارات العقارية", icon: MessageCircle, badge: unreadMessages },
     { href: "/inbox", label: "الإشعارات", icon: Bell, badge: unreadNotifications },
     ...(ambassadorEnabled ? [{ href: "/referral", label: "سفراء البيت", icon: Building2, badgeNew: userBadges.ambassadorRewards }] : []),
   ];
