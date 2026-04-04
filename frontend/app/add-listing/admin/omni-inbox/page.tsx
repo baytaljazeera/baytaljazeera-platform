@@ -45,7 +45,7 @@ type TimelineEntry = {
   sender_id: string;
   sender_name: string;
   content: string;
-  visibility: string;
+  visibility?: string;
   created_at: string;
 };
 
@@ -79,6 +79,7 @@ export default function OmniInboxPage() {
     subject: string;
     user_name?: string;
     user_email?: string;
+    department?: string | null;
   } | null>(null);
   const [aiSessionId, setAiSessionId] = useState<string | null>(null);
   const [aiLogs, setAiLogs] = useState<AiLog[]>([]);
@@ -88,6 +89,7 @@ export default function OmniInboxPage() {
   const [visibility, setVisibility] = useState<"public" | "internal_note">("public");
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
+  const [transferLoading, setTransferLoading] = useState(false);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -181,6 +183,7 @@ export default function OmniInboxPage() {
             subject: data.ticket.subject,
             user_name: data.ticket.user_name,
             user_email: data.ticket.user_email,
+            department: data.ticket.department ?? null,
           });
         }
         const sid = data.ai_session_id as string | null;
@@ -205,6 +208,30 @@ export default function OmniInboxPage() {
     },
     [fetchAiContext, fetchInbox]
   );
+
+  const transferToFinance = useCallback(async () => {
+    if (!ticketMeta?.id) return;
+    setTransferLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/support/${ticketMeta.id}/transfer`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: JSON_HEADERS(),
+        body: JSON.stringify({ target: "financial" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || "فشل التحويل");
+      toast.success("تم تحويل التذكرة إلى قسم المالية");
+      if (selected && omniId) {
+        await loadThread({ ...selected, omni_id: omniId, kind: "omni" });
+      }
+      void fetchInbox();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "فشل التحويل");
+    } finally {
+      setTransferLoading(false);
+    }
+  }, [ticketMeta?.id, selected, omniId, loadThread, fetchInbox]);
 
   useEffect(() => {
     void fetchInbox();
@@ -354,29 +381,50 @@ export default function OmniInboxPage() {
             </div>
           ) : (
             <>
-              <div className="shrink-0 px-4 py-3 bg-white/95 border-b border-slate-200 flex items-center justify-between gap-3">
-                <div className="min-w-0">
+              <div className="shrink-0 px-4 py-3 bg-white/95 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
                   <h2 className="font-bold text-[#002845] truncate">{selected.title}</h2>
                   {ticketMeta && (
-                    <p className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
+                    <p className="text-xs text-slate-500 flex items-center gap-2 mt-0.5 flex-wrap">
                       <User className="w-3.5 h-3.5 shrink-0" />
                       <span className="truncate">
                         {ticketMeta.user_name || "عميل"} {ticketMeta.user_email ? `· ${ticketMeta.user_email}` : ""}
                       </span>
+                      {ticketMeta.department && (
+                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                          القسم: {ticketMeta.department === "financial" ? "مالية" : ticketMeta.department}
+                        </span>
+                      )}
                     </p>
                   )}
                 </div>
-                {showAiPanel && (
-                  <button
-                    type="button"
-                    onClick={() => setPanelOpen((v) => !v)}
-                    className="shrink-0 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-[#002845] hover:bg-slate-50"
-                  >
-                    <Sparkles className="w-4 h-4 text-amber-500" />
-                    سياق الذكاء الاصطناعي
-                    {panelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-                  </button>
-                )}
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {ticketMeta &&
+                    String(ticketMeta.department || "").toLowerCase() !== "financial" && (
+                      <button
+                        type="button"
+                        onClick={() => void transferToFinance()}
+                        disabled={transferLoading}
+                        className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                      >
+                        {transferLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : null}
+                        تحويل للمالية 💰
+                      </button>
+                    )}
+                  {showAiPanel && (
+                    <button
+                      type="button"
+                      onClick={() => setPanelOpen((v) => !v)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-[#002845] hover:bg-slate-50"
+                    >
+                      <Sparkles className="w-4 h-4 text-amber-500" />
+                      سياق الذكاء الاصطناعي
+                      {panelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="flex-1 flex min-h-0">
@@ -384,8 +432,10 @@ export default function OmniInboxPage() {
                   <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
                     {timeline.map((m) => {
                       const isOmni = m.entry_kind === "omni";
-                      const isInternal = isOmni && m.visibility === "internal_note";
                       const isTicket = m.entry_kind === "ticket_reply";
+                      const isInternal =
+                        (isOmni && m.visibility === "internal_note") ||
+                        (isTicket && m.visibility === "internal_note");
                       const isUser = m.sender_type === "user";
 
                       if (isInternal) {
@@ -397,7 +447,7 @@ export default function OmniInboxPage() {
                             <div className="flex items-center gap-2 mb-2 flex-wrap">
                               <Lock className="w-4 h-4 text-amber-800 shrink-0" />
                               <span className="text-[10px] font-black uppercase tracking-wide text-amber-900 bg-amber-200/80 px-2 py-0.5 rounded-md">
-                                ملاحظة داخلية — مخفية عن العميل
+                                {isTicket ? "سجل تذكرة داخلي — مخفي عن العميل" : "ملاحظة داخلية — مخفية عن العميل"}
                               </span>
                               <span className="text-[11px] text-amber-800/80 mr-auto">
                                 {m.sender_name} ·{" "}

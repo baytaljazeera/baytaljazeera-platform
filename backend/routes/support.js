@@ -266,6 +266,70 @@ router.patch("/:id/mark-read", authMiddleware, asyncHandler(async (req, res) => 
   res.json({ ok: true });
 }));
 
+/** Manual routing: move ticket to Finance (audit trail as internal reply). */
+router.patch(
+  "/:id/transfer",
+  authMiddleware,
+  requireRoles(
+    "super_admin",
+    "admin",
+    "support_admin",
+    "admin_manager",
+    "content_admin"
+  ),
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: "معرف غير صالح" });
+    }
+    const target = (req.body?.target || "financial").toLowerCase();
+    if (target !== "financial") {
+      return res.status(400).json({ error: "نوع التحويل غير مدعوم حالياً" });
+    }
+
+    const sc = getSupportTicketScope(req.user.role, req.user.id, 2);
+    let ticketQuery = `SELECT * FROM support_tickets st WHERE st.id = $1`;
+    const ticketParams = [id];
+    if (sc.clause) {
+      ticketQuery += ` AND ${sc.clause}`;
+      ticketParams.push(...sc.params);
+    }
+
+    const existing = await db.query(ticketQuery, ticketParams);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: "التذكرة غير موجودة أو غير مصرح بعرضها" });
+    }
+
+    const ticket = existing.rows[0];
+    if (ticket.department === "financial") {
+      return res.status(400).json({ error: "التذكرة مسجّلة بالفعل في القسم المالي" });
+    }
+
+    const routing = getSmartRouting("financial", ticket.priority || "medium");
+
+    const updated = await db.query(
+      `UPDATE support_tickets st
+       SET department = 'financial',
+           category = COALESCE(NULLIF(TRIM(category), ''), 'financial'),
+           auto_assigned_role = $1,
+           sla_hours = $2,
+           updated_at = NOW()
+       WHERE st.id = $3
+       RETURNING *`,
+      [routing.role, routing.sla_hours, id]
+    );
+
+    const auditMessage = "تم تحويل التذكرة إلى قسم المالية";
+    await db.query(
+      `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
+       VALUES ($1, $2, 'internal', $3)`,
+      [id, req.user.id, auditMessage]
+    );
+
+    res.json({ ok: true, ticket: updated.rows[0], message: auditMessage });
+  })
+);
+
 router.get("/:id", authMiddleware, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
@@ -302,17 +366,17 @@ router.get("/:id", authMiddleware, asyncHandler(async (req, res) => {
     return res.status(404).json({ error: "التذكرة غير موجودة" });
   }
   
-  const repliesResult = await db.query(
-    `SELECT 
+  const repliesSql = `
+     SELECT 
       r.*,
       u.name as sender_name,
       u.role as sender_role
      FROM support_ticket_replies r
      LEFT JOIN users u ON r.sender_id = u.id
      WHERE r.ticket_id = $1
-     ORDER BY r.created_at ASC`,
-    [id]
-  );
+     ${role === "user" ? "AND r.sender_type <> 'internal'" : ""}
+     ORDER BY r.created_at ASC`;
+  const repliesResult = await db.query(repliesSql, [id]);
 
   if (role === "user") {
     try {

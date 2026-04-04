@@ -50,11 +50,15 @@ async function fetchMergedTimeline(omniId) {
       `SELECT 
          'ticket_reply' AS entry_kind,
          r.id,
-         CASE WHEN r.sender_type = 'user' THEN 'user' ELSE 'admin' END AS sender_type,
+         CASE
+           WHEN r.sender_type = 'user' THEN 'user'
+           WHEN r.sender_type = 'internal' THEN 'internal'
+           ELSE 'admin'
+         END AS sender_type,
          r.sender_id,
          COALESCE(u.name, 'مستخدم') AS sender_name,
          r.message AS content,
-         'public' AS visibility,
+         CASE WHEN r.sender_type = 'internal' THEN 'internal_note' ELSE 'public' END AS visibility,
          r.created_at
        FROM support_ticket_replies r
        LEFT JOIN users u ON u.id = r.sender_id
