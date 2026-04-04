@@ -446,4 +446,22 @@ router.patch("/:id/priority", authMiddleware, requireRoles('super_admin', 'admin
   res.json({ ok: true, ticket: result.rows[0], message: "تم تحديث الأولوية" });
 }));
 
+router.delete("/:id", authMiddleware, requireRoles("super_admin", "admin"), asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) {
+    return res.status(400).json({ error: "معرف غير صالح" });
+  }
+
+  const result = await db.query(
+    `DELETE FROM support_tickets WHERE id = $1 RETURNING id`,
+    [id]
+  );
+
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: "التذكرة غير موجودة" });
+  }
+
+  res.json({ ok: true, deleted: id, message: "تم حذف التذكرة نهائياً" });
+}));
+
 module.exports = router;

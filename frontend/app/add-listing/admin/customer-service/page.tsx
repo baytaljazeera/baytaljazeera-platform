@@ -8,9 +8,10 @@ import { useState, useEffect, useCallback } from "react";
 import { 
   Headset, MessageCircle, Clock, CheckCircle, AlertCircle, Search, RefreshCw, 
   Send, User, Mail, Phone, ExternalLink, FileText, Calendar, X, 
-  AlertTriangle, Building2, XCircle, Eye
+  AlertTriangle, Building2, XCircle, Eye, Trash2, Loader2
 } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 
 interface Reply {
   id: number;
@@ -133,6 +134,28 @@ export default function CustomerServicePage() {
   
   const [loading, setLoading] = useState(true);
   const [complaintsTotalRows, setComplaintsTotalRows] = useState(0);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string | number;
+    type: "support" | "complaint";
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const fetchCurrentUser = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/auth/me`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const u = data.user || data;
+        setUserRole(u.role ?? null);
+      }
+    } catch {
+      setUserRole(null);
+    }
+  }, []);
 
   const fetchTickets = useCallback(async () => {
     try {
@@ -211,6 +234,7 @@ export default function CustomerServicePage() {
     const loadData = async () => {
       setLoading(true);
       await Promise.all([
+        fetchCurrentUser(),
         fetchTickets(),
         fetchSupportStats(),
         fetchComplaints(),
@@ -219,17 +243,65 @@ export default function CustomerServicePage() {
       setLoading(false);
     };
     loadData();
-  }, [fetchTickets, fetchSupportStats, fetchComplaints, fetchComplaintStats]);
+  }, [fetchCurrentUser, fetchTickets, fetchSupportStats, fetchComplaints, fetchComplaintStats]);
 
   const handleRefresh = async () => {
     setLoading(true);
     await Promise.all([
+      fetchCurrentUser(),
       fetchTickets(),
       fetchSupportStats(),
       fetchComplaints(),
       fetchComplaintStats(),
     ]);
     setLoading(false);
+  };
+
+  const canHardDelete =
+    userRole === "super_admin" || userRole === "admin";
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      const url =
+        deleteTarget.type === "support"
+          ? `${API_URL}/api/support/${deleteTarget.id}`
+          : `${API_URL}/api/account-complaints/${deleteTarget.id}`;
+      const res = await fetch(url, {
+        method: "DELETE",
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(
+          typeof data.error === "string" ? data.error : "تعذّر إتمام المسح النهائي"
+        );
+        return;
+      }
+      if (deleteTarget.type === "support") {
+        setTickets((prev) => prev.filter((t) => t.id !== deleteTarget.id));
+        if (selectedTicket?.id === deleteTarget.id) {
+          setSelectedTicket(null);
+          setReplies([]);
+        }
+      } else {
+        setComplaints((prev) => prev.filter((c) => c.id !== deleteTarget.id));
+      }
+      await Promise.all([
+        fetchTickets(),
+        fetchSupportStats(),
+        fetchComplaints(),
+        fetchComplaintStats(),
+      ]);
+      toast.success("تم المسح النهائي بنجاح");
+      setDeleteTarget(null);
+    } catch {
+      toast.error("فشل الاتصال بالخادم");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleSelectTicket = async (ticket: SupportTicket) => {
@@ -538,13 +610,29 @@ export default function CustomerServicePage() {
                       </div>
                       
                       <div className="flex md:flex-col gap-2">
-                        <button
-                          onClick={() => handleSelectTicket(ticket)}
-                          className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-[#002845] text-white rounded-xl hover:bg-[#001a2e] transition text-sm font-medium"
-                        >
-                          <Eye className="w-4 h-4" />
-                          عرض والرد
-                        </button>
+                        <div className="flex flex-wrap gap-2 w-full md:flex-col">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectTicket(ticket)}
+                            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-[#002845] text-white rounded-xl hover:bg-[#001a2e] transition text-sm font-medium min-w-0"
+                          >
+                            <Eye className="w-4 h-4 shrink-0" />
+                            عرض والرد
+                          </button>
+                          {canHardDelete && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDeleteTarget({ id: ticket.id, type: "support" })
+                              }
+                              className="flex items-center justify-center gap-2 px-4 py-2.5 border border-red-200 bg-red-50 text-red-700 rounded-xl hover:bg-red-100 transition text-sm font-medium"
+                              title="مسح نهائي"
+                            >
+                              <Trash2 className="w-4 h-4 shrink-0" />
+                              مسح نهائي
+                            </button>
+                          )}
+                        </div>
                         {ticket.status === "new" && (
                           <button
                             onClick={() => {
@@ -727,6 +815,19 @@ export default function CustomerServicePage() {
                       </div>
                       
                       <div className="flex md:flex-col gap-2">
+                        {canHardDelete && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDeleteTarget({ id: complaint.id, type: "complaint" })
+                            }
+                            className="flex items-center justify-center gap-2 px-4 py-2.5 border border-red-200 bg-red-50 text-red-700 rounded-xl hover:bg-red-100 transition text-sm font-medium w-full md:w-auto"
+                            title="مسح نهائي"
+                          >
+                            <Trash2 className="w-4 h-4 shrink-0" />
+                            مسح نهائي
+                          </button>
+                        )}
                         {complaint.status === "new" && (
                           <>
                             <button
@@ -780,6 +881,67 @@ export default function CustomerServicePage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-modal-title"
+        >
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
+            <div className="p-6 text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-100">
+                <AlertTriangle className="h-7 w-7 text-red-600" />
+              </div>
+              <h3
+                id="delete-modal-title"
+                className="text-lg font-black text-[#002845] mb-2"
+              >
+                مسح نهائي
+              </h3>
+              <p className="text-sm text-slate-600 leading-relaxed mb-1">
+                هل أنت متأكد من المسح النهائي؟ لا يمكن التراجع عن هذا الإجراء وسيتم
+                حذف جميع الردود المرتبطة.
+              </p>
+              <p className="text-xs text-slate-400 mb-6">
+                {deleteTarget.type === "support"
+                  ? "تذكرة الدعم الفني"
+                  : "شكوى الحساب"}{" "}
+                #{deleteTarget.id}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => !isDeleting && setDeleteTarget(null)}
+                  disabled={isDeleting}
+                  className="flex-1 px-4 py-3 rounded-xl bg-slate-100 text-slate-700 font-semibold hover:bg-slate-200 transition disabled:opacity-50"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleConfirmDelete()}
+                  disabled={isDeleting}
+                  className="flex-1 px-4 py-3 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 transition disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      جاري المسح…
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      تأكيد المسح
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

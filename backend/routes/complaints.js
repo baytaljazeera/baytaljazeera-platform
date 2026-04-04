@@ -164,6 +164,24 @@ router.get("/", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), asyncHa
   });
 }));
 
+router.delete("/:id", authMiddleware, requireRoles("super_admin", "admin"), asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) {
+    return res.status(400).json({ error: "معرف غير صالح" });
+  }
+
+  const result = await db.query(
+    `DELETE FROM account_complaints WHERE id = $1 RETURNING id`,
+    [id]
+  );
+
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: "الشكوى غير موجودة" });
+  }
+
+  res.json({ ok: true, deleted: id, message: "تم حذف الشكوى نهائياً" });
+}));
+
 router.patch("/:id", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { status, adminNote } = req.body;
