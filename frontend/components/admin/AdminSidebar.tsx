@@ -285,7 +285,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
         if (loadingVisibility || visibleSections.length === 0) return true;
         const sectionKey = getSectionKeyFromHref(link.href);
         // Always show feedback + whatsapp even if not yet registered in sidebar visibility settings
-        if (sectionKey === 'feedback' || sectionKey === 'whatsapp') return true;
+        if (sectionKey === 'feedback' || sectionKey === 'whatsapp' || sectionKey === 'omni-inbox') return true;
         return visibleSections.includes(sectionKey);
       });
       return { ...section, links: filteredLinks };
@@ -297,7 +297,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     if (href === '/admin/reports') return { newCount: pendingCounts.reportsNew, inProgressCount: pendingCounts.reportsInProgress };
     if (href === '/admin/roles?tab=applications') return { newCount: pendingCounts.membershipNew, inProgressCount: pendingCounts.membershipInProgress };
     if (href === '/admin/roles') return { newCount: pendingCounts.membershipNew, inProgressCount: pendingCounts.membershipInProgress };
-    if (href === '/admin/messages') return { newCount: pendingCounts.messagesNew, inProgressCount: 0 };
+    if (href === '/admin/messages' || href === '/admin/omni-inbox') return { newCount: pendingCounts.messagesNew, inProgressCount: 0 };
     if (href === '/admin/customer-service') return { newCount: pendingCounts.complaintsNew + pendingCounts.supportNew, inProgressCount: pendingCounts.complaintsInProgress + pendingCounts.supportInProgress };
     if (href === '/admin/finance') return { newCount: pendingCounts.refundsNew + pendingCounts.ambassadorWithdrawals, inProgressCount: pendingCounts.refundsInProgress };
     if (href === '/admin/ambassador') return { newCount: pendingCounts.ambassadorPending + pendingCounts.ambassadorWithdrawals, inProgressCount: 0 };

@@ -22,6 +22,7 @@ import {
   MessageCirclePlus,
   RotateCcw,
   MessageCircle,
+  Inbox,
 } from "lucide-react";
 
 export type AdminLink = {
@@ -104,10 +105,11 @@ export const adminSections: AdminSection[] = [
         permissionKey: "support",
       },
       {
-        href: "/admin/messages",
-        label: "المراسلات الداخلية",
-        icon: MessageSquare,
+        href: "/admin/omni-inbox",
+        label: "البريد الموحد",
+        icon: Inbox,
         permissionKey: "support_internal",
+        childRoutes: ["/admin/messages"],
       },
       {
         href: "/admin/whatsapp",
