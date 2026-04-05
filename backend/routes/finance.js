@@ -18,6 +18,37 @@ function quoteSqlIdent(name) {
 
 const SYSTEM_PG_SCHEMAS = new Set(["pg_catalog", "information_schema", "pg_toast"]);
 
+/** Allow SET NULL on FK columns that were defined NOT NULL (pre-launch reset). */
+async function dropNotNullOnFkColumnsReferencingInvoices(client, invoicesOid) {
+  const { rows } = await client.query(
+    `
+    SELECT DISTINCT n.nspname AS schema_name, c.relname AS relname, a.attname AS attname
+    FROM pg_constraint g
+    JOIN pg_class c ON c.oid = g.conrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = g.conrelid AND a.attnum = ANY (g.conkey)
+    WHERE g.contype = 'f'
+      AND g.confrelid = $1
+      AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+      AND n.nspname NOT LIKE 'pg\\_temp\\_%' ESCAPE '\\'
+      AND c.relkind IN ('r', 'p')
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+      AND a.attnotnull
+  `,
+    [invoicesOid]
+  );
+  for (const row of rows) {
+    if (SYSTEM_PG_SCHEMAS.has(row.schema_name)) continue;
+    const sch = quoteSqlIdent(row.schema_name);
+    const tbl = quoteSqlIdent(row.relname);
+    const col = quoteSqlIdent(row.attname);
+    await client.query(
+      `ALTER TABLE ${sch}.${tbl} ALTER COLUMN ${col} DROP NOT NULL`
+    );
+  }
+}
+
 /**
  * TRUNCATE invoices fails while any row in another table still references invoices.
  * Discover FKs to public.invoices and NULL referencing columns (pre-launch reset).
@@ -37,6 +68,8 @@ async function nullAllForeignKeysToInvoices(client) {
     throw new Error("جدول public.invoices غير موجود أو غير قابل للوصول");
   }
   const invoicesOid = inv.rows[0].oid;
+
+  await dropNotNullOnFkColumnsReferencingInvoices(client, invoicesOid);
 
   const { rows: singleCol } = await client.query(
     `
@@ -107,13 +140,19 @@ function resetInvoicesRequestConfirmed(req) {
   return false;
 }
 
-/** Empty invoices and reset SERIAL; prefer TRUNCATE, fall back if views/triggers block it. */
+/**
+ * Empty invoices and reset SERIAL. TRUNCATE failure aborts the txn unless we use a savepoint;
+ * otherwise the follow-up DELETE hits "current transaction is aborted".
+ */
 async function truncateInvoicesOrDeleteAndResetSeq(client) {
+  await client.query("SAVEPOINT reset_invoices_trunc");
   try {
     await client.query(`TRUNCATE TABLE public.invoices RESTART IDENTITY`);
+    await client.query("RELEASE SAVEPOINT reset_invoices_trunc");
     return;
   } catch (truncateErr) {
     console.error("[finance reset-invoices] TRUNCATE failed, using DELETE + setval", truncateErr);
+    await client.query("ROLLBACK TO SAVEPOINT reset_invoices_trunc");
   }
   await client.query(`DELETE FROM public.invoices`);
   const seqRes = await client.query(
