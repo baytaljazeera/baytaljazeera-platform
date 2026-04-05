@@ -164,6 +164,92 @@ async function truncateInvoicesOrDeleteAndResetSeq(client) {
   }
 }
 
+async function execOptionalSql(client, sql, label) {
+  try {
+    await client.query(sql);
+  } catch (err) {
+    if (err.code === "42P01" || err.code === "42703" || err.code === "42883") {
+      console.warn(`[finance reset-invoices] skip optional step (${label}):`, err.message);
+      return;
+    }
+    throw err;
+  }
+}
+
+async function resetSerialIfExists(client, tableName, columnName = "id") {
+  const r = await client.query(
+    `SELECT pg_get_serial_sequence($1, $2) AS seqname`,
+    [`public.${tableName}`, columnName]
+  );
+  const seqname = r.rows[0]?.seqname;
+  if (seqname) {
+    await client.query(`SELECT setval($1::regclass, 1, false)`, [seqname]);
+  }
+}
+
+/**
+ * Pre-launch holistic finance wipe: removes dependent rows so dashboards show zero,
+ * not just invoices. Order respects FKs (omni → tickets → complaints → refunds/chargebacks → invoices).
+ */
+async function wipeFinanceEcosystem(client) {
+  try {
+    await client.query(`
+      DELETE FROM omni_conversations oc
+      WHERE oc.source_type = 'ticket'
+        AND oc.source_id IN (
+          SELECT id FROM support_tickets
+          WHERE department = 'financial' OR COALESCE(category, '') = 'billing_hint'
+        )
+    `);
+  } catch (err) {
+    if (err.code === "42703") {
+      await client.query(`
+        DELETE FROM omni_conversations oc
+        WHERE oc.source_type = 'ticket'
+          AND oc.source_id IN (SELECT id FROM support_tickets WHERE department = 'financial')
+      `);
+    } else {
+      throw err;
+    }
+  }
+
+  try {
+    await client.query(`
+      DELETE FROM support_tickets
+      WHERE department = 'financial' OR COALESCE(category, '') = 'billing_hint'
+    `);
+  } catch (err) {
+    if (err.code === "42703") {
+      await client.query(`DELETE FROM support_tickets WHERE department = 'financial'`);
+    } else {
+      throw err;
+    }
+  }
+
+  await execOptionalSql(
+    client,
+    `
+    DELETE FROM account_complaints
+    WHERE invoice_id IS NOT NULL OR refund_id IS NOT NULL
+  `,
+    "account_complaints linked to invoice/refund"
+  );
+
+  await execOptionalSql(client, `DELETE FROM chargebacks`, "chargebacks");
+  await resetSerialIfExists(client, "chargebacks");
+
+  await execOptionalSql(client, `DELETE FROM refunds`, "refunds");
+  await resetSerialIfExists(client, "refunds");
+
+  await execOptionalSql(client, `DELETE FROM elite_extension_requests`, "elite_extension_requests");
+
+  await execOptionalSql(
+    client,
+    `TRUNCATE TABLE billing_audit_log RESTART IDENTITY`,
+    "billing_audit_log"
+  );
+}
+
 function sendRefundEmail(type, refund, userEmail, userName, decisionNote, bankReference) {
   const emailLogPath = path.join(__dirname, '../../public/emails');
   if (!fs.existsSync(emailLogPath)) {
@@ -1563,10 +1649,15 @@ const resetInvoicesHandler = asyncHandler(async (req, res) => {
   const client = await db.pool.connect();
   try {
     await client.query("BEGIN");
+    await wipeFinanceEcosystem(client);
     await nullAllForeignKeysToInvoices(client);
     await truncateInvoicesOrDeleteAndResetSeq(client);
     await client.query("COMMIT");
-    res.json({ ok: true, message: "تم حذف جميع الفواتير وإعادة ضبط الترقيم" });
+    res.json({
+      ok: true,
+      message:
+        "تم تصفير بيئة المالية: الفواتير، الاستردادات، الاعتراضات البنكية، الشكاوى المرتبطة، تذاكر المالية، وسجل التدقيق.",
+    });
   } catch (err) {
     try {
       await client.query("ROLLBACK");

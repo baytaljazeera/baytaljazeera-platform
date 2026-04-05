@@ -210,6 +210,7 @@ export default function FinancePage() {
     replies: Array<Record<string, unknown>>;
     replyBody: string;
     sending: boolean;
+    statusUpdating: boolean;
   }>({
     open: false,
     ticketId: null,
@@ -218,6 +219,7 @@ export default function FinancePage() {
     replies: [],
     replyBody: "",
     sending: false,
+    statusUpdating: false,
   });
 
   useEffect(() => {
@@ -280,6 +282,22 @@ export default function FinancePage() {
     }
   }
 
+  function financeTicketStatusLabel(status: string | undefined) {
+    switch (status) {
+      case "new":
+      case "open":
+        return "جديدة";
+      case "in_progress":
+        return "قيد المعالجة";
+      case "resolved":
+        return "تم الحل";
+      case "closed":
+        return "مغلقة";
+      default:
+        return status || "—";
+    }
+  }
+
   async function openFinanceTicketModal(ticketId: number) {
     setFinanceTicketModal({
       open: true,
@@ -289,6 +307,7 @@ export default function FinancePage() {
       replies: [],
       replyBody: "",
       sending: false,
+      statusUpdating: false,
     });
     try {
       const res = await fetch(`${API_URL}/api/support/${ticketId}`, {
@@ -308,6 +327,45 @@ export default function FinancePage() {
       }
     } catch {
       setFinanceTicketModal((prev) => ({ ...prev, loading: false }));
+    }
+  }
+
+  async function updateFinanceTicketStatus(status: "resolved" | "closed" | "in_progress" | "new") {
+    const id = financeTicketModal.ticketId;
+    if (id == null) return;
+    setFinanceTicketModal((prev) => ({ ...prev, statusUpdating: true }));
+    try {
+      const res = await fetch(`${API_URL}/api/support/${id}/status`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const t = data.ticket as Record<string, unknown> | undefined;
+        setFinanceTicketModal((prev) => ({
+          ...prev,
+          statusUpdating: false,
+          ticket: t ? { ...prev.ticket, ...t } : prev.ticket,
+        }));
+        const listRes = await fetch(`${API_URL}/api/support`, {
+          credentials: "include",
+          headers: getAuthHeaders(),
+        });
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          setFinanceQueueTickets(
+            (listData.tickets || []).filter(
+              (ticket: FinanceQueueTicket) => ticket.department === "financial"
+            )
+          );
+        }
+      } else {
+        setFinanceTicketModal((prev) => ({ ...prev, statusUpdating: false }));
+      }
+    } catch {
+      setFinanceTicketModal((prev) => ({ ...prev, statusUpdating: false }));
     }
   }
 
@@ -1801,14 +1859,16 @@ export default function FinancePage() {
                           <span className="text-xs text-gray-400">{t.user_email || ""}</span>
                         </td>
                         <td className="px-4 py-3">
-                          <span className="inline-flex rounded-full bg-emerald-50 text-emerald-800 px-2 py-0.5 text-xs font-bold">
-                            {t.status === "new" || t.status === "open"
-                              ? "جديد"
-                              : t.status === "in_progress"
-                                ? "قيد المعالجة"
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
+                              t.status === "closed"
+                                ? "bg-slate-100 text-slate-700"
                                 : t.status === "resolved"
-                                  ? "تم الحل"
-                                  : t.status}
+                                  ? "bg-emerald-50 text-emerald-800"
+                                  : "bg-amber-50 text-amber-900"
+                            }`}
+                          >
+                            {financeTicketStatusLabel(t.status)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
@@ -1851,6 +1911,11 @@ export default function FinancePage() {
                     {String(financeTicketModal.ticket.ticket_number)}
                   </p>
                 )}
+                {!financeTicketModal.loading && financeTicketModal.ticket?.status != null && (
+                  <span className="inline-flex mt-2 rounded-full bg-slate-100 text-slate-800 px-2.5 py-0.5 text-xs font-bold">
+                    {financeTicketStatusLabel(String(financeTicketModal.ticket.status))}
+                  </span>
+                )}
               </div>
               <button
                 type="button"
@@ -1863,6 +1928,7 @@ export default function FinancePage() {
                     replies: [],
                     replyBody: "",
                     sending: false,
+                    statusUpdating: false,
                   })
                 }
                 className="p-2 rounded-lg hover:bg-gray-200 transition shrink-0"
@@ -1916,6 +1982,40 @@ export default function FinancePage() {
                 </>
               )}
             </div>
+            <div className="p-4 border-t border-gray-100 bg-slate-50 space-y-3">
+              <p className="text-xs font-bold text-[#002845]">إدارة الحالة</p>
+              <div className="flex flex-wrap gap-2">
+                {(["new", "in_progress", "resolved", "closed"] as const).map((st) => {
+                  const current = String(financeTicketModal.ticket?.status ?? "");
+                  const active = current === st;
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      disabled={
+                        financeTicketModal.loading ||
+                        financeTicketModal.statusUpdating ||
+                        active
+                      }
+                      onClick={() => void updateFinanceTicketStatus(st)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                        active
+                          ? "bg-[#002845] text-white cursor-default"
+                          : "bg-white border border-slate-200 text-[#002845] hover:bg-slate-100 disabled:opacity-40"
+                      }`}
+                    >
+                      {financeTicketStatusLabel(st)}
+                    </button>
+                  );
+                })}
+              </div>
+              {financeTicketModal.statusUpdating && (
+                <p className="text-xs text-amber-700 flex items-center gap-1">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  جاري تحديث الحالة…
+                </p>
+              )}
+            </div>
             <div className="p-4 border-t border-gray-100 bg-white space-y-2">
               <label className="text-xs font-bold text-gray-600">رد للعميل</label>
               <textarea
@@ -1939,6 +2039,7 @@ export default function FinancePage() {
                       replies: [],
                       replyBody: "",
                       sending: false,
+                      statusUpdating: false,
                     })
                   }
                   className="px-4 py-2 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-100"
@@ -1950,7 +2051,8 @@ export default function FinancePage() {
                   disabled={
                     financeTicketModal.sending ||
                     !financeTicketModal.replyBody.trim() ||
-                    financeTicketModal.loading
+                    financeTicketModal.loading ||
+                    financeTicketModal.statusUpdating
                   }
                   onClick={() => void sendFinanceTicketReply()}
                   className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-[#002845] text-white text-sm font-black hover:bg-[#003d5c] disabled:opacity-40 transition-all duration-300"
@@ -2579,8 +2681,8 @@ export default function FinancePage() {
                 تصفير الفواتير التجريبية (ما قبل الإطلاق)
               </div>
               <p className="text-sm text-red-800 mt-3 leading-relaxed">
-                سيتم حذف <span className="font-black">جميع</span> سجلات جدول الفواتير نهائياً وإعادة ترقيم المعرفات إلى الصفر.
-                لا يمكن التراجع. استخدم فقط على بيئة اختبار أو قبل الإطلاق الرسمي بعد أخذ نسخة احتياطية.
+                سيتم <span className="font-black">تصفير بيئة المالية بالكامل</span>: الفواتير، طلبات الاسترداد، الاعتراضات البنكية، الشكاوى المرتبطة بالفواتير/الاسترداد، تذاكر قسم المالية (ومراسلاتها في البريد الموحد)، طلبات تمديد النخبة المرتبطة، وسجل تدقيق الفوترة.
+                لا يمكن التراجع. للاختبار أو ما قبل الإطلاق فقط بعد نسخة احتياطية.
               </p>
             </div>
             <div className="p-5 space-y-4">
