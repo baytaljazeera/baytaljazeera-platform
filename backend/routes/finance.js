@@ -189,7 +189,8 @@ async function resetSerialIfExists(client, tableName, columnName = "id") {
 
 /**
  * Pre-launch holistic finance wipe: removes dependent rows so dashboards show zero,
- * not just invoices. Order respects FKs (omni → tickets → complaints → refunds/chargebacks → invoices).
+ * not just invoices. Order respects FKs (omni → tickets → complaints → chargebacks/refunds →
+ * elite slots → payments → billing log → invoices).
  */
 async function wipeFinanceEcosystem(client) {
   try {
@@ -242,6 +243,24 @@ async function wipeFinanceEcosystem(client) {
   await resetSerialIfExists(client, "refunds");
 
   await execOptionalSql(client, `DELETE FROM elite_extension_requests`, "elite_extension_requests");
+
+  /* Payments tab + payment-stats read public.payments; FKs: invoices (SET NULL), elite_slot_reservations (restrict) */
+  await execOptionalSql(
+    client,
+    `UPDATE elite_slot_reservations SET payment_id = NULL WHERE payment_id IS NOT NULL`,
+    "elite_slot_reservations payment_id"
+  );
+
+  await execOptionalSql(client, `DELETE FROM payment_idempotency`, "payment_idempotency");
+
+  await execOptionalSql(
+    client,
+    `TRUNCATE TABLE stripe_payments RESTART IDENTITY`,
+    "stripe_payments"
+  );
+
+  await execOptionalSql(client, `DELETE FROM payments`, "payments");
+  await resetSerialIfExists(client, "payments");
 
   await execOptionalSql(
     client,
@@ -1656,7 +1675,7 @@ const resetInvoicesHandler = asyncHandler(async (req, res) => {
     res.json({
       ok: true,
       message:
-        "تم تصفير بيئة المالية: الفواتير، الاستردادات، الاعتراضات البنكية، الشكاوى المرتبطة، تذاكر المالية، وسجل التدقيق.",
+        "تم تصفير بيئة المالية: المدفوعات، الفواتير، الاستردادات، الاعتراضات البنكية، الشكاوى المرتبطة، تذاكر المالية، طلبات تمديد النخبة، مفاتيح عدم تكرار الدفع، وسجل التدقيق.",
     });
   } catch (err) {
     try {
