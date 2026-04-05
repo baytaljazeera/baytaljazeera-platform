@@ -18,30 +18,93 @@ function quoteSqlIdent(name) {
 
 /**
  * TRUNCATE invoices fails while any row in another table still references invoices.
- * Discover single-column FKs to public.invoices and NULL them (pre-launch reset).
+ * Discover FKs to public.invoices and NULL referencing columns (pre-launch reset).
+ * Includes partitioned tables (relkind 'p'); handles multi-column FKs.
  */
 async function nullAllForeignKeysToInvoices(client) {
-  const { rows } = await client.query(`
+  const inv = await client.query(`
+    SELECT ic.oid
+    FROM pg_class ic
+    JOIN pg_namespace ins ON ins.oid = ic.relnamespace
+    WHERE ins.nspname = 'public'
+      AND ic.relname = 'invoices'
+      AND ic.relkind IN ('r', 'p')
+  `);
+  if (inv.rows.length === 0) {
+    throw new Error("جدول public.invoices غير موجود أو غير قابل للوصول");
+  }
+  const invoicesOid = inv.rows[0].oid;
+
+  const { rows: singleCol } = await client.query(
+    `
     SELECT DISTINCT c.relname AS relname, a.attname AS attname
     FROM pg_constraint g
     JOIN pg_class c ON c.oid = g.conrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
     JOIN pg_attribute a ON a.attrelid = g.conrelid AND a.attnum = ANY (g.conkey)
     WHERE g.contype = 'f'
-      AND g.confrelid = (
-        SELECT ic.oid
-        FROM pg_class ic
-        JOIN pg_namespace ins ON ins.oid = ic.relnamespace
-        WHERE ins.nspname = 'public' AND ic.relname = 'invoices' AND ic.relkind = 'r'
-      )
+      AND g.confrelid = $1
       AND n.nspname = 'public'
-      AND c.relkind = 'r'
+      AND c.relkind IN ('r', 'p')
       AND array_length(g.conkey, 1) = 1
-  `);
-  for (const row of rows) {
+  `,
+    [invoicesOid]
+  );
+  for (const row of singleCol) {
     const tbl = quoteSqlIdent(row.relname);
     const col = quoteSqlIdent(row.attname);
     await client.query(`UPDATE public.${tbl} SET ${col} = NULL WHERE ${col} IS NOT NULL`);
+  }
+
+  const { rows: multiFk } = await client.query(
+    `
+    SELECT g.oid, c.relname AS relname
+    FROM pg_constraint g
+    JOIN pg_class c ON c.oid = g.conrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE g.contype = 'f'
+      AND g.confrelid = $1
+      AND n.nspname = 'public'
+      AND c.relkind IN ('r', 'p')
+      AND array_length(g.conkey, 1) > 1
+  `,
+    [invoicesOid]
+  );
+  for (const fk of multiFk) {
+    const { rows: attrs } = await client.query(
+      `
+      SELECT a.attname
+      FROM pg_constraint g
+      CROSS JOIN LATERAL unnest(g.conkey) WITH ORDINALITY AS u(attnum, ord)
+      JOIN pg_attribute a ON a.attrelid = g.conrelid AND a.attnum = u.attnum AND NOT a.attisdropped
+      WHERE g.oid = $1
+      ORDER BY u.ord
+    `,
+      [fk.oid]
+    );
+    if (attrs.length === 0) continue;
+    const tbl = quoteSqlIdent(fk.relname);
+    const setList = attrs.map((r) => `${quoteSqlIdent(r.attname)} = NULL`).join(", ");
+    const whereAny = attrs.map((r) => `${quoteSqlIdent(r.attname)} IS NOT NULL`).join(" OR ");
+    await client.query(`UPDATE public.${tbl} SET ${setList} WHERE ${whereAny}`);
+  }
+}
+
+/** Empty invoices and reset SERIAL; prefer TRUNCATE, fall back if views/triggers block it. */
+async function truncateInvoicesOrDeleteAndResetSeq(client) {
+  try {
+    await client.query(`TRUNCATE TABLE public.invoices RESTART IDENTITY`);
+    return;
+  } catch (truncateErr) {
+    console.error("[finance reset-invoices] TRUNCATE failed, using DELETE + setval", truncateErr);
+  }
+  await client.query(`DELETE FROM public.invoices`);
+  const seqRes = await client.query(
+    `SELECT pg_get_serial_sequence('public.invoices', 'id') AS seqname`
+  );
+  const seqname = seqRes.rows[0]?.seqname;
+  if (seqname) {
+    await client.query(`SELECT setval($1::regclass, 1, false)`, [seqname]);
   }
 }
 
@@ -1448,7 +1511,7 @@ router.delete(
     try {
       await client.query("BEGIN");
       await nullAllForeignKeysToInvoices(client);
-      await client.query(`TRUNCATE TABLE invoices RESTART IDENTITY`);
+      await truncateInvoicesOrDeleteAndResetSeq(client);
       await client.query("COMMIT");
       res.json({ ok: true, message: "تم حذف جميع الفواتير وإعادة ضبط الترقيم" });
     } catch (err) {
