@@ -16,10 +16,13 @@ function quoteSqlIdent(name) {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
+const SYSTEM_PG_SCHEMAS = new Set(["pg_catalog", "information_schema", "pg_toast"]);
+
 /**
  * TRUNCATE invoices fails while any row in another table still references invoices.
  * Discover FKs to public.invoices and NULL referencing columns (pre-launch reset).
  * Includes partitioned tables (relkind 'p'); handles multi-column FKs.
+ * Clears references from any non-system schema (not only public).
  */
 async function nullAllForeignKeysToInvoices(client) {
   const inv = await client.query(`
@@ -37,40 +40,45 @@ async function nullAllForeignKeysToInvoices(client) {
 
   const { rows: singleCol } = await client.query(
     `
-    SELECT DISTINCT c.relname AS relname, a.attname AS attname
+    SELECT DISTINCT n.nspname AS schema_name, c.relname AS relname, a.attname AS attname
     FROM pg_constraint g
     JOIN pg_class c ON c.oid = g.conrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
     JOIN pg_attribute a ON a.attrelid = g.conrelid AND a.attnum = ANY (g.conkey)
     WHERE g.contype = 'f'
       AND g.confrelid = $1
-      AND n.nspname = 'public'
+      AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+      AND n.nspname NOT LIKE 'pg\\_temp\\_%' ESCAPE '\\'
       AND c.relkind IN ('r', 'p')
       AND array_length(g.conkey, 1) = 1
   `,
     [invoicesOid]
   );
   for (const row of singleCol) {
+    if (SYSTEM_PG_SCHEMAS.has(row.schema_name)) continue;
+    const sch = quoteSqlIdent(row.schema_name);
     const tbl = quoteSqlIdent(row.relname);
     const col = quoteSqlIdent(row.attname);
-    await client.query(`UPDATE public.${tbl} SET ${col} = NULL WHERE ${col} IS NOT NULL`);
+    await client.query(`UPDATE ${sch}.${tbl} SET ${col} = NULL WHERE ${col} IS NOT NULL`);
   }
 
   const { rows: multiFk } = await client.query(
     `
-    SELECT g.oid, c.relname AS relname
+    SELECT g.oid, n.nspname AS schema_name, c.relname AS relname
     FROM pg_constraint g
     JOIN pg_class c ON c.oid = g.conrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE g.contype = 'f'
       AND g.confrelid = $1
-      AND n.nspname = 'public'
+      AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+      AND n.nspname NOT LIKE 'pg\\_temp\\_%' ESCAPE '\\'
       AND c.relkind IN ('r', 'p')
       AND array_length(g.conkey, 1) > 1
   `,
     [invoicesOid]
   );
   for (const fk of multiFk) {
+    if (SYSTEM_PG_SCHEMAS.has(fk.schema_name)) continue;
     const { rows: attrs } = await client.query(
       `
       SELECT a.attname
@@ -83,11 +91,20 @@ async function nullAllForeignKeysToInvoices(client) {
       [fk.oid]
     );
     if (attrs.length === 0) continue;
+    const sch = quoteSqlIdent(fk.schema_name);
     const tbl = quoteSqlIdent(fk.relname);
     const setList = attrs.map((r) => `${quoteSqlIdent(r.attname)} = NULL`).join(", ");
     const whereAny = attrs.map((r) => `${quoteSqlIdent(r.attname)} IS NOT NULL`).join(" OR ");
-    await client.query(`UPDATE public.${tbl} SET ${setList} WHERE ${whereAny}`);
+    await client.query(`UPDATE ${sch}.${tbl} SET ${setList} WHERE ${whereAny}`);
   }
+}
+
+function resetInvoicesRequestConfirmed(req) {
+  if (req.body && req.body.confirm === true) return true;
+  const q = req.query?.confirm;
+  if (q === true) return true;
+  if (typeof q === "string" && (q === "true" || q === "1")) return true;
+  return false;
 }
 
 /** Empty invoices and reset SERIAL; prefer TRUNCATE, fall back if views/triggers block it. */
@@ -1496,36 +1513,35 @@ router.get("/chargebacks/:id", authMiddleware, requireRoles('finance_admin'), as
 }));
 
 /**
- * Pre-launch only: wipe all invoices and reset SERIAL (super_admin + body confirm).
+ * Pre-launch only: wipe all invoices and reset SERIAL (super_admin + confirm).
  * Clears FK references from dependent tables first.
+ * POST preferred: some proxies strip DELETE bodies; DELETE still supported; ?confirm=true is a fallback.
  */
-router.delete(
-  "/reset-invoices",
-  authMiddleware,
-  requireRoles("super_admin"),
-  asyncHandler(async (req, res) => {
-    if (!req.body || req.body.confirm !== true) {
-      return res.status(400).json({ error: "يجب إرسال { confirm: true } للتأكيد" });
-    }
-    const client = await db.pool.connect();
+const resetInvoicesHandler = asyncHandler(async (req, res) => {
+  if (!resetInvoicesRequestConfirmed(req)) {
+    return res.status(400).json({ error: "يجب إرسال { confirm: true } أو ?confirm=true للتأكيد" });
+  }
+  const client = await db.pool.connect();
+  try {
+    await client.query("BEGIN");
+    await nullAllForeignKeysToInvoices(client);
+    await truncateInvoicesOrDeleteAndResetSeq(client);
+    await client.query("COMMIT");
+    res.json({ ok: true, message: "تم حذف جميع الفواتير وإعادة ضبط الترقيم" });
+  } catch (err) {
     try {
-      await client.query("BEGIN");
-      await nullAllForeignKeysToInvoices(client);
-      await truncateInvoicesOrDeleteAndResetSeq(client);
-      await client.query("COMMIT");
-      res.json({ ok: true, message: "تم حذف جميع الفواتير وإعادة ضبط الترقيم" });
-    } catch (err) {
-      try {
-        await client.query("ROLLBACK");
-      } catch (rollbackErr) {
-        console.error("[finance reset-invoices] rollback failed", rollbackErr);
-      }
-      console.error("[finance reset-invoices]", err);
-      res.status(500).json({ error: err.message || "فشل تصفير الفواتير" });
-    } finally {
-      client.release();
+      await client.query("ROLLBACK");
+    } catch (rollbackErr) {
+      console.error("[finance reset-invoices] rollback failed", rollbackErr);
     }
-  })
-);
+    console.error("[finance reset-invoices]", err);
+    res.status(500).json({ error: err.message || "فشل تصفير الفواتير" });
+  } finally {
+    client.release();
+  }
+});
+
+router.post("/reset-invoices", authMiddleware, requireRoles("super_admin"), resetInvoicesHandler);
+router.delete("/reset-invoices", authMiddleware, requireRoles("super_admin"), resetInvoicesHandler);
 
 module.exports = router;

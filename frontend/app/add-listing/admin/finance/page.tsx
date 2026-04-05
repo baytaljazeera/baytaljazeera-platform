@@ -831,7 +831,7 @@ export default function FinancePage() {
     setResetLoading(true);
     try {
       const res = await fetch(`${API_URL}/api/admin/finance/reset-invoices`, {
-        method: "DELETE",
+        method: "POST",
         credentials: "include",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ confirm: true }),
