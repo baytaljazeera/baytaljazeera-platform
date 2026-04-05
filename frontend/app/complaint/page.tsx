@@ -19,12 +19,20 @@ const categories = [
   { value: "account_issue", label: "مشكلة في الحساب", icon: User, description: "تسجيل الدخول، استعادة كلمة السر، تفعيل الحساب" },
 ];
 
-/** Maps legacy complaint categories → support_tickets.department + subcategory (Omni-Inbox routing). */
+/**
+ * Maps complaint page choices → support_tickets.
+ * Billing: queue as technical (CS triage) + category billing_hint so Omni shows hint + Transfer to Finance stays available.
+ */
 const CATEGORY_TO_SUPPORT: Record<
   string,
-  { department: string; subcategory: string; labelAr: string }
+  { department: string; subcategory: string; labelAr: string; category?: string }
 > = {
-  billing: { department: "financial", subcategory: "refund", labelAr: "مالية" },
+  billing: {
+    department: "technical",
+    subcategory: "refund",
+    labelAr: "مالية",
+    category: "billing_hint",
+  },
   technical: { department: "technical", subcategory: "app_error", labelAr: "تقنية" },
   account_issue: { department: "account", subcategory: "profile_update", labelAr: "حسابي/إداري" },
 };
@@ -117,6 +125,7 @@ function ComplaintPageContent() {
         body: JSON.stringify({
           department: mapping.department,
           subcategory: mapping.subcategory,
+          ...(mapping.category ? { category: mapping.category } : {}),
           priority: "medium",
           subject: subject.trim(),
           description,

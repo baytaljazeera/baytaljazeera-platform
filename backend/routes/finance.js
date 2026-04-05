@@ -8,6 +8,43 @@ const { asyncHandler } = require('../middleware/asyncHandler');
 
 const router = express.Router();
 
+/** Safe double-quote for PostgreSQL identifiers (names from pg_catalog only). */
+function quoteSqlIdent(name) {
+  if (typeof name !== "string" || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+    throw new Error(`Invalid SQL identifier: ${name}`);
+  }
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+/**
+ * TRUNCATE invoices fails while any row in another table still references invoices.
+ * Discover single-column FKs to public.invoices and NULL them (pre-launch reset).
+ */
+async function nullAllForeignKeysToInvoices(client) {
+  const { rows } = await client.query(`
+    SELECT DISTINCT c.relname AS relname, a.attname AS attname
+    FROM pg_constraint g
+    JOIN pg_class c ON c.oid = g.conrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = g.conrelid AND a.attnum = ANY (g.conkey)
+    WHERE g.contype = 'f'
+      AND g.confrelid = (
+        SELECT ic.oid
+        FROM pg_class ic
+        JOIN pg_namespace ins ON ins.oid = ic.relnamespace
+        WHERE ins.nspname = 'public' AND ic.relname = 'invoices' AND ic.relkind = 'r'
+      )
+      AND n.nspname = 'public'
+      AND c.relkind = 'r'
+      AND array_length(g.conkey, 1) = 1
+  `);
+  for (const row of rows) {
+    const tbl = quoteSqlIdent(row.relname);
+    const col = quoteSqlIdent(row.attname);
+    await client.query(`UPDATE public.${tbl} SET ${col} = NULL WHERE ${col} IS NOT NULL`);
+  }
+}
+
 function sendRefundEmail(type, refund, userEmail, userName, decisionNote, bankReference) {
   const emailLogPath = path.join(__dirname, '../../public/emails');
   if (!fs.existsSync(emailLogPath)) {
@@ -1410,16 +1447,16 @@ router.delete(
     const client = await db.pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query(`UPDATE refunds SET invoice_id = NULL WHERE invoice_id IS NOT NULL`);
-      await client.query(`UPDATE account_complaints SET invoice_id = NULL WHERE invoice_id IS NOT NULL`);
-      await client.query(`UPDATE chargebacks SET invoice_id = NULL WHERE invoice_id IS NOT NULL`);
-      await client.query(`UPDATE elite_slot_reservations SET invoice_id = NULL WHERE invoice_id IS NOT NULL`);
-      await client.query(`UPDATE elite_extension_requests SET invoice_id = NULL WHERE invoice_id IS NOT NULL`);
+      await nullAllForeignKeysToInvoices(client);
       await client.query(`TRUNCATE TABLE invoices RESTART IDENTITY`);
       await client.query("COMMIT");
       res.json({ ok: true, message: "تم حذف جميع الفواتير وإعادة ضبط الترقيم" });
     } catch (err) {
-      await client.query("ROLLBACK");
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackErr) {
+        console.error("[finance reset-invoices] rollback failed", rollbackErr);
+      }
       console.error("[finance reset-invoices]", err);
       res.status(500).json({ error: err.message || "فشل تصفير الفواتير" });
     } finally {

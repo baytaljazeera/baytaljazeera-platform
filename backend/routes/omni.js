@@ -128,7 +128,7 @@ async function buildInboxList() {
       }
     } else if (r.source_type === "ticket" && r.source_id) {
       const st = await db.query(
-        `SELECT id, subject, source, source_ref, department FROM support_tickets WHERE id = $1`,
+        `SELECT id, subject, source, source_ref, department, category FROM support_tickets WHERE id = $1`,
         [r.source_id]
       );
       if (st.rows[0]) {
@@ -136,12 +136,14 @@ async function buildInboxList() {
         title = st.rows[0].subject || `تذكرة #${st.rows[0].id}`;
         const dept = st.rows[0].department;
         const deptTag = dept ? (DEPT_AR[dept] || dept) : "دعم";
+        const hint =
+          st.rows[0].category === "billing_hint" ? "تلميح: مالية · " : "";
         if (st.rows[0].source === "complaint_page") {
-          subtitle = `شكوى — ${deptTag} · البريد الموحد`;
+          subtitle = `${hint}شكوى — ${deptTag} · البريد الموحد`;
         } else if (st.rows[0].source === "ai_chatbot") {
-          subtitle = `${deptTag} · تصعيد من الدعم الآلي`;
+          subtitle = `${hint}${deptTag} · تصعيد من الدعم الآلي`;
         } else {
-          subtitle = `${deptTag} · تذكرة دعم`;
+          subtitle = `${hint}${deptTag} · تذكرة دعم`;
         }
         if (st.rows[0].source === "ai_chatbot" && st.rows[0].source_ref) {
           aiSessionId = st.rows[0].source_ref;

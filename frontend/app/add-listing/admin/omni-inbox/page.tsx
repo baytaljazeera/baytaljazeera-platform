@@ -174,6 +174,7 @@ export default function OmniInboxPage() {
     user_name?: string;
     user_email?: string;
     department?: string | null;
+    category?: string | null;
   } | null>(null);
   const [aiSessionId, setAiSessionId] = useState<string | null>(null);
   const [aiLogs, setAiLogs] = useState<AiLog[]>([]);
@@ -278,6 +279,7 @@ export default function OmniInboxPage() {
             user_name: data.ticket.user_name,
             user_email: data.ticket.user_email,
             department: data.ticket.department ?? null,
+            category: data.ticket.category ?? null,
           });
         } else if (item.ticket_id) {
           try {
@@ -295,6 +297,7 @@ export default function OmniInboxPage() {
                   user_name: t.user_name,
                   user_email: t.user_email,
                   department: t.department ?? null,
+                  category: t.category ?? null,
                 });
               }
             }
@@ -514,6 +517,11 @@ export default function OmniInboxPage() {
                       <span className="truncate">
                         {ticketMeta.user_name || "عميل"} {ticketMeta.user_email ? `· ${ticketMeta.user_email}` : ""}
                       </span>
+                      {ticketMeta.category === "billing_hint" && (
+                        <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-900 ring-1 ring-amber-300/60">
+                          تلميح العميل: مالية
+                        </span>
+                      )}
                       {ticketMeta.department != null && ticketMeta.department !== "" && (
                         <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
                           القسم: {DEPT_LABEL[ticketMeta.department] || ticketMeta.department}

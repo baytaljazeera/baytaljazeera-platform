@@ -178,6 +178,16 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
 
   const allowedSources = new Set(["manual", "complaint_page", "ai_chatbot", "feedback_followup"]);
   const source = allowedSources.has(req.body?.source) ? req.body.source : "manual";
+
+  /** Optional triage tag (e.g. billing_hint) — stored in category column; keeps CS queue + transfer workflow */
+  const ALLOWED_CATEGORY_TAGS = new Set(["billing_hint"]);
+  let categoryValue = department;
+  if (typeof req.body.category === "string" && req.body.category.trim()) {
+    const tag = req.body.category.trim();
+    if (ALLOWED_CATEGORY_TAGS.has(tag)) {
+      categoryValue = tag;
+    }
+  }
   
   const ticketNumber = generateTicketNumber();
   const routing = getSmartRouting(department, priority || 'medium');
@@ -193,7 +203,7 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
       ticketNumber, 
       department,
       subcategory || null,
-      department,
+      categoryValue,
       priority || 'medium', 
       subject, 
       description,
