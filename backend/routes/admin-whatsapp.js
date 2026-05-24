@@ -4,10 +4,16 @@ const { authMiddleware, requireRoles } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { GoogleGenAI } = require('@google/genai');
 
-// Lazy-init Gemini — same key priority as ai.js
+let geminiKeyWarned = false;
 function getGenAI() {
-  const key = process.env.GEMINI_API_KEY || process.env.Gemeni2 || process.env.Gemeni;
-  if (!key) return null;
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) {
+    if (!geminiKeyWarned) {
+      console.error('[admin-whatsapp] GEMINI_API_KEY is not set — AI suggestion endpoints will return 503.');
+      geminiKeyWarned = true;
+    }
+    return null;
+  }
   return new GoogleGenAI({ apiKey: key });
 }
 
@@ -390,7 +396,7 @@ ${contextLines}
     res.json({ suggestion });
   } catch (err) {
     console.error('[ai-suggest]', err.message);
-    res.status(500).json({ error: 'فشل توليد الاقتراح' });
+    return res.status(500).json({ error: 'فشل توليد الاقتراح' });
   }
 }));
 
@@ -415,7 +421,7 @@ router.post('/ai-blast-suggest', ...adminAuth, asyncHandler(async (req, res) => 
     res.json({ suggestion });
   } catch (err) {
     console.error('[ai-blast-suggest]', err.message);
-    res.status(500).json({ error: 'فشل توليد الرسالة' });
+    return res.status(500).json({ error: 'فشل توليد الرسالة' });
   }
 }));
 

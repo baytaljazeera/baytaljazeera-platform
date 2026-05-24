@@ -1,10 +1,57 @@
 const express = require("express");
+const crypto = require("crypto");
 const db = require("../db");
 const { authMiddleware, requireRoles } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { logWhatsAppMessage } = require('../services/googleSheetsService');
 
 const router = express.Router();
+
+// Verifies the X-Twilio-Signature header per Twilio's webhook security spec.
+// Algorithm: HMAC-SHA1(authToken, fullUrl + sortedPostParams.join('')) → base64.
+// Returns true if request is authentic, false otherwise.
+function verifyTwilioSignature(req) {
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+
+  if (!authToken) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[whatsapp/webhook] TWILIO_AUTH_TOKEN missing in production — rejecting request.');
+      return false;
+    }
+    console.warn('[whatsapp/webhook] TWILIO_AUTH_TOKEN not set — skipping signature check (non-production).');
+    return true;
+  }
+
+  const twilioSignature = req.get('X-Twilio-Signature');
+  if (!twilioSignature) return false;
+
+  // Reconstruct the URL Twilio used (respecting reverse proxies like Render/Railway).
+  const proto = req.get('X-Forwarded-Proto') || req.protocol;
+  const host = req.get('X-Forwarded-Host') || req.get('host');
+  const url = `${proto}://${host}${req.originalUrl}`;
+
+  const params = req.body && typeof req.body === 'object' ? req.body : {};
+  const sortedKeys = Object.keys(params).sort();
+  let data = url;
+  for (const key of sortedKeys) {
+    const val = params[key];
+    data += key + (val == null ? '' : String(val));
+  }
+
+  const expected = crypto
+    .createHmac('sha1', authToken)
+    .update(Buffer.from(data, 'utf-8'))
+    .digest('base64');
+
+  try {
+    const a = Buffer.from(expected);
+    const b = Buffer.from(twilioSignature);
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
 
 async function sendWhatsAppMessage(to, message) {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -48,6 +95,11 @@ async function sendWhatsAppMessage(to, message) {
 const WELCOME_FALLBACK = 'أهلاً وسهلاً بكم في بيت الجزيرة 🏠\n\nسيقوم فريقنا بالتواصل معكم قريباً.';
 
 router.post('/webhook', asyncHandler(async (req, res) => {
+  if (!verifyTwilioSignature(req)) {
+    console.warn('[whatsapp/webhook] Invalid or missing Twilio signature — rejecting request.');
+    return res.status(403).send('Forbidden');
+  }
+
   const { From, Body, MessageSid } = req.body;
   const cleanPhone = From ? From.replace('whatsapp:', '') : 'Unknown';
 
