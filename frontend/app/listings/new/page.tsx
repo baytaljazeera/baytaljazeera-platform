@@ -143,6 +143,76 @@ type ListingFormState = {
 
 type ValidationErrors = Partial<Record<keyof ListingFormState | "media", string>>;
 
+// ───── Draft autosave (localStorage) ─────────────────────────────────────────
+const DRAFT_STORAGE_KEY = "bj_new_listing_draft_v1";
+const DRAFT_VERSION = 1;
+
+type DraftPayload = {
+  v: number;
+  savedAt: string;
+  form: ListingFormState;
+  step: number;
+  locationConfirmed: boolean;
+  coverImageIndex: number;
+  selectedBucketId?: number;
+};
+
+// ───── Price → Arabic readout (round-number friendly) ────────────────────────
+const ARABIC_THOUSANDS: Record<number, string> = {
+  1: "ألف", 2: "ألفان", 3: "ثلاثة آلاف", 4: "أربعة آلاف", 5: "خمسة آلاف",
+  6: "ستة آلاف", 7: "سبعة آلاف", 8: "ثمانية آلاف", 9: "تسعة آلاف", 10: "عشرة آلاف",
+  15: "خمسة عشر ألف", 20: "عشرون ألف", 25: "خمسة وعشرون ألف",
+  30: "ثلاثون ألف", 40: "أربعون ألف", 50: "خمسون ألف",
+  60: "ستون ألف", 70: "سبعون ألف", 75: "خمسة وسبعون ألف",
+  80: "ثمانون ألف", 90: "تسعون ألف",
+  100: "مائة ألف", 150: "مائة وخمسون ألف",
+  200: "مائتا ألف", 250: "مائتان وخمسون ألف",
+  300: "ثلاثمائة ألف", 350: "ثلاثمائة وخمسون ألف",
+  400: "أربعمائة ألف", 450: "أربعمائة وخمسون ألف",
+  500: "خمسمائة ألف", 600: "ستمائة ألف",
+  700: "سبعمائة ألف", 750: "سبعمائة وخمسون ألف",
+  800: "ثمانمائة ألف", 900: "تسعمائة ألف",
+};
+
+function priceToArabicReadout(n: number, currencyLabel: string = "ريال"): string {
+  if (!Number.isFinite(n) || n <= 0) return "";
+  // Whole-billion
+  if (n % 1_000_000_000 === 0 && n >= 1_000_000_000) {
+    const b = n / 1_000_000_000;
+    if (b === 1) return `مليار ${currencyLabel} تقريباً`;
+    if (b === 2) return `ملياران ${currencyLabel} تقريباً`;
+    return `${b} مليار ${currencyLabel} تقريباً`;
+  }
+  // Whole-million
+  if (n % 1_000_000 === 0 && n >= 1_000_000) {
+    const m = n / 1_000_000;
+    if (m === 1) return `مليون ${currencyLabel} تقريباً`;
+    if (m === 2) return `مليونان ${currencyLabel} تقريباً`;
+    if (m >= 3 && m <= 10) {
+      const words: Record<number, string> = { 3: "ثلاثة", 4: "أربعة", 5: "خمسة", 6: "ستة", 7: "سبعة", 8: "ثمانية", 9: "تسعة", 10: "عشرة" };
+      return `${words[m]} ملايين ${currencyLabel} تقريباً`;
+    }
+    return `${m} مليون ${currencyLabel} تقريباً`;
+  }
+  // Whole-thousand
+  if (n % 1000 === 0 && n >= 1000 && n < 1_000_000) {
+    const k = n / 1000;
+    if (ARABIC_THOUSANDS[k]) return `${ARABIC_THOUSANDS[k]} ${currencyLabel} تقريباً`;
+    return `${k.toLocaleString("en-US")} ألف ${currencyLabel} تقريباً`;
+  }
+  // Mixed fallback
+  if (n >= 1_000_000_000) {
+    return `${(n / 1_000_000_000).toFixed(2).replace(/\.?0+$/, "")} مليار ${currencyLabel} تقريباً`;
+  }
+  if (n >= 1_000_000) {
+    return `${(n / 1_000_000).toFixed(2).replace(/\.?0+$/, "")} مليون ${currencyLabel} تقريباً`;
+  }
+  if (n >= 1000) {
+    return `${(n / 1000).toFixed(0)} ألف ${currencyLabel} تقريباً`;
+  }
+  return `${n.toLocaleString("en-US")} ${currencyLabel}`;
+}
+
 const SAUDI_CITIES = [
   "مكة المكرمة", "المدينة المنورة", "جدة", "الطائف", "الرياض",
   "الدمام", "الخبر", "الظهران", "تبوك", "بريدة", "حائل", "أبها", "جازان", "نجران",
@@ -233,6 +303,13 @@ export default function NewListingPage() {
   // Location confirmation state
   const [locationConfirmed, setLocationConfirmed] = useState(false);
 
+  // Draft autosave state
+  const [showDraftRestoreModal, setShowDraftRestoreModal] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<DraftPayload | null>(null);
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const draftCheckedRef = useRef(false);
+  const draftRestoredRef = useRef(false);
+
   // AI Description Generator states
   const [aiLevel, setAiLevel] = useState(0);
   const [aiLoading, setAiLoading] = useState(false);
@@ -315,6 +392,123 @@ export default function NewListingPage() {
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  // ───── Draft restore on mount ─────────────────────────────────────────────
+  useEffect(() => {
+    if (typeof window === "undefined" || draftCheckedRef.current) return;
+    draftCheckedRef.current = true;
+    try {
+      const raw = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as DraftPayload;
+      if (!parsed || parsed.v !== DRAFT_VERSION || !parsed.form) {
+        window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+        return;
+      }
+      const hasContent =
+        parsed.form.propertyType ||
+        parsed.form.title?.trim() ||
+        parsed.form.price ||
+        parsed.form.city ||
+        parsed.form.district?.trim();
+      if (!hasContent) {
+        window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+        return;
+      }
+      setPendingDraft(parsed);
+      setShowDraftRestoreModal(true);
+    } catch {
+      try { window.localStorage.removeItem(DRAFT_STORAGE_KEY); } catch {}
+    }
+  }, []);
+
+  // ───── Autosave on form change (debounced 1.5s) ───────────────────────────
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (showDraftRestoreModal) return; // don't overwrite a pending draft before user decides
+    const hasContent =
+      form.propertyType ||
+      form.title?.trim() ||
+      form.price ||
+      form.city ||
+      form.district?.trim();
+    if (!hasContent) return;
+    const t = setTimeout(() => {
+      try {
+        const payload: DraftPayload = {
+          v: DRAFT_VERSION,
+          savedAt: new Date().toISOString(),
+          form,
+          step,
+          locationConfirmed,
+          coverImageIndex,
+          selectedBucketId: selectedBucket?.bucketId,
+        };
+        window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
+        setDraftSavedAt(payload.savedAt);
+      } catch {}
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [form, step, locationConfirmed, coverImageIndex, selectedBucket?.bucketId, showDraftRestoreModal]);
+
+  // ───── Autosave safety-net interval (30s) ─────────────────────────────────
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const interval = setInterval(() => {
+      if (showDraftRestoreModal) return;
+      const hasContent =
+        form.propertyType ||
+        form.title?.trim() ||
+        form.price ||
+        form.city ||
+        form.district?.trim();
+      if (!hasContent) return;
+      try {
+        const payload: DraftPayload = {
+          v: DRAFT_VERSION,
+          savedAt: new Date().toISOString(),
+          form,
+          step,
+          locationConfirmed,
+          coverImageIndex,
+          selectedBucketId: selectedBucket?.bucketId,
+        };
+        window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
+        setDraftSavedAt(payload.savedAt);
+      } catch {}
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [form, step, locationConfirmed, coverImageIndex, selectedBucket?.bucketId, showDraftRestoreModal]);
+
+  const clearDraftStorage = useCallback(() => {
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+      }
+    } catch {}
+    setPendingDraft(null);
+    setShowDraftRestoreModal(false);
+    setDraftSavedAt(null);
+  }, []);
+
+  const restoreDraft = useCallback(() => {
+    if (!pendingDraft) {
+      setShowDraftRestoreModal(false);
+      return;
+    }
+    setForm(pendingDraft.form);
+    setStep(Math.max(0, Math.min(5, pendingDraft.step)) as any);
+    setLocationConfirmed(!!pendingDraft.locationConfirmed);
+    setCoverImageIndex(Math.max(0, pendingDraft.coverImageIndex || 0));
+    draftRestoredRef.current = true;
+    setShowDraftRestoreModal(false);
+    toast.success("تم استرجاع المسودة. لاحظ: الصور والفيديو يحتاجان إعادة الرفع.", { duration: 5000 });
+  }, [pendingDraft]);
+
+  const discardDraft = useCallback(() => {
+    clearDraftStorage();
+    toast.message("تم مسح المسودة السابقة. بدأنا من جديد.", { duration: 3000 });
+  }, [clearDraftStorage]);
 
   useEffect(() => {
     async function load() {
@@ -1022,6 +1216,43 @@ export default function NewListingPage() {
     setErrors((prev) => ({ ...prev, [key]: undefined }));
   }
 
+  // Per-field on-blur validation with specific Arabic messages.
+  // Only sets/clears the error for the named field — does not touch other fields.
+  function validateField(key: keyof ListingFormState | "media", currentValue?: any) {
+    let message: string | undefined;
+    const v = currentValue;
+    switch (key) {
+      case "title":
+        if (!String(v ?? "").trim()) message = "العنوان مطلوب — اكتب عنواناً قصيراً يصف العقار.";
+        else if (String(v).trim().length < 5) message = "العنوان قصير جداً (5 أحرف على الأقل).";
+        break;
+      case "district":
+        if (!String(v ?? "").trim()) message = "اسم الحي مطلوب — اكتب اسم الحي مثلاً: النرجس.";
+        break;
+      case "city":
+        if (!v) message = "اختر المدينة من القائمة.";
+        break;
+      case "country":
+        if (!v) message = "اختر الدولة من القائمة.";
+        break;
+      case "price":
+        if (!v || Number(v) <= 0) message = "أدخل سعراً أكبر من صفر.";
+        break;
+      case "landArea":
+        if (!v || Number(v) <= 0) message = "أدخل مساحة الأرض (بالمتر المربع).";
+        break;
+      case "bedrooms":
+        if (v === "" || v == null || Number(v) < 0) message = "حدد عدد الغرف.";
+        break;
+      case "bathrooms":
+        if (v === "" || v == null || Number(v) < 0) message = "حدد عدد دورات المياه.";
+        break;
+      default:
+        return;
+    }
+    setErrors((prev) => ({ ...prev, [key]: message }));
+  }
+
   // دعم جميع أنواع الصور بما في ذلك صور الجوال (HEIC, HEIF, etc.)
   const ALLOWED_IMAGE_TYPES = [
     'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
@@ -1095,53 +1326,121 @@ export default function NewListingPage() {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
     const maxImages = selectedBucket?.benefits.maxPhotos || plan?.maxPhotosPerListing || 5;
-    
-    // التحقق من نوع الملفات - قبول جميع أنواع الصور
-    const imageFiles = files.filter(file => {
-      // قبول أي ملف يبدأ بـ image/ أو له امتداد صورة معروف
-      const isImage = file.type.startsWith('image/') || 
-                     /\.(jpg|jpeg|png|gif|webp|heic|heif|avif|bmp|tiff|svg|ico)$/i.test(file.name);
+
+    // 1) قبول جميع أنواع الصور المعروفة (HEIC/HEIF/AVIF/WEBP/JPEG/PNG/GIF/BMP/TIFF/SVG/ICO)
+    const imageFiles = files.filter((file) => {
+      const isImage =
+        file.type.startsWith("image/") ||
+        /\.(jpg|jpeg|png|gif|webp|heic|heif|avif|bmp|tiff|svg|ico)$/i.test(file.name);
       return isImage;
     });
-    
+
     if (imageFiles.length === 0) {
-      toast.error('لم يتم العثور على صور صالحة', { duration: 3000 });
-      e.target.value = '';
+      toast.error("لم يتم العثور على صور صالحة. الأنواع المدعومة: JPG, PNG, HEIC, WEBP.", { duration: 4000 });
+      e.target.value = "";
       return;
     }
-    
+
     if (imageFiles.length !== files.length) {
-      toast.warning(`تم قبول ${imageFiles.length} من ${files.length} ملف`, { duration: 3000 });
+      toast.warning(`تم تجاهل ${files.length - imageFiles.length} ملف غير صورة.`, { duration: 3500 });
     }
 
-    const total = images.length + files.length;
+    // 2) حدّ الباقة
+    const total = images.length + imageFiles.length;
     if (total > maxImages) {
       const excess = total - maxImages;
-      setErrors(prev => ({ 
-        ...prev, 
-        media: `تجاوزت الحد الأقصى! باقتك تسمح بـ ${maxImages} صور فقط. لديك ${images.length} صورة حالياً.` 
+      setErrors((prev) => ({
+        ...prev,
+        media: `تجاوزت الحد الأقصى! باقتك تسمح بـ ${maxImages} صور فقط. لديك ${images.length} صورة حالياً.`,
       }));
-      toast.error(`لا يمكن رفع أكثر من ${maxImages} صورة. تجاوزت الحد بـ ${excess} صورة.`, { 
+      toast.error(`لا يمكن رفع أكثر من ${maxImages} صورة. تجاوزت الحد بـ ${excess} صورة.`, {
         duration: 5000,
-        style: {
-          background: '#FEE2E2',
-          color: '#991B1B',
-          fontWeight: '600',
-        }
+        style: { background: "#FEE2E2", color: "#991B1B", fontWeight: "600" },
       });
-      e.target.value = '';
+      e.target.value = "";
       return;
     }
 
-    const newImages = [...images, ...files];
+    // 3) حد حجم الملف الفردي قبل أي معالجة
+    const MAX_RAW_BYTES = 25 * 1024 * 1024; // 25 MB قبل الضغط
+    const COMPRESS_THRESHOLD = 2 * 1024 * 1024; // 2 MB → اضغط
+
+    const oversized = imageFiles.find((f) => f.size > MAX_RAW_BYTES);
+    if (oversized) {
+      toast.error(
+        `الملف "${oversized.name}" حجمه ${(oversized.size / 1024 / 1024).toFixed(1)} ميجابايت — الحد الأقصى 25 ميجا.`,
+        { duration: 6000 }
+      );
+      e.target.value = "";
+      return;
+    }
+
+    // 4) عملية تجهيز/ضغط مع toast واحد للمعالجة
+    const needsProcessing = imageFiles.some(
+      (f) =>
+        f.size > COMPRESS_THRESHOLD ||
+        /heic|heif/i.test(f.type) ||
+        /\.(heic|heif)$/i.test(f.name)
+    );
+
+    let processingToastId: string | number | undefined;
+    if (needsProcessing) {
+      processingToastId = toast.loading(`جاري تجهيز ${imageFiles.length} صورة...`, {
+        description: "نقوم بتحويل وضغط الصور لرفع أسرع",
+      });
+    }
+
+    const processed: File[] = [];
+    const failed: { name: string; reason: string }[] = [];
+
+    for (const file of imageFiles) {
+      const isHeic = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name);
+      const needsCompress = file.size > COMPRESS_THRESHOLD || isHeic;
+      if (!needsCompress) {
+        processed.push(file);
+        continue;
+      }
+      try {
+        const out = await compressImage(file, 1920, 0.85);
+        processed.push(out);
+      } catch (err: any) {
+        // HEIC في بعض المتصفحات لا يفك إلا عبر مكتبة منفصلة — نخبر المستخدم بوضوح
+        const reason = isHeic
+          ? "صيغة HEIC غير مدعومة في هذا المتصفح. حوّل الصورة إلى JPG ثم أعد المحاولة."
+          : err?.message || "تعذّر معالجة الصورة";
+        failed.push({ name: file.name, reason });
+      }
+    }
+
+    if (processingToastId !== undefined) {
+      toast.dismiss(processingToastId);
+    }
+
+    if (failed.length > 0) {
+      const first = failed[0];
+      toast.error(
+        failed.length === 1
+          ? `فشلت معالجة "${first.name}": ${first.reason}`
+          : `فشلت معالجة ${failed.length} صور. مثال: "${first.name}" — ${first.reason}`,
+        { duration: 6000 }
+      );
+    }
+
+    if (processed.length === 0) {
+      e.target.value = "";
+      return;
+    }
+
+    const newImages = [...images, ...processed];
     setImages(newImages);
 
-    const newPreviews = files.map(file => URL.createObjectURL(file));
+    const newPreviews = processed.map((file) => URL.createObjectURL(file));
     setImagePreviews([...imagePreviews, ...newPreviews]);
     setErrors((prev) => ({ ...prev, media: undefined }));
-    
-    toast.success(`تم رفع ${files.length} صورة بنجاح`, { duration: 2000 });
-  }, [images, imagePreviews, selectedBucket?.benefits.maxPhotos, plan?.maxPhotosPerListing]);
+
+    toast.success(`تم رفع ${processed.length} صورة بنجاح`, { duration: 2500 });
+    e.target.value = "";
+  }, [images, imagePreviews, selectedBucket?.benefits.maxPhotos, plan?.maxPhotosPerListing, compressImage]);
 
   const removeImage = useCallback((index: number) => {
     URL.revokeObjectURL(imagePreviews[index]);
@@ -1604,6 +1903,13 @@ export default function NewListingPage() {
         },
       });
 
+      // المسودة لم تعد ضرورية بعد النشر الناجح
+      try {
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+        }
+      } catch {}
+
       setTimeout(() => {
         router.push("/my-listings");
       }, 1500);
@@ -1715,6 +2021,68 @@ export default function NewListingPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100" dir="rtl">
+      {/* Restore-draft prompt (shown only once on mount when a saved draft is detected) */}
+      {showDraftRestoreModal && pendingDraft && (
+        <div className="fixed inset-0 z-[2000] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-amber-200">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
+                <FileText className="w-6 h-6 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-[#002845]">وجدنا إعلاناً غير مكتمل</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  محفوظ تلقائياً{(() => {
+                    try {
+                      const d = new Date(pendingDraft.savedAt);
+                      return ` بتاريخ ${d.toLocaleDateString("ar-EG")} الساعة ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+                    } catch { return ""; }
+                  })()}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-3 mb-4 text-sm text-slate-700 space-y-1">
+              {pendingDraft.form.title && (
+                <p><span className="font-semibold">العنوان:</span> {pendingDraft.form.title}</p>
+              )}
+              {pendingDraft.form.propertyType && (
+                <p><span className="font-semibold">النوع:</span> {pendingDraft.form.propertyType}</p>
+              )}
+              {pendingDraft.form.city && (
+                <p><span className="font-semibold">المدينة:</span> {pendingDraft.form.city}</p>
+              )}
+              {pendingDraft.form.price && (
+                <p><span className="font-semibold">السعر:</span> {Number(pendingDraft.form.price).toLocaleString("en-US")}</p>
+              )}
+            </div>
+
+            <p className="text-sm text-slate-600 mb-4">
+              هل تريد المتابعة من حيث توقفت؟ (الصور والفيديو ستحتاج إعادة الرفع)
+            </p>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={restoreDraft}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-l from-[#0B6B4C] to-[#0d8a5e] text-white font-bold rounded-xl hover:opacity-90 transition"
+              >
+                <CheckCircle2 className="w-5 h-5" />
+                نعم، تابع
+              </button>
+              <button
+                type="button"
+                onClick={discardDraft}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border-2 border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-100 transition"
+              >
+                <Trash2 className="w-5 h-5" />
+                ابدأ من جديد
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="relative overflow-hidden">
         <div 
           className="absolute inset-0 bg-cover bg-center bg-slate-800"
@@ -1765,6 +2133,37 @@ export default function NewListingPage() {
       </div>
 
       <div className="max-w-5xl mx-auto px-4 py-6">
+        {/* Draft status + clear button */}
+        {draftSavedAt && (
+          <div className="mb-4 flex items-center justify-between gap-3 px-4 py-2 bg-slate-100 border border-slate-200 rounded-xl">
+            <div className="flex items-center gap-2 text-xs text-slate-600">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span>
+                تم حفظ المسودة تلقائياً
+                {(() => {
+                  try {
+                    const d = new Date(draftSavedAt);
+                    const hh = String(d.getHours()).padStart(2, "0");
+                    const mm = String(d.getMinutes()).padStart(2, "0");
+                    return ` · ${hh}:${mm}`;
+                  } catch { return ""; }
+                })()}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== "undefined" && !window.confirm("هل أنت متأكد من مسح المسودة المحفوظة؟")) return;
+                discardDraft();
+              }}
+              className="flex items-center gap-1 text-xs text-red-600 hover:text-red-700 font-semibold px-2 py-1 rounded-md hover:bg-red-50 transition"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>مسح المسودة</span>
+            </button>
+          </div>
+        )}
+
         {/* Progress Bar */}
         <div className="mb-6">
           <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
@@ -2234,6 +2633,7 @@ export default function NewListingPage() {
                         updateField("country", e.target.value);
                         updateField("city", "");
                       }}
+                      onBlur={(e) => validateField("country", e.target.value)}
                       className="w-full max-w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-[#D4AF37] outline-none transition bg-white text-base appearance-none"
                       style={{ WebkitAppearance: 'none', MozAppearance: 'none' }}
                     >
@@ -2254,6 +2654,7 @@ export default function NewListingPage() {
                     <select
                       value={form.city}
                       onChange={(e) => updateField("city", e.target.value)}
+                      onBlur={(e) => validateField("city", e.target.value)}
                       disabled={!form.country || citiesLoading}
                       className="w-full max-w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-[#D4AF37] outline-none transition bg-white disabled:bg-slate-100 disabled:cursor-not-allowed text-base appearance-none"
                       style={{ WebkitAppearance: 'none', MozAppearance: 'none' }}
@@ -2273,6 +2674,7 @@ export default function NewListingPage() {
                       label="الحي *"
                       value={form.district}
                       onChange={(e) => updateField("district", e.target.value)}
+                      onBlur={(e) => validateField("district", e.target.value)}
                       placeholder="مثال: النرجس"
                       error={errors.district}
                     />
@@ -3122,6 +3524,20 @@ export default function NewListingPage() {
                         });
                       })()}
                     />
+                    {/* قراءة عربية مختصرة للسعر */}
+                    {Number(form.price) > 0 && (
+                      <div className="mt-3 p-3 bg-gradient-to-l from-amber-50 to-yellow-50 rounded-xl border border-amber-200">
+                        <div className="flex flex-wrap items-baseline gap-2 text-amber-800">
+                          <span className="text-base font-semibold">
+                            {Number(form.price).toLocaleString("en-US")} {localCurrency?.symbol || "ريال"}
+                          </span>
+                          <span className="text-amber-500">≈</span>
+                          <span className="text-base font-bold">
+                            {priceToArabicReadout(Number(form.price), localCurrency?.symbol || "ريال")}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                     {/* عرض السعر بالدولار الأمريكي كمرجع عالمي */}
                     {Number(form.price) > 0 && (
                       <div className="mt-3 p-3 bg-gradient-to-l from-emerald-50 to-teal-50 rounded-xl border border-emerald-200">
@@ -3213,6 +3629,7 @@ export default function NewListingPage() {
                         type="text"
                         value={form.title}
                         onChange={(e) => updateField("title", e.target.value)}
+                        onBlur={(e) => validateField("title", e.target.value)}
                         placeholder="مثال: فيلا فاخرة 5 غرف في حي النرجس - تشطيب سوبر ديلوكس"
                         className="w-full px-4 py-3 border-2 border-amber-200 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-base bg-white"
                       />
@@ -3383,26 +3800,31 @@ export default function NewListingPage() {
                     </div>
                     
                     {!locationConfirmed && (
-                      <div className="flex flex-col sm:flex-row gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setLocationConfirmed(true)}
-                          className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-l from-[#0B6B4C] to-[#0d8a5e] text-white font-bold rounded-xl hover:opacity-90 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-xl"
-                        >
-                          <CheckCircle2 className="w-6 h-6" />
-                          <span className="text-base">أكد الموقع</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setForm(prev => ({ ...prev, latitude: 0, longitude: 0, formattedAddress: "" }));
-                            setLocationConfirmed(false);
-                          }}
-                          className="flex-1 flex items-center justify-center gap-2 px-6 py-4 border-2 border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-100 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                        >
-                          <RefreshCw className="w-5 h-5" />
-                          <span className="text-base">إعادة المحاولة</span>
-                        </button>
+                      <div className="sticky bottom-2 z-20 -mx-2 px-2 py-2 bg-white/95 backdrop-blur-sm rounded-xl shadow-md ring-1 ring-amber-200/60">
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setLocationConfirmed(true)}
+                            className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-l from-[#0B6B4C] to-[#0d8a5e] text-white font-bold rounded-xl hover:opacity-90 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-xl"
+                          >
+                            <CheckCircle2 className="w-6 h-6" />
+                            <span className="text-base">أكد الموقع</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForm(prev => ({ ...prev, latitude: 0, longitude: 0, formattedAddress: "" }));
+                              setLocationConfirmed(false);
+                            }}
+                            className="flex-1 flex items-center justify-center gap-2 px-6 py-4 border-2 border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-100 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                          >
+                            <RefreshCw className="w-5 h-5" />
+                            <span className="text-base">إعادة المحاولة</span>
+                          </button>
+                        </div>
+                        <p className="mt-2 text-center text-xs text-amber-700/80">
+                          لا تنسَ الضغط على "أكد الموقع" قبل المتابعة
+                        </p>
                       </div>
                     )}
                     
