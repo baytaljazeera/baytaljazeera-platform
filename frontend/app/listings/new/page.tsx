@@ -374,6 +374,10 @@ export default function NewListingPage() {
   const [elevenlabsVoicesLoading, setElevenlabsVoicesLoading] = useState(false);
   const [elevenlabsVoicesError, setElevenlabsVoicesError] = useState<string | null>(null);
   const [showVideoConfirmModal, setShowVideoConfirmModal] = useState(false);
+
+  // الفيديو مخفي افتراضياً — معظم الإعلانات يكفيها الصور.
+  // ينفتح تلقائياً لو المستخدم رفع فيديواً بنفسه أو ولّد واحداً.
+  const [showVideoSection, setShowVideoSection] = useState(false);
   const [videoConfirmImageCount, setVideoConfirmImageCount] = useState(0);
   const pendingVideoImagesRef = useRef<File[]>([]);
   const voicePreviewAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -429,6 +433,13 @@ export default function NewListingPage() {
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  // Auto-expand video section if any video content already exists.
+  useEffect(() => {
+    if (videoFile || videoResult || slideshowResult) {
+      setShowVideoSection(true);
+    }
+  }, [videoFile, videoResult, slideshowResult]);
 
   // ───── Draft restore on mount ─────────────────────────────────────────────
   useEffect(() => {
@@ -4197,8 +4208,28 @@ export default function NewListingPage() {
                   )}
                 </div>
 
+                {/* زر اختياري لإظهار قسم الفيديو (مخفي افتراضياً لتقليل الإرباك ووقت التوليد) */}
+                {!showVideoSection && (selectedBucket?.benefits?.maxVideos || 0) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowVideoSection(true)}
+                    className="w-full mb-6 p-4 bg-white border-2 border-dashed border-[#D4AF37]/50 rounded-2xl hover:border-[#D4AF37] hover:bg-amber-50/40 transition group flex items-center gap-4"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#D4AF37]/20 to-[#D4AF37]/10 flex items-center justify-center shrink-0 group-hover:from-[#D4AF37]/30 group-hover:to-[#D4AF37]/20">
+                      <Film className="w-6 h-6 text-[#D4AF37]" />
+                    </div>
+                    <div className="flex-1 text-right">
+                      <p className="font-bold text-[#002845]">إضافة فيديو للإعلان (اختياري)</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        ارفع فيديو من جوالك، أو ولّد فيديو ترويجي بالذكاء الاصطناعي. يمكن تخطّيها — الصور كافية لمعظم الإعلانات.
+                      </p>
+                    </div>
+                    <ChevronLeft className="w-5 h-5 text-slate-400 group-hover:text-[#D4AF37] transition" />
+                  </button>
+                )}
+
                 {/* فيديو ترويجي — ترتيب: صور (أعلى) ← صوت ← جودة ← توليد */}
-                {(selectedBucket?.benefits?.maxVideos || 0) > 0 && imagePreviews.length > 0 && (
+                {showVideoSection && (selectedBucket?.benefits?.maxVideos || 0) > 0 && imagePreviews.length > 0 && (
                   <div className="mb-6 p-5 bg-gradient-to-br from-amber-50 via-[#D4AF37]/10 to-[#002845]/5 rounded-2xl border-2 border-[#D4AF37]/40 shadow-lg shadow-[#D4AF37]/10">
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-12 h-12 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-xl flex items-center justify-center shadow-lg shadow-[#D4AF37]/30">
@@ -4457,16 +4488,27 @@ export default function NewListingPage() {
                   </div>
                 )}
 
-                {(selectedBucket?.benefits.maxVideos || 0) > 0 && (
+                {showVideoSection && (selectedBucket?.benefits.maxVideos || 0) > 0 && (
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                         <Video className="w-5 h-5 text-[#D4AF37]" />
                         فيديو العقار (اختياري)
                       </label>
-                      <span className="text-xs text-slate-500">
-                        حد أقصى {selectedBucket?.benefits.maxVideoDuration || plan?.maxVideoDuration || 60} ثانية
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-slate-500">
+                          حد أقصى {selectedBucket?.benefits.maxVideoDuration || plan?.maxVideoDuration || 60} ثانية
+                        </span>
+                        {!videoFile && !videoResult && !slideshowResult && (
+                          <button
+                            type="button"
+                            onClick={() => setShowVideoSection(false)}
+                            className="text-xs text-slate-500 hover:text-red-600 underline"
+                          >
+                            إخفاء قسم الفيديو
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {!videoPreview ? (

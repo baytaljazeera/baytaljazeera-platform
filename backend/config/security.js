@@ -49,6 +49,22 @@ const aiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// حدّ صارم على بدء توليد الفيديو (يحمي OpenAI/ElevenLabs/Replicate من الاستنزاف).
+// تحديد لكل مستخدم مصادَق عليه: req.user.id؛ يقع IP-based للطلبات غير المسجلة.
+// يخص فقط endpoints بدء التوليد — لا يؤثر على استطلاع الحالة.
+const videoGenerationLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 3,
+  keyGenerator: (req) => (req.user && req.user.id ? `user:${req.user.id}` : req.ip),
+  message: {
+    error: "تم تجاوز حد توليد الفيديو (3 طلبات في الدقيقة). انتظر قليلاً قبل المحاولة.",
+    errorEn: "Video generation rate limit exceeded (3/min). Please wait.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipFailedRequests: false,
+});
+
 const reportCreateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 5,
@@ -210,6 +226,7 @@ module.exports = {
   strictAuthLimiter,
   registrationLimiter,
   aiLimiter,
+  videoGenerationLimiter,
   reportCreateLimiter,
   adminPagesLimiter,
   complaintsLimiter,

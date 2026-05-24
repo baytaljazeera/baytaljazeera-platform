@@ -5,6 +5,7 @@ const { GoogleGenAI } = require("@google/genai");
 const db = require("../db");
 const { authMiddleware, adminMiddleware } = require("../middleware/auth");
 const { asyncHandler } = require("../middleware/asyncHandler");
+const { videoGenerationLimiter } = require("../config/security");
 const path = require("path");
 const fs = require("fs").promises;
 const { spawn } = require("child_process");
@@ -1459,7 +1460,7 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
 }
 
 // 🎬 توليد فيديو شرائح من صور الإعلان المرفوعة - يستخدم FFmpeg
-router.post("/user/generate-slideshow-video", authMiddleware, asyncHandler(async (req, res) => {
+router.post("/user/generate-slideshow-video", authMiddleware, videoGenerationLimiter, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { imagePaths, listingData, customText } = req.body;
 
@@ -1544,7 +1545,7 @@ router.get("/video-templates", asyncHandler(async (req, res) => {
 }));
 
 // 🎬 توليد فيديو متقدم مع قوالب وموسيقى
-router.post("/user/generate-advanced-video", authMiddleware, asyncHandler(async (req, res) => {
+router.post("/user/generate-advanced-video", authMiddleware, videoGenerationLimiter, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { imagePaths, listingData, template = "luxury", includeAudio = true } = req.body;
 
@@ -1631,7 +1632,7 @@ router.post("/user/generate-advanced-video", authMiddleware, asyncHandler(async 
 }));
 
 // 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي - Python Engine
-router.post("/user/generate-video", authMiddleware, asyncHandler(async (req, res) => {
+router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description, videoQuality, videoVoice, targetDurationSec } = req.body;
 
