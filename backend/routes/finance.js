@@ -19,7 +19,7 @@ function quoteSqlIdent(name) {
 const SYSTEM_PG_SCHEMAS = new Set(["pg_catalog", "information_schema", "pg_toast"]);
 
 /** Allow SET NULL on FK columns that were defined NOT NULL (pre-launch reset). */
-async function dropNotNullOnFkColumnsReferencingInvoices(client, invoicesOid) {
+async function dropNotNullOnFkColumnsReferencingConfrelid(client, confrelOid) {
   const { rows } = await client.query(
     `
     SELECT DISTINCT n.nspname AS schema_name, c.relname AS relname, a.attname AS attname
@@ -36,7 +36,7 @@ async function dropNotNullOnFkColumnsReferencingInvoices(client, invoicesOid) {
       AND NOT a.attisdropped
       AND a.attnotnull
   `,
-    [invoicesOid]
+    [confrelOid]
   );
   for (const row of rows) {
     if (SYSTEM_PG_SCHEMAS.has(row.schema_name)) continue;
@@ -50,26 +50,32 @@ async function dropNotNullOnFkColumnsReferencingInvoices(client, invoicesOid) {
 }
 
 /**
- * TRUNCATE invoices fails while any row in another table still references invoices.
- * Discover FKs to public.invoices and NULL referencing columns (pre-launch reset).
+ * Discover FKs pointing at a referenced table and clear referencing columns (SET NULL).
+ * Used before DELETE/TRUNCATE when ON DELETE is not SET NULL/CASCADE everywhere.
  * Includes partitioned tables (relkind 'p'); handles multi-column FKs.
- * Clears references from any non-system schema (not only public).
  */
-async function nullAllForeignKeysToInvoices(client) {
-  const inv = await client.query(`
+async function nullAllForeignKeysToReferencedTable(client, schemaName, tableName, options = {}) {
+  const { throwIfMissing = false } = options;
+  const inv = await client.query(
+    `
     SELECT ic.oid
     FROM pg_class ic
     JOIN pg_namespace ins ON ins.oid = ic.relnamespace
-    WHERE ins.nspname = 'public'
-      AND ic.relname = 'invoices'
+    WHERE ins.nspname = $1
+      AND ic.relname = $2
       AND ic.relkind IN ('r', 'p')
-  `);
+  `,
+    [schemaName, tableName]
+  );
   if (inv.rows.length === 0) {
-    throw new Error("جدول public.invoices غير موجود أو غير قابل للوصول");
+    if (throwIfMissing) {
+      throw new Error(`جدول ${schemaName}.${tableName} غير موجود أو غير قابل للوصول`);
+    }
+    return;
   }
-  const invoicesOid = inv.rows[0].oid;
+  const refOid = inv.rows[0].oid;
 
-  await dropNotNullOnFkColumnsReferencingInvoices(client, invoicesOid);
+  await dropNotNullOnFkColumnsReferencingConfrelid(client, refOid);
 
   const { rows: singleCol } = await client.query(
     `
@@ -85,7 +91,7 @@ async function nullAllForeignKeysToInvoices(client) {
       AND c.relkind IN ('r', 'p')
       AND array_length(g.conkey, 1) = 1
   `,
-    [invoicesOid]
+    [refOid]
   );
   for (const row of singleCol) {
     if (SYSTEM_PG_SCHEMAS.has(row.schema_name)) continue;
@@ -108,7 +114,7 @@ async function nullAllForeignKeysToInvoices(client) {
       AND c.relkind IN ('r', 'p')
       AND array_length(g.conkey, 1) > 1
   `,
-    [invoicesOid]
+    [refOid]
   );
   for (const fk of multiFk) {
     if (SYSTEM_PG_SCHEMAS.has(fk.schema_name)) continue;
@@ -132,12 +138,53 @@ async function nullAllForeignKeysToInvoices(client) {
   }
 }
 
+/**
+ * TRUNCATE invoices fails while any row in another table still references invoices.
+ * Delegates to nullAllForeignKeysToReferencedTable(public.invoices).
+ */
+async function nullAllForeignKeysToInvoices(client) {
+  await nullAllForeignKeysToReferencedTable(client, "public", "invoices", { throwIfMissing: true });
+}
+
 function resetInvoicesRequestConfirmed(req) {
   if (req.body && req.body.confirm === true) return true;
   const q = req.query?.confirm;
   if (q === true) return true;
   if (typeof q === "string" && (q === "true" || q === "1")) return true;
   return false;
+}
+
+/** JSON body for POST/DELETE /reset-invoices failures so production can see the blocking FK/table (node-postgres). */
+function buildResetInvoicesErrorResponse(err) {
+  const base = {
+    error: err.message || "فشل تصفير الفواتير",
+    ok: false,
+  };
+  if (err && typeof err === "object") {
+    if (err.name && err.name !== "Error") base.name = err.name;
+    const pgKeys = [
+      "code",
+      "severity",
+      "detail",
+      "hint",
+      "position",
+      "internalPosition",
+      "internalQuery",
+      "where",
+      "schema",
+      "table",
+      "column",
+      "dataType",
+      "constraint",
+      "file",
+      "line",
+      "routine",
+    ];
+    for (const k of pgKeys) {
+      if (err[k] != null && err[k] !== "") base[k] = err[k];
+    }
+  }
+  return base;
 }
 
 /**
@@ -189,8 +236,17 @@ async function resetSerialIfExists(client, tableName, columnName = "id") {
 
 /**
  * Pre-launch holistic finance wipe: removes dependent rows so dashboards show zero,
- * not just invoices. Order respects FKs (omni → tickets → complaints → chargebacks/refunds →
- * elite slots → payments → billing log → invoices).
+ * not just invoices. Order: omni/tickets/complaints → rows that FK payments (chargebacks,
+ * extension requests) → clear payment_id / pg_catalog FK sweep → DELETE payments →
+ * billing log → legacy subscription tables → FK sweep user_plans → DELETE user_plans.
+ *
+ * Schema notes (public): FKs to payments include invoices (ON DELETE SET NULL),
+ * elite_slot_reservations + elite_extension_requests (no ON DELETE → block DELETE),
+ * chargebacks (NOT NULL, ON DELETE CASCADE). user_plans is referenced by quota_buckets,
+ * promotion_usage (SET NULL), ambassador_consumptions (restrict), referral_rewards (no FK in base).
+ * There is no generic `transactions` table for checkout; payment rows live in `payments`.
+ * Legacy knex migration may add `user_subscriptions` — cleared optionally.
+ * `wallet_transactions` is ambassador ledger (not Stripe/payment TXN) — not truncated here.
  */
 async function wipeFinanceEcosystem(client) {
   try {
@@ -236,15 +292,17 @@ async function wipeFinanceEcosystem(client) {
     "account_complaints linked to invoice/refund"
   );
 
+  /* Must remove chargebacks first: payment_id NOT NULL REFERENCES payments(id). */
   await execOptionalSql(client, `DELETE FROM chargebacks`, "chargebacks");
   await resetSerialIfExists(client, "chargebacks");
 
   await execOptionalSql(client, `DELETE FROM refunds`, "refunds");
   await resetSerialIfExists(client, "refunds");
 
+  /* References payments(id) without ON DELETE — delete rows before clearing payments. */
   await execOptionalSql(client, `DELETE FROM elite_extension_requests`, "elite_extension_requests");
 
-  /* Payments tab + payment-stats read public.payments; FKs: invoices (SET NULL), elite_slot_reservations (restrict) */
+  /* elite_slot_reservations.payment_id REFERENCES payments(id) default NO ACTION */
   await execOptionalSql(
     client,
     `UPDATE elite_slot_reservations SET payment_id = NULL WHERE payment_id IS NOT NULL`,
@@ -259,6 +317,9 @@ async function wipeFinanceEcosystem(client) {
     "stripe_payments"
   );
 
+  /* Discover any other FKs → payments (incl. prod-only ALTERs), DROP NOT NULL + SET NULL */
+  await nullAllForeignKeysToReferencedTable(client, "public", "payments");
+
   await execOptionalSql(client, `DELETE FROM payments`, "payments");
   await resetSerialIfExists(client, "payments");
 
@@ -267,6 +328,16 @@ async function wipeFinanceEcosystem(client) {
     `TRUNCATE TABLE billing_audit_log RESTART IDENTITY`,
     "billing_audit_log"
   );
+
+  /* Legacy name from early knex migrations; main app uses user_plans. */
+  await execOptionalSql(client, `DELETE FROM user_subscriptions`, "user_subscriptions");
+  await resetSerialIfExists(client, "user_subscriptions");
+
+  /* All referencing columns (e.g. ambassador_consumptions.user_plan_id) — then DELETE user_plans */
+  await nullAllForeignKeysToReferencedTable(client, "public", "user_plans");
+
+  await execOptionalSql(client, `DELETE FROM user_plans`, "user_plans");
+  await resetSerialIfExists(client, "user_plans");
 }
 
 function sendRefundEmail(type, refund, userEmail, userName, decisionNote, bankReference) {
@@ -390,6 +461,7 @@ router.get("/stats", authMiddleware, requireRoles('finance_admin'), asyncHandler
   const activeSubscribersResult = await db.query(`
     SELECT COUNT(DISTINCT up.user_id) as count 
     FROM user_plans up
+    INNER JOIN users u ON u.id = up.user_id AND u.role = 'user'
     WHERE up.status = 'active' 
       AND (up.expires_at IS NULL OR up.expires_at > NOW())
   `);
@@ -398,6 +470,7 @@ router.get("/stats", authMiddleware, requireRoles('finance_admin'), asyncHandler
   const expiredSubscribersResult = await db.query(`
     SELECT COUNT(DISTINCT up.user_id) as count 
     FROM user_plans up
+    INNER JOIN users u ON u.id = up.user_id AND u.role = 'user'
     WHERE up.status = 'active' 
       AND up.expires_at IS NOT NULL 
       AND up.expires_at <= NOW()
@@ -407,28 +480,24 @@ router.get("/stats", authMiddleware, requireRoles('finance_admin'), asyncHandler
   const suspendedSubscribersResult = await db.query(`
     SELECT COUNT(DISTINCT up.user_id) as count 
     FROM user_plans up
+    INNER JOIN users u ON u.id = up.user_id AND u.role = 'user'
     WHERE up.status = 'suspended'
   `);
   const suspendedSubscribers = parseInt(suspendedSubscribersResult.rows[0].count);
 
+  /* Align with GET /payment-stats: cash recorded in payments (not plan list price / paid_amount on user_plans). */
   const totalRevenueResult = await db.query(`
-    SELECT COALESCE(SUM(CASE WHEN up.paid_amount > 0 THEN up.paid_amount ELSE p.price END), 0) as total 
-    FROM user_plans up
-    JOIN plans p ON up.plan_id = p.id
-    WHERE p.price > 0
-      AND up.status = 'active'
-      AND up.id = (SELECT id FROM user_plans WHERE user_id = up.user_id ORDER BY started_at DESC LIMIT 1)
+    SELECT COALESCE(SUM(amount), 0) as total 
+    FROM payments
+    WHERE status = 'completed'
   `);
   const totalRevenue = parseFloat(totalRevenueResult.rows[0].total) || 0;
 
   const monthlyRevenueResult = await db.query(`
-    SELECT COALESCE(SUM(CASE WHEN up.paid_amount > 0 THEN up.paid_amount ELSE p.price END), 0) as total 
-    FROM user_plans up
-    JOIN plans p ON up.plan_id = p.id
-    WHERE p.price > 0 
-      AND up.status = 'active'
-      AND up.started_at >= DATE_TRUNC('month', CURRENT_DATE)
-      AND up.id = (SELECT id FROM user_plans WHERE user_id = up.user_id ORDER BY started_at DESC LIMIT 1)
+    SELECT COALESCE(SUM(amount), 0) as total 
+    FROM payments
+    WHERE status = 'completed'
+      AND created_at >= DATE_TRUNC('month', NOW())
   `);
   const monthlyRevenue = parseFloat(monthlyRevenueResult.rows[0].total) || 0;
 
@@ -456,6 +525,8 @@ router.get("/stats", authMiddleware, requireRoles('finance_admin'), asyncHandler
     SELECT p.name_ar, p.color, COUNT(up.id) as subscribers
     FROM plans p
     LEFT JOIN user_plans up ON p.id = up.plan_id AND up.status = 'active'
+      AND (up.expires_at IS NULL OR up.expires_at > NOW())
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = up.user_id AND u.role = 'user')
     WHERE p.visible = true
     GROUP BY p.id, p.name_ar, p.color
     ORDER BY p.sort_order
@@ -463,15 +534,13 @@ router.get("/stats", authMiddleware, requireRoles('finance_admin'), asyncHandler
 
   const monthlyTrendResult = await db.query(`
     SELECT 
-      TO_CHAR(DATE_TRUNC('month', up.started_at), 'YYYY-MM') as month,
+      TO_CHAR(DATE_TRUNC('month', p.created_at), 'YYYY-MM') as month,
       COUNT(*) as subscriptions,
-      COALESCE(SUM(CASE WHEN up.paid_amount > 0 THEN up.paid_amount ELSE p.price END), 0) as revenue
-    FROM user_plans up
-    JOIN plans p ON up.plan_id = p.id
-    WHERE up.started_at >= NOW() - INTERVAL '12 months'
-      AND up.status = 'active'
-      AND up.id = (SELECT id FROM user_plans WHERE user_id = up.user_id ORDER BY started_at DESC LIMIT 1)
-    GROUP BY DATE_TRUNC('month', up.started_at)
+      COALESCE(SUM(p.amount), 0) as revenue
+    FROM payments p
+    WHERE p.status = 'completed'
+      AND p.created_at >= NOW() - INTERVAL '12 months'
+    GROUP BY DATE_TRUNC('month', p.created_at)
     ORDER BY month DESC
     LIMIT 12
   `);
@@ -1675,7 +1744,7 @@ const resetInvoicesHandler = asyncHandler(async (req, res) => {
     res.json({
       ok: true,
       message:
-        "تم تصفير بيئة المالية: المدفوعات، الفواتير، الاستردادات، الاعتراضات البنكية، الشكاوى المرتبطة، تذاكر المالية، طلبات تمديد النخبة، مفاتيح عدم تكرار الدفع، وسجل التدقيق.",
+        "تم تصفير بيئة المالية: المدفوعات، اشتراكات المستخدمين (user_plans)، الفواتير، الاستردادات، الاعتراضات البنكية، الشكاوى المرتبطة، تذاكر المالية، طلبات تمديد النخبة، مفاتيح عدم تكرار الدفع، وسجل التدقيق.",
     });
   } catch (err) {
     try {
@@ -1684,7 +1753,7 @@ const resetInvoicesHandler = asyncHandler(async (req, res) => {
       console.error("[finance reset-invoices] rollback failed", rollbackErr);
     }
     console.error("[finance reset-invoices]", err);
-    res.status(500).json({ error: err.message || "فشل تصفير الفواتير" });
+    res.status(500).json(buildResetInvoicesErrorResponse(err));
   } finally {
     client.release();
   }

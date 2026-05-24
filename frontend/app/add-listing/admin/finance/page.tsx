@@ -896,7 +896,21 @@ export default function FinancePage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error((data as { error?: string }).error || "فشل تصفير الفواتير");
+        const d = data as {
+          error?: string;
+          detail?: string;
+          table?: string;
+          constraint?: string;
+          code?: string;
+        };
+        const parts = [
+          d.error || "فشل تصفير الفواتير",
+          d.code && `رمز: ${d.code}`,
+          d.table && `جدول: ${d.table}`,
+          d.constraint && `قيود: ${d.constraint}`,
+          d.detail && `التفاصيل: ${d.detail}`,
+        ].filter(Boolean);
+        throw new Error(parts.join("\n"));
       }
       setResetInvoiceOpen(false);
       setResetPhrase("");
@@ -1172,7 +1186,7 @@ export default function FinancePage() {
                   <div key={idx} className="flex items-center justify-between text-sm">
                     <span className="text-gray-500">{item.month}</span>
                     <div className="flex gap-4">
-                      <span className="text-[#002845]">{item.subscriptions} اشتراك</span>
+                      <span className="text-[#002845]">{item.subscriptions} مدفوعات مكتملة</span>
                       <span className="font-bold text-[#D4AF37]">{formatCurrency(item.revenue)}</span>
                     </div>
                   </div>
@@ -2731,7 +2745,11 @@ export default function FinancePage() {
 
       {successModal.isOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+          <div
+            className={`bg-white rounded-2xl shadow-2xl w-full overflow-hidden ${
+              successModal.type === "error" ? "max-w-lg" : "max-w-sm"
+            }`}
+          >
             <div className={`p-8 text-center ${successModal.type === "success" ? "bg-green-50" : "bg-red-50"}`}>
               <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center ${
                 successModal.type === "success" ? "bg-green-100" : "bg-red-100"
@@ -2742,9 +2760,11 @@ export default function FinancePage() {
                   <XCircle className="w-8 h-8 text-red-600" />
                 )}
               </div>
-              <p className={`text-lg font-bold ${
-                successModal.type === "success" ? "text-green-800" : "text-red-800"
-              }`}>
+              <p
+                className={`text-lg font-bold whitespace-pre-wrap break-words text-right ${
+                  successModal.type === "success" ? "text-green-800" : "text-red-800"
+                }`}
+              >
                 {successModal.message}
               </p>
             </div>
