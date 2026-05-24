@@ -174,6 +174,43 @@ const ARABIC_THOUSANDS: Record<number, string> = {
   800: "ثمانمائة ألف", 900: "تسعمائة ألف",
 };
 
+// Shared: turn user input (with commas, spaces, or Arabic-Indic digits) into a raw decimal string.
+function normalizeDigits(raw: string): string {
+  return raw
+    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+    .replace(/[^\d]/g, "");
+}
+
+// Shared: display value with thousand separators (empty if input is empty / not a number).
+function formatWithCommas(value: string): string {
+  if (value === "" || value == null) return "";
+  const n = Number(value);
+  if (isNaN(n)) return value;
+  return n.toLocaleString("en-US");
+}
+
+// Arabic short readout for counts/areas (e.g. "5 مليون م²", "150 ألف غرفة", "20 حمام").
+function countToArabicReadout(n: number, unit: string): string {
+  if (!Number.isFinite(n) || n <= 0) return "";
+  if (n >= 1_000_000_000) {
+    const v = (n / 1_000_000_000).toFixed(2).replace(/\.?0+$/, "");
+    return `${v} مليار ${unit}`;
+  }
+  if (n >= 1_000_000) {
+    const v = (n / 1_000_000).toFixed(2).replace(/\.?0+$/, "");
+    return `${v} مليون ${unit}`;
+  }
+  if (n >= 10_000) {
+    const v = (n / 1000).toFixed(1).replace(/\.?0+$/, "");
+    return `${v} ألف ${unit}`;
+  }
+  if (n >= 1000) {
+    const v = (n / 1000).toFixed(1).replace(/\.?0+$/, "");
+    return `${v} ألف ${unit}`;
+  }
+  return `${n.toLocaleString("en-US")} ${unit}`;
+}
+
 function priceToArabicReadout(n: number, currencyLabel: string = "ريال"): string {
   if (!Number.isFinite(n) || n <= 0) return "";
   // Whole-billion
@@ -2713,15 +2750,22 @@ export default function NewListingPage() {
                         </div>
                         <div className="flex items-center gap-4">
                           <input
-                            type="number"
-                            value={form.landArea}
-                            onChange={(e) => updateField("landArea", e.target.value)}
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            dir="ltr"
+                            value={formatWithCommas(form.landArea)}
+                            onChange={(e) => updateField("landArea", normalizeDigits(e.target.value))}
                             placeholder="أدخل المساحة بالمتر المربع"
-                            min={0}
-                            className="flex-1 px-4 py-3 border-2 border-amber-300 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-center text-lg font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white"
+                            className="flex-1 px-4 py-3 border-2 border-amber-300 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-center text-lg font-bold bg-white"
                           />
                           <span className="text-sm font-medium text-amber-700 min-w-[60px]">م²</span>
                         </div>
+                        {Number(form.landArea) > 0 && (
+                          <p className="text-center text-xs text-amber-800 mt-2">
+                            ≈ {countToArabicReadout(Number(form.landArea), "م²")}
+                          </p>
+                        )}
                         <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-amber-200">
                           <span className="text-xs text-amber-600 w-full mb-1">قيم سريعة للمساحات الكبيرة:</span>
                           {[100000, 500000, 1000000, 2000000, 5000000, 10000000].map((qv) => {
@@ -2808,15 +2852,22 @@ export default function NewListingPage() {
                         </div>
                         <div className="flex items-center gap-4">
                           <input
-                            type="number"
-                            value={form.buildingArea}
-                            onChange={(e) => updateField("buildingArea", e.target.value)}
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            dir="ltr"
+                            value={formatWithCommas(form.buildingArea)}
+                            onChange={(e) => updateField("buildingArea", normalizeDigits(e.target.value))}
                             placeholder="أدخل مساحة البناء"
-                            min={0}
-                            className="flex-1 px-4 py-3 border-2 border-blue-300 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-center text-lg font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white"
+                            className="flex-1 px-4 py-3 border-2 border-blue-300 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-center text-lg font-bold bg-white"
                           />
                           <span className="text-sm font-medium text-blue-700 min-w-[60px]">م²</span>
                         </div>
+                        {Number(form.buildingArea) > 0 && (
+                          <p className="text-center text-xs text-blue-800 mt-2">
+                            ≈ {countToArabicReadout(Number(form.buildingArea), "م²")}
+                          </p>
+                        )}
                         <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-blue-200">
                           <span className="text-xs text-blue-600 w-full mb-1">قيم سريعة:</span>
                           {[50000, 100000, 200000, 500000, 1000000].map((qv) => {
@@ -2888,15 +2939,22 @@ export default function NewListingPage() {
                         </div>
                         <div className="flex items-center gap-4">
                           <input
-                            type="number"
-                            value={form.bedrooms}
-                            onChange={(e) => updateField("bedrooms", e.target.value)}
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            dir="ltr"
+                            value={formatWithCommas(form.bedrooms)}
+                            onChange={(e) => updateField("bedrooms", normalizeDigits(e.target.value))}
                             placeholder="أدخل عدد الغرف"
-                            min={0}
-                            className="flex-1 px-4 py-3 border-2 border-purple-300 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-center text-lg font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white"
+                            className="flex-1 px-4 py-3 border-2 border-purple-300 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-center text-lg font-bold bg-white"
                           />
                           <span className="text-sm font-medium text-purple-700 min-w-[60px]">غرفة</span>
                         </div>
+                        {Number(form.bedrooms) > 0 && (
+                          <p className="text-center text-xs text-purple-800 mt-2">
+                            ≈ {countToArabicReadout(Number(form.bedrooms), "غرفة")}
+                          </p>
+                        )}
                         <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-purple-200">
                           <span className="text-xs text-purple-600 w-full mb-1">قيم سريعة:</span>
                           {[20, 50, 100, 200, 500, 1000].map((qv) => (
@@ -2963,15 +3021,22 @@ export default function NewListingPage() {
                         </div>
                         <div className="flex items-center gap-4">
                           <input
-                            type="number"
-                            value={form.bathrooms}
-                            onChange={(e) => updateField("bathrooms", e.target.value)}
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            dir="ltr"
+                            value={formatWithCommas(form.bathrooms)}
+                            onChange={(e) => updateField("bathrooms", normalizeDigits(e.target.value))}
                             placeholder="أدخل عدد الحمامات"
-                            min={0}
-                            className="flex-1 px-4 py-3 border-2 border-teal-300 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-center text-lg font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white"
+                            className="flex-1 px-4 py-3 border-2 border-teal-300 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-center text-lg font-bold bg-white"
                           />
                           <span className="text-sm font-medium text-teal-700 min-w-[60px]">حمام</span>
                         </div>
+                        {Number(form.bathrooms) > 0 && (
+                          <p className="text-center text-xs text-teal-800 mt-2">
+                            ≈ {countToArabicReadout(Number(form.bathrooms), "حمام")}
+                          </p>
+                        )}
                         <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-teal-200">
                           <span className="text-xs text-teal-600 w-full mb-1">قيم سريعة:</span>
                           {[20, 50, 100, 200, 500].map((qv) => (

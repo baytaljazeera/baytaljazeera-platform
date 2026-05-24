@@ -46,22 +46,29 @@ export default function SliderInput({
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    if (val === "") {
+    // Strip everything except digits — accept commas/spaces/Arabic digits gracefully
+    const raw = e.target.value
+      .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+      .replace(/[^\d]/g, "");
+    if (raw === "") {
       onChange("");
       return;
     }
-    const num = Number(val);
+    const num = Number(raw);
     if (!isNaN(num)) {
       if (num > safeMax) {
         onChange(String(safeMax));
       } else if (num < min) {
         onChange(String(min));
       } else {
-        onChange(val);
+        onChange(raw);
       }
     }
   };
+
+  // Display the value with thousand separators while keeping the raw numeric `value` for state/backend.
+  const formattedInputValue =
+    value === "" ? "" : isNaN(Number(value)) ? value : Number(value).toLocaleString("en-US");
 
   const handleQuickValue = (qv: number) => {
     onChange(String(qv));
@@ -93,13 +100,14 @@ export default function SliderInput({
         <div className="flex items-center gap-4 mb-3">
           <div className="flex-1 relative">
             <input
-              type="number"
-              value={value}
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              value={formattedInputValue}
               onChange={handleInputChange}
               placeholder="0"
-              min={min}
-              max={safeMax}
-              className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-center text-lg font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white"
+              dir="ltr"
+              className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-center text-lg font-bold bg-white"
             />
           </div>
           {unit && (
