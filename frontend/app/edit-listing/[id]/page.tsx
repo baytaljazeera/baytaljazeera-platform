@@ -5,7 +5,7 @@ import { RESIDENTIAL_TYPES, COMMERCIAL_TYPES, isResidential, isCommercial, norma
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowRight, Save, Loader2, Home, MapPin, DollarSign, Ruler, BedDouble, Bath, Camera, Video, Building2, Crown, Sparkles, Rocket, CheckCircle2, AlertTriangle, X, Upload, Trash2, Plus, ImagePlus, Star, Check, Film, Zap } from "lucide-react";
 import Link from "next/link";
@@ -113,6 +113,8 @@ export default function EditListingPage() {
   const [videoQuality, setVideoQuality] = useState<"full" | "fast">("full");
   const [elevenlabsVoices, setElevenlabsVoices] = useState<any[]>([]);
   const [elevenlabsVoicesLoading, setElevenlabsVoicesLoading] = useState(false);
+  const voicePreviewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [voicePreviewPlaying, setVoicePreviewPlaying] = useState<string | null>(null);
 
   // Image management state
   const [imageQuota, setImageQuota] = useState<{maxPhotos: number; currentCount: number; remainingSlots: number; canAddMore: boolean} | null>(null);
@@ -1749,6 +1751,12 @@ export default function EditListingPage() {
                       {videoQuality === "full" && (
                         <div className="p-3 bg-white rounded-xl border border-emerald-200">
                           <p className="text-sm font-semibold text-emerald-800 mb-2">صوت التعليق:</p>
+                          <audio
+                            ref={voicePreviewAudioRef}
+                            className="hidden"
+                            onEnded={() => setVoicePreviewPlaying(null)}
+                            onError={() => setVoicePreviewPlaying(null)}
+                          />
                           {elevenlabsVoicesLoading ? (
                             <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
                               <Loader2 className="w-4 h-4 animate-spin" />
@@ -1761,6 +1769,8 @@ export default function EditListingPage() {
                                   {elevenlabsVoices.map((v: any) => {
                                     const voiceId = v.id || v.voice_id;
                                     const isSelected = videoVoice === voiceId;
+                                    const previewUrl = v.previewUrl || v.preview_url || null;
+                                    const isPlaying = voicePreviewPlaying === voiceId;
                                     const displayName = v.name?.includes(" - ") ? v.name.split(" - ")[0].trim() : v.name;
                                     return (
                                       <div
@@ -1784,6 +1794,32 @@ export default function EditListingPage() {
                                           <span className={`text-sm font-semibold truncate w-full ${isSelected ? "text-[#002845]" : "text-[#002845]/80"}`}>
                                             {displayName}
                                           </span>
+                                          {previewUrl && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (!voicePreviewAudioRef.current) return;
+                                                if (isPlaying) {
+                                                  voicePreviewAudioRef.current.pause();
+                                                  voicePreviewAudioRef.current.currentTime = 0;
+                                                  setVoicePreviewPlaying(null);
+                                                  return;
+                                                }
+                                                voicePreviewAudioRef.current.src = previewUrl;
+                                                setVideoVoice(voiceId);
+                                                voicePreviewAudioRef.current
+                                                  .play()
+                                                  .then(() => setVoicePreviewPlaying(voiceId))
+                                                  .catch(() => setVoicePreviewPlaying(null));
+                                              }}
+                                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+                                                isPlaying ? "bg-red-500 text-white" : "bg-[#002845]/10 text-[#002845] hover:bg-[#002845]/20"
+                                              }`}
+                                            >
+                                              {isPlaying ? "⏸ إيقاف" : "▶ استمع"}
+                                            </button>
+                                          )}
                                         </div>
                                       </div>
                                     );
