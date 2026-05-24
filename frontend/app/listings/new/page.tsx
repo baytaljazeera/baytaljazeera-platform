@@ -375,9 +375,9 @@ export default function NewListingPage() {
   const [elevenlabsVoicesError, setElevenlabsVoicesError] = useState<string | null>(null);
   const [showVideoConfirmModal, setShowVideoConfirmModal] = useState(false);
 
-  // الفيديو مخفي افتراضياً — معظم الإعلانات يكفيها الصور.
-  // ينفتح تلقائياً لو المستخدم رفع فيديواً بنفسه أو ولّد واحداً.
-  const [showVideoSection, setShowVideoSection] = useState(false);
+  // قسم الفيديو ظاهر افتراضياً — توليد الفيديو + اختيار الصوت ميزة أساسية للإعلان.
+  // الـ toggle موجود فقط لو المستخدم يريد إخفاءه يدوياً.
+  const [showVideoSection, setShowVideoSection] = useState(true);
   const [videoConfirmImageCount, setVideoConfirmImageCount] = useState(0);
   const pendingVideoImagesRef = useRef<File[]>([]);
   const voicePreviewAudioRef = useRef<HTMLAudioElement | null>(null);

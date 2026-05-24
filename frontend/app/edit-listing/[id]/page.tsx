@@ -131,14 +131,21 @@ export default function EditListingPage() {
   useEffect(() => {
     if (!isBusinessPlan && !canGenerateVideo) return;
     setElevenlabsVoicesLoading(true);
-    fetch(`/api/ai/user/elevenlabs-voices`, { credentials: "include" })
-      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
-      .then(({ ok, data }) => {
+    fetch(`${API_URL}/api/ai/user/elevenlabs-voices`, {
+      credentials: "include",
+      headers: getAuthHeaders(),
+    })
+      .then((res) => res.json().then((data) => ({ ok: res.ok, status: res.status, data })))
+      .then(({ ok, status, data }) => {
         if (ok && Array.isArray(data.voices)) {
           setElevenlabsVoices(data.voices);
+        } else {
+          console.warn("[edit-listing] elevenlabs voices fetch failed:", status, data?.error || data?.message);
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.warn("[edit-listing] elevenlabs voices network error:", err?.message);
+      })
       .finally(() => setElevenlabsVoicesLoading(false));
   }, [isBusinessPlan, canGenerateVideo]);
 
