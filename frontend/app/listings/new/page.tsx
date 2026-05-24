@@ -2757,60 +2757,19 @@ export default function NewListingPage() {
                       <div className="bg-amber-50 rounded-2xl p-4 border-2 border-amber-200">
                         <div className="flex items-center gap-2 mb-3">
                           <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-lg">🏜️ مساحة ضخمة</span>
-                          <span className="text-xs text-amber-600">للأراضي والمزارع الكبيرة</span>
+                          <span className="text-xs text-amber-600">للأراضي والمزارع الكبيرة — حرّك البار أو اكتب الرقم</span>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            autoComplete="off"
-                            dir="ltr"
-                            value={formatWithCommas(form.landArea)}
-                            onChange={(e) => updateField("landArea", normalizeDigits(e.target.value))}
-                            placeholder="أدخل المساحة بالمتر المربع"
-                            className="flex-1 px-4 py-3 border-2 border-amber-300 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-center text-lg font-bold bg-white"
-                          />
-                          <span className="text-sm font-medium text-amber-700 min-w-[60px]">م²</span>
-                        </div>
-                        {Number(form.landArea) > 0 && (
-                          <p className="text-center text-xs text-amber-800 mt-2">
-                            ≈ {countToArabicReadout(Number(form.landArea), "م²")}
-                          </p>
-                        )}
-                        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-amber-200">
-                          <span className="text-xs text-amber-600 w-full mb-1">قيم سريعة للمساحات الكبيرة:</span>
-                          {[100000, 500000, 1000000, 2000000, 5000000, 10000000].map((qv) => {
-                            let displayText = qv.toLocaleString("en-US");
-                            if (qv >= 1000000) {
-                              displayText = `${(qv / 1000000)} مليون`;
-                            } else if (qv >= 1000) {
-                              displayText = `${(qv / 1000)} ألف`;
-                            }
-                            return (
-                              <button
-                                key={qv}
-                                type="button"
-                                onClick={() => updateField("landArea", String(qv))}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-                                  Number(form.landArea) === qv
-                                    ? "bg-amber-500 text-white"
-                                    : "bg-white border border-amber-300 text-amber-700 hover:border-amber-500 hover:bg-amber-100"
-                                }`}
-                              >
-                                {displayText}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {form.landArea && Number(form.landArea) > 0 && (
-                          <p className="text-center text-sm text-amber-700 font-bold mt-3 bg-amber-100 rounded-lg py-2">
-                            {Number(form.landArea) >= 1000000
-                              ? `${(Number(form.landArea) / 1000000).toFixed(2)} مليون م²`
-                              : Number(form.landArea) >= 1000
-                                ? `${(Number(form.landArea) / 1000).toFixed(1)} ألف م²`
-                                : `${Number(form.landArea).toLocaleString("en-US")} م²`}
-                          </p>
-                        )}
+                        <SliderInput
+                          value={form.landArea}
+                          onChange={(val) => updateField("landArea", val)}
+                          min={0}
+                          max={10000000}
+                          step={100000}
+                          unit="م²"
+                          error={errors.landArea}
+                          quickValues={[100000, 500000, 1000000, 2000000, 5000000, 10000000]}
+                          formatLabel={(v) => countToArabicReadout(v, "م²")}
+                        />
                       </div>
                     ) : (
                       <SliderInput
@@ -2859,46 +2818,19 @@ export default function NewListingPage() {
                       <div className="bg-blue-50 rounded-2xl p-4 border-2 border-blue-200">
                         <div className="flex items-center gap-2 mb-3">
                           <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-lg">🏢 مبنى ضخم</span>
-                          <span className="text-xs text-blue-600">للفنادق والمجمعات الكبيرة</span>
+                          <span className="text-xs text-blue-600">للفنادق والمجمعات الكبيرة — حرّك البار أو اكتب الرقم</span>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            autoComplete="off"
-                            dir="ltr"
-                            value={formatWithCommas(form.buildingArea)}
-                            onChange={(e) => updateField("buildingArea", normalizeDigits(e.target.value))}
-                            placeholder="أدخل مساحة البناء"
-                            className="flex-1 px-4 py-3 border-2 border-blue-300 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-center text-lg font-bold bg-white"
-                          />
-                          <span className="text-sm font-medium text-blue-700 min-w-[60px]">م²</span>
-                        </div>
-                        {Number(form.buildingArea) > 0 && (
-                          <p className="text-center text-xs text-blue-800 mt-2">
-                            ≈ {countToArabicReadout(Number(form.buildingArea), "م²")}
-                          </p>
-                        )}
-                        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-blue-200">
-                          <span className="text-xs text-blue-600 w-full mb-1">قيم سريعة:</span>
-                          {[50000, 100000, 200000, 500000, 1000000].map((qv) => {
-                            let displayText = qv >= 1000000 ? `${(qv / 1000000)} مليون` : `${(qv / 1000)} ألف`;
-                            return (
-                              <button
-                                key={qv}
-                                type="button"
-                                onClick={() => updateField("buildingArea", String(qv))}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-                                  Number(form.buildingArea) === qv
-                                    ? "bg-blue-500 text-white"
-                                    : "bg-white border border-blue-300 text-blue-700 hover:border-blue-500 hover:bg-blue-100"
-                                }`}
-                              >
-                                {displayText}
-                              </button>
-                            );
-                          })}
-                        </div>
+                        <SliderInput
+                          value={form.buildingArea}
+                          onChange={(val) => updateField("buildingArea", val)}
+                          min={0}
+                          max={1000000}
+                          step={10000}
+                          unit="م²"
+                          error={errors.buildingArea}
+                          quickValues={[50000, 100000, 200000, 500000, 1000000]}
+                          formatLabel={(v) => countToArabicReadout(v, "م²")}
+                        />
                       </div>
                     ) : (
                       <SliderInput
@@ -2946,43 +2878,19 @@ export default function NewListingPage() {
                       <div className="bg-purple-50 rounded-2xl p-4 border-2 border-purple-200">
                         <div className="flex items-center gap-2 mb-3">
                           <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-bold rounded-lg">🏨 غرف كثيرة</span>
-                          <span className="text-xs text-purple-600">للفنادق والمباني السكنية</span>
+                          <span className="text-xs text-purple-600">للفنادق والمباني السكنية — حرّك البار أو اكتب الرقم</span>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            autoComplete="off"
-                            dir="ltr"
-                            value={formatWithCommas(form.bedrooms)}
-                            onChange={(e) => updateField("bedrooms", normalizeDigits(e.target.value))}
-                            placeholder="أدخل عدد الغرف"
-                            className="flex-1 px-4 py-3 border-2 border-purple-300 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-center text-lg font-bold bg-white"
-                          />
-                          <span className="text-sm font-medium text-purple-700 min-w-[60px]">غرفة</span>
-                        </div>
-                        {Number(form.bedrooms) > 0 && (
-                          <p className="text-center text-xs text-purple-800 mt-2">
-                            ≈ {countToArabicReadout(Number(form.bedrooms), "غرفة")}
-                          </p>
-                        )}
-                        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-purple-200">
-                          <span className="text-xs text-purple-600 w-full mb-1">قيم سريعة:</span>
-                          {[20, 50, 100, 200, 500, 1000].map((qv) => (
-                            <button
-                              key={qv}
-                              type="button"
-                              onClick={() => updateField("bedrooms", String(qv))}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-                                Number(form.bedrooms) === qv
-                                  ? "bg-purple-500 text-white"
-                                  : "bg-white border border-purple-300 text-purple-700 hover:border-purple-500 hover:bg-purple-100"
-                              }`}
-                            >
-                              {qv}
-                            </button>
-                          ))}
-                        </div>
+                        <SliderInput
+                          value={form.bedrooms}
+                          onChange={(val) => updateField("bedrooms", val)}
+                          min={0}
+                          max={1000}
+                          step={5}
+                          unit="غرفة"
+                          error={errors.bedrooms}
+                          quickValues={[20, 50, 100, 200, 500, 1000]}
+                          formatLabel={(v) => countToArabicReadout(v, "غرفة")}
+                        />
                       </div>
                     ) : (
                       <SliderInput
@@ -3028,43 +2936,19 @@ export default function NewListingPage() {
                       <div className="bg-teal-50 rounded-2xl p-4 border-2 border-teal-200">
                         <div className="flex items-center gap-2 mb-3">
                           <span className="px-2 py-1 bg-teal-100 text-teal-700 text-xs font-bold rounded-lg">🚿 حمامات كثيرة</span>
-                          <span className="text-xs text-teal-600">للمباني والمجمعات الكبيرة</span>
+                          <span className="text-xs text-teal-600">للمباني والمجمعات الكبيرة — حرّك البار أو اكتب الرقم</span>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            autoComplete="off"
-                            dir="ltr"
-                            value={formatWithCommas(form.bathrooms)}
-                            onChange={(e) => updateField("bathrooms", normalizeDigits(e.target.value))}
-                            placeholder="أدخل عدد الحمامات"
-                            className="flex-1 px-4 py-3 border-2 border-teal-300 rounded-xl focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 outline-none transition text-center text-lg font-bold bg-white"
-                          />
-                          <span className="text-sm font-medium text-teal-700 min-w-[60px]">حمام</span>
-                        </div>
-                        {Number(form.bathrooms) > 0 && (
-                          <p className="text-center text-xs text-teal-800 mt-2">
-                            ≈ {countToArabicReadout(Number(form.bathrooms), "حمام")}
-                          </p>
-                        )}
-                        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-teal-200">
-                          <span className="text-xs text-teal-600 w-full mb-1">قيم سريعة:</span>
-                          {[20, 50, 100, 200, 500].map((qv) => (
-                            <button
-                              key={qv}
-                              type="button"
-                              onClick={() => updateField("bathrooms", String(qv))}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-                                Number(form.bathrooms) === qv
-                                  ? "bg-teal-500 text-white"
-                                  : "bg-white border border-teal-300 text-teal-700 hover:border-teal-500 hover:bg-teal-100"
-                              }`}
-                            >
-                              {qv}
-                            </button>
-                          ))}
-                        </div>
+                        <SliderInput
+                          value={form.bathrooms}
+                          onChange={(val) => updateField("bathrooms", val)}
+                          min={0}
+                          max={500}
+                          step={5}
+                          unit="حمام"
+                          error={errors.bathrooms}
+                          quickValues={[20, 50, 100, 200, 500]}
+                          formatLabel={(v) => countToArabicReadout(v, "حمام")}
+                        />
                       </div>
                     ) : (
                       <SliderInput
