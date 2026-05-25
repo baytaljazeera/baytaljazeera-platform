@@ -193,13 +193,13 @@ async function generateEnhancedPromoText(listingData, template = "luxury") {
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       messages: [
-        { role: "system", content: "أنت كاتب محتوى عقاري محترف. اكتب نصوصاً تسويقية قوية ومؤثرة." },
+        { role: "system", content: "أنت كاتب نصوص فيديو عقاري فاخر بأسلوب راقٍ غير مكرر. تتجنب الكليشيهات (فاخر، استثنائي، حصري، فرصة) وتكتب جملاً قصيرة مؤثرة بصرياً، كما يكتب صنّاع المحتوى السينمائي. أرجع نصاً مباشراً بالعربية الفصحى بدون تشكيل." },
         { role: "user", content: prompt }
       ],
-      max_tokens: 300,
-      temperature: 0.8
+      max_tokens: 350,
+      temperature: 0.85
     });
 
     const text = response.choices[0]?.message?.content || "";
@@ -567,8 +567,10 @@ async function createAdvancedSlideshow(imagePaths, outputPath, promoText, option
   for (let i = 0; i < validPaths.length; i++) {
     const frames = Math.round(slideDuration * fps);
     const effect = kenBurnsEffects[i % kenBurnsEffects.length];
+    // Cinematic color grade (same chain as routes/ai.js main slideshow): curves S-curve,
+    // warm color balance, slight gamma lift, gentle sharpening, soft vignette.
     filters.push(
-      `[${i}:v]scale=8000:-1,zoompan=z='${effect.zoom}':x='${effect.x}':y='${effect.y}':d=${frames}:s=${W}x${H}:fps=${fps},format=yuv420p[v${i}]`
+      `[${i}:v]scale=8000:-1,zoompan=z='${effect.zoom}':x='${effect.x}':y='${effect.y}':d=${frames}:s=${W}x${H}:fps=${fps},curves=preset=increase_contrast,colorbalance=rs=0.05:gs=0.02:bs=-0.05:rm=0.06:gm=0.0:bm=-0.06:rh=0.02:gh=0.0:bh=-0.03,eq=contrast=1.06:brightness=0.015:saturation=1.10:gamma=1.02,unsharp=5:5:0.6:5:5:0.0,vignette=PI/4.5,format=yuv420p[v${i}]`
     );
   }
 

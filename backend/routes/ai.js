@@ -954,48 +954,54 @@ async function generateDynamicPromoText(listingData) {
   if (hasGarden) features.push("حديقة");
   const featuresText = features.length > 0 ? features.join(" • ") : "تشطيب فاخر";
   
-  const prompt = `أنت كاتب إعلانات عقارية محترف في الخليج ومعلّق صوتي. مهمتك كتابة نصوص إعلانية تلفت الانتباه وتجعل المشاهد يتوقف ويشاهد الفيديو كاملاً.
+  const prompt = `أنت أفضل كاتب نصوص فيديو عقاري فاخر في السعودية والخليج. أسلوبك يجمع بين رقي صنّاع المحتوى السينمائي وحرفية كتّاب الإعلانات لدى دور المزادات الراقية (Sotheby's, Christie's). كل كلمة لها قيمة. لا حشو، لا قوالب جاهزة، لا كلام عام.
 
 🏠 بيانات العقار:
 - النوع: ${propertyType || "عقار فاخر"}
-- الغرض: ${purpose || "للبيع"}  
+- الغرض: ${purpose || "للبيع"}
 - المدينة: ${city || "الخليج"}
 - الحي: ${district || "موقع استراتيجي"}
 - السعر: ${formattedPrice || "عرض حصري"}
 - المساحة: ${formattedArea || "مساحة واسعة"}
 - المميزات: ${featuresText}
-${title ? `- العنوان: ${title}` : ''}
-${description ? `- الوصف: ${description}` : ''}
+${title ? `- عنوان المالك: ${title}` : ''}
+${description ? `- وصف المالك: ${description}` : ''}
 
-📝 المطلوب - 4 نصوص إعلانية:
+📝 اكتب 4 عناصر بعناية شديدة:
 
-1. headline (5-10 كلمات): عنوان يلفت الانتباه فوراً
-2. subheadline (8-15 كلمة): وصف يبرز أهم المميزات
-3. priceTag (3-6 كلمات): دعوة للتواصل
-4. voiceScript (200-300 كلمة): نص طويل ومفصّل للتعليق الصوتي مدته دقيقتين تقريباً. يجب أن يكون بأسلوب معلّق وثائقي عقاري محترف مثل قنوات العقارات الفاخرة. يجب أن يتضمن:
-   - مقدمة جذابة تشد المشاهد
-   - وصف تفصيلي للموقع والحي والمنطقة المحيطة
-   - وصف دقيق لمميزات العقار من الداخل والخارج (الغرف، المساحات، التشطيبات، المواد المستخدمة)
-   - ذكر المرافق والخدمات القريبة
-   - وصف نمط الحياة الذي سيعيشه المالك
-   - خاتمة قوية مع دعوة للتواصل عبر بيت الجزيرة
-   النص يجب أن يتدفق بسلاسة كأنه حلقة وثائقية عن العقار.
-   ⛔ ممنوع منعاً باتاً ذكر السعر أو أي أرقام مالية في النص الصوتي. لا تذكر أي مبلغ أو رقم. ركز على المميزات والموقع والتجربة فقط.
+1) **headline** (3-6 كلمات بحدّ أقصى — جملة واحدة قصيرة كصاعقة):
+   - يجب أن تثير الفضول بصرياً، لا أن تصف.
+   - أمثلة جيدة: "هنا تبدأ القصة"، "حيث تسكن الفخامة"، "إعلان يستحق التوقف"
+   - أمثلة سيئة (ممنوعة): "فيلا فاخرة للبيع في الرياض"، "عقار مميز بسعر منافس"
 
-⚡ قواعد مهمة جداً:
-- النصوص يجب أن تكون بالعربية الفصحى الواضحة **بدون أي تشكيل** (بدون فتحة أو ضمة أو كسرة أو سكون)
-- اكتب بعربية فصحى بسيطة وواضحة وطبيعية كما يتحدث مذيع أخبار محترف
-- استخدم علامات الترقيم بكثرة: فاصلة (،) ونقطة (.) وثلاث نقاط (...) للتوقف الطبيعي في الكلام
-- أضف فواصل بين الجمل لإعطاء المتحدث وقتاً للتنفس
-- مثال: "في قلب المدينة، وسط أرقى الأحياء... نقدم لكم هذه الفيلا الاستثنائية. تتميز بتصميمها العصري، ومساحاتها الواسعة، وإطلالتها الساحرة."
-- استخدم كلمات تحفيزية: فاخر، استثنائي، حصري، ذهبي، مميز
-- اخلق إحساس بالفرصة والعجلة
-- بدون أي emoji
-- بدون أي تشكيل نهائياً
-- استخدم المثنى الصحيح: "حمامان" وليس "2 حمام"، "غرفتان" وليس "2 غرف"، "موقفان" وليس "2 موقف"
-- للأعداد 3-10 استخدم الكلمة: "ثلاث غرف" وليس "3 غرف"، "خمس حمامات" وليس "5 حمامات"
+2) **subheadline** (5-9 كلمات — جملة موقع/تجربة، لا قائمة مميزات):
+   - تخبر المشاهد عن المكان أو الشعور، لا عن عدد الغرف.
+   - مثال جيد: "في قلب ${district || "أرقى الأحياء"}، حيث الهدوء سيد المشهد"
+   - مثال سيئ: "5 غرف نوم و3 حمامات ومسبح وحديقة"
 
-أرجع JSON فقط:
+3) **priceTag** (2-4 كلمات — CTA لاذع):
+   - دعوة لاتخاذ خطوة، ليست مجرد رقم.
+   - أمثلة: "احجز معاينتك الآن"، "تواصل قبل فواته"، "اتصل لتفاصيل خاصة"
+   - ⛔ لا تذكر السعر هنا — السعر يعرض في مكان آخر من الفيديو.
+
+4) **voiceScript** (150-220 كلمة — تعليق صوتي وثائقي راقٍ، مدة ~60-90 ثانية):
+   - افتتاحية بجملة قصيرة قوية تشد المشاهد في أول ثانيتين.
+   - ثم قصة قصيرة عن المكان (الحي، أجواؤه، إيقاع الحياة فيه).
+   - ثم تجوّل وصفي حسّي بالعقار — الإضاءة، المساحات، التفاصيل المعمارية، اللحظات التي ستعيشها فيه.
+   - دون قائمة مرافق. القصد هو الشعور لا التعداد.
+   - ختام يدعو إلى تجربة المعاينة، باسم "بيت الجزيرة".
+   - ⛔ ممنوع ذكر السعر أو أي رقم مالي.
+   - ⛔ ممنوع استخدام: "فاخر، استثنائي، حصري، ذهبي، مميز، فرصة، عرض" — هذه كلمات مستهلكة. ابحث عن بدائل أصلية وأقرب للمعنى البصري الحقيقي.
+
+⚡ قواعد الكتابة:
+- عربية فصحى بسيطة، **بدون تشكيل نهائياً** (لا حركات).
+- جمل قصيرة (4-9 كلمات للجملة في الـ headline/subheadline). لا فقرات طويلة.
+- فاصلات للتنفّس، ونقاط للوقف، وثلاث نقاط (...) للتأمل في voiceScript.
+- بدون emoji نهائياً.
+- استخدم المثنى الصحيح: "غرفتان" لا "2 غرف". للأعداد 3-10: "ثلاث غرف" لا "3 غرف".
+- اقرأ ما تكتب بصوتك الداخلي — لو شعرت أنه مكرر أو "إعلاني مبتذل"، أعد كتابته.
+
+أرجع JSON صالحاً فقط (بدون أي شرح خارجه):
 {"headline": "...", "subheadline": "...", "priceTag": "...", "voiceScript": "..."}`;
 
   // محاولة Gemini أولاً
@@ -1023,17 +1029,18 @@ ${description ? `- الوصف: ${description}` : ''}
     }
   }
 
-  // بديل OpenAI
+  // بديل OpenAI — استخدمنا gpt-4o (وليس mini) لأن جودة النسخ التسويقي حرجة هنا.
+  // التكلفة تبقى صغيرة لأن المخرج محدود بـ 600-900 token تقريباً.
   try {
-    console.log("[OpenAI] Generating promotional text as fallback...");
+    console.log("[OpenAI] Generating promotional text via gpt-4o (cinematic upgrade)...");
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       messages: [
-        { role: "system", content: "أنت خبير تسويق عقارات فاخرة في الخليج ومعلّق صوتي محترف. تكتب نصوص إعلانية راقية مُشكَّلة بالكامل (بالحركات: فتحة، ضمة، كسرة، سكون، شدة، تنوين). أرجع JSON فقط." },
+        { role: "system", content: "أنت كاتب نصوص فيديو عقاري فاخر في السعودية. تكتب نصوصاً قصيرة، أنيقة، وغير مكررة — كما يكتب صنّاع المحتوى السينمائي. تتجنب الكليشيهات والكلمات المستهلكة. ترجع JSON صالحاً فقط، بدون شرح أو ملاحظات خارج الـ JSON." },
         { role: "user", content: prompt }
       ],
-      max_tokens: 800,
-      temperature: 0.7,
+      max_tokens: 900,
+      temperature: 0.85,
     });
 
     const content = response.choices[0]?.message?.content || "";
@@ -1135,39 +1142,50 @@ function buildAssFile(promoText, totalDuration, outPath) {
   const bottomLine = reshapeArabicText(bottomLineRaw.replace(/\n/g, " ").trim());
   const logo = reshapeArabicText("بيت الجزيرة");
   
-  // توقيتات
-  const t1 = 0.5;
-  const t2 = 1.5;
-  const t3 = 2.5;
-  const endTime = totalDuration - 0.3;
-  
-  // ألوان احترافية (BGR format for ASS) - بدون خلفية سوداء
-  const GOLD = "&H0037AFD4";       // ذهبي فاخر
-  const WHITE = "&H00FFFFFF";      // أبيض نقي
-  const BLACK = "&H00000000";      // أسود للحدود
-  const SHADOW_CLR = "&H80000000"; // ظل خفيف شفاف
-  
-  // تصميم احترافي: نصوص بحدود وظلال بدون خلفية سوداء
-  // BorderStyle=1 = حدود + ظلال (بدون صندوق خلفية)
+  // توقيتات سينمائية: عناصر تظهر متتابعة بفواصل أطول، والقيمة الأخيرة (CTA) تتأخر قليلاً للوزن.
+  const t1 = 1.2;   // عنوان رئيسي (يدخل بعد افتتاحية صامتة قصيرة)
+  const t2 = 3.0;   // وصف موقع/تجربة
+  const t3 = totalDuration - 4.5;  // CTA يدخل قرب النهاية لتأثير ختامي
+  const logoFadeOut = totalDuration - 0.8;
+  const endTime = totalDuration - 0.5;
+
+  // لوحة ألوان سينمائية (BGR for ASS)
+  const GOLD   = "&H0037AFD4"; // ذهبي بيت الجزيرة
+  const WHITE  = "&H00FFFFFF";
+  const BLACK  = "&H00000000";
+  const SOFT_SHADOW = "&H80000000";
+
+  // فلسفة التصميم:
+  //  - خط Cairo (موجود في /backend/public/fonts كما يستخدمه advancedVideoService).
+  //  - عنصر واحد فقط مرئي بقوة في كل لحظة → focus بصري.
+  //  - الـ fade أطول (1200ms in / 800ms out) → "ينساب" بدلاً من snap.
+  //  - حركة دخول لطيفة من الأسفل (\move عمودي 60px) → cinematic feel.
+  //  - Logo صغير ثابت أسفل اليمين (لا يزاحم المحتوى).
+  //  - استخدام MarginV الكبيرة للابتعاد عن الحواف.
   const ass = `[Script Info]
 ScriptType: v4.00+
 PlayResX: 1920
 PlayResY: 1080
 WrapStyle: 0
+ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Logo,Arial,72,${GOLD},${GOLD},${BLACK},${SHADOW_CLR},1,0,0,0,100,100,4,0,1,4,4,8,100,100,50,1
-Style: Title,Arial,82,${WHITE},${WHITE},${BLACK},${SHADOW_CLR},1,0,0,0,100,100,2,0,1,5,4,5,100,100,0,1
-Style: Features,Arial,54,${GOLD},${GOLD},${BLACK},${SHADOW_CLR},1,0,0,0,100,100,2,0,1,4,3,5,100,100,0,1
-Style: Price,Arial,72,${GOLD},${GOLD},${BLACK},${SHADOW_CLR},1,0,0,0,100,100,3,0,1,5,4,2,100,100,60,1
+Style: Logo,Cairo,46,${GOLD},${GOLD},${BLACK},${SOFT_SHADOW},1,0,0,0,100,100,3,0,1,3,3,3,80,80,60,1
+Style: Title,Cairo,110,${WHITE},${WHITE},${BLACK},${SOFT_SHADOW},1,0,0,0,100,100,2,0,1,6,5,5,140,140,0,1
+Style: Sub,Cairo,52,${GOLD},${GOLD},${BLACK},${SOFT_SHADOW},0,0,0,0,100,100,3,0,1,4,4,5,180,180,0,1
+Style: CTA,Cairo,84,${WHITE},${WHITE},${GOLD},${SOFT_SHADOW},1,0,0,0,100,100,4,0,1,7,5,2,120,120,80,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,${toAssTime(t1)},${toAssTime(endTime)},Logo,,0,0,0,,{\\fad(800,600)}${logo}
-Dialogue: 0,${toAssTime(t1 + 0.3)},${toAssTime(endTime)},Title,,0,0,0,,{\\fad(800,600)}${topLine}
-Dialogue: 0,${toAssTime(t2)},${toAssTime(endTime)},Features,,0,0,0,,{\\fad(800,600)}${midLine}
-Dialogue: 0,${toAssTime(t3)},${toAssTime(endTime)},Price,,0,0,0,,{\\fad(800,600)}${bottomLine}
+; Logo: ثابت أسفل اليمين طوال الفيديو، fade in بطيء + fade out قبل النهاية.
+Dialogue: 0,${toAssTime(0.6)},${toAssTime(logoFadeOut)},Logo,,0,0,0,,{\\fad(1000,800)}${logo}
+; Title: يدخل من تحت بحركة ناعمة، يبقى ~1.5 ثانية ثم يختفي بسلاسة.
+Dialogue: 1,${toAssTime(t1)},${toAssTime(t1 + 2.6)},Title,,0,0,0,,{\\fad(1200,800)\\move(960,600,960,540,0,900)}${topLine}
+; Subhead: يأتي بعد ما يختفي الـ Title، أقصر مدة لقراءة سريعة.
+Dialogue: 1,${toAssTime(t2)},${toAssTime(t2 + 2.4)},Sub,,0,0,0,,{\\fad(1200,800)\\move(960,580,960,540,0,900)}${midLine}
+; CTA: يدخل أخيراً للتأثير الختامي مع حركة up-fade.
+Dialogue: 2,${toAssTime(t3)},${toAssTime(endTime)},CTA,,0,0,0,,{\\fad(1500,500)\\move(960,720,960,640,0,1000)}${bottomLine}
 `.trim();
 
   require("fs").writeFileSync(outPath, ass, "utf8");
@@ -1213,9 +1231,10 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
   }
 
   // Calculate duration per slide with transition overlap
-  const transition = 1.2; // مدة انتقال أطول لمظهر سينمائي
+  // Slightly longer crossfade + minimum slide duration gives each shot time to breathe (cinematic pacing).
+  const transition = 1.5; // crossfade أطول (1.5s بدل 1.2s) — انتقال سينمائي ناعم
   const numImages = imagePaths.length;
-  const slideDuration = Math.max(4, Math.min(20, (duration + (numImages - 1) * transition) / numImages));
+  const slideDuration = Math.max(4.5, Math.min(20, (duration + (numImages - 1) * transition) / numImages));
   const totalDuration = (numImages * slideDuration) - ((numImages - 1) * transition);
   
   // 🔒 Security: Define allowed base directories for images
@@ -1330,28 +1349,23 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
   const H = 1080;
   
   const frames = Math.round(slideDuration * fps);
-  // حركات كاميرا درامية - Ken Burns قوي ومتنوع
+  // ─── حركات كاميرا سينمائية أنعم ───
+  // (سرعات zoom أقل بنسبة 35% — حركة شبيهة بـ drone slow-push للمنازل الفاخرة)
   const cameraMovements = [
-    // تكبير قوي من المنتصف
-    { zoom: `min(zoom+0.0015,1.35)`, x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
-    // تصغير من قريب إلى بعيد
-    { zoom: `if(lte(zoom,1.0),1.35,max(1.0,zoom-0.0015))`, x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
-    // تكبير + حركة للأسفل (كشف المبنى)
-    { zoom: `min(zoom+0.001,1.25)`, x: "iw/2-(iw/zoom/2)", y: `min(on*${(0.6/frames).toFixed(6)}*ih,ih/2-(ih/zoom/2))` },
-    // حركة بانورامية يسار إلى يمين مع تكبير خفيف
-    { zoom: "1.15", x: `on/${frames}*(iw-iw/zoom)`, y: "ih/2-(ih/zoom/2)" },
-    // حركة بانورامية يمين إلى يسار مع تكبير خفيف
-    { zoom: "1.15", x: `(iw-iw/zoom)-on/${frames}*(iw-iw/zoom)`, y: "ih/2-(ih/zoom/2)" },
-    // تكبير على الزاوية العلوية اليمنى
-    { zoom: `min(zoom+0.001,1.3)`, x: `iw/zoom/4`, y: `ih/zoom/4` },
-    // تكبير على الزاوية السفلية اليسرى
-    { zoom: `min(zoom+0.001,1.3)`, x: `iw-iw/zoom-iw/zoom/4`, y: `ih-ih/zoom-ih/zoom/4` },
-    // تكبير بطيء مع حركة قطرية
-    { zoom: `min(zoom+0.0008,1.2)`, x: `on/${frames}*(iw-iw/zoom)`, y: `on/${frames}*(ih-ih/zoom)` },
+    // 1) Slow push-in افتتاحي — تكبير بطيء جداً من المنتصف
+    { zoom: `min(zoom+0.0009,1.20)`, x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
+    // 2) Pull-out هادئ — كشف العقار من تفصيل إلى كامل
+    { zoom: `if(lte(zoom,1.0),1.20,max(1.0,zoom-0.0008))`, x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" },
+    // 3) Tilt-down ناعم مع تكبير لطيف
+    { zoom: `min(zoom+0.0006,1.15)`, x: "iw/2-(iw/zoom/2)", y: `min(on*${(0.4/frames).toFixed(6)}*ih,ih/2-(ih/zoom/2))` },
+    // 4) Pan أفقي بطيء (يسار→يمين) بدون تكبير ملحوظ
+    { zoom: "1.12", x: `on/${frames}*(iw-iw/zoom)`, y: "ih/2-(ih/zoom/2)" },
+    // 5) حركة قطرية ناعمة (drone-style)
+    { zoom: `min(zoom+0.0006,1.16)`, x: `on/${frames}*(iw-iw/zoom)*0.7`, y: `on/${frames}*(ih-ih/zoom)*0.5` },
   ];
-  
-  // انتقالات احترافية متنوعة
-  const transitionTypes = ["fade", "fadeblack", "fadewhite", "smoothleft", "smoothright", "smoothup", "circlecrop", "dissolve", "radial", "hblur"];
+
+  // ─── انتقالات سينمائية فقط (إزالة الانتقالات المزعجة fadeblack/fadewhite/circlecrop/radial/hblur) ───
+  const transitionTypes = ["fade", "dissolve", "smoothleft", "smoothright", "fade", "dissolve"];
   
   // Build input arguments
   let args = ["-y"];
@@ -1366,9 +1380,14 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
   for (let i = 0; i < validPaths.length; i++) {
     const movement = cameraMovements[i % cameraMovements.length];
     
-    // Scale, apply Ken Burns zoom/pan, then add cinematic color grading + vignette
+    // Scale, apply Ken Burns zoom/pan, then a cinematic color grade chain:
+    //   • curves (rgb)   — soft S-curve for "filmic" contrast (deep shadows, gentle highlight roll-off)
+    //   • colorbalance   — push midtones/shadows warm (oranges/ambers) for luxury feel
+    //   • eq             — fine-tune contrast + saturation + slight gamma lift
+    //   • unsharp        — subtle edge enhancement (won't crunch faces/textures)
+    //   • vignette       — softer than before (PI/4.5 vs PI/5) so corners darken naturally
     filters.push(
-      `[${i}:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,scale=8000:-1,zoompan=z='${movement.zoom}':x='${movement.x}':y='${movement.y}':d=${frames}:s=${W}x${H}:fps=${fps},eq=contrast=1.08:brightness=0.02:saturation=1.15,unsharp=3:3:0.5,vignette=PI/5,format=yuv420p[v${i}]`
+      `[${i}:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,scale=8000:-1,zoompan=z='${movement.zoom}':x='${movement.x}':y='${movement.y}':d=${frames}:s=${W}x${H}:fps=${fps},curves=preset=increase_contrast,colorbalance=rs=0.05:gs=0.02:bs=-0.05:rm=0.06:gm=0.0:bm=-0.06:rh=0.02:gh=0.0:bh=-0.03,eq=contrast=1.06:brightness=0.015:saturation=1.10:gamma=1.02,unsharp=5:5:0.6:5:5:0.0,vignette=PI/4.5,format=yuv420p[v${i}]`
     );
   }
   
@@ -1385,8 +1404,8 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
     currentOffset += (slideDuration - transition);
   }
   
-  // Step 2.5: Add fade-in at start and fade-out at end
-  const fadeInOut = `[${lastLabel}]fade=t=in:st=0:d=0.5,fade=t=out:st=${(totalDuration - 0.5).toFixed(2)}:d=0.5[vfaded]`;
+  // Step 2.5: Cinematic fade-in/out — أطول (1.2s) لافتتاحية وخاتمة درامية
+  const fadeInOut = `[${lastLabel}]fade=t=in:st=0:d=1.2,fade=t=out:st=${(totalDuration - 1.2).toFixed(2)}:d=1.2[vfaded]`;
   filters.push(fadeInOut);
   lastLabel = "vfaded";
   
