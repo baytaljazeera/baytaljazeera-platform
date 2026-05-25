@@ -304,7 +304,9 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
       const lat = parseFloat(String(m.lat));
       const lng = parseFloat(String(m.lng));
       if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        mapRef.current.flyTo([lat, lng], 15, { animate: true, duration: 0.8 });
+        // Calmer neighborhood-level zoom (~35% less tight than zoom 15) so
+        // the surroundings stay visible when the user picks a listing.
+        mapRef.current.flyTo([lat, lng], 13, { animate: true, duration: 0.9 });
       }
     }
   }, [activeListingId, markers]);
@@ -485,7 +487,8 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
                 const lat = parseFloat(String(marker.lat));
                 const lng = parseFloat(String(marker.lng));
                 if (mapRef.current && Number.isFinite(lat) && Number.isFinite(lng)) {
-                  mapRef.current.flyTo([lat, lng], 15, { animate: true, duration: 0.8 });
+                  // Match list-click behavior: calmer zoom that keeps context visible.
+                  mapRef.current.flyTo([lat, lng], 13, { animate: true, duration: 0.9 });
                 }
               },
               dblclick: () => {
