@@ -1705,7 +1705,7 @@ export default function PlansManagement() {
                               className={`relative flex flex-col gap-2 p-3 rounded-xl border-2 transition ${
                                 hasTier('standard')
                                   ? 'border-emerald-500 bg-emerald-50'
-                                  : 'border-gray-200 bg-white hover:border-emerald-300'
+                                  : 'border-gray-200 bg-white opacity-80 hover:border-emerald-300'
                               }`}
                             >
                               <label className="flex items-center gap-2 cursor-pointer">
@@ -1715,24 +1715,36 @@ export default function PlansManagement() {
                                   checked={hasTier('standard')}
                                   onChange={(e) => toggleTier('standard', e.target.checked)}
                                 />
+                                {/* Visible checkbox indicator */}
+                                <span className={`w-5 h-5 rounded border-2 flex items-center justify-center transition ${
+                                  hasTier('standard') ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-gray-300'
+                                }`}>
+                                  {hasTier('standard') && <span className="text-white text-sm leading-none">✓</span>}
+                                </span>
                                 <span className="text-lg">🎬</span>
                                 <span className="font-bold text-sm text-gray-800">قياسي</span>
                                 <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded">مجاناً</span>
                               </label>
                               <p className="text-[11px] text-gray-600 leading-snug">سلايد شو FFmpeg + صوت ElevenLabs</p>
-                              {hasTier('standard') && (
-                                <div className="mt-1">
-                                  <label className="text-[10px] text-gray-700 block mb-0.5">عدد القياسي لكل إعلان</label>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    value={tierCap('standard')}
-                                    onChange={(e) => setTierCap('standard', e.target.value)}
-                                    placeholder="افتراضي"
-                                    className="w-full px-2 py-1 text-xs border border-emerald-300 rounded bg-white focus:border-emerald-500 outline-none"
-                                  />
-                                </div>
-                              )}
+                              {/* Counter always visible — sets the per-listing video limit for this tier */}
+                              <div className="mt-1">
+                                <label className="text-[10px] text-gray-700 block mb-0.5">عدد فيديوهات القياسي لكل إعلان</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={tierCap('standard')}
+                                  onChange={(e) => setTierCap('standard', e.target.value)}
+                                  placeholder="مثال: 5"
+                                  className={`w-full px-2 py-1 text-xs border rounded outline-none transition ${
+                                    hasTier('standard')
+                                      ? 'border-emerald-300 bg-white focus:border-emerald-500'
+                                      : 'border-gray-200 bg-gray-50 text-gray-500 focus:border-gray-400'
+                                  }`}
+                                />
+                                {!hasTier('standard') && (
+                                  <p className="text-[9px] text-gray-500 mt-0.5">يُحفظ لكن لا يُطبَّق حتى تُفعّل القياسي.</p>
+                                )}
+                              </div>
                             </div>
 
                             {/* Luxury */}
@@ -1740,7 +1752,7 @@ export default function PlansManagement() {
                               className={`relative flex flex-col gap-2 p-3 rounded-xl border-2 transition ${
                                 hasTier('luxury')
                                   ? 'border-amber-500 bg-amber-50'
-                                  : 'border-gray-200 bg-white hover:border-amber-300'
+                                  : 'border-gray-200 bg-white opacity-80 hover:border-amber-300'
                               }`}
                             >
                               <label className="flex items-center gap-2 cursor-pointer">
@@ -1750,24 +1762,34 @@ export default function PlansManagement() {
                                   checked={hasTier('luxury')}
                                   onChange={(e) => toggleTier('luxury', e.target.checked)}
                                 />
+                                <span className={`w-5 h-5 rounded border-2 flex items-center justify-center transition ${
+                                  hasTier('luxury') ? 'bg-amber-500 border-amber-500' : 'bg-white border-gray-300'
+                                }`}>
+                                  {hasTier('luxury') && <span className="text-white text-sm leading-none">✓</span>}
+                                </span>
                                 <span className="text-lg">✨</span>
                                 <span className="font-bold text-sm text-gray-800">فاخر</span>
                                 <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">~$0.30</span>
                               </label>
                               <p className="text-[11px] text-gray-600 leading-snug">لقطة AI افتتاحية (Replicate) + سلايد شو</p>
-                              {hasTier('luxury') && (
-                                <div className="mt-1">
-                                  <label className="text-[10px] text-gray-700 block mb-0.5">عدد الفاخر لكل إعلان</label>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    value={tierCap('luxury')}
-                                    onChange={(e) => setTierCap('luxury', e.target.value)}
-                                    placeholder="افتراضي"
-                                    className="w-full px-2 py-1 text-xs border border-amber-300 rounded bg-white focus:border-amber-500 outline-none"
-                                  />
-                                </div>
-                              )}
+                              <div className="mt-1">
+                                <label className="text-[10px] text-gray-700 block mb-0.5">عدد فيديوهات الفاخر لكل إعلان</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={tierCap('luxury')}
+                                  onChange={(e) => setTierCap('luxury', e.target.value)}
+                                  placeholder="مثال: 3"
+                                  className={`w-full px-2 py-1 text-xs border rounded outline-none transition ${
+                                    hasTier('luxury')
+                                      ? 'border-amber-300 bg-white focus:border-amber-500'
+                                      : 'border-gray-200 bg-gray-50 text-gray-500 focus:border-gray-400'
+                                  }`}
+                                />
+                                {!hasTier('luxury') && (
+                                  <p className="text-[9px] text-gray-500 mt-0.5">يُحفظ لكن لا يُطبَّق حتى تُفعّل الفاخر.</p>
+                                )}
+                              </div>
                             </div>
 
                             {/* Ultra */}
@@ -1775,7 +1797,7 @@ export default function PlansManagement() {
                               className={`relative flex flex-col gap-2 p-3 rounded-xl border-2 transition ${
                                 hasTier('ultra')
                                   ? 'border-purple-500 bg-purple-50'
-                                  : 'border-gray-200 bg-white hover:border-purple-300'
+                                  : 'border-gray-200 bg-white opacity-80 hover:border-purple-300'
                               }`}
                             >
                               <label className="flex items-center gap-2 cursor-pointer">
@@ -1785,24 +1807,34 @@ export default function PlansManagement() {
                                   checked={hasTier('ultra')}
                                   onChange={(e) => toggleTier('ultra', e.target.checked)}
                                 />
+                                <span className={`w-5 h-5 rounded border-2 flex items-center justify-center transition ${
+                                  hasTier('ultra') ? 'bg-purple-500 border-purple-500' : 'bg-white border-gray-300'
+                                }`}>
+                                  {hasTier('ultra') && <span className="text-white text-sm leading-none">✓</span>}
+                                </span>
                                 <span className="text-lg">👑</span>
                                 <span className="font-bold text-sm text-gray-800">سينمائي خارق</span>
                                 <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">$2–6</span>
                               </label>
                               <p className="text-[11px] text-gray-600 leading-snug">Gemini Veo — فيديو AI متكامل</p>
-                              {hasTier('ultra') && (
-                                <div className="mt-1">
-                                  <label className="text-[10px] text-gray-700 block mb-0.5">عدد الخارق لكل إعلان</label>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    value={tierCap('ultra')}
-                                    onChange={(e) => setTierCap('ultra', e.target.value)}
-                                    placeholder="افتراضي"
-                                    className="w-full px-2 py-1 text-xs border border-purple-300 rounded bg-white focus:border-purple-500 outline-none"
-                                  />
-                                </div>
-                              )}
+                              <div className="mt-1">
+                                <label className="text-[10px] text-gray-700 block mb-0.5">عدد فيديوهات الخارق لكل إعلان</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={tierCap('ultra')}
+                                  onChange={(e) => setTierCap('ultra', e.target.value)}
+                                  placeholder="مثال: 1"
+                                  className={`w-full px-2 py-1 text-xs border rounded outline-none transition ${
+                                    hasTier('ultra')
+                                      ? 'border-purple-300 bg-white focus:border-purple-500'
+                                      : 'border-gray-200 bg-gray-50 text-gray-500 focus:border-gray-400'
+                                  }`}
+                                />
+                                {!hasTier('ultra') && (
+                                  <p className="text-[9px] text-gray-500 mt-0.5">يُحفظ لكن لا يُطبَّق حتى تُفعّل الخارق.</p>
+                                )}
+                              </div>
                             </div>
                           </div>
                           {!hasTier('standard') && (
