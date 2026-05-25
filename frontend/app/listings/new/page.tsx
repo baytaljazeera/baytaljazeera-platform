@@ -80,6 +80,12 @@ type QuotaOption = {
     videoEnabled?: boolean;
     allowedTiers?: ("standard" | "luxury" | "ultra")[];
     maxRegenerations?: number;
+    // Per-tier video count caps. null = use maxVideos fallback.
+    tierCaps?: {
+      standard: number | null;
+      luxury: number | null;
+      ultra: number | null;
+    };
   };
 };
 
@@ -448,6 +454,37 @@ export default function NewListingPage() {
       setShowVideoSection(true);
     }
   }, [videoFile, videoResult, slideshowResult]);
+
+  // Refresh quota benefits whenever the user steps into the media/video step (4).
+  // This guarantees that any plan edits an admin made in /admin/plans show up
+  // without forcing the user to reload the whole page — addresses the "static
+  // image doesn't respond" complaint.
+  useEffect(() => {
+    if (step !== 4) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/quota/options-for-listing?_=${Date.now()}`, {
+          credentials: "include",
+          headers: getAuthHeaders(),
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (cancelled || !Array.isArray(json.options)) return;
+        setQuotaOptions(json.options);
+        // Refresh selectedBucket's benefits in-place (keep same bucket ID).
+        setSelectedBucket((prev) => {
+          if (!prev) return prev;
+          const match = json.options.find((o: QuotaOption) => o.bucketId === prev.bucketId);
+          return match || prev;
+        });
+      } catch {
+        /* ignore — user can still proceed with stale benefits */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [step]);
 
   // ───── Draft restore on mount ─────────────────────────────────────────────
   useEffect(() => {
@@ -4220,6 +4257,13 @@ export default function NewListingPage() {
                         ultra: planAllowedTiers.has("ultra"),
                       };
                       const planName = selectedBucket?.planName || "باقتك الحالية";
+                      // Per-tier video count: explicit cap from admin, else plan total, else 0.
+                      const fallbackMax = selectedBucket?.benefits?.maxVideos || 0;
+                      const tierCount = (t: "standard" | "luxury" | "ultra") => {
+                        const cap = selectedBucket?.benefits?.tierCaps?.[t];
+                        if (cap != null) return cap;
+                        return fallbackMax;
+                      };
 
                       const lockToast = (tierLabel: string) =>
                         toast.message(`المستوى "${tierLabel}" غير متاح في ${planName}. ارتقِ بباقتك لتفعيله، أو استخدم كود تجربة مسموح به.`, {
@@ -4270,6 +4314,11 @@ export default function NewListingPage() {
                               <p className="text-[11px] text-[#002845]/60 leading-snug">
                                 سلايد شو سينمائي بحركة كاميرا وصوت تعليق
                               </p>
+                              {tierMeta.standard && tierCount("standard") > 0 && (
+                                <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-[10px] font-bold">
+                                  📊 {tierCount("standard")} لكل إعلان
+                                </div>
+                              )}
                             </button>
 
                             {/* Tier 2 — Luxury */}
@@ -4297,6 +4346,11 @@ export default function NewListingPage() {
                               <p className="text-[11px] text-[#002845]/60 leading-snug">
                                 لقطة افتتاحية AI متحركة + سلايد شو — فيديو واحد/يوم
                               </p>
+                              {tierMeta.luxury && tierCount("luxury") > 0 && (
+                                <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[10px] font-bold">
+                                  ✨ {tierCount("luxury")} لكل إعلان
+                                </div>
+                              )}
                             </button>
 
                             {/* Tier 3 — Ultra */}
@@ -4324,6 +4378,11 @@ export default function NewListingPage() {
                               <p className="text-[11px] text-[#002845]/60 leading-snug">
                                 فيديو AI متكامل من Gemini Veo — للباقة المميزة
                               </p>
+                              {tierMeta.ultra && tierCount("ultra") > 0 && (
+                                <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full text-[10px] font-bold">
+                                  👑 {tierCount("ultra")} لكل إعلان
+                                </div>
+                              )}
                             </button>
                           </div>
 

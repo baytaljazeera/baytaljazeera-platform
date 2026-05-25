@@ -91,12 +91,16 @@ interface Plan {
   video_config: {
     enabled: boolean;
     // New 3-tier model: declare which tiers this plan unlocks. Backend (ai.js)
-    // checks `tier in allowed_tiers` before dispatching. "standard" is the
-    // baseline FFmpeg slideshow; "luxury" adds the Replicate AI opening shot;
-    // "ultra" unlocks Gemini Veo (currently bypass-only — see ULTRA_BYPASS_CODE).
+    // checks `tier in allowed_tiers` before dispatching.
     allowed_tiers?: ('standard' | 'luxury' | 'ultra')[];
-    // Kept for back-compat with already-saved plans; will be migrated to
-    // allowed_tiers on read in the UI.
+    // Per-tier video counter (max videos of each tier per listing).
+    // Empty values = use plan.max_videos_per_listing as fallback for all tiers.
+    tier_caps?: {
+      standard?: number;
+      luxury?: number;
+      ultra?: number;
+    };
+    // Kept for back-compat with already-saved plans; auto-migrated to allowed_tiers.
     tier?: 'basic' | 'cinematic' | 'standard' | 'luxury' | 'ultra';
     ambience?: 'none' | 'birds' | 'sea';
     max_regenerations?: number;
@@ -1678,6 +1682,17 @@ export default function PlansManagement() {
                         video_config: { ...cfg, allowed_tiers: next },
                       });
                     };
+                    const tierCap = (t: 'standard' | 'luxury' | 'ultra') => cfg.tier_caps?.[t] ?? '';
+                    const setTierCap = (t: 'standard' | 'luxury' | 'ultra', val: string) => {
+                      const n = val === '' ? undefined : Math.max(0, parseInt(val) || 0);
+                      const nextCaps = { ...(cfg.tier_caps || {}) };
+                      if (n === undefined) delete nextCaps[t];
+                      else nextCaps[t] = n;
+                      setEditingPlan({
+                        ...editingPlan,
+                        video_config: { ...cfg, tier_caps: nextCaps },
+                      });
+                    };
                     return (
                       <div className="space-y-4 pt-3 border-t border-purple-200">
                         {/* 3 tier checkpoints */}
@@ -1686,70 +1701,109 @@ export default function PlansManagement() {
                           <p className="text-xs text-gray-500 mb-3">يحدد المستويات التي يستطيع المستخدم اختيارها وقت توليد الفيديو. القياسي إلزامي عند تفعيل الفيديو.</p>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                             {/* Standard */}
-                            <label
-                              className={`relative flex flex-col gap-1 p-3 rounded-xl border-2 cursor-pointer transition ${
+                            <div
+                              className={`relative flex flex-col gap-2 p-3 rounded-xl border-2 transition ${
                                 hasTier('standard')
                                   ? 'border-emerald-500 bg-emerald-50'
                                   : 'border-gray-200 bg-white hover:border-emerald-300'
                               }`}
                             >
-                              <input
-                                type="checkbox"
-                                className="sr-only"
-                                checked={hasTier('standard')}
-                                onChange={(e) => toggleTier('standard', e.target.checked)}
-                              />
-                              <div className="flex items-center gap-2">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  className="sr-only"
+                                  checked={hasTier('standard')}
+                                  onChange={(e) => toggleTier('standard', e.target.checked)}
+                                />
                                 <span className="text-lg">🎬</span>
                                 <span className="font-bold text-sm text-gray-800">قياسي</span>
                                 <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded">مجاناً</span>
-                              </div>
+                              </label>
                               <p className="text-[11px] text-gray-600 leading-snug">سلايد شو FFmpeg + صوت ElevenLabs</p>
-                            </label>
+                              {hasTier('standard') && (
+                                <div className="mt-1">
+                                  <label className="text-[10px] text-gray-700 block mb-0.5">عدد القياسي لكل إعلان</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={tierCap('standard')}
+                                    onChange={(e) => setTierCap('standard', e.target.value)}
+                                    placeholder="افتراضي"
+                                    className="w-full px-2 py-1 text-xs border border-emerald-300 rounded bg-white focus:border-emerald-500 outline-none"
+                                  />
+                                </div>
+                              )}
+                            </div>
 
                             {/* Luxury */}
-                            <label
-                              className={`relative flex flex-col gap-1 p-3 rounded-xl border-2 cursor-pointer transition ${
+                            <div
+                              className={`relative flex flex-col gap-2 p-3 rounded-xl border-2 transition ${
                                 hasTier('luxury')
                                   ? 'border-amber-500 bg-amber-50'
                                   : 'border-gray-200 bg-white hover:border-amber-300'
                               }`}
                             >
-                              <input
-                                type="checkbox"
-                                className="sr-only"
-                                checked={hasTier('luxury')}
-                                onChange={(e) => toggleTier('luxury', e.target.checked)}
-                              />
-                              <div className="flex items-center gap-2">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  className="sr-only"
+                                  checked={hasTier('luxury')}
+                                  onChange={(e) => toggleTier('luxury', e.target.checked)}
+                                />
                                 <span className="text-lg">✨</span>
                                 <span className="font-bold text-sm text-gray-800">فاخر</span>
                                 <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">~$0.30</span>
-                              </div>
+                              </label>
                               <p className="text-[11px] text-gray-600 leading-snug">لقطة AI افتتاحية (Replicate) + سلايد شو</p>
-                            </label>
+                              {hasTier('luxury') && (
+                                <div className="mt-1">
+                                  <label className="text-[10px] text-gray-700 block mb-0.5">عدد الفاخر لكل إعلان</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={tierCap('luxury')}
+                                    onChange={(e) => setTierCap('luxury', e.target.value)}
+                                    placeholder="افتراضي"
+                                    className="w-full px-2 py-1 text-xs border border-amber-300 rounded bg-white focus:border-amber-500 outline-none"
+                                  />
+                                </div>
+                              )}
+                            </div>
 
                             {/* Ultra */}
-                            <label
-                              className={`relative flex flex-col gap-1 p-3 rounded-xl border-2 cursor-pointer transition ${
+                            <div
+                              className={`relative flex flex-col gap-2 p-3 rounded-xl border-2 transition ${
                                 hasTier('ultra')
                                   ? 'border-purple-500 bg-purple-50'
                                   : 'border-gray-200 bg-white hover:border-purple-300'
                               }`}
                             >
-                              <input
-                                type="checkbox"
-                                className="sr-only"
-                                checked={hasTier('ultra')}
-                                onChange={(e) => toggleTier('ultra', e.target.checked)}
-                              />
-                              <div className="flex items-center gap-2">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  className="sr-only"
+                                  checked={hasTier('ultra')}
+                                  onChange={(e) => toggleTier('ultra', e.target.checked)}
+                                />
                                 <span className="text-lg">👑</span>
                                 <span className="font-bold text-sm text-gray-800">سينمائي خارق</span>
                                 <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">$2–6</span>
-                              </div>
+                              </label>
                               <p className="text-[11px] text-gray-600 leading-snug">Gemini Veo — فيديو AI متكامل</p>
-                            </label>
+                              {hasTier('ultra') && (
+                                <div className="mt-1">
+                                  <label className="text-[10px] text-gray-700 block mb-0.5">عدد الخارق لكل إعلان</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={tierCap('ultra')}
+                                    onChange={(e) => setTierCap('ultra', e.target.value)}
+                                    placeholder="افتراضي"
+                                    className="w-full px-2 py-1 text-xs border border-purple-300 rounded bg-white focus:border-purple-500 outline-none"
+                                  />
+                                </div>
+                              )}
+                            </div>
                           </div>
                           {!hasTier('standard') && (
                             <p className="text-xs text-red-600 mt-2">⚠ يجب تفعيل "قياسي" على الأقل عند تشغيل الفيديو.</p>

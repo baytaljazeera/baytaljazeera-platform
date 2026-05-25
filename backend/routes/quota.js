@@ -140,7 +140,7 @@ router.get("/options-for-listing", authMiddleware, asyncHandler(async (req, res)
   `, [userId]);
 
   // Normalize the video_config JSON into a frontend-friendly shape:
-  // { videoEnabled, allowedTiers, maxRegenerations }.
+  // { videoEnabled, allowedTiers, maxRegenerations, tierCaps }.
   function videoBenefits(cfg) {
     const vc = (cfg && typeof cfg === "object") ? cfg : {};
     const enabled = vc.enabled !== false;
@@ -153,7 +153,15 @@ router.get("/options-for-listing", authMiddleware, asyncHandler(async (req, res)
       else if (legacy === "ultra") allowedTiers = ["standard", "luxury", "ultra"];
       else allowedTiers = ["standard"];
     }
-    return { enabled, allowedTiers, maxRegenerations: vc.max_regenerations };
+    // Per-tier caps as set by admin in /admin/plans → video_config.tier_caps.
+    // Empty / undefined → tier falls back to the plan's overall max_videos_per_listing.
+    const tcRaw = vc.tier_caps && typeof vc.tier_caps === "object" ? vc.tier_caps : {};
+    const tierCaps = {
+      standard: Number.isFinite(tcRaw.standard) ? tcRaw.standard : null,
+      luxury: Number.isFinite(tcRaw.luxury) ? tcRaw.luxury : null,
+      ultra: Number.isFinite(tcRaw.ultra) ? tcRaw.ultra : null,
+    };
+    return { enabled, allowedTiers, maxRegenerations: vc.max_regenerations, tierCaps };
   }
 
   const options = result.rows
@@ -189,6 +197,9 @@ router.get("/options-for-listing", authMiddleware, asyncHandler(async (req, res)
           videoEnabled: v.enabled,
           allowedTiers: v.allowedTiers,
           maxRegenerations: v.maxRegenerations,
+          // Per-tier video count caps from admin/plans → video_config.tier_caps.
+          // null = use plan's max_videos_per_listing fallback.
+          tierCaps: v.tierCaps,
         }
       };
     })
