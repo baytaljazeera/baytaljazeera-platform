@@ -90,8 +90,15 @@ interface Plan {
   } | string | null;
   video_config: {
     enabled: boolean;
-    tier: 'basic' | 'cinematic';
-    ambience: 'none' | 'birds' | 'sea';
+    // New 3-tier model: declare which tiers this plan unlocks. Backend (ai.js)
+    // checks `tier in allowed_tiers` before dispatching. "standard" is the
+    // baseline FFmpeg slideshow; "luxury" adds the Replicate AI opening shot;
+    // "ultra" unlocks Gemini Veo (currently bypass-only — see ULTRA_BYPASS_CODE).
+    allowed_tiers?: ('standard' | 'luxury' | 'ultra')[];
+    // Kept for back-compat with already-saved plans; will be migrated to
+    // allowed_tiers on read in the UI.
+    tier?: 'basic' | 'cinematic' | 'standard' | 'luxury' | 'ultra';
+    ambience?: 'none' | 'birds' | 'sea';
     max_regenerations?: number;
   } | null;
 }
@@ -151,7 +158,7 @@ const defaultPlan: Partial<Plan> = {
   seo_feature_title: "تحسين محركات البحث SEO",
   seo_feature_description: "تحسين ظهور عقاراتك في نتائج البحث",
   feature_display_order: { listings: 1, photos: 2, map: 3, ai: 4, video: 5, elite: 6, seo: 7 },
-  video_config: { enabled: false, tier: 'basic' as const, ambience: 'none' as const, max_regenerations: 3 },
+  video_config: { enabled: false, allowed_tiers: ['standard'] as ('standard' | 'luxury' | 'ultra')[], max_regenerations: 3 },
 };
 
 const FEATURE_ORDER_LABELS: Record<string, string> = {
@@ -1620,7 +1627,7 @@ export default function PlansManagement() {
                         onChange={(e) => setEditingPlan({
                           ...editingPlan,
                           video_config: {
-                            ...(editingPlan.video_config || { tier: 'tier1_safwa', ambience: 'none' }),
+                            ...(editingPlan.video_config || { allowed_tiers: ['standard'] as ('standard'|'luxury'|'ultra')[], max_regenerations: 3 }),
                             enabled: e.target.checked
                           }
                         })}
@@ -1633,68 +1640,117 @@ export default function PlansManagement() {
                     <span className="text-sm font-medium text-gray-700">تفعيل الفيديو لهذه الباقة</span>
                   </label>
 
-                  {editingPlan.video_config?.enabled && (
-                    <div className="space-y-4 pt-3 border-t border-purple-200">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {editingPlan.video_config?.enabled && (() => {
+                    // Migrate legacy tier values to the new allowed_tiers shape on read.
+                    // Old "basic"/standard → ['standard']; old "cinematic" → ['standard','luxury'].
+                    const cfg = editingPlan.video_config!;
+                    let allowed = cfg.allowed_tiers;
+                    if (!allowed || allowed.length === 0) {
+                      if (cfg.tier === 'cinematic' || cfg.tier === 'luxury') allowed = ['standard', 'luxury'];
+                      else if (cfg.tier === 'ultra') allowed = ['standard', 'luxury', 'ultra'];
+                      else allowed = ['standard'];
+                    }
+                    const hasTier = (t: 'standard' | 'luxury' | 'ultra') => allowed!.includes(t);
+                    const toggleTier = (t: 'standard' | 'luxury' | 'ultra', on: boolean) => {
+                      let next = (allowed || []).filter((x) => x !== t);
+                      if (on) next.push(t);
+                      // Keep canonical order so the UI is stable.
+                      const order: Record<'standard' | 'luxury' | 'ultra', number> = { standard: 0, luxury: 1, ultra: 2 };
+                      next.sort((a, b) => order[a] - order[b]);
+                      setEditingPlan({
+                        ...editingPlan,
+                        video_config: { ...cfg, allowed_tiers: next },
+                      });
+                    };
+                    return (
+                      <div className="space-y-4 pt-3 border-t border-purple-200">
+                        {/* 3 tier checkpoints */}
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">جودة الفيديو</label>
-                          <select
-                            value={editingPlan.video_config?.tier || 'basic'}
-                            onChange={(e) => setEditingPlan({
-                              ...editingPlan,
-                              video_config: {
-                                ...(editingPlan.video_config || { enabled: true, ambience: 'none', max_regenerations: 3 }),
-                                tier: e.target.value as 'basic' | 'cinematic'
-                              }
-                            })}
-                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
-                          >
-                            <option value="basic">أساسي (تحريك بسيط)</option>
-                            <option value="cinematic">سينمائي فاخر (Ken Burns)</option>
-                          </select>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {editingPlan.video_config?.tier === 'cinematic' 
-                              ? 'تأثيرات Ken Burns سينمائية مع انتقالات فاخرة' 
-                              : 'تكبير بسيط للصور مع انتقالات ناعمة'}
-                          </p>
+                          <p className="text-sm font-semibold text-gray-800 mb-2">المستويات المتاحة لهذه الباقة</p>
+                          <p className="text-xs text-gray-500 mb-3">يحدد المستويات التي يستطيع المستخدم اختيارها وقت توليد الفيديو. القياسي إلزامي عند تفعيل الفيديو.</p>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            {/* Standard */}
+                            <label
+                              className={`relative flex flex-col gap-1 p-3 rounded-xl border-2 cursor-pointer transition ${
+                                hasTier('standard')
+                                  ? 'border-emerald-500 bg-emerald-50'
+                                  : 'border-gray-200 bg-white hover:border-emerald-300'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="sr-only"
+                                checked={hasTier('standard')}
+                                onChange={(e) => toggleTier('standard', e.target.checked)}
+                              />
+                              <div className="flex items-center gap-2">
+                                <span className="text-lg">🎬</span>
+                                <span className="font-bold text-sm text-gray-800">قياسي</span>
+                                <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded">مجاناً</span>
+                              </div>
+                              <p className="text-[11px] text-gray-600 leading-snug">سلايد شو FFmpeg + صوت ElevenLabs</p>
+                            </label>
+
+                            {/* Luxury */}
+                            <label
+                              className={`relative flex flex-col gap-1 p-3 rounded-xl border-2 cursor-pointer transition ${
+                                hasTier('luxury')
+                                  ? 'border-amber-500 bg-amber-50'
+                                  : 'border-gray-200 bg-white hover:border-amber-300'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="sr-only"
+                                checked={hasTier('luxury')}
+                                onChange={(e) => toggleTier('luxury', e.target.checked)}
+                              />
+                              <div className="flex items-center gap-2">
+                                <span className="text-lg">✨</span>
+                                <span className="font-bold text-sm text-gray-800">فاخر</span>
+                                <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">~$0.30</span>
+                              </div>
+                              <p className="text-[11px] text-gray-600 leading-snug">لقطة AI افتتاحية (Replicate) + سلايد شو</p>
+                            </label>
+
+                            {/* Ultra */}
+                            <label
+                              className={`relative flex flex-col gap-1 p-3 rounded-xl border-2 cursor-pointer transition ${
+                                hasTier('ultra')
+                                  ? 'border-purple-500 bg-purple-50'
+                                  : 'border-gray-200 bg-white hover:border-purple-300'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="sr-only"
+                                checked={hasTier('ultra')}
+                                onChange={(e) => toggleTier('ultra', e.target.checked)}
+                              />
+                              <div className="flex items-center gap-2">
+                                <span className="text-lg">👑</span>
+                                <span className="font-bold text-sm text-gray-800">سينمائي خارق</span>
+                                <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">$2–6</span>
+                              </div>
+                              <p className="text-[11px] text-gray-600 leading-snug">Gemini Veo — فيديو AI متكامل</p>
+                            </label>
+                          </div>
+                          {!hasTier('standard') && (
+                            <p className="text-xs text-red-600 mt-2">⚠ يجب تفعيل "قياسي" على الأقل عند تشغيل الفيديو.</p>
+                          )}
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">الخلفية الصوتية</label>
-                          <select
-                            value={editingPlan.video_config?.ambience || 'none'}
-                            onChange={(e) => setEditingPlan({
-                              ...editingPlan,
-                              video_config: {
-                                ...(editingPlan.video_config || { enabled: true, tier: 'basic', max_regenerations: 3 }),
-                                ambience: e.target.value as 'none' | 'birds' | 'sea'
-                              }
-                            })}
-                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
-                          >
-                            <option value="none">بدون خلفية (صامت)</option>
-                            <option value="birds">طبيعة: زقزقة عصافير</option>
-                            <option value="sea">طبيعة: أمواج البحر</option>
-                          </select>
-                          <p className="text-xs text-gray-500 mt-1">
-                            أصوات طبيعية هادئة مع التعليق الصوتي (بدون موسيقى)
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">عدد مرات إعادة التوليد لكل إعلان</label>
                           <input
                             type="number"
-                            value={editingPlan.video_config?.max_regenerations ?? 3}
-                            onChange={(e) => setEditingPlan({
-                              ...editingPlan,
-                              video_config: {
-                                ...(editingPlan.video_config || { enabled: true, tier: 'basic', ambience: 'none' }),
-                                max_regenerations: parseInt(e.target.value) || 0
-                              }
-                            })}
+                            value={cfg.max_regenerations ?? 3}
+                            onChange={(e) =>
+                              setEditingPlan({
+                                ...editingPlan,
+                                video_config: { ...cfg, max_regenerations: parseInt(e.target.value) || 0 },
+                              })
+                            }
                             className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
                             min="0"
                             max="100"
@@ -1704,8 +1760,8 @@ export default function PlansManagement() {
                           </p>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
 

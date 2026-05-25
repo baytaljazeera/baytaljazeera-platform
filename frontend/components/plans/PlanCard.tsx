@@ -413,10 +413,18 @@ export function mapDbPlanToPlanCopy(dbPlan: DBPlan, currencySymbol: string = "ر
     ? `فيديو (${dbPlan.max_videos_per_listing} ${dbPlan.max_videos_per_listing > 1 ? "فيديوهات" : "فيديو"}${dbPlan.max_video_duration ? ` - ${formatVideoDuration(dbPlan.max_video_duration)}` : ""})`
     : "فيديو";
 
-  const aiText = dbPlan.ai_support_level > 0 ? AI_LABELS[dbPlan.ai_support_level] || "ذكاء اصطناعي" : "ذكاء اصطناعي";
-  const elitePropertiesText = "نخبة العقارات المختارة";
+  // Use admin-customizable labels from DB when provided; fall back to defaults.
+  // Plans page exposes these as: 🤖 ai_feature_title, 🏆 elite_feature_title,
+  // 🔍 seo_feature_title — previously stored but ignored. Now consumed.
+  const aiText =
+    (dbPlan as any).ai_feature_title?.trim() ||
+    (dbPlan.ai_support_level > 0 ? AI_LABELS[dbPlan.ai_support_level] || "ذكاء اصطناعي" : "ذكاء اصطناعي");
+  const elitePropertiesText =
+    (dbPlan as any).elite_feature_title?.trim() || "نخبة العقارات المختارة";
   const seoLevel = dbPlan.seo_level || 0;
-  const seoText = seoLevel > 0 ? SEO_LABELS[seoLevel] || "SEO" : "تحسين محركات البحث SEO";
+  const seoText =
+    (dbPlan as any).seo_feature_title?.trim() ||
+    (seoLevel > 0 ? SEO_LABELS[seoLevel] || "SEO" : "تحسين محركات البحث SEO");
 
   const defaultOrder = { listings: 1, photos: 2, map: 3, ai: 4, video: 5, elite: 6, seo: 7 };
   const rawOrder = dbPlan.feature_display_order;

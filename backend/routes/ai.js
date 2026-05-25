@@ -1756,14 +1756,49 @@ router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyn
   const maxVideos = userPlan?.max_videos_per_listing || 0;
   const videoConfig = userPlan?.video_config || {};
   const videoEnabled = videoConfig.enabled !== false && maxVideos > 0;
-  
+
   if (!videoEnabled) {
-    return res.status(403).json({ 
+    return res.status(403).json({
       error: "باقتك الحالية لا تتضمن ميزة توليد الفيديو. يرجى ترقية الباقة",
-      upgradeRequired: true 
+      upgradeRequired: true
     });
   }
-  
+
+  // ── Plan-level tier permission gate ──
+  // Reads which tiers this plan unlocks. Supports the new `allowed_tiers`
+  // array; falls back to the legacy `tier` string for old DB rows.
+  // Bypass codes (LUXURY_BYPASS_CODE / ULTRA_BYPASS_CODE), if present and
+  // valid earlier in the route, take precedence — they short-circuit this gate.
+  const planAllowedTiers = (function (cfg) {
+    if (Array.isArray(cfg?.allowed_tiers) && cfg.allowed_tiers.length > 0) {
+      return new Set(cfg.allowed_tiers.map((t) => String(t).toLowerCase()));
+    }
+    const legacy = String(cfg?.tier || "").toLowerCase();
+    if (legacy === "cinematic" || legacy === "luxury") return new Set(["standard", "luxury"]);
+    if (legacy === "ultra") return new Set(["standard", "luxury", "ultra"]);
+    return new Set(["standard"]);
+  })(videoConfig);
+
+  const hasUltraBypassNow = bypassCode === ULTRA_BYPASS_CODE;
+  const hasLuxuryBypassNow = bypassCode === LUXURY_BYPASS_CODE;
+
+  if (requestedTier === "luxury" && !planAllowedTiers.has("luxury") && !hasLuxuryBypassNow && !hasUltraBypassNow) {
+    return res.status(403).json({
+      error: "باقتك الحالية لا تشمل المستوى الفاخر. يرجى الترقية أو إدخال كود تجربة صالح.",
+      tier: "luxury",
+      allowed_tiers: Array.from(planAllowedTiers),
+    });
+  }
+  if (requestedTier === "ultra" && !planAllowedTiers.has("ultra") && !hasUltraBypassNow) {
+    // (The earlier Ultra block also blocks without ULTRA_BYPASS_CODE; this is
+    // belt-and-braces for plans that explicitly do not include Ultra.)
+    return res.status(403).json({
+      error: "باقتك الحالية لا تشمل المستوى السينمائي الخارق.",
+      tier: "ultra",
+      allowed_tiers: Array.from(planAllowedTiers),
+    });
+  }
+
   const planMaxDuration = userPlan?.max_video_duration || userPlan?.max_video_seconds || 60;
 
   if (!propertyType || !city) {
