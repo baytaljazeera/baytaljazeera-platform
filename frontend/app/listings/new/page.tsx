@@ -369,6 +369,9 @@ export default function NewListingPage() {
   const [videoPromoText, setVideoPromoText] = useState<{headline: string; subheadline: string; callToAction: string; tagline?: string; priceTag: string | null} | null>(null);
   const [selectedVideoImageIndex, setSelectedVideoImageIndex] = useState<number | null>(null);
   const [videoQuality, setVideoQuality] = useState<"fast" | "full">("full");
+  // 3-tier dispatch: "standard" (FFmpeg, free), "luxury" (hybrid, rate-limited), "ultra" (locked).
+  const [videoTier, setVideoTier] = useState<"standard" | "luxury" | "ultra">("standard");
+  const [luxuryBypassCode, setLuxuryBypassCode] = useState("");
   const [videoVoice, setVideoVoice] = useState<string>("onyx");
   const [elevenlabsVoices, setElevenlabsVoices] = useState<{ id: string; name: string; previewUrl: string | null }[]>([]);
   const [elevenlabsVoicesLoading, setElevenlabsVoicesLoading] = useState(false);
@@ -1154,7 +1157,10 @@ export default function NewListingPage() {
           imagePaths: uploadedPaths,
           template: "luxury",
           videoQuality: videoQuality,
-          videoVoice: videoQuality === "full" ? videoVoice : undefined
+          videoVoice: videoQuality === "full" ? videoVoice : undefined,
+          // ↓ 3-tier dispatch
+          tier: videoTier,
+          bypassCode: videoTier === "luxury" && luxuryBypassCode.trim() ? luxuryBypassCode.trim() : undefined,
         })
       });
 
@@ -4188,6 +4194,88 @@ export default function NewListingPage() {
                         <h3 className="text-lg font-bold text-[#002845]">فيديو ترويجي بالذكاء الاصطناعي</h3>
                         <p className="text-sm text-[#002845]/70">فيديو احترافي من وصف العقار — اختر الجودة والصوت ثم ولّد</p>
                       </div>
+                    </div>
+
+                    {/* ─── 3-Tier video selector ─── */}
+                    <div className="mb-5">
+                      <p className="text-xs font-semibold text-[#002845]/80 mb-2">اختر مستوى الفيديو</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {/* Tier 1 — Standard */}
+                        <button
+                          type="button"
+                          onClick={() => setVideoTier("standard")}
+                          className={`relative text-right rounded-xl border-2 p-3 transition ${
+                            videoTier === "standard"
+                              ? "border-[#D4AF37] bg-amber-50 shadow-md"
+                              : "border-slate-200 bg-white hover:border-[#D4AF37]/50"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xl">🎬</span>
+                            <span className="font-bold text-sm text-[#002845]">قياسي</span>
+                            <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded">مجاناً</span>
+                          </div>
+                          <p className="text-[11px] text-[#002845]/60 leading-snug">
+                            سلايد شو سينمائي بحركة كاميرا وصوت تعليق
+                          </p>
+                        </button>
+
+                        {/* Tier 2 — Luxury */}
+                        <button
+                          type="button"
+                          onClick={() => setVideoTier("luxury")}
+                          className={`relative text-right rounded-xl border-2 p-3 transition ${
+                            videoTier === "luxury"
+                              ? "border-[#D4AF37] bg-amber-50 shadow-md"
+                              : "border-slate-200 bg-white hover:border-[#D4AF37]/50"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xl">✨</span>
+                            <span className="font-bold text-sm text-[#002845]">فاخر</span>
+                            <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-[#D4AF37]/20 text-[#B8860B] rounded font-bold">تجربة</span>
+                          </div>
+                          <p className="text-[11px] text-[#002845]/60 leading-snug">
+                            لقطة افتتاحية AI متحركة + سلايد شو — فيديو واحد/يوم
+                          </p>
+                        </button>
+
+                        {/* Tier 3 — Ultra (locked) */}
+                        <button
+                          type="button"
+                          disabled
+                          aria-disabled="true"
+                          onClick={() => toast.message("هذه الميزة قادمة في الباقة المميزة 👑", { duration: 2500 })}
+                          className="relative text-right rounded-xl border-2 border-slate-200 bg-slate-50 p-3 cursor-not-allowed opacity-70"
+                        >
+                          <div className="absolute top-2 left-2 text-base">🔒</div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xl grayscale">👑</span>
+                            <span className="font-bold text-sm text-slate-500">سينمائي خارق</span>
+                            <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded">قريباً</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-snug">
+                            فيديو AI متكامل بكل اللقطات — للباقة المميزة
+                          </p>
+                        </button>
+                      </div>
+
+                      {/* Luxury bypass code (owner testing) */}
+                      {videoTier === "luxury" && (
+                        <div className="mt-3 p-3 rounded-xl bg-gradient-to-l from-amber-50 to-yellow-50 border border-[#D4AF37]/40">
+                          <p className="text-[11px] text-[#002845]/70 mb-2">
+                            ✨ المستوى الفاخر مرة واحدة في اليوم لكل حساب. إن كان لديك كود تجربة، أدخله هنا لتجاوز الحد.
+                          </p>
+                          <input
+                            type="text"
+                            value={luxuryBypassCode}
+                            onChange={(e) => setLuxuryBypassCode(e.target.value)}
+                            placeholder="كود التجربة (اختياري)"
+                            dir="ltr"
+                            className="w-full px-3 py-2 text-sm rounded-lg border border-[#D4AF37]/40 bg-white focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]/30 outline-none"
+                          />
+                        </div>
+                      )}
                     </div>
 
                     {/* ١ الجودة — ٢ الصوت (واضح بدون إرباك) */}

@@ -1652,9 +1652,71 @@ router.post("/user/generate-advanced-video", authMiddleware, videoGenerationLimi
 }));
 
 // 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي - Python Engine
+// ─── 3-Tier video gating helpers (standard / luxury / ultra) ───
+// In-memory per-user counter for the Luxury daily quota. Resets on backend
+// restart — acceptable for now since the cap is "1 per day" and Render restarts
+// daily-ish. If we need durability we'll back it with Redis later.
+const LUXURY_USAGE = new Map(); // userId -> { count, lastResetMs }
+const LUXURY_DAILY_LIMIT = parseInt(process.env.LUXURY_DAILY_LIMIT || "1", 10);
+const LUXURY_BYPASS_CODE = process.env.LUXURY_BYPASS_CODE || "M333M333M333";
+
+function checkLuxuryQuota(userId, providedBypassCode) {
+  // Bypass code for the owner's testing — must match env exactly.
+  if (providedBypassCode && providedBypassCode === LUXURY_BYPASS_CODE) {
+    return { allowed: true, bypassed: true };
+  }
+  const now = Date.now();
+  const ONE_DAY = 24 * 60 * 60 * 1000;
+  const rec = LUXURY_USAGE.get(userId) || { count: 0, lastResetMs: now };
+  if (now - rec.lastResetMs >= ONE_DAY) {
+    rec.count = 0;
+    rec.lastResetMs = now;
+  }
+  if (rec.count >= LUXURY_DAILY_LIMIT) {
+    const msToNext = ONE_DAY - (now - rec.lastResetMs);
+    const hoursToNext = Math.ceil(msToNext / (60 * 60 * 1000));
+    return { allowed: false, reason: "luxury_daily_limit", retryAfterHours: hoursToNext };
+  }
+  rec.count += 1;
+  LUXURY_USAGE.set(userId, rec);
+  return { allowed: true, bypassed: false };
+}
+
 router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description, videoQuality, videoVoice, targetDurationSec } = req.body;
+
+  // Resolve requested tier (standard / luxury / ultra). Backwards-compatible —
+  // requests without `tier` get treated as the previous default ("standard"),
+  // so existing frontend code keeps working until it learns about tiers.
+  const requestedTier = String(req.body.tier || "standard").toLowerCase();
+  const bypassCode = req.body.bypassCode || req.get("x-bypass-code") || null;
+
+  // ── Tier 3: Ultra Cinematic — locked during pre-launch ──
+  if (requestedTier === "ultra") {
+    return res.status(403).json({
+      error: "هذه الميزة متاحة فقط للباقات المدفوعة المميزة. ستُفتح قريباً.",
+      errorEn: "This feature is locked for premium tiers.",
+      tier: "ultra",
+      locked: true,
+    });
+  }
+
+  // ── Tier 2: Luxury — rate-limit + bypass code ──
+  if (requestedTier === "luxury") {
+    const quota = checkLuxuryQuota(userId, bypassCode);
+    if (!quota.allowed) {
+      return res.status(429).json({
+        error: `تجاوزت حد المستوى الفاخر (${LUXURY_DAILY_LIMIT} فيديو في اليوم). أعد المحاولة بعد ${quota.retryAfterHours} ساعة، أو استعمل كود التجربة الخاص.`,
+        errorEn: `Luxury tier daily limit reached. Retry in ${quota.retryAfterHours}h, or supply the bypass code.`,
+        tier: "luxury",
+        retryAfterHours: quota.retryAfterHours,
+      });
+    }
+    if (quota.bypassed) {
+      console.log(`[Luxury] 🔓 Bypass code accepted for user ${userId} — daily limit ignored.`);
+    }
+  }
 
   const planResult = await db.query(
     `SELECT p.max_videos_per_listing, p.max_video_duration, p.max_video_seconds, p.video_config, p.name_ar
@@ -1734,25 +1796,33 @@ router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyn
   });
 
   const { generateListingSlideshow } = require('../services/videoService');
+  const { generateHybridLuxuryVideo } = require('../services/luxuryVideoOrchestrator');
   const openAiVoices = ['onyx', 'ash', 'fable', 'echo', 'alloy'];
   const isOpenAiVoice = openAiVoices.includes(String(videoVoice || '').toLowerCase());
-  const listingData = { 
-    title: title || 'عقار مميز', 
-    city, 
-    district, 
-    price, 
-    userId, 
+  const listingData = {
+    title: title || 'عقار مميز',
+    city,
+    district,
+    price,
+    userId,
     propertyType,
     purpose,
     description: description || `${propertyType} لل${purpose}`,
     videoQuality: videoQuality ?? 'full',
     voice: isOpenAiVoice ? (videoVoice || 'onyx') : 'onyx',
     elevenlabsVoiceId: !isOpenAiVoice && videoVoice && String(videoVoice).length > 10 ? String(videoVoice).trim() : undefined,
-    targetDurationSec: targetDurationSec ?? 20
+    targetDurationSec: targetDurationSec ?? 20,
+    tier: requestedTier,
   };
-  const targetId = listingId || `temp_${Date.now()}`; 
+  const targetId = listingId || `temp_${Date.now()}`;
 
-  generateListingSlideshow(targetId, cleanImages, listingData)
+  // Tier-aware dispatch. Standard keeps the existing FFmpeg flow exactly;
+  // Luxury runs the hybrid (Replicate opening shot + FFmpeg slideshow + concat).
+  const generationPromise = requestedTier === "luxury"
+    ? generateHybridLuxuryVideo(targetId, cleanImages, listingData)
+    : generateListingSlideshow(targetId, cleanImages, listingData);
+
+  generationPromise
     .then((result) => {
       const url = result?.url ?? (typeof result === 'string' ? result : null);
       if (url) {
