@@ -9,6 +9,7 @@ import {
   Marker,
   Popup,
   useMap,
+  useMapEvents,
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L, { LatLngExpression } from "leaflet";
@@ -1150,6 +1151,123 @@ function ListingMarker({
   );
 }
 
+// ─── Clustered markers (zoom-aware, no extra dependency) ─────────────────────
+// Groups listings by rounded lat/lng cells whose precision tracks the map zoom.
+// At zoom 16+ shows individual markers (no clustering); below that, overlapping
+// pins get collapsed into a single circular marker whose label shows the count.
+function ClusteredMarkers({
+  listings,
+  onSelectListing,
+  onToggleFavorite,
+  showFavoriteButton,
+}: {
+  listings: MapListing[];
+  onSelectListing?: (id: string) => void;
+  onToggleFavorite?: (listingId: string, isFavorite: boolean) => void;
+  showFavoriteButton?: boolean;
+}) {
+  const map = useMap();
+  const [zoom, setZoom] = useState<number>(() => {
+    try { return map.getZoom(); } catch { return DEFAULT_ZOOM; }
+  });
+  useMapEvents({
+    zoomend: () => setZoom(map.getZoom()),
+  });
+
+  // Precision (decimal places) used to bin lat/lng — smaller precision = bigger cell.
+  const precision: number | null =
+    zoom < 8 ? 1 :
+    zoom < 11 ? 2 :
+    zoom < 14 ? 3 :
+    zoom < 16 ? 4 :
+    null; // 16+ → no clustering, show every pin
+
+  // No clustering at high zoom — just render every marker.
+  if (precision === null) {
+    return (
+      <>
+        {listings.map((l) => (
+          <ListingMarker
+            key={l.id}
+            listing={l}
+            onSelectListing={onSelectListing}
+            onToggleFavorite={onToggleFavorite}
+            showFavoriteButton={showFavoriteButton}
+          />
+        ))}
+      </>
+    );
+  }
+
+  // Group by rounded coordinates.
+  const groups = new Map<string, { items: MapListing[]; sumLat: number; sumLng: number }>();
+  for (const l of listings) {
+    const lat = typeof l.latitude === "string" ? parseFloat(l.latitude) : l.latitude;
+    const lng = typeof l.longitude === "string" ? parseFloat(l.longitude) : l.longitude;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    const key = `${(lat as number).toFixed(precision)}_${(lng as number).toFixed(precision)}`;
+    const g = groups.get(key);
+    if (g) {
+      g.items.push(l);
+      g.sumLat += lat as number;
+      g.sumLng += lng as number;
+    } else {
+      groups.set(key, { items: [l], sumLat: lat as number, sumLng: lng as number });
+    }
+  }
+
+  const makeClusterIcon = (count: number) => {
+    const size = count < 10 ? 36 : count < 100 ? 44 : 52;
+    return L.divIcon({
+      className: "bj-cluster-marker",
+      html: `<div style="
+        width:${size}px;height:${size}px;
+        background:linear-gradient(135deg,#D4AF37,#B8860B);
+        border:3px solid #002845;
+        color:#002845;
+        border-radius:50%;
+        display:flex;align-items:center;justify-content:center;
+        font-weight:800;font-size:${count < 100 ? 14 : 12}px;
+        box-shadow:0 4px 12px rgba(0,0,0,0.35);
+      ">${count}</div>`,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+    });
+  };
+
+  return (
+    <>
+      {Array.from(groups.entries()).map(([key, g]) => {
+        if (g.items.length === 1) {
+          return (
+            <ListingMarker
+              key={g.items[0].id}
+              listing={g.items[0]}
+              onSelectListing={onSelectListing}
+              onToggleFavorite={onToggleFavorite}
+              showFavoriteButton={showFavoriteButton}
+            />
+          );
+        }
+        const center: [number, number] = [g.sumLat / g.items.length, g.sumLng / g.items.length];
+        return (
+          <Marker
+            key={`cluster-${key}`}
+            position={center}
+            icon={makeClusterIcon(g.items.length)}
+            eventHandlers={{
+              click: () => {
+                const targetZoom = Math.min((map.getZoom() || DEFAULT_ZOOM) + 2, 18);
+                map.setView(center, targetZoom, { animate: true });
+              },
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
 function UserLocationMarker({ userLocation, visible }: { userLocation: [number, number] | null; visible: boolean }) {
   const userIcon = L.divIcon({
     className: 'user-location-marker',
@@ -1295,15 +1413,12 @@ export default function MapClient({
           selectedListingId={selectedListingId}
         />
 
-        {validListings.map((l) => (
-          <ListingMarker
-            key={l.id}
-            listing={l}
-            onSelectListing={onSelectListing}
-            onToggleFavorite={onToggleFavorite}
-            showFavoriteButton={showFavoriteButton}
-          />
-        ))}
+        <ClusteredMarkers
+          listings={validListings}
+          onSelectListing={onSelectListing}
+          onToggleFavorite={onToggleFavorite}
+          showFavoriteButton={showFavoriteButton}
+        />
         
         {/* User Location Marker - always render but control visibility */}
         {userLocation && <UserLocationMarker userLocation={userLocation} visible={locationEnabled} />}

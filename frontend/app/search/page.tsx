@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 import React, { JSX, useEffect, useMemo, useState, useRef, useCallback, Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import dynamicImport from "next/dynamic";
 
 const MapClient = dynamicImport(() => import("../../components/MapClient"), {
@@ -66,7 +66,8 @@ type Listing = {
   bathrooms?: number;
   usage?: string; // سكني / تجاري (مستقبلاً)
   lister_type?: string; // مالك / وسيط / مكتب عقار (مستقبلاً)
-  image_url?: string; // صورة الإعلان
+  image_url?: string; // صورة الإعلان (الغلاف)
+  cover_image?: string; // صورة الغلاف الصريحة من API
   images?: string[]; // جميع صور الإعلان
   created_at?: string; // تاريخ الإضافة
   has_pool?: boolean;
@@ -77,6 +78,8 @@ type Listing = {
   longitude?: number;
   is_promotional?: boolean; // إعلان ترويجي/تجريبي
   deal_status?: string; // حالة الصفقة: active, negotiating, sold, rented, archived
+  owner_phone?: string; // رقم هاتف المعلن (للواتساب)
+  owner_name?: string;
 };
 
 // فلاتر البحث
@@ -120,6 +123,67 @@ type ViewMode = "list" | "map";
 // دالة بناء رابط الـ API
 function getApiBase(): string {
   return process.env.NEXT_PUBLIC_API_URL || "";
+}
+
+// ─── URL ↔ Filters ─────────────────────────────────────────────────────────
+// تحويل قاموس الفلاتر إلى URLSearchParams (لمشاركة الرابط + رجوع آمن).
+function filtersToSearchParams(filters: Filters, viewMode: ViewMode): URLSearchParams {
+  const p = new URLSearchParams();
+  if (viewMode) p.set("view", viewMode);
+  if (filters.country) p.set("country", filters.country);
+  if (filters.city) p.set("city", filters.city);
+  if (filters.minPrice != null) p.set("minPrice", String(filters.minPrice));
+  if (filters.maxPrice != null) p.set("maxPrice", String(filters.maxPrice));
+  if (filters.minLandArea != null) p.set("minLandArea", String(filters.minLandArea));
+  if (filters.maxLandArea != null) p.set("maxLandArea", String(filters.maxLandArea));
+  if (filters.minBuildingArea != null) p.set("minBuildingArea", String(filters.minBuildingArea));
+  if (filters.maxBuildingArea != null) p.set("maxBuildingArea", String(filters.maxBuildingArea));
+  if (filters.bedrooms != null) p.set("bedrooms", String(filters.bedrooms));
+  if (filters.bathrooms != null) p.set("bathrooms", String(filters.bathrooms));
+  if (filters.listerType) p.set("listerType", filters.listerType);
+  if (filters.propertyTypes && filters.propertyTypes.length > 0) {
+    p.set("types", filters.propertyTypes.join(","));
+  }
+  if (filters.searchText) p.set("q", filters.searchText);
+  if (filters.hasPool) p.set("pool", "1");
+  if (filters.hasGarden) p.set("garden", "1");
+  if (filters.hasElevator) p.set("elevator", "1");
+  if (filters.hasParking) p.set("parking", "1");
+  if (filters.dealStatus && filters.dealStatus !== "active") {
+    p.set("dealStatus", filters.dealStatus);
+  }
+  return p;
+}
+
+// الاتجاه المعاكس: نقرأ URLSearchParams ونبني كائن Filters.
+function searchParamsToFilters(sp: URLSearchParams): Filters {
+  const out: Filters = { dealStatus: sp.get("dealStatus") || "active" };
+  const num = (k: string) => {
+    const v = sp.get(k);
+    if (v == null || v === "") return undefined;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const country = sp.get("country"); if (country) out.country = country;
+  const city = sp.get("city"); if (city) out.city = city;
+  out.minPrice = num("minPrice");
+  out.maxPrice = num("maxPrice");
+  out.minLandArea = num("minLandArea");
+  out.maxLandArea = num("maxLandArea");
+  out.minBuildingArea = num("minBuildingArea");
+  out.maxBuildingArea = num("maxBuildingArea");
+  out.bedrooms = num("bedrooms");
+  out.bathrooms = num("bathrooms");
+  const lt = sp.get("listerType"); if (lt) out.listerType = lt;
+  const types = sp.get("types"); if (types) out.propertyTypes = types.split(",").filter(Boolean);
+  const q = sp.get("q"); if (q) out.searchText = q;
+  if (sp.get("pool") === "1") out.hasPool = true;
+  if (sp.get("garden") === "1") out.hasGarden = true;
+  if (sp.get("elevator") === "1") out.hasElevator = true;
+  if (sp.get("parking") === "1") out.hasParking = true;
+  // remove undefined keys so equality checks stay clean
+  Object.keys(out).forEach((k) => out[k as keyof Filters] === undefined && delete out[k as keyof Filters]);
+  return out;
 }
 
 import { formatListingPriceByCountry as formatListingPrice } from "@/lib/stores/currencyStore";
@@ -276,10 +340,24 @@ function SortDropdown({
 
 function SearchPage() {
   const searchParams = useSearchParams();
-  const viewMode = (searchParams.get("view") || "map") as ViewMode; // ✅ قراءة من URL
-  
+  const router = useRouter();
+  const pathname = usePathname();
+  // Next.js types `useSearchParams()` as nullable; treat null as empty params.
+  const safeParams: URLSearchParams = useMemo(() => {
+    if (!searchParams) return new URLSearchParams();
+    return new URLSearchParams(searchParams.toString());
+  }, [searchParams]);
+  const viewMode = (safeParams.get("view") || "map") as ViewMode; // ✅ قراءة من URL
+
   const [listings, setListings] = useState<Listing[]>([]);
-  const [filters, setFilters] = useState<Filters>({ dealStatus: "active" }); // ✅ الديفولت نشط
+  // Hydrate filters from URL on mount so a shared link / refresh keeps state.
+  const [filters, setFilters] = useState<Filters>(() => searchParamsToFilters(safeParams));
+
+  // Pagination state — backend already supports page/limit + hasMore.
+  const PAGE_SIZE = 20;
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [purposeTab, setPurposeTab] = useState<PurposeTab>("all"); // سيتم تعيينه بناءً على الإعلانات
   const [purposeInitialized, setPurposeInitialized] = useState(false); // لتجنب إعادة التعيين
   const [usageTab, setUsageTab] = useState<UsageTab>("all");
@@ -439,13 +517,7 @@ function SearchPage() {
     is_capital: boolean;
   }[]>([]);
 
-  // 🟢 قراءة المدينة من URL عند التحميل
-  useEffect(() => {
-    const cityParam = searchParams.get("city");
-    if (cityParam) {
-      setFilters((prev) => ({ ...prev, city: cityParam }));
-    }
-  }, [searchParams]);
+  // (إزالة effect قديم كان يقرأ ?city من URL — الآن الـ initial state يقرأ كل الفلاتر من URL مرة واحدة عند الـ mount)
 
   // 🌟 جلب نخبة العقارات
   useEffect(() => {
@@ -508,24 +580,27 @@ function SearchPage() {
     fetchFavorites();
   }, []);
 
-  // 🟢 جلب الإعلانات
+  // 🟢 جلب الإعلانات (صفحة أولى)
   useEffect(() => {
-    async function loadListings() {
+    async function loadFirstPage() {
       try {
         setIsLoading(true);
         setError(null);
+        setPage(1);
         const apiBase = getApiBase();
-        const res = await fetch(`${apiBase}/api/listings`);
+        const cityParam = filters.city ? `&city=${encodeURIComponent(filters.city)}` : "";
+        const res = await fetch(`${apiBase}/api/listings?page=1&limit=${PAGE_SIZE}${cityParam}`);
         if (!res.ok) throw new Error("فشل في تحميل الإعلانات من الخادم");
         const data = await res.json();
-        const listingsArray = Array.isArray(data) ? data : (data.listings || []);
+        const listingsArray: Listing[] = Array.isArray(data) ? data : (data.listings || []);
         setListings(listingsArray);
-        
+        setHasMore(Boolean(data?.pagination?.hasMore));
+
         // تعيين الـ tab الافتراضي بناءً على الإعلانات الموجودة
         if (!purposeInitialized && listingsArray.length > 0) {
           const hasSell = listingsArray.some((l: Listing) => l.purpose === "بيع" || l.purpose === "للبيع");
           const hasRent = listingsArray.some((l: Listing) => l.purpose === "إيجار" || l.purpose === "للإيجار");
-          
+
           if (hasSell && !hasRent) {
             setPurposeTab("sell");
           } else if (hasRent && !hasSell) {
@@ -542,8 +617,47 @@ function SearchPage() {
         setIsLoading(false);
       }
     }
-    loadListings();
-  }, [purposeInitialized]);
+    loadFirstPage();
+  }, [filters.city, purposeInitialized]);
+
+  // 🟢 تحميل صفحة إضافية (Load more)
+  const loadMoreListings = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    try {
+      setLoadingMore(true);
+      const apiBase = getApiBase();
+      const nextPage = page + 1;
+      const cityParam = filters.city ? `&city=${encodeURIComponent(filters.city)}` : "";
+      const res = await fetch(`${apiBase}/api/listings?page=${nextPage}&limit=${PAGE_SIZE}${cityParam}`);
+      if (!res.ok) throw new Error("فشل في تحميل المزيد");
+      const data = await res.json();
+      const more: Listing[] = Array.isArray(data) ? data : (data.listings || []);
+      setListings((prev) => {
+        const seen = new Set(prev.map((l) => l.id));
+        const deduped = more.filter((l) => !seen.has(l.id));
+        return [...prev, ...deduped];
+      });
+      setHasMore(Boolean(data?.pagination?.hasMore));
+      setPage(nextPage);
+    } catch (err) {
+      console.error("Error loading more listings:", err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [filters.city, page, hasMore, loadingMore]);
+
+  // 🟢 مزامنة الفلاتر مع URL (debounced) — يجعل الرابط قابلاً للمشاركة وآمناً عند الـ refresh.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const sp = filtersToSearchParams(filters, viewMode);
+      const qs = sp.toString();
+      const base = pathname || "/search";
+      const target = qs ? `${base}?${qs}` : base;
+      router.replace(target, { scroll: false });
+    }, 200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, viewMode]);
 
 
   // 🧠 فلترة + ترتيب الإعلانات
@@ -995,6 +1109,30 @@ function SearchPage() {
                 );
               })}
             </div>
+
+            {/* زر تحميل المزيد — يظهر فقط لما السيرفر يقول إن في صفحات إضافية */}
+            {hasMore && (
+              <div className="flex justify-center mt-6">
+                <button
+                  type="button"
+                  onClick={loadMoreListings}
+                  disabled={loadingMore}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#002845] text-white font-bold shadow hover:bg-[#003366] disabled:opacity-60 disabled:cursor-not-allowed transition"
+                >
+                  {loadingMore ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      جاري التحميل...
+                    </>
+                  ) : (
+                    <>
+                      عرض المزيد
+                      <span className="text-xs opacity-75">({listings.length} حتى الآن)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* 🗺 خريطة جانبية متزامنة - 30% على الشاشات الكبيرة */}
@@ -2824,29 +2962,45 @@ function PropertyCard({
 }) {
   const priceText = formatListingPrice(listing.price, listing.country);
   const isPromo = listing.is_promotional;
-  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const imageSrc = getImageUrl(listing.image_url) || `/images/property${(parseInt(String(listing.id).slice(-2), 16) % 5) + 1}.jpg`;
+  // Build image gallery (cover first, then the rest, dedup, up to 5).
+  const galleryImages: string[] = useMemo(() => {
+    const list: string[] = [];
+    const cover = listing.cover_image || listing.image_url;
+    if (cover) list.push(cover);
+    if (Array.isArray(listing.images)) {
+      for (const u of listing.images) {
+        if (u && !list.includes(u)) list.push(u);
+      }
+    }
+    if (list.length === 0) {
+      list.push(`/images/property${(parseInt(String(listing.id).slice(-2), 16) % 5) + 1}.jpg`);
+    }
+    return list.slice(0, 5);
+  }, [listing.id, listing.cover_image, listing.image_url, listing.images]);
 
+  const [imgIndex, setImgIndex] = useState(0);
+  const imageSrc = getImageUrl(galleryImages[imgIndex]) || galleryImages[imgIndex];
+
+  // Normalize phone for wa.me (strip non-digits; convert leading 0 → 966 Saudi default).
+  const waPhone = useMemo(() => {
+    if (!listing.owner_phone) return null;
+    const digits = listing.owner_phone.replace(/[^0-9+]/g, "").replace(/^\+/, "").replace(/^0/, "966");
+    return digits.length >= 8 ? digits : null;
+  }, [listing.owner_phone]);
+
+  // Single-click → open listing. (Removed the brittle double-click trick.)
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (clickTimer.current) {
-      clearTimeout(clickTimer.current);
-      clickTimer.current = null;
-      window.location.href = `/listing/${listing.id}`;
-    } else {
-      clickTimer.current = setTimeout(() => {
-        clickTimer.current = null;
-        onHover?.();
-      }, 280);
-    }
+    onHover?.();
+    window.location.href = `/listing/${listing.id}`;
   };
 
   return (
     <div
-      className={`relative rounded-2xl sm:rounded-3xl overflow-hidden shadow-md sm:shadow-[0_10px_25px_-12px_rgba(0,0,0,0.3)] border flex flex-col cursor-pointer active:scale-[0.98] sm:hover:-translate-y-1 sm:hover:shadow-[0_16px_40px_-10px_rgba(0,0,0,0.45)] transition ${
-        isPromo 
-          ? "bg-gradient-to-br from-[#002845] via-[#003d66] to-[#001830] border-[#D4AF37]/50 ring-1 ring-[#D4AF37]/30" 
+      className={`group relative rounded-2xl sm:rounded-3xl overflow-hidden shadow-md sm:shadow-[0_10px_25px_-12px_rgba(0,0,0,0.3)] border flex flex-col cursor-pointer active:scale-[0.98] sm:hover:-translate-y-1 sm:hover:shadow-[0_16px_40px_-10px_rgba(0,0,0,0.45)] transition ${
+        isPromo
+          ? "bg-gradient-to-br from-[#002845] via-[#003d66] to-[#001830] border-[#D4AF37]/50 ring-1 ring-[#D4AF37]/30"
           : "bg-white"
       } ${
         isActive ? "ring-2 ring-[#f6d879] border-[#f6d879]" : isPromo ? "" : "border-slate-200 sm:border-[#f6d879]/70"
@@ -2873,15 +3027,54 @@ function PropertyCard({
             </div>
           </div>
         ) : (
-          <img
-            src={imageSrc}
-            alt={listing.title}
-            className="object-cover w-full h-full bg-slate-800"
-            loading="lazy"
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = `https://picsum.photos/400/250?random=${listing.id}`;
-            }}
-          />
+          <>
+            <img
+              src={imageSrc}
+              alt={listing.title}
+              className="object-cover w-full h-full bg-slate-800"
+              loading="lazy"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = `https://picsum.photos/400/250?random=${listing.id}`;
+              }}
+            />
+            {/* أسهم سحب + نقاط (تظهر فقط لو عندنا أكثر من صورة) */}
+            {galleryImages.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  aria-label="الصورة السابقة"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setImgIndex((i) => (i - 1 + galleryImages.length) % galleryImages.length);
+                  }}
+                  className="absolute top-1/2 -translate-y-1/2 right-1.5 w-8 h-8 rounded-full bg-black/45 hover:bg-black/65 text-white flex items-center justify-center shadow-md transition opacity-0 group-hover:opacity-100 sm:opacity-100"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  aria-label="الصورة التالية"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setImgIndex((i) => (i + 1) % galleryImages.length);
+                  }}
+                  className="absolute top-1/2 -translate-y-1/2 left-1.5 w-8 h-8 rounded-full bg-black/45 hover:bg-black/65 text-white flex items-center justify-center shadow-md transition opacity-0 group-hover:opacity-100 sm:opacity-100"
+                >
+                  ›
+                </button>
+                <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-0.5 bg-black/40 rounded-full pointer-events-none">
+                  {galleryImages.map((_, i) => (
+                    <span
+                      key={i}
+                      className={`w-1.5 h-1.5 rounded-full transition ${i === imgIndex ? "bg-white" : "bg-white/40"}`}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+          </>
         )}
 
         {/* شارة السعر */}
@@ -2957,6 +3150,24 @@ function PropertyCard({
             </div>
           ) : null}
         </div>
+
+        {/* زر WhatsApp مباشر — يظهر فقط لو الإعلان حقيقي وعنده رقم */}
+        {!isPromo && waPhone && (
+          <a
+            href={`https://wa.me/${waPhone}?text=${encodeURIComponent(
+              `السلام عليكم، استفسار عن إعلانكم: ${listing.title}\n${typeof window !== "undefined" ? window.location.origin : "https://www.baytaljazeera.com"}/listing/${listing.id}`
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="mt-2 inline-flex items-center justify-center gap-1.5 w-full py-2 rounded-xl bg-gradient-to-r from-[#1B5E3A] to-[#2D7A4E] text-white text-xs font-bold shadow-sm hover:from-[#256B45] hover:to-[#3A8A5A] transition"
+          >
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+            </svg>
+            تواصل عبر واتساب
+          </a>
+        )}
 
         {/* رسالة ترويجية */}
         {isPromo && (

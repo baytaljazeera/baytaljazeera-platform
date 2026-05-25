@@ -205,12 +205,14 @@ router.get("/", asyncHandler(async (req, res) => {
   
   const dataParams = [...params, limitNum, offset];
   const dataQuery = `
-    SELECT p.*, 
-      (SELECT array_agg(url ORDER BY is_cover DESC, sort_order ASC) 
-       FROM listing_media 
+    SELECT p.*,
+      u.phone AS owner_phone,
+      u.name  AS owner_name,
+      (SELECT array_agg(url ORDER BY is_cover DESC, sort_order ASC)
+       FROM listing_media
        WHERE listing_id = p.id AND (kind = 'image' OR kind IS NULL)) as media_images
-    ${baseQuery.replace('FROM properties', 'FROM properties p')} 
-    ORDER BY p.created_at DESC 
+    ${baseQuery.replace('FROM properties', 'FROM properties p LEFT JOIN users u ON u.id = p.user_id')}
+    ORDER BY p.created_at DESC
     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
   const countQuery = `SELECT COUNT(*) as total ${baseQuery}`;
   
