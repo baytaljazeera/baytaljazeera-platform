@@ -119,7 +119,16 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
       // Cloudinary serves listing images as JPEG by default, so this is safe.
       const mimeType = ct === "image/png" ? "image/png" : "image/jpeg";
       const bytesBase64Encoded = Buffer.from(imgRes.data).toString("base64");
-      imageInput = { bytesBase64Encoded, mimeType };
+      // Double-key shape (camelCase + snake_case) — the @google/genai SDK transforms
+      // outer keys to snake_case before posting to the REST endpoint, but Veo's
+      // image-struct validator wants camelCase. Sending both ensures whichever
+      // form the server actually reads survives the transformation.
+      imageInput = {
+        bytesBase64Encoded: bytesBase64Encoded,
+        bytes_base64_encoded: bytesBase64Encoded,
+        mimeType: mimeType,
+        mime_type: mimeType,
+      };
       console.log(`[Ultra/Veo]    seed image encoded: ${Math.round(bytesBase64Encoded.length / 1024)} KB base64, mime=${mimeType}`);
     } else {
       console.warn(`[Ultra/Veo]    seed image fetch returned ${imgRes.status} — falling back to text-only Veo.`);
