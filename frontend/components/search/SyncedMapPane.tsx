@@ -266,6 +266,9 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
   const [useMapEvents,  setUseMapEvents]  = useState<any>(null);
 
   const mapRef = useRef<any>(null);
+  // DOM ref on the outer wrapper so a document-level listener can decide
+  // "did this click land inside the map area (including the floating sidebar)?"
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   /* location */
   const [userLocation,    setUserLocation]    = useState<[number, number] | null>(null);
@@ -382,6 +385,25 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
     if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
   }, []);
 
+  /* dismiss the preview when the user clicks anywhere outside the map+sidebar.
+     We bind on `mousedown` rather than `click` so a drag-to-pan that starts
+     outside doesn't fire close twice, and so we run before the map's own
+     click handler.  No-op while the preview isn't open. */
+  useEffect(() => {
+    if (!selectedMarker) return;
+    const onDocDown = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (!target || !wrapperRef.current) return;
+      if (!wrapperRef.current.contains(target)) closeSidebar();
+    };
+    document.addEventListener("mousedown", onDocDown);
+    document.addEventListener("touchstart", onDocDown as any, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", onDocDown);
+      document.removeEventListener("touchstart", onDocDown as any);
+    };
+  }, [selectedMarker, closeSidebar]);
+
   if (!leaflet || !MapContainer || !TileLayer || !Marker || !Popup || !useMap || !useMapEvents) {
     return (
       <div className="w-full h-full bg-[#001a2c] rounded-xl flex items-center justify-center">
@@ -452,7 +474,7 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
   });
 
   return (
-    <div className="relative w-full h-full">
+    <div ref={wrapperRef} className="relative w-full h-full">
       {/* location button */}
       <button
         onClick={handleLocationToggle}
