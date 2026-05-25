@@ -215,14 +215,20 @@ import { SAUDI_CITIES, PRICE_HISTOGRAM, SORT_OPTIONS } from "@/components/search
 function ViewToggle({
   active,
   compact = false,
+  onListClick,
 }: {
   active: ViewMode;
   compact?: boolean;
+  // Fires before Next.js handles the route change. The parent uses this to
+  // re-open the side map if the user had closed it via the X button —
+  // clicking "قائمة" again is now the canonical way to bring it back.
+  onListClick?: () => void;
 }) {
   return (
     <div className={`inline-flex rounded-full overflow-hidden border border-[#f6d879] bg-[#fffaf0] shadow-sm ${compact ? "text-[10px]" : "text-[10px] md:text-xs"}`}>
       <Link
         href="/search?view=list"
+        onClick={onListClick}
         className={`${compact ? "px-1.5 py-0.5" : "px-2 py-1"} font-semibold flex items-center gap-0.5 transition ${
           active === "list"
             ? "bg-[#002845] text-white"
@@ -1410,6 +1416,7 @@ function SearchPage() {
                 <div className="flex items-center gap-1.5 bg-white/10 rounded-full p-1">
                   <Link
                     href="/search?view=list"
+                    onClick={() => setShowMiniMap(true)}
                     className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition ${
                       viewMode === "list"
                         ? "bg-white text-[#002845]"
@@ -1763,7 +1770,7 @@ function SearchPage() {
                   <span className="text-xs font-bold whitespace-nowrap bg-[#D4AF37] text-[#002845] px-2.5 py-1 rounded-full">
                     {filteredListings.length}
                   </span>
-                  <ViewToggle active={viewMode} />
+                  <ViewToggle active={viewMode} onListClick={() => setShowMiniMap(true)} />
                 </div>
               </div>
             </div>
