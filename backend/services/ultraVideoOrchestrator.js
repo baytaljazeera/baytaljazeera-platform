@@ -100,24 +100,49 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
   // Model name — Veo 3.0 generate is the current public ID; override via env if needed.
   const veoModel = process.env.VEO_MODEL || "veo-3.0-generate-001";
 
+  // Veo requires the seed image as { bytesBase64Encoded, mimeType }, NOT a URL.
+  // Download the hero image (max ~10MB to be safe), then base64-encode and detect
+  // the MIME type from the Content-Type header. If the download fails for any
+  // reason, fall back to text-only generation — Veo still produces a clip,
+  // just without the listing's hero frame as conditioning.
+  let imageInput = null;
+  try {
+    const imgRes = await axios.get(imageUrls[0], {
+      responseType: "arraybuffer",
+      timeout: 30000,
+      maxContentLength: 10 * 1024 * 1024,
+      validateStatus: () => true,
+    });
+    if (imgRes.status === 200 && imgRes.data) {
+      const ct = String(imgRes.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+      // Veo currently accepts JPEG and PNG. Normalize anything weird to JPEG —
+      // Cloudinary serves listing images as JPEG by default, so this is safe.
+      const mimeType = ct === "image/png" ? "image/png" : "image/jpeg";
+      const bytesBase64Encoded = Buffer.from(imgRes.data).toString("base64");
+      imageInput = { bytesBase64Encoded, mimeType };
+      console.log(`[Ultra/Veo]    seed image encoded: ${Math.round(bytesBase64Encoded.length / 1024)} KB base64, mime=${mimeType}`);
+    } else {
+      console.warn(`[Ultra/Veo]    seed image fetch returned ${imgRes.status} — falling back to text-only Veo.`);
+    }
+  } catch (e) {
+    console.warn(`[Ultra/Veo]    seed image fetch failed (${e.message}) — falling back to text-only Veo.`);
+  }
+
   // Kick off the generation operation.
   let operation;
   try {
-    operation = await genAI.models.generateVideos({
+    const req = {
       model: veoModel,
       prompt,
-      // Veo also accepts an image seed. We pass the listing's hero image URL as
-      // a starting frame for stronger likeness — the field name follows
-      // @google/genai's image-input shape; if unsupported by the deployed model,
-      // it's ignored and the result is pure text-to-video.
-      image: { imageUri: imageUrls[0] },
       config: {
         numberOfVideos: 1,
         durationSeconds: 5,
         aspectRatio: "16:9",
         personGeneration: "dont_allow",
       },
-    });
+    };
+    if (imageInput) req.image = imageInput;
+    operation = await genAI.models.generateVideos(req);
   } catch (e) {
     const msg = e?.message || String(e);
     if (msg.includes("403") || /permission/i.test(msg)) {
