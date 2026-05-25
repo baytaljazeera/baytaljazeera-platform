@@ -192,17 +192,21 @@ router.get("/", asyncHandler(async (req, res) => {
   const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
   const offset = (pageNum - 1) * limitNum;
   
-  let baseQuery = `FROM properties WHERE status = 'approved' AND (expires_at IS NULL OR expires_at > NOW())`;
+  // All column refs qualified with `p.` so the LEFT JOIN to users (added below) doesn't
+  // turn shared column names (status, city, ...) into "ambiguous column" errors.
+  const whereClauses = [`p.status = 'approved'`, `(p.expires_at IS NULL OR p.expires_at > NOW())`];
   const params = [];
 
   if (city) {
     params.push(city);
-    baseQuery += ` AND city = $${params.length}`;
+    whereClauses.push(`p.city = $${params.length}`);
   }
-  
+
+  const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
+
   const CACHE_KEY = `listings:search:${city || 'all'}:${pageNum}:${limitNum}`;
   const CACHE_TTL = 60000;
-  
+
   const dataParams = [...params, limitNum, offset];
   const dataQuery = `
     SELECT p.*,
@@ -211,10 +215,11 @@ router.get("/", asyncHandler(async (req, res) => {
       (SELECT array_agg(url ORDER BY is_cover DESC, sort_order ASC)
        FROM listing_media
        WHERE listing_id = p.id AND (kind = 'image' OR kind IS NULL)) as media_images
-    ${baseQuery.replace('FROM properties', 'FROM properties p LEFT JOIN users u ON u.id = p.user_id')}
+    FROM properties p LEFT JOIN users u ON u.id = p.user_id
+    ${whereSql}
     ORDER BY p.created_at DESC
     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-  const countQuery = `SELECT COUNT(*) as total ${baseQuery}`;
+  const countQuery = `SELECT COUNT(*) as total FROM properties p ${whereSql}`;
   
   const [countResult, result] = await Promise.all([
     db.cachedQuery(`${CACHE_KEY}:count`, countQuery, params, CACHE_TTL),
