@@ -1160,7 +1160,12 @@ export default function NewListingPage() {
           videoVoice: videoQuality === "full" ? videoVoice : undefined,
           // ↓ 3-tier dispatch
           tier: videoTier,
-          bypassCode: videoTier === "luxury" && luxuryBypassCode.trim() ? luxuryBypassCode.trim() : undefined,
+          // Send the bypass code whenever the user typed one — both Luxury and
+          // Ultra need it. (Bug fix: earlier this only fired for "luxury", which
+          // meant Ultra requests with a valid MMM2099 still got 403.)
+          bypassCode: (videoTier === "luxury" || videoTier === "ultra") && luxuryBypassCode.trim()
+            ? luxuryBypassCode.trim()
+            : undefined,
         })
       });
 
