@@ -37,11 +37,13 @@ import {
   Bath,
   Square,
   ChevronDown,
+  ChevronLeft,
   Map,
   List,
   X,
   SlidersHorizontal,
   Loader2,
+  Eye,
 } from "lucide-react";
 import { useSearchMapStore } from "@/lib/stores/searchMapStore";
 import { useCurrencyStore } from "@/lib/stores/currencyStore";
@@ -597,6 +599,7 @@ function SearchPage() {
         setHasMore(Boolean(data?.pagination?.hasMore));
 
         // تعيين الـ tab الافتراضي بناءً على الإعلانات الموجودة
+        // كلا النوعين (بيع + إيجار) معاً افتراضياً — المستخدم يضيق الاختيار بنفسه.
         if (!purposeInitialized && listingsArray.length > 0) {
           const hasSell = listingsArray.some((l: Listing) => l.purpose === "بيع" || l.purpose === "للبيع");
           const hasRent = listingsArray.some((l: Listing) => l.purpose === "إيجار" || l.purpose === "للإيجار");
@@ -606,7 +609,7 @@ function SearchPage() {
           } else if (hasRent && !hasSell) {
             setPurposeTab("rent");
           } else {
-            setPurposeTab("sell"); // إذا كان هناك كلاهما، نبدأ بالبيع
+            setPurposeTab("all"); // كلاهما موجود → اعرض الكل افتراضياً
           }
           setPurposeInitialized(true);
         }
@@ -1105,6 +1108,10 @@ function SearchPage() {
                       }
                     }}
                     isActive={activeListingId === item.id}
+                    // When the side-map is visible (large screens, has markers),
+                    // single-click on the card focuses the map only; the explicit
+                    // "تفاصيل" button on the card is the only path to /listing/[id].
+                    syncedMapMode={showMiniMap && mapMarkers.length > 0}
                   />
                 );
               })}
@@ -2953,12 +2960,17 @@ function PropertyCard({
   onToggleFavorite,
   onHover,
   isActive,
+  // When set (synced map view), single-click only focuses the map; navigation
+  // happens via the explicit "تفاصيل" button instead. Keeps the user in the
+  // list while panning the map to the selected listing.
+  syncedMapMode = false,
 }: {
   listing: Listing;
   isFavorite: boolean;
   onToggleFavorite: () => void;
   onHover?: () => void;
   isActive?: boolean;
+  syncedMapMode?: boolean;
 }) {
   const priceText = formatListingPrice(listing.price, listing.country);
   const isPromo = listing.is_promotional;
@@ -2989,11 +3001,15 @@ function PropertyCard({
     return digits.length >= 8 ? digits : null;
   }, [listing.owner_phone]);
 
-  // Single-click → open listing. (Removed the brittle double-click trick.)
+  // In synced-map mode, click just focuses the listing on the map (calls onHover,
+  // which the parent wires up to setMapCenter + activeListingId). In standalone
+  // list mode, click still navigates to the detail page like before.
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     onHover?.();
-    window.location.href = `/listing/${listing.id}`;
+    if (!syncedMapMode) {
+      window.location.href = `/listing/${listing.id}`;
+    }
   };
 
   return (
@@ -3150,6 +3166,21 @@ function PropertyCard({
             </div>
           ) : null}
         </div>
+
+        {/* زر "عرض التفاصيل" — في synced-map mode هو الطريق الوحيد لصفحة الإعلان،
+            لأن الكلك العادي على البطاقة يحرّك الخريطة فقط. في الـ list mode بدون
+            خريطة جانبية يظل ظاهراً كاختصار واضح. */}
+        {!isPromo && (
+          <a
+            href={`/listing/${listing.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="mt-2 inline-flex items-center justify-center gap-1.5 w-full py-2 rounded-xl border-2 border-[#002845] text-[#002845] text-xs font-bold bg-white hover:bg-[#002845] hover:text-white transition group/btn"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            عرض تفاصيل الإعلان
+            <ChevronLeft className="w-3.5 h-3.5 transition group-hover/btn:-translate-x-1" />
+          </a>
+        )}
 
         {/* زر WhatsApp مباشر — يظهر فقط لو الإعلان حقيقي وعنده رقم */}
         {!isPromo && waPhone && (
