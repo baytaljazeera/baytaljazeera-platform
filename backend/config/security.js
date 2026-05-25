@@ -52,13 +52,21 @@ const aiLimiter = rateLimit({
 // حدّ صارم على بدء توليد الفيديو (يحمي OpenAI/ElevenLabs/Replicate من الاستنزاف).
 // تحديد لكل مستخدم مصادَق عليه: req.user.id؛ يقع IP-based للطلبات غير المسجلة.
 // يخص فقط endpoints بدء التوليد — لا يؤثر على استطلاع الحالة.
+// يتم تجاوز هذا الحد عند تقديم كود تجربة Luxury/Ultra صالح (المالك أثناء الاختبار).
+const _LUXURY_BYPASS_CODE = process.env.LUXURY_BYPASS_CODE || "M333M333M333";
+const _ULTRA_BYPASS_CODE = process.env.ULTRA_BYPASS_CODE || "MMM2099";
 const videoGenerationLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 3,
+  max: 6, // رفع من 3 إلى 6 — يتيح للمالك إعادة التجربة بسرعة دون الإضرار بالحماية
   keyGenerator: (req) => (req.user && req.user.id ? `user:${req.user.id}` : req.ip),
+  skip: (req) => {
+    // المالك يمرر كوداً → ليس مستخدماً عادياً، يتجاوز الحد لتسهيل التجربة.
+    const code = (req.body && req.body.bypassCode) || req.get("x-bypass-code") || "";
+    return code === _LUXURY_BYPASS_CODE || code === _ULTRA_BYPASS_CODE;
+  },
   message: {
-    error: "تم تجاوز حد توليد الفيديو (3 طلبات في الدقيقة). انتظر قليلاً قبل المحاولة.",
-    errorEn: "Video generation rate limit exceeded (3/min). Please wait.",
+    error: "تم تجاوز حد توليد الفيديو (6 طلبات في الدقيقة). انتظر قليلاً قبل المحاولة.",
+    errorEn: "Video generation rate limit exceeded (6/min). Please wait.",
   },
   standardHeaders: true,
   legacyHeaders: false,
