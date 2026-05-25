@@ -19,22 +19,23 @@ const categories = [
   { value: "account_issue", label: "مشكلة في الحساب", icon: User, description: "تسجيل الدخول، استعادة كلمة السر، تفعيل الحساب" },
 ];
 
-/**
- * Maps complaint page choices → support_tickets.
- * Billing: queue as technical (CS triage) + category billing_hint so Omni shows hint + Transfer to Finance stays available.
- */
-const CATEGORY_TO_SUPPORT: Record<
-  string,
-  { department: string; subcategory: string; labelAr: string; category?: string }
-> = {
-  billing: {
-    department: "technical",
-    subcategory: "refund",
-    labelAr: "مالية",
-    category: "billing_hint",
-  },
-  technical: { department: "technical", subcategory: "app_error", labelAr: "تقنية" },
-  account_issue: { department: "account", subcategory: "profile_update", labelAr: "حسابي/إداري" },
+// Maps the user-facing category to the canonical complaint_type stored on
+// account_complaints. This is what the backend role-scope rules use to route:
+//   billing       → finance_admin queue (matches "billing" in scope rules)
+//   technical     → content_admin queue (matches "technical")
+//   account_issue → content_admin queue (matches "service")
+const CATEGORY_TO_COMPLAINT_TYPE: Record<string, string> = {
+  billing: "billing",
+  technical: "technical",
+  account_issue: "service",
+};
+
+type UserInvoice = {
+  id: number;
+  invoice_number?: string;
+  total?: number;
+  plan_name?: string | null;
+  created_at?: string;
 };
 
 function ComplaintPageContent() {
@@ -53,6 +54,13 @@ function ComplaintPageContent() {
   const [userEmail, setUserEmail] = useState("");
   const [userPhone, setUserPhone] = useState("");
 
+  // For billing complaints we let the user link the offending invoice so the
+  // backend can route the ticket to the accountant (finance_admin) — the
+  // scope rule keys off invoice_id being present.
+  const [invoices, setInvoices] = useState<UserInvoice[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | "">("");
+
   useEffect(() => {
     if (typeFromUrl && categories.some(c => c.value === typeFromUrl)) {
       setCategory(typeFromUrl);
@@ -62,6 +70,30 @@ function ComplaintPageContent() {
   useEffect(() => {
     fetchUser();
   }, []);
+
+  // Lazy-load the user's invoices the first time they pick "شكوى مالية".
+  useEffect(() => {
+    if (category !== "billing" || invoices.length > 0 || invoicesLoading) return;
+    let cancelled = false;
+    (async () => {
+      setInvoicesLoading(true);
+      try {
+        const res = await fetch(`${API_URL}/api/payments/invoices`, {
+          credentials: "include",
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const list: UserInvoice[] = Array.isArray(data) ? data : (data.invoices || []);
+        if (!cancelled) setInvoices(list);
+      } catch (_) {
+        // silent — invoice picker is optional
+      } finally {
+        if (!cancelled) setInvoicesLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [category, invoices.length, invoicesLoading]);
 
   async function fetchUser() {
     try {
@@ -81,14 +113,14 @@ function ComplaintPageContent() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    
+
     if (!category || !subject || !details) {
       toast.warning("يرجى ملء جميع الحقول المطلوبة");
       return;
     }
 
-    const mapping = CATEGORY_TO_SUPPORT[category];
-    if (!mapping) {
+    const complaintType = CATEGORY_TO_COMPLAINT_TYPE[category];
+    if (!complaintType) {
       toast.error("نوع الشكوى غير صالح");
       return;
     }
@@ -96,49 +128,42 @@ function ComplaintPageContent() {
     setLoading(true);
 
     try {
+      // Login required so /my-complaints can track it back to the user and
+      // the scope rules can resolve assignment cleanly.
       const me = await fetch(`${API_URL}/api/auth/me`, {
         credentials: "include",
         headers: getAuthHeaders(),
       });
       if (!me.ok) {
-        toast.error("يجب تسجيل الدخول لإرسال الشكوى عبر نظام التذاكر الموحد (البريد الموحد)");
+        toast.error("يجب تسجيل الدخول قبل إرسال الشكوى");
         router.push("/login?redirect=/complaint");
         return;
       }
 
-      const description = [
-        `[شكوى — صفحة /complaint]`,
-        `تصنيف العميل: ${mapping.labelAr} (${category})`,
-        ``,
-        details.trim(),
-        ``,
-        `— بيانات التواصل —`,
-        `الاسم: ${userName || "—"}`,
-        `البريد: ${userEmail || "—"}`,
-        `الجوال: ${userPhone || "—"}`,
-      ].join("\n");
-
-      const res = await fetch(`${API_URL}/api/support`, {
+      const res = await fetch(`${API_URL}/api/account-complaints`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
         body: JSON.stringify({
-          department: mapping.department,
-          subcategory: mapping.subcategory,
-          ...(mapping.category ? { category: mapping.category } : {}),
-          priority: "medium",
+          category,
+          complaint_type: complaintType,
           subject: subject.trim(),
-          description,
-          source: "complaint_page",
+          details: details.trim(),
+          userName,
+          userEmail,
+          userPhone,
+          // invoice_id only sent for billing complaints; backend validates
+          // ownership and silently drops if invalid.
+          ...(category === "billing" && selectedInvoiceId ? { invoice_id: Number(selectedInvoiceId) } : {}),
         }),
       });
 
       if (res.ok) {
         setSent(true);
-        toast.success("تم إرسال شكواك — ستُعالج عبر البريد الموحد لخدمة العملاء");
+        toast.success("تم إرسال شكواك — يمكنك متابعتها من صفحة شكاواي");
       } else {
         const data = await res.json().catch(() => ({}));
-        toast.error((data as { error?: string }).error || "حدث خطأ في إرسال الشكوى");
+        toast.error((data as { errorAr?: string; error?: string }).errorAr || (data as { error?: string }).error || "حدث خطأ في إرسال الشكوى");
       }
     } catch (error) {
       console.error("Error submitting complaint:", error);
@@ -158,22 +183,22 @@ function ComplaintPageContent() {
             </div>
             <h1 className="text-2xl font-bold text-[#002845] mb-3">تم استلام شكواك</h1>
             <p className="text-slate-600 mb-6">
-              شكراً لتواصلك معنا. تم تسجيل طلبك كتذكرة في البريد الموحد لخدمة العملاء مع تصنيف القسم الذي اخترته، وسيتابعه الفريق هناك.
+              شكراً لتواصلك معنا. تم تسجيل شكواك ووُجِّهت تلقائياً للفريق المختص ({category === "billing" ? "المحاسب" : "فريق الدعم"}). تستطيع متابعة الحالة من صفحة شكاواي.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Link
-                href="/"
+                href="/my-complaints"
                 className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-[#002845] text-white rounded-xl hover:bg-[#003d66] transition font-medium"
+              >
+                <FileText className="w-5 h-5" />
+                متابعة شكاواي
+              </Link>
+              <Link
+                href="/"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition font-medium"
               >
                 <Home className="w-5 h-5" />
                 الرئيسية
-              </Link>
-              <Link
-                href="/account"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition font-medium"
-              >
-                <User className="w-5 h-5" />
-                حسابي
               </Link>
             </div>
           </div>
@@ -279,6 +304,36 @@ function ComplaintPageContent() {
             </div>
           </div>
 
+          {/* اختياري — ربط الفاتورة (للشكاوى المالية فقط) */}
+          {category === "billing" && (
+            <div className="border border-amber-200 bg-amber-50/50 rounded-xl p-4">
+              <label className="block text-sm font-medium text-[#002845] mb-2 flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-amber-600" />
+                ربط الفاتورة <span className="text-slate-400 text-xs font-normal">(اختياري — يسرّع توجيه شكواك للمحاسب)</span>
+              </label>
+              {invoicesLoading ? (
+                <div className="text-xs text-slate-500 py-2">جاري تحميل فواتيرك...</div>
+              ) : invoices.length === 0 ? (
+                <div className="text-xs text-slate-500 py-2">لا توجد فواتير مرتبطة بحسابك. يمكنك المتابعة بدون ربط فاتورة.</div>
+              ) : (
+                <select
+                  value={selectedInvoiceId}
+                  onChange={(e) => setSelectedInvoiceId(e.target.value ? Number(e.target.value) : "")}
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D4AF37] text-sm bg-white"
+                >
+                  <option value="">— لا أربط فاتورة —</option>
+                  {invoices.map((inv) => (
+                    <option key={inv.id} value={inv.id}>
+                      {inv.invoice_number || `#${inv.id}`}
+                      {inv.plan_name ? ` — ${inv.plan_name}` : ""}
+                      {inv.total != null ? ` — ${Number(inv.total).toLocaleString("en-US")} ر.س` : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+
           {/* عنوان الشكوى */}
           <div>
             <label className="block text-sm font-medium text-[#002845] mb-2">
@@ -329,7 +384,7 @@ function ComplaintPageContent() {
           </button>
 
           <p className="text-xs text-slate-500 text-center">
-            يتطلب الإرسال تسجيل الدخول. تُسجَّل الشكوى كتذكرة دعم موحّدة مع قسم واضح في البريد الموحد لخدمة العملاء.
+            يتطلب الإرسال تسجيل الدخول. تُوجَّه شكواك تلقائياً للقسم المختص (المحاسب للشكاوى المالية، فريق الدعم للباقي) ويمكنك متابعتها من صفحة شكاواي.
           </p>
         </form>
       </div>
