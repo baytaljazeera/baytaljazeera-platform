@@ -1352,7 +1352,11 @@ export default function NewListingPage() {
                 reject(new Error('فشل في ضغط الصورة'));
                 return;
               }
-              const compressedFile = new File([blob], file.name, {
+              // canvas.toBlob('image/jpeg') يُنتج JPEG دائماً → يجب أن يكون امتداد
+              // الملف الجديد .jpg أيضاً، وإلا سيرفضه الـ multer على السيرفر
+              // بـ "نوع الملف لا يتطابق مع الامتداد" لأن الصورة قد تكون HEIC/PNG/WebP في الأصل.
+              const safeName = file.name.replace(/\.[^./\\]+$/, '') + '.jpg';
+              const compressedFile = new File([blob], safeName, {
                 type: 'image/jpeg',
                 lastModified: Date.now()
               });
