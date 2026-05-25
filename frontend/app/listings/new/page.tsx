@@ -2571,17 +2571,24 @@ export default function NewListingPage() {
                               <span>ينتهي في: {expiryDate}</span>
                             </div>
 
-                            <div className="space-y-2">
-                              <div className="text-xs font-semibold text-[#002845]/70 mb-2">مميزات هذه الباقة:</div>
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="flex items-center gap-1 text-xs text-[#002845] bg-white/50 backdrop-blur-sm rounded-lg px-2 py-1.5">
-                                  <Camera className="w-3.5 h-3.5 text-[#002845]/70" />
-                                  <span>{option.benefits.maxPhotos} صورة</span>
-                                </div>
-                                <div className="flex items-center gap-1 text-xs text-[#002845] bg-white/50 backdrop-blur-sm rounded-lg px-2 py-1.5">
-                                  <Film className="w-3.5 h-3.5 text-[#002845]/70" />
-                                  <span>{option.benefits.maxVideos} فيديو</span>
-                                </div>
+                            {(() => {
+                              // Effective video count = sum of the per-tier caps the admin set,
+                              // or fall back to the legacy max_videos_per_listing column.
+                              const tc = option.benefits.tierCaps || ({} as any);
+                              const sumCaps = (tc.standard || 0) + (tc.luxury || 0) + (tc.ultra || 0);
+                              const effectiveMaxVideos = sumCaps > 0 ? sumCaps : option.benefits.maxVideos;
+                              return (
+                                <div className="space-y-2">
+                                  <div className="text-xs font-semibold text-[#002845]/70 mb-2">مميزات هذه الباقة:</div>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div className="flex items-center gap-1 text-xs text-[#002845] bg-white/50 backdrop-blur-sm rounded-lg px-2 py-1.5">
+                                      <Camera className="w-3.5 h-3.5 text-[#002845]/70" />
+                                      <span>{option.benefits.maxPhotos} صورة</span>
+                                    </div>
+                                    <div className="flex items-center gap-1 text-xs text-[#002845] bg-white/50 backdrop-blur-sm rounded-lg px-2 py-1.5">
+                                      <Film className="w-3.5 h-3.5 text-[#002845]/70" />
+                                      <span>{effectiveMaxVideos} فيديو</span>
+                                    </div>
                                 {option.benefits.showOnMap && (
                                   <div className="flex items-center gap-1 text-xs text-[#002845] bg-white/50 backdrop-blur-sm rounded-lg px-2 py-1.5">
                                     <Map className="w-3.5 h-3.5 text-[#002845]/70" />
@@ -2594,8 +2601,10 @@ export default function NewListingPage() {
                                     <span>تمييز الإعلان</span>
                                   </div>
                                 )}
-                              </div>
-                            </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </button>
                       );
@@ -4686,7 +4695,11 @@ export default function NewListingPage() {
                       <div className="space-y-3">
                         <p className="text-xs text-[#002845]/70">فيديو سينمائي 16:9 مع نص ترويجي تلقائي — يُرفق مع الإعلان عند النشر.</p>
                         {(() => {
-                          const planMaxVideos = selectedBucket?.benefits?.maxVideos || 0;
+                          // Effective video count: prefer per-tier caps sum (new),
+                          // fall back to legacy max_videos_per_listing.
+                          const tc = selectedBucket?.benefits?.tierCaps || ({} as any);
+                          const sumCaps = (tc.standard || 0) + (tc.luxury || 0) + (tc.ultra || 0);
+                          const planMaxVideos = sumCaps > 0 ? sumCaps : (selectedBucket?.benefits?.maxVideos || 0);
                           const noVideoQuota = planMaxVideos === 0;
                           const hasBypass = !!luxuryBypassCode.trim();
                           // Block generation when the plan has 0 video allowance AND no bypass code.
