@@ -318,11 +318,43 @@ async function elevenLabsTTSToMp3(text, voiceId) {
   // Output is clean — no tashkeel added by numberToArabicWords.
   processedText = normalizeArabicNumbers(processedText);
 
-  // IMPORTANT: pronunciationDict (which injects tashkeel) is intentionally NOT
-  // applied. eleven_multilingual_v2 reads natural unvocalized Arabic better
-  // than over-vocalized text — diacritics from our dict were making the
-  // delivery sound stiff/robotic. Dict object stays defined above so we can
-  // turn it back on per-voice if needed, but the replace loop is disabled.
+  // Targeted micro-dictionary — only the words ElevenLabs reliably misses.
+  // Intentionally tiny so we don't over-vocalize and re-introduce the stiff
+  // robotic delivery that the full pronunciationDict caused. Add an entry
+  // ONLY after a real-world mispronunciation is observed.
+  const ESSENTIAL_PRONUNCIATIONS = {
+    // Property types that the model gets wrong:
+    'فيلا':    'فِيلَّا',
+    'الفيلا':  'الفِيلَّا',
+    'الفلل':   'الفِلَل',
+    'فلل':     'فِلَل',
+    'ثرية':    'ثَرِيَّة',
+    'الثرية':  'الثَّرِيَّة',
+    'ثري':     'ثَرِي',
+    'الثري':   'الثَّرِي',
+    'دوبلكس':  'دُوبلِكس',
+    'شاليه':   'شَالِيه',
+    'استوديو': 'اِستُودِيو',
+    // Brand:
+    'بيت الجزيرة': 'بَيت الجَزِيرَة',
+    'بيت الجزيره': 'بَيت الجَزِيرَة',
+    // Major Saudi cities (commonly read with wrong vowel patterns):
+    'الرياض':   'الرِّيَاض',
+    'جدة':      'جِدَّة',
+    'الدمام':   'الدَّمَّام',
+    'مكة':      'مَكَّة',
+    'المدينة المنورة': 'المَدِينَة المُنَوَّرَة',
+    'النرجس':   'النَّرجِس',
+  };
+  const essentialEntries = Object.entries(ESSENTIAL_PRONUNCIATIONS)
+    .sort((a, b) => b[0].length - a[0].length);
+  for (const [word, phonetic] of essentialEntries) {
+    processedText = processedText.replace(new RegExp(word, 'g'), phonetic);
+  }
+
+  // NOTE: the older 80-entry pronunciationDict is left defined above but its
+  // replace loop is intentionally disabled — wholesale tashkeel injection
+  // made delivery stiff. Use ESSENTIAL_PRONUNCIATIONS only.
 
   const cleanText = processedText.slice(0, 3000);
   if (!cleanText) throw new Error('نص الصوت فارغ');
