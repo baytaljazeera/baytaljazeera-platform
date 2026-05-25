@@ -24,6 +24,8 @@ import {
   ChevronRight,
   Heart,
   Navigation,
+  Key,
+  CalendarDays,
 } from "lucide-react";
 import { useSearchMapStore } from "@/lib/stores/searchMapStore";
 import { getImageUrl } from "@/lib/imageUrl";
@@ -434,6 +436,12 @@ function ListingPopupCard({
   const [isFavorite, setIsFavorite] = useState(listing.isFavorite || false);
   const favoriteButtonRef = useRef<HTMLButtonElement>(null);
   const router = useRouter();
+
+  // Purpose-tinted popup background — matches the list/preview cards so
+  // sale=rose, rent=mint reads consistently across all surfaces.
+  const isSale = listing.purpose === "بيع" || listing.purpose === "للبيع" || listing.purpose === "sale";
+  const popupBg = isSale ? "#fff1f2" : "#ecfdf5"; // rose-50 / emerald-50
+  const popupBorder = isSale ? "#fecdd3" : "#a7f3d0"; // rose-200 / emerald-200
   
   // Update isFavorite when listing.isFavorite changes
   useEffect(() => {
@@ -619,9 +627,9 @@ function ListingPopupCard({
         width: 300,
         margin: "-8px -12px -10px -12px",
         borderRadius: 16,
-        backgroundColor: "#ffffff",
+        backgroundColor: popupBg,
         boxShadow: "0 10px 25px rgba(0,0,0,0.18)",
-        border: "2px solid #D4AF37",
+        border: `2px solid ${popupBorder}`,
         cursor: "default",
         position: "relative",
       }}
@@ -820,15 +828,18 @@ function ListingPopupCard({
             })()}
             {listing.purpose && (
               <span style={{
-                backgroundColor: listing.purpose === "بيع" || listing.purpose === "للبيع" ? "#dc2626" : "#F5DEB3",
-                color: listing.purpose === "بيع" || listing.purpose === "للبيع" ? "#fff" : "#8B4513",
+                backgroundColor: isSale ? "#e11d48" : "#059669", // rose-600 / emerald-600
+                color: "#fff",
                 fontSize: 11,
                 fontWeight: 700,
                 padding: "4px 10px",
                 borderRadius: 20,
-                border: listing.purpose === "بيع" || listing.purpose === "للبيع" ? "none" : "1px solid #D4AF37",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
               }}>
-                {listing.purpose === "بيع" || listing.purpose === "للبيع" ? "بيع" : "إيجار"}
+                {isSale ? <Key size={12} strokeWidth={2.5} /> : <CalendarDays size={12} strokeWidth={2.5} />}
+                {isSale ? "للبيع" : "للإيجار"}
               </span>
             )}
           </div>

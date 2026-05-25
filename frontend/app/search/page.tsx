@@ -400,7 +400,21 @@ function SearchPage() {
   const [activeListingId, setActiveListingId] = useState<string | null>(null);
   const filterBarRef = useRef<HTMLDivElement>(null);
   const [searchInput, setSearchInput] = useState("");
-  const [showMiniMap, setShowMiniMap] = useState(true);
+  // Side-map open/closed state is persisted in localStorage so closing it
+  // via X sticks across re-renders, route changes within /search, and even
+  // navigations from the navbar back into /search. Default is open the first
+  // time the user lands here. Clicking "قائمة" explicitly re-opens it.
+  const [showMiniMap, setShowMiniMap] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      const v = window.localStorage.getItem("bj.search.sideMapOpen");
+      if (v === "false") return false;
+      return true;
+    } catch { return true; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem("bj.search.sideMapOpen", String(showMiniMap)); } catch { /* ignore quota errors */ }
+  }, [showMiniMap]);
   const listingsContainerRef = useRef<HTMLDivElement>(null);
   const [showPromoOverlay, setShowPromoOverlay] = useState(true);
   
