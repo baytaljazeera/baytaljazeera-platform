@@ -1619,26 +1619,42 @@ export default function PlansManagement() {
                 </div>
                 
                 <div className="space-y-4">
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <div className="relative">
-                      <input
-                        type="checkbox"
-                        checked={editingPlan.video_config?.enabled || false}
-                        onChange={(e) => setEditingPlan({
-                          ...editingPlan,
-                          video_config: {
-                            ...(editingPlan.video_config || { allowed_tiers: ['standard'] as ('standard'|'luxury'|'ultra')[], max_regenerations: 3 }),
-                            enabled: e.target.checked
-                          }
-                        })}
-                        className="sr-only"
-                      />
-                      <div className={`w-12 h-6 rounded-full transition-colors ${editingPlan.video_config?.enabled ? 'bg-purple-600' : 'bg-gray-300'}`}>
-                        <div className={`w-5 h-5 rounded-full bg-white shadow transform transition-transform ${editingPlan.video_config?.enabled ? 'translate-x-6' : 'translate-x-0.5'} mt-0.5`}></div>
-                      </div>
-                    </div>
-                    <span className="text-sm font-medium text-gray-700">تفعيل الفيديو لهذه الباقة</span>
-                  </label>
+                  {(() => {
+                    const videoEnabled = !!editingPlan.video_config?.enabled;
+                    return (
+                      <label className="inline-flex items-center gap-3 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={videoEnabled}
+                          onChange={(e) => setEditingPlan({
+                            ...editingPlan,
+                            video_config: {
+                              ...(editingPlan.video_config || { allowed_tiers: ['standard'] as ('standard'|'luxury'|'ultra')[], max_regenerations: 3 }),
+                              enabled: e.target.checked
+                            }
+                          })}
+                          className="sr-only"
+                          aria-label="تفعيل الفيديو لهذه الباقة"
+                        />
+                        {/* Track */}
+                        <span
+                          dir="ltr"
+                          className={`relative inline-block w-12 h-6 rounded-full transition-colors duration-200 ${
+                            videoEnabled ? 'bg-purple-600' : 'bg-gray-300'
+                          }`}
+                        >
+                          {/* Knob — absolute positioning works identically in RTL/LTR
+                              because we force dir=ltr on the track itself. */}
+                          <span
+                            className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200 ${
+                              videoEnabled ? 'left-[26px]' : 'left-0.5'
+                            }`}
+                          />
+                        </span>
+                        <span className="text-sm font-medium text-gray-700">تفعيل الفيديو لهذه الباقة</span>
+                      </label>
+                    );
+                  })()}
 
                   {editingPlan.video_config?.enabled && (() => {
                     // Migrate legacy tier values to the new allowed_tiers shape on read.
