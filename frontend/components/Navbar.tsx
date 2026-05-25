@@ -721,9 +721,15 @@ function NavbarContent() {
           <div className="flex items-center bg-[#E8F5F0]/80 backdrop-blur-sm rounded-xl p-1 border border-[#5FBDAA]/30 shadow-sm">
             <Link
               href="/search?view=list"
+              onClick={() => {
+                // Reset the persisted "side map hidden" flag so navigating
+                // back into البحث بالقائمة always brings the map back —
+                // the user explicitly asked for this entry-point to re-open it.
+                try { window.localStorage.setItem("bj.search.sideMapOpen", "true"); } catch {}
+              }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-300 ${
                 isSearchPage && currentView === 'list'
-                  ? 'bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md' 
+                  ? 'bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md'
                   : 'text-[#003366] hover:bg-white/80'
               }`}
             >
@@ -810,7 +816,10 @@ function NavbarContent() {
             </Link>
             <Link
               href="/search?view=list"
-              onClick={closeMobileMenu}
+              onClick={() => {
+                try { window.localStorage.setItem("bj.search.sideMapOpen", "true"); } catch {}
+                closeMobileMenu();
+              }}
               className="flex-1 flex items-center justify-center gap-2 min-h-[48px] px-4 py-3 rounded-xl bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md active:scale-95 touch-manipulation"
             >
               <List className="w-5 h-5" />
