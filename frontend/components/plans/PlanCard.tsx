@@ -409,8 +409,17 @@ export function mapDbPlanToPlanCopy(dbPlan: DBPlan, currencySymbol: string = "ر
   }
   const iconPath = dbPlan.custom_icon || designIcon || "/icons/plan-starter.jpeg";
 
-  const videoText = dbPlan.max_videos_per_listing > 0
-    ? `فيديو (${dbPlan.max_videos_per_listing} ${dbPlan.max_videos_per_listing > 1 ? "فيديوهات" : "فيديو"}${dbPlan.max_video_duration ? ` - ${formatVideoDuration(dbPlan.max_video_duration)}` : ""})`
+  // Effective video count: sum of per-tier caps (new) takes priority,
+  // else the legacy max_videos_per_listing column.
+  const _vc = (dbPlan as any).video_config || {};
+  const _tc = (_vc && typeof _vc === "object" ? _vc.tier_caps : null) || {};
+  const _sumCaps =
+    (Number.isFinite(_tc.standard) ? _tc.standard : 0) +
+    (Number.isFinite(_tc.luxury) ? _tc.luxury : 0) +
+    (Number.isFinite(_tc.ultra) ? _tc.ultra : 0);
+  const effectiveMaxVideos = _sumCaps > 0 ? _sumCaps : (dbPlan.max_videos_per_listing || 0);
+  const videoText = effectiveMaxVideos > 0
+    ? `فيديو (${effectiveMaxVideos} ${effectiveMaxVideos > 1 ? "فيديوهات" : "فيديو"}${dbPlan.max_video_duration ? ` - ${formatVideoDuration(dbPlan.max_video_duration)}` : ""})`
     : "فيديو";
 
   // Use admin-customizable labels from DB when provided; fall back to defaults.
@@ -435,7 +444,7 @@ export function mapDbPlanToPlanCopy(dbPlan: DBPlan, currencySymbol: string = "ر
     { key: "photos", feature: { text: `حتى ${dbPlan.max_photos_per_listing} صور`, included: true }, order: order.photos ?? 2 },
     { key: "map", feature: { text: `ظهور على الخريطة`, included: dbPlan.show_on_map }, order: order.map ?? 3 },
     { key: "ai", feature: { text: aiText, included: dbPlan.ai_support_level > 0 }, order: order.ai ?? 4 },
-    { key: "video", feature: { text: videoText, included: dbPlan.max_videos_per_listing > 0 }, order: order.video ?? 5 },
+    { key: "video", feature: { text: videoText, included: effectiveMaxVideos > 0 }, order: order.video ?? 5 },
     { key: "elite", feature: { text: elitePropertiesText, included: (dbPlan.support_level || 0) > 0 }, order: order.elite ?? 6 },
     { key: "seo", feature: { text: seoText, included: seoLevel > 0 }, order: order.seo ?? 7 },
   ];
