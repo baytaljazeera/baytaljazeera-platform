@@ -1384,14 +1384,6 @@ function SearchPage() {
           </div>
         )}
 
-        {/* زر العودة للقائمة */}
-        <button
-          onClick={() => window.location.href = '/search?view=list'}
-          className="absolute top-4 right-4 z-50 flex items-center gap-2 px-4 py-2.5 bg-white/95 backdrop-blur text-[#002845] rounded-full shadow-lg active:scale-95 transition font-bold text-sm border border-slate-200"
-        >
-          <List className="w-4 h-4" />
-          <span className="lg:inline hidden">القائمة</span>
-        </button>
       </div>
     );
   } else {
