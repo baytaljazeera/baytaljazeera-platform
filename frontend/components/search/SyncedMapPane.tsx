@@ -64,31 +64,29 @@ function ListingSidebar({
   const statusCfg = DEAL_STATUS_CONFIG[marker.deal_status || "active"] || DEAL_STATUS_CONFIG.active;
   const listingUrl = `/listing/${marker.id}`;
 
+  // Mobile: full-width bottom sheet. Desktop: compact 280px card floating at
+  // bottom-right of the map (doesn't block the marker the user just clicked).
   return (
-    <>
-      {/* backdrop */}
-      <div
-        className="fixed inset-0 bg-black/20 z-[1999]"
-        onClick={onClose}
-      />
-
-      {/* panel */}
-      <div
-        className={`absolute top-0 right-0 z-[2000] h-full bg-white shadow-2xl overflow-y-auto flex flex-col map-sidebar-enter ${
-          isMobile ? "w-full" : "w-[320px]"
-        }`}
-        style={{ maxWidth: "100vw" }}
-      >
+    <div
+      className={`absolute z-[2000] map-sidebar-enter ${
+        isMobile
+          ? "left-0 right-0 bottom-0"
+          : "right-3 bottom-3 w-[280px]"
+      }`}
+      dir="rtl"
+    >
+      <div className="relative bg-white rounded-2xl shadow-2xl border border-[#D4AF37]/30 overflow-hidden">
         {/* close */}
         <button
           onClick={onClose}
-          className="absolute top-3 left-3 z-10 w-8 h-8 rounded-full bg-white/90 shadow-md flex items-center justify-center hover:bg-gray-100 transition"
+          className="absolute top-2 left-2 z-20 w-7 h-7 rounded-full bg-black/55 text-white flex items-center justify-center hover:bg-black/75 transition backdrop-blur-sm"
+          aria-label="إغلاق"
         >
-          <X className="w-4 h-4 text-gray-700" />
+          <X className="w-3.5 h-3.5" />
         </button>
 
-        {/* image */}
-        <div className="relative w-full bg-gray-100 flex-shrink-0" style={{ aspectRatio: "16/10" }}>
+        {/* image — short, doesn't dominate */}
+        <a href={listingUrl} className="block relative w-full bg-gray-100" style={{ aspectRatio: "16/9" }}>
           {imgs.length > 0 ? (
             <>
               <img
@@ -100,19 +98,20 @@ function ListingSidebar({
               {imgs.length > 1 && (
                 <>
                   <button
-                    onClick={() => setImgIdx((i) => (i - 1 + imgs.length) % imgs.length)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/50 text-white flex items-center justify-center text-base"
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); setImgIdx((i) => (i - 1 + imgs.length) % imgs.length); }}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-black/55 text-white flex items-center justify-center text-sm hover:bg-black/75"
                   >›</button>
                   <button
-                    onClick={() => setImgIdx((i) => (i + 1) % imgs.length)}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/50 text-white flex items-center justify-center text-base"
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); setImgIdx((i) => (i + 1) % imgs.length); }}
+                    className="absolute left-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-black/55 text-white flex items-center justify-center text-sm hover:bg-black/75"
                   >‹</button>
-                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                  <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1">
                     {imgs.map((_, i) => (
-                      <button
+                      <span
                         key={i}
-                        onClick={() => setImgIdx(i)}
-                        className={`w-1.5 h-1.5 rounded-full transition ${i === imgIdx ? "bg-white" : "bg-white/50"}`}
+                        className={`w-1 h-1 rounded-full ${i === imgIdx ? "bg-white" : "bg-white/45"}`}
                       />
                     ))}
                   </div>
@@ -121,80 +120,60 @@ function ListingSidebar({
             </>
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <MapPin className="w-12 h-12 text-gray-300" />
+              <MapPin className="w-8 h-8 text-gray-300" />
             </div>
           )}
-          <span className={`absolute top-3 right-3 text-[10px] px-2 py-0.5 rounded-full ${statusCfg.bg} ${statusCfg.color} font-medium`}>
+          {/* status pill */}
+          <span className={`absolute top-2 right-2 text-[9px] px-1.5 py-0.5 rounded-full ${statusCfg.bg} ${statusCfg.color} font-medium`}>
             {statusCfg.label}
           </span>
-        </div>
+          {/* purpose pill on image (cleaner than separate row) */}
+          <span className={`absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full font-bold backdrop-blur-sm ${
+            marker.purpose === "بيع"
+              ? "bg-[#D4AF37] text-[#002845]"
+              : "bg-emerald-600/90 text-white"
+          }`}>
+            {marker.purpose === "بيع" ? "للبيع" : "للإيجار"}
+          </span>
+        </a>
 
-        {/* content */}
-        <div className="p-4 text-right flex flex-col flex-1" dir="rtl">
-          <h3 className="font-bold text-[#002845] text-base mb-1 leading-snug">{marker.title}</h3>
-          <p className="text-xs text-gray-500 mb-3 flex items-center gap-1 justify-end">
-            <span>{marker.city}{marker.district ? ` - ${marker.district}` : ""}</span>
-            <MapPin className="w-3 h-3" />
+        {/* content — tight padding, no wasted vertical space */}
+        <div className="p-3">
+          <h3 className="font-bold text-[#002845] text-sm leading-snug line-clamp-2 mb-1">{marker.title}</h3>
+          <p className="text-[11px] text-gray-500 flex items-center gap-1 mb-2">
+            <MapPin className="w-3 h-3 shrink-0" />
+            <span className="truncate">{marker.city}{marker.district ? ` · ${marker.district}` : ""}</span>
           </p>
 
-          <div className="flex items-baseline gap-1 justify-end mb-0.5">
-            <span className="text-2xl font-bold text-[#D4AF37]">{marker.price.toLocaleString("en-US")}</span>
-            <span className="text-sm text-gray-500">ريال</span>
-          </div>
-          <p className="text-[11px] text-gray-400 mb-4 text-left">
-            ≈ ${(marker.price / 3.75).toLocaleString("en-US", { maximumFractionDigits: 0 })} USD
-          </p>
-
-          {/* specs */}
-          <div className="flex gap-3 justify-end mb-4 flex-wrap">
-            {marker.bedrooms && (
-              <div className="flex items-center gap-1 text-sm text-gray-600">
-                <span>{marker.bedrooms} غرف</span>
-                <Bed className="w-4 h-4" />
-              </div>
-            )}
-            {marker.bathrooms && (
-              <div className="flex items-center gap-1 text-sm text-gray-600">
-                <span>{marker.bathrooms} حمام</span>
-                <Bath className="w-4 h-4" />
-              </div>
-            )}
-            {marker.area && (
-              <div className="flex items-center gap-1 text-sm text-gray-600">
-                <span>{marker.area} م²</span>
-                <Maximize2 className="w-4 h-4" />
-              </div>
-            )}
+          {/* price */}
+          <div className="flex items-baseline gap-1 mb-2">
+            <span className="text-lg font-bold text-[#D4AF37]">{marker.price.toLocaleString("en-US")}</span>
+            <span className="text-[11px] text-gray-500">ريال</span>
           </div>
 
-          {/* tags */}
-          <div className="flex gap-2 justify-end mb-5">
-            <span className={`text-xs px-3 py-1 rounded-full font-medium ${
-              marker.purpose === "بيع" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
-            }`}>
-              {marker.purpose === "بيع" ? "للبيع" : "للإيجار"}
-            </span>
-            <span className="text-xs px-3 py-1 rounded-full bg-[#fdf8ec] text-[#8B6914] font-medium">
-              {marker.type}
-            </span>
+          {/* specs — small inline row */}
+          <div className="flex gap-3 text-[11px] text-gray-600 mb-2.5">
+            {marker.bedrooms ? (
+              <span className="flex items-center gap-0.5"><Bed className="w-3.5 h-3.5" />{marker.bedrooms}</span>
+            ) : null}
+            {marker.bathrooms ? (
+              <span className="flex items-center gap-0.5"><Bath className="w-3.5 h-3.5" />{marker.bathrooms}</span>
+            ) : null}
+            {marker.area ? (
+              <span className="flex items-center gap-0.5"><Maximize2 className="w-3.5 h-3.5" />{marker.area} م²</span>
+            ) : null}
           </div>
 
-          {/* CTA */}
+          {/* single primary CTA — no decorative emoji, smaller padding */}
           <a
             href={listingUrl}
-            className="w-full py-3 rounded-xl font-bold text-sm text-white mt-auto flex items-center justify-center"
-            style={{
-              background: "linear-gradient(135deg, #D4AF37 0%, #B8860B 100%)",
-              textDecoration: "none",
-              color: "#fff",
-              display: "flex",
-            }}
+            className="block w-full py-2 rounded-lg text-center text-xs font-bold bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] shadow hover:shadow-lg transition"
           >
-            🏠 عرض الإعلان كاملاً
+            عرض تفاصيل الإعلان
           </a>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
