@@ -119,16 +119,10 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
       // Cloudinary serves listing images as JPEG by default, so this is safe.
       const mimeType = ct === "image/png" ? "image/png" : "image/jpeg";
       const bytesBase64Encoded = Buffer.from(imgRes.data).toString("base64");
-      // Double-key shape (camelCase + snake_case) — the @google/genai SDK transforms
-      // outer keys to snake_case before posting to the REST endpoint, but Veo's
-      // image-struct validator wants camelCase. Sending both ensures whichever
-      // form the server actually reads survives the transformation.
-      imageInput = {
-        bytesBase64Encoded: bytesBase64Encoded,
-        bytes_base64_encoded: bytesBase64Encoded,
-        mimeType: mimeType,
-        mime_type: mimeType,
-      };
+      // Clean camelCase shape — we bypass the @google/genai SDK below and POST
+      // directly to the REST endpoint, so the SDK's snake_case transform is no
+      // longer in play. Veo's image-struct validator wants pure camelCase.
+      imageInput = { bytesBase64Encoded, mimeType };
       console.log(`[Ultra/Veo]    seed image encoded: ${Math.round(bytesBase64Encoded.length / 1024)} KB base64, mime=${mimeType}`);
     } else {
       console.warn(`[Ultra/Veo]    seed image fetch returned ${imgRes.status} — falling back to text-only Veo.`);
@@ -137,54 +131,89 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
     console.warn(`[Ultra/Veo]    seed image fetch failed (${e.message}) — falling back to text-only Veo.`);
   }
 
-  // Kick off the generation operation.
+  // ─── Direct REST call (bypass @google/genai SDK) ─────────────────────────
+  // The SDK silently transforms top-level keys to snake_case before posting,
+  // which collides with Veo's image-struct validator that wants camelCase. So
+  // we hit the REST endpoint with the canonical Vertex AI prediction shape
+  // ({ instances:[...], parameters:{...} }) and pure camelCase keys.
+  const apiKey = process.env.GEMINI_API_KEY || process.env.Gemeni2 || process.env.Gemeni;
+  if (!apiKey) throw new Error("GEMINI_API_KEY غير مضبوط — لا يمكن استدعاء Veo.");
+
+  const startUrl = `https://generativelanguage.googleapis.com/v1beta/models/${veoModel}:generateVideos?key=${apiKey}`;
+  const instance = imageInput ? { prompt, image: imageInput } : { prompt };
+  const payload = {
+    instances: [instance],
+    parameters: {
+      aspectRatio: "16:9",
+      durationSeconds: 5,
+      sampleCount: 1,
+      personGeneration: "dont_allow",
+    },
+  };
+
   let operation;
   try {
-    const req = {
-      model: veoModel,
-      prompt,
-      config: {
-        numberOfVideos: 1,
-        durationSeconds: 5,
-        aspectRatio: "16:9",
-        personGeneration: "dont_allow",
-      },
-    };
-    if (imageInput) req.image = imageInput;
-    operation = await genAI.models.generateVideos(req);
+    const startRes = await axios.post(startUrl, payload, {
+      headers: { "Content-Type": "application/json" },
+      timeout: 60000,
+      validateStatus: () => true,
+    });
+    if (startRes.status >= 400) {
+      const body = typeof startRes.data === "string" ? startRes.data : JSON.stringify(startRes.data);
+      if (startRes.status === 403 || /permission/i.test(body)) {
+        throw new Error(`Veo رفض الطلب (403) — تأكد أن GEMINI_API_KEY مفعّل لميزة Veo. التفصيل: ${body}`);
+      }
+      if (startRes.status === 404 || /not.found/i.test(body)) {
+        throw new Error(`موديل Veo (${veoModel}) غير متاح لحسابك. جرّب VEO_MODEL=veo-2.0-generate-001 في env. التفصيل: ${body}`);
+      }
+      throw new Error(`فشل بدء توليد Veo: ${body}`);
+    }
+    operation = startRes.data;
   } catch (e) {
-    const msg = e?.message || String(e);
-    if (msg.includes("403") || /permission/i.test(msg)) {
-      throw new Error(`Veo رفض الطلب (403) — تأكد أن GEMINI_API_KEY مفعّل لميزة Veo. التفصيل: ${msg}`);
-    }
-    if (msg.includes("404") || /not.found/i.test(msg)) {
-      throw new Error(`موديل Veo (${veoModel}) غير متاح لحسابك. جرّب VEO_MODEL=veo-2.0-generate-001 في env. التفصيل: ${msg}`);
-    }
-    throw new Error(`فشل بدء توليد Veo: ${msg}`);
+    if (e.message && e.message.startsWith("فشل") || e.message?.startsWith("Veo") || e.message?.startsWith("موديل")) throw e;
+    throw new Error(`فشل بدء توليد Veo: ${e.message || e}`);
   }
 
-  // Poll until done. Max 8 minutes — Veo is slow.
+  if (!operation?.name) {
+    throw new Error(`Veo لم يُرجع اسم عملية صالح. الاستجابة: ${JSON.stringify(operation).slice(0, 400)}`);
+  }
+  console.log(`[Ultra/Veo]    operation started: ${operation.name}`);
+
+  // ─── REST polling — same operation name on v1beta/{name}?key=... ─────────
   const MAX_WAIT_MS = 8 * 60 * 1000;
   const POLL_INTERVAL = 8000;
+  const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${operation.name}?key=${apiKey}`;
   let result = operation;
   const pollStart = Date.now();
   while (!result.done && Date.now() - pollStart < MAX_WAIT_MS) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL));
     try {
-      result = await genAI.operations.getVideosOperation({ operation: result });
-      console.log(`[Ultra/Veo]    polling… done=${result.done}`);
+      const pollRes = await axios.get(pollUrl, {
+        timeout: 30000,
+        validateStatus: () => true,
+      });
+      if (pollRes.status >= 400) {
+        const body = typeof pollRes.data === "string" ? pollRes.data : JSON.stringify(pollRes.data);
+        throw new Error(`فشل استطلاع حالة Veo (status ${pollRes.status}): ${body}`);
+      }
+      result = pollRes.data;
+      console.log(`[Ultra/Veo]    polling… done=${!!result.done}`);
     } catch (e) {
-      throw new Error(`فشل استطلاع حالة Veo: ${e.message}`);
+      throw new Error(`فشل استطلاع حالة Veo: ${e.message || e}`);
     }
   }
   if (!result.done) {
     throw new Error("انتهت المهلة قبل اكتمال فيديو Veo (>8 دقائق).");
   }
-  if (!result.response || !result.response.generatedVideos || result.response.generatedVideos.length === 0) {
+  if (result.error) {
+    throw new Error(`Veo أرجع خطأ بعد الاكتمال: ${JSON.stringify(result.error)}`);
+  }
+  const generatedVideos = result.response?.generatedVideos || result.response?.generated_videos || [];
+  if (generatedVideos.length === 0) {
     throw new Error("Veo أرجع نتيجة فارغة — لا يوجد فيديو في الاستجابة.");
   }
 
-  const video = result.response.generatedVideos[0];
+  const video = generatedVideos[0];
   const videoData = video.video || video;
   const videoUri = videoData?.uri || videoData?.url;
   if (!videoUri) {
@@ -192,10 +221,10 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
   }
 
   // Download to temp + upload to Cloudinary.
+  // `apiKey` already declared above for the REST start/poll calls.
   const tempDir = path.join(os.tmpdir(), "ultra-veo");
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
   const tempPath = path.join(tempDir, `veo_${listingId}_${Date.now()}.mp4`);
-  const apiKey = process.env.GEMINI_API_KEY || process.env.Gemeni2 || process.env.Gemeni;
   await downloadVeoVideo(videoUri, apiKey, tempPath);
 
   let finalUrl = null;
