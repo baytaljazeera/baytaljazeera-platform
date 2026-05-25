@@ -4,9 +4,13 @@ const fs = require("fs");
 const crypto = require("crypto");
 
 // 🔒 Security: Allowed MIME types for upload (used by file-type validation)
+// Expanded to cover iPhone HEIC/HEIF, legacy JFIF, AVIF, BMP, TIFF, MOV — common
+// real-world camera/phone exports. The actual security check is magic-byte
+// validation (validateFileMagicBytes), not the claimed MIME from the browser.
 const ALLOWED_MIME_TYPES = new Set([
-  'image/jpeg', 'image/png', 'image/webp', 'image/gif',
-  'video/mp4', 'video/webm'
+  'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif',
+  'image/heic', 'image/heif', 'image/avif', 'image/bmp', 'image/tiff',
+  'video/mp4', 'video/webm', 'video/quicktime'
 ]);
 
 // 🔒 Security: Use file-type library for robust magic byte detection
@@ -99,36 +103,69 @@ async function validateFileMagicBytes(filePathOrBuffer) {
   }
 }
 
-// 🔒 Security: Sanitize filename to prevent path traversal and malicious names
+// 🔒 Security: Sanitize filename to prevent path traversal and malicious names.
+// Accepts the wider set of real-world camera/phone extensions; if no recognized
+// extension is present we default to ".bin" so the file still saves under a safe
+// random name and magic-byte validation later determines real type.
 function sanitizeFilename(originalname) {
-  // Get extension safely
-  const ext = path.extname(originalname).toLowerCase();
-  
-  // Validate extension against allowed list
-  const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.mp4', '.webm'];
-  if (!allowedExtensions.includes(ext)) {
-    return null; // Invalid extension
+  let ext = path.extname(originalname || "").toLowerCase();
+
+  const allowedExtensions = [
+    '.jpg', '.jpeg', '.jfif', '.jpe',
+    '.png', '.webp', '.gif',
+    '.heic', '.heif',
+    '.avif', '.bmp', '.tiff', '.tif',
+    '.mp4', '.webm', '.mov', '.m4v'
+  ];
+  if (!ext || !allowedExtensions.includes(ext)) {
+    // Don't reject yet — the post-upload magic-byte check is the real gate.
+    // Keep the file as ".bin" so it still writes safely.
+    ext = '.bin';
   }
-  
-  // Generate secure random filename (no user input)
+
   const randomName = crypto.randomBytes(16).toString('hex');
   return `${Date.now()}-${randomName}${ext}`;
 }
 
-// 🔒 Security: Validate MIME type matches extension
+// 🔒 Security: relaxed match — returns true if the claimed mime is plausible
+// for the extension. We accept the well-known iPhone/Android quirks
+// ("image/jpg" without the "e", JFIF, HEIC variants) without compromising
+// safety because validateFileMagicBytes will run on the actual file bytes.
 function validateMimeType(mimetype, ext) {
+  const mt = (mimetype || "").toLowerCase();
+  const e = (ext || "").toLowerCase();
+
   const mimeMap = {
-    '.jpg': ['image/jpeg'],
-    '.jpeg': ['image/jpeg'],
-    '.png': ['image/png'],
+    '.jpg':  ['image/jpeg', 'image/jpg', 'image/pjpeg'],
+    '.jpeg': ['image/jpeg', 'image/jpg', 'image/pjpeg'],
+    '.jpe':  ['image/jpeg', 'image/jpg'],
+    '.jfif': ['image/jpeg', 'image/jpg'],
+    '.png':  ['image/png', 'image/x-png'],
     '.webp': ['image/webp'],
-    '.gif': ['image/gif'],
-    '.mp4': ['video/mp4'],
-    '.webm': ['video/webm']
+    '.gif':  ['image/gif'],
+    '.heic': ['image/heic', 'image/heif', 'image/jpeg', 'application/octet-stream'],
+    '.heif': ['image/heif', 'image/heic', 'image/jpeg', 'application/octet-stream'],
+    '.avif': ['image/avif', 'image/jpeg'],
+    '.bmp':  ['image/bmp', 'image/x-ms-bmp'],
+    '.tif':  ['image/tiff'],
+    '.tiff': ['image/tiff'],
+    '.mp4':  ['video/mp4', 'application/mp4', 'video/x-m4v'],
+    '.m4v':  ['video/mp4', 'video/x-m4v'],
+    '.webm': ['video/webm'],
+    '.mov':  ['video/quicktime', 'video/mp4'],
   };
-  
-  const allowedMimes = mimeMap[ext] || [];
-  return allowedMimes.includes(mimetype);
+
+  const allowedMimes = mimeMap[e];
+  if (!allowedMimes) return false;
+
+  // Direct match
+  if (allowedMimes.includes(mt)) return true;
+  // Any image/* extension accepts any image/* mime (covers misreported mimes
+  // from older browsers / WhatsApp / Outlook). Magic bytes still gate it.
+  if (e.match(/^\.(jpg|jpeg|jpe|jfif|png|webp|gif|heic|heif|avif|bmp|tif|tiff)$/) && mt.startsWith('image/')) {
+    return true;
+  }
+  return false;
 }
 
 const storage = multer.diskStorage({
@@ -149,21 +186,31 @@ const storage = multer.diskStorage({
   }
 });
 
+// Lenient pre-upload filter — admit anything that LOOKS like an image/video.
+// Final security gate is post-upload magic-byte validation (see validateFileMagicBytes
+// usage in routes/listings.js). This avoids spurious rejections of HEIC/HEIF from
+// iPhone, JFIF from Outlook, WhatsApp-mangled MIME, etc.
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm'];
-  
-  // 🔒 Security: Validate MIME type
-  if (!allowedTypes.includes(file.mimetype)) {
-    return cb(new Error('نوع الملف غير مدعوم'), false);
+  const mt = (file.mimetype || "").toLowerCase();
+  const ext = path.extname(file.originalname || "").toLowerCase();
+
+  // Accept if claimed MIME is in our wider whitelist.
+  if (ALLOWED_MIME_TYPES.has(mt)) return cb(null, true);
+
+  // Accept if extension is recognized AND MIME at least starts with image/ or video/
+  // (handles browsers/clients that send "application/octet-stream" for HEIC, etc.)
+  const knownExt = /\.(jpg|jpeg|jpe|jfif|png|webp|gif|heic|heif|avif|bmp|tif|tiff|mp4|webm|mov|m4v)$/i;
+  if (knownExt.test(ext) && (mt.startsWith('image/') || mt.startsWith('video/') || mt === 'application/octet-stream' || mt === '')) {
+    return cb(null, true);
   }
-  
-  // 🔒 Security: Validate extension matches MIME type
-  const ext = path.extname(file.originalname).toLowerCase();
-  if (!validateMimeType(file.mimetype, ext)) {
-    return cb(new Error('نوع الملف لا يتطابق مع الامتداد'), false);
+
+  // Last-resort: be tolerant if MIME generically looks like image/video, even with unknown extension
+  // — the magic-byte check downstream will reject if it's actually malicious.
+  if (mt.startsWith('image/') || mt.startsWith('video/')) {
+    return cb(null, true);
   }
-  
-  cb(null, true);
+
+  return cb(new Error(`نوع الملف غير مدعوم (${mt || ext || 'غير معروف'}). الأنواع المدعومة: JPG/PNG/HEIC/WebP/GIF/MP4.`), false);
 };
 
 const upload = multer({

@@ -544,14 +544,32 @@ export default function NewListingPage() {
       setShowDraftRestoreModal(false);
       return;
     }
+    // Restore ONLY user-typed fields. Deliberately do NOT touch:
+    //   • selectedBucket / plan limits — those are owned by the backend (/api/quota)
+    //     and were already resolved in the load() effect using the smart default.
+    //     If we overwrote them from a stale draft we'd risk pinning a Business-plan
+    //     user back to a Basic bucket they previously used.
+    //   • plan — same reason.
     setForm(pendingDraft.form);
     setStep(Math.max(0, Math.min(5, pendingDraft.step)) as any);
     setLocationConfirmed(!!pendingDraft.locationConfirmed);
     setCoverImageIndex(Math.max(0, pendingDraft.coverImageIndex || 0));
     draftRestoredRef.current = true;
     setShowDraftRestoreModal(false);
-    toast.success("تم استرجاع المسودة. لاحظ: الصور والفيديو يحتاجان إعادة الرفع.", { duration: 5000 });
-  }, [pendingDraft]);
+    // Diagnostic log — verify the plan/bucket was NOT clobbered by restore.
+    try {
+      console.log("[Draft restore]", {
+        restoredStep: pendingDraft.step,
+        draftSavedBucketId: pendingDraft.selectedBucketId ?? null,
+        currentBucketId: selectedBucket?.bucketId ?? null,
+        currentPlanName: selectedBucket?.planName ?? null,
+        currentMaxPhotos: selectedBucket?.benefits?.maxPhotos ?? null,
+        currentMaxVideos: selectedBucket?.benefits?.maxVideos ?? null,
+        note: "Plan/limits were NOT modified by restore (intentional).",
+      });
+    } catch {}
+    toast.success("تم استرجاع المسودة. الصور والفيديو تحتاج إعادة رفع. باقتك الحالية محفوظة.", { duration: 5000 });
+  }, [pendingDraft, selectedBucket]);
 
   const discardDraft = useCallback(() => {
     clearDraftStorage();
@@ -592,14 +610,57 @@ export default function NewListingPage() {
         // Fetch quota options for bucket selection in listing creation
         const quotaRes = await fetch(`${API_URL}/api/quota/options-for-listing`, { credentials: "include", headers: getAuthHeaders() });
         const quotaJson = quotaRes.ok ? await quotaRes.json() : { options: [] };
-        
+
         setQuotaOptions(quotaJson.options || []);
         const availableOptions = (quotaJson.options || []).filter((opt: QuotaOption) => opt.remainingSlots > 0);
-        if (availableOptions.length > 0) {
-          setSelectedBucket(availableOptions[0]);
-        } else {
-          setSelectedBucket(null);
+
+        // ─── Smart default bucket selection ────────────────────────────────
+        // 1) If the user had previously selected a bucket (saved in draft), and that
+        //    same bucket is still available, restore it — they made an explicit choice.
+        // 2) Otherwise default to the BEST bucket they own (highest maxPhotos), so
+        //    Business plan users don't get accidentally pinned to a Basic bucket
+        //    just because the API happened to return it first.
+        let savedBucketId: number | null = null;
+        try {
+          if (typeof window !== "undefined") {
+            const raw = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+            if (raw) {
+              const draft = JSON.parse(raw);
+              if (draft?.v === DRAFT_VERSION && typeof draft.selectedBucketId === "number") {
+                savedBucketId = draft.selectedBucketId;
+              }
+            }
+          }
+        } catch {}
+
+        let chosen: QuotaOption | null = null;
+        if (savedBucketId != null) {
+          const match = availableOptions.find((o: QuotaOption) => o.bucketId === savedBucketId);
+          if (match) chosen = match;
         }
+        if (!chosen && availableOptions.length > 0) {
+          // Pick the option with the highest maxPhotos — that's the user's "best" plan.
+          chosen = availableOptions.slice().sort((a: QuotaOption, b: QuotaOption) => {
+            return (b.benefits?.maxPhotos || 0) - (a.benefits?.maxPhotos || 0);
+          })[0];
+        }
+        setSelectedBucket(chosen);
+
+        // Diagnostic log — visible in browser console for verification.
+        // Remove after we've confirmed the plan-restore bug is gone.
+        try {
+          console.log("[Plan resolution]", {
+            currentPlanFromBackend: planRes.ok ? (await planRes.clone().json().catch(() => null)) : null,
+            quotaOptionsCount: (quotaJson.options || []).length,
+            availableBucketsCount: availableOptions.length,
+            savedBucketIdFromDraft: savedBucketId,
+            chosenBucketId: chosen?.bucketId ?? null,
+            chosenPlanName: chosen?.planName ?? null,
+            chosenMaxPhotos: chosen?.benefits?.maxPhotos ?? null,
+            chosenMaxVideos: chosen?.benefits?.maxVideos ?? null,
+            chosenAiLevel: chosen?.benefits?.aiSupportLevel ?? null,
+          });
+        } catch {}
       } catch (e) {
         console.error("Error loading user/plan", e);
       } finally {

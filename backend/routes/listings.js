@@ -29,17 +29,49 @@ router.post("/temp-images", authMiddlewareWithEmailCheck, upload.array('images',
   }
 
   const paths = [];
-  
+  const rejected = []; // [{ name, reason }] — surface back to client so user sees why
+  // Accept the wider set of REAL image MIMEs (matches relaxed multer config).
+  // The magic-byte check below is the actual security gate.
+  const acceptedImageMimes = new Set([
+    'image/jpeg', 'image/jpg', 'image/pjpeg',
+    'image/png', 'image/x-png',
+    'image/webp', 'image/gif',
+    'image/heic', 'image/heif',
+    'image/avif', 'image/bmp', 'image/tiff', 'image/x-ms-bmp',
+  ]);
+
   for (const file of req.files) {
-    // Validate file type
-    const validMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    if (!validMimeTypes.includes(file.mimetype)) {
+    // 1) Magic-byte validation — authoritative. Rejects file if not a real image
+    //    regardless of what extension/MIME the client claimed.
+    let detected = null;
+    try {
+      const result = await validateFileMagicBytes(file.path);
+      detected = result?.detectedType || null;
+      if (!result?.valid) {
+        rejected.push({ name: file.originalname, reason: 'not_an_image' });
+        try { fs.unlinkSync(file.path); } catch {}
+        continue;
+      }
+    } catch (e) {
+      console.warn("[TempImages] magic-byte check threw:", e.message);
+      rejected.push({ name: file.originalname, reason: 'validation_error' });
+      try { fs.unlinkSync(file.path); } catch {}
       continue;
     }
-    
+
+    // 2) Accept if the detected MIME is in our list, OR if the claimed MIME is.
+    //    detected is the TRUTH; falling back to claimed only when detection returned null.
+    const effectiveMime = (detected || file.mimetype || '').toLowerCase();
+    if (!acceptedImageMimes.has(effectiveMime)) {
+      rejected.push({ name: file.originalname, reason: `unsupported_type:${effectiveMime || 'unknown'}` });
+      try { fs.unlinkSync(file.path); } catch {}
+      continue;
+    }
+
     const baseUrl = (process.env.BACKEND_URL || process.env.API_URL || '').replace(/\/$/, '');
     if (isCloudinaryConfigured()) {
       try {
+        // Cloudinary handles HEIC → web-friendly format transparently.
         const result = await uploadImage(file.path);
         if (result && result.success && result.url) {
           paths.push(result.url);
@@ -57,15 +89,20 @@ router.post("/temp-images", authMiddlewareWithEmailCheck, upload.array('images',
   }
 
   if (paths.length === 0) {
-    return res.status(400).json({ error: "لم يتم رفع أي صور صالحة" });
+    const firstReason = rejected[0]?.reason || 'unknown';
+    return res.status(400).json({
+      error: `لم يتم قبول أي صورة. السبب الأول: ${firstReason === 'not_an_image' ? 'الملف ليس صورة فعلية' : firstReason}.`,
+      rejected,
+    });
   }
 
-  console.log(`[TempImages] Uploaded ${paths.length} images for video generation`);
-  
-  res.json({ 
+  console.log(`[TempImages] Uploaded ${paths.length} images (rejected ${rejected.length}) for video generation`);
+
+  res.json({
     success: true,
     paths,
-    count: paths.length
+    count: paths.length,
+    ...(rejected.length > 0 ? { rejected, warning: `تم رفض ${rejected.length} ملف غير صالح.` } : {}),
   });
 }));
 
