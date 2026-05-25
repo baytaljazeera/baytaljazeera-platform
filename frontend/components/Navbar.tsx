@@ -722,10 +722,12 @@ function NavbarContent() {
             <Link
               href="/search?view=list"
               onClick={() => {
-                // Reset the persisted "side map hidden" flag so navigating
-                // back into البحث بالقائمة always brings the map back —
-                // the user explicitly asked for this entry-point to re-open it.
+                // Reset the persisted "side map hidden" flag AND fire an event
+                // so an already-mounted /search page re-opens immediately —
+                // without the event, same-route navs would leave the in-memory
+                // state untouched and the map would stay hidden.
                 try { window.localStorage.setItem("bj.search.sideMapOpen", "true"); } catch {}
+                try { window.dispatchEvent(new CustomEvent("bj:search:open-side-map")); } catch {}
               }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-300 ${
                 isSearchPage && currentView === 'list'
@@ -818,6 +820,7 @@ function NavbarContent() {
               href="/search?view=list"
               onClick={() => {
                 try { window.localStorage.setItem("bj.search.sideMapOpen", "true"); } catch {}
+                try { window.dispatchEvent(new CustomEvent("bj:search:open-side-map")); } catch {}
                 closeMobileMenu();
               }}
               className="flex-1 flex items-center justify-center gap-2 min-h-[48px] px-4 py-3 rounded-xl bg-gradient-to-r from-[#4DB6A0] to-[#3A9A87] text-white shadow-md active:scale-95 touch-manipulation"

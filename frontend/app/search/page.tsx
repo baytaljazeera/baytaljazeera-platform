@@ -415,6 +415,15 @@ function SearchPage() {
   useEffect(() => {
     try { window.localStorage.setItem("bj.search.sideMapOpen", String(showMiniMap)); } catch { /* ignore quota errors */ }
   }, [showMiniMap]);
+  // Allow external entry points (the navbar "البحث بالقائمة" links) to
+  // force-open the side map even when the page is already mounted and the
+  // URL/searchParams don't change. The useState initializer above only runs
+  // on first mount, so a custom-event bridge is the cleanest way to react.
+  useEffect(() => {
+    const onForceOpen = () => setShowMiniMap(true);
+    window.addEventListener("bj:search:open-side-map", onForceOpen);
+    return () => window.removeEventListener("bj:search:open-side-map", onForceOpen);
+  }, []);
   const listingsContainerRef = useRef<HTMLDivElement>(null);
   const [showPromoOverlay, setShowPromoOverlay] = useState(true);
   
