@@ -1230,17 +1230,6 @@ function SearchPage() {
             </div>
           )}
 
-          {/* زر إظهار الخريطة - يظهر عند إخفائها */}
-          {!showMiniMap && mapMarkers.length > 0 && (
-            <button
-              onClick={() => setShowMiniMap(true)}
-              className="hidden lg:flex fixed left-4 bottom-4 z-50 items-center gap-2 px-4 py-3 bg-[#002845] text-white rounded-xl shadow-lg hover:bg-[#003366] transition"
-            >
-              <Map className="w-5 h-5" />
-              <span className="font-semibold">إظهار الخريطة</span>
-            </button>
-          )}
-
           {/* زر الخريطة للموبايل - تصميم Zillow */}
           {mapMarkers.length > 0 && (
             <button
