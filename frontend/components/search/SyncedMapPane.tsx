@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useState, useRef, memo, useCallback } from "react";
-import { MapPin, Navigation, X, Bed, Bath, Maximize2 } from "lucide-react";
+import { MapPin, Navigation, X, Bed, Bath, Maximize2, Key, CalendarDays } from "lucide-react";
 import { useSearchMapStore } from "@/lib/stores/searchMapStore";
 
 export type PropertyMarker = {
@@ -67,6 +67,12 @@ function ListingSidebar({
   // Mobile: top-anchored panel so it stays in view above the keyboard / footer.
   // Desktop: compact 280px card floating at top-right of the map — owner asked
   // for the preview to sit "في الأعلى" instead of dropping to the bottom.
+  // Purpose-tinted background to give the card an at-a-glance identity:
+  //   • بيع   → warm rose tint (ownership / home)
+  //   • إيجار → light mint tint (flexibility / temporary stay)
+  const isSale = marker.purpose === "بيع" || marker.purpose === "للبيع";
+  const tintBg = isSale ? "bg-rose-50" : "bg-emerald-50";
+  const tintBorder = isSale ? "border-rose-200" : "border-emerald-200";
   return (
     <div
       className={`absolute z-[2000] map-sidebar-enter ${
@@ -76,7 +82,7 @@ function ListingSidebar({
       }`}
       dir="rtl"
     >
-      <div className="relative bg-white rounded-2xl shadow-2xl border border-[#D4AF37]/30 overflow-hidden">
+      <div className={`relative ${tintBg} rounded-2xl shadow-2xl border ${tintBorder} overflow-hidden`}>
         {/* close */}
         <button
           onClick={onClose}
@@ -128,13 +134,15 @@ function ListingSidebar({
           <span className={`absolute top-2 right-2 text-[9px] px-1.5 py-0.5 rounded-full ${statusCfg.bg} ${statusCfg.color} font-medium`}>
             {statusCfg.label}
           </span>
-          {/* purpose pill on image (cleaner than separate row) */}
-          <span className={`absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full font-bold backdrop-blur-sm ${
-            marker.purpose === "بيع"
+          {/* purpose pill on image — icon reinforces meaning at a glance:
+              key for ownership/sale, calendar for time-bound rental */}
+          <span className={`absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full font-bold backdrop-blur-sm inline-flex items-center gap-1 ${
+            isSale
               ? "bg-[#D4AF37] text-[#002845]"
               : "bg-emerald-600/90 text-white"
           }`}>
-            {marker.purpose === "بيع" ? "للبيع" : "للإيجار"}
+            {isSale ? <Key className="w-3 h-3" /> : <CalendarDays className="w-3 h-3" />}
+            {isSale ? "للبيع" : "للإيجار"}
           </span>
         </a>
 

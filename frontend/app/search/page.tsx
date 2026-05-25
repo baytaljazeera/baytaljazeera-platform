@@ -44,6 +44,8 @@ import {
   SlidersHorizontal,
   Loader2,
   Eye,
+  Key,
+  CalendarDays,
 } from "lucide-react";
 import { useSearchMapStore } from "@/lib/stores/searchMapStore";
 import { useCurrencyStore } from "@/lib/stores/currencyStore";
@@ -2975,6 +2977,16 @@ function PropertyCard({
   const priceText = formatListingPrice(listing.price, listing.country);
   const isPromo = listing.is_promotional;
 
+  // Purpose-tinted card identity: warm rose for ownership/sale, mint for rental.
+  // Sale flag accepts both Arabic ("بيع"/"للبيع") and English ("sale") forms
+  // because the API has historically emitted both shapes.
+  const isSale =
+    listing.purpose === "بيع" ||
+    listing.purpose === "للبيع" ||
+    listing.purpose === "sale";
+  const tintBg = isSale ? "bg-rose-50" : "bg-emerald-50";
+  const tintBorder = isSale ? "border-rose-200" : "border-emerald-200";
+
   // Build image gallery (cover first, then the rest, dedup, up to 5).
   const galleryImages: string[] = useMemo(() => {
     const list: string[] = [];
@@ -3017,9 +3029,9 @@ function PropertyCard({
       className={`group relative rounded-2xl sm:rounded-3xl overflow-hidden shadow-md sm:shadow-[0_10px_25px_-12px_rgba(0,0,0,0.3)] border flex flex-col cursor-pointer active:scale-[0.98] sm:hover:-translate-y-1 sm:hover:shadow-[0_16px_40px_-10px_rgba(0,0,0,0.45)] transition ${
         isPromo
           ? "bg-gradient-to-br from-[#002845] via-[#003d66] to-[#001830] border-[#D4AF37]/50 ring-1 ring-[#D4AF37]/30"
-          : "bg-white"
+          : tintBg
       } ${
-        isActive ? "ring-2 ring-[#f6d879] border-[#f6d879]" : isPromo ? "" : "border-slate-200 sm:border-[#f6d879]/70"
+        isActive ? "ring-2 ring-[#f6d879] border-[#f6d879]" : isPromo ? "" : `${tintBorder} sm:border-[#f6d879]/70`
       }`}
       onClick={handleClick}
     >
@@ -3100,11 +3112,16 @@ function PropertyCard({
           {priceText}
         </div>
 
-        {/* نوع العرض - بيع/إيجار */}
-        <div className={`absolute top-2 sm:top-3 right-2 sm:right-3 rounded-lg sm:rounded-full px-2.5 py-1 text-xs font-bold shadow ${
-          isPromo ? "bg-white/20 text-white backdrop-blur" : "bg-[#D4AF37] text-[#002845]"
+        {/* نوع العرض - بيع/إيجار — icon reinforces meaning at a glance */}
+        <div className={`absolute top-2 sm:top-3 right-2 sm:right-3 rounded-lg sm:rounded-full px-2.5 py-1 text-xs font-bold shadow inline-flex items-center gap-1 ${
+          isPromo
+            ? "bg-white/20 text-white backdrop-blur"
+            : isSale
+              ? "bg-[#D4AF37] text-[#002845]"
+              : "bg-emerald-600 text-white"
         }`}>
-          {listing.purpose === 'sale' ? 'للبيع' : listing.purpose === 'rent' ? 'للإيجار' : listing.purpose || 'عقار'}
+          {isSale ? <Key className="w-3.5 h-3.5" /> : <CalendarDays className="w-3.5 h-3.5" />}
+          {isSale ? "للبيع" : "للإيجار"}
         </div>
 
         {/* زر القلب - مخفي للإعلانات الترويجية */}
