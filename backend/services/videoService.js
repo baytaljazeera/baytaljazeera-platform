@@ -314,19 +314,22 @@ async function elevenLabsTTSToMp3(text, voiceId) {
   let processedText = String(text || '').trim()
     .replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED]/g, '');
 
+  // Convert raw digits to Arabic words (keeps "725" from being mispronounced).
+  // Output is clean — no tashkeel added by numberToArabicWords.
   processedText = normalizeArabicNumbers(processedText);
 
-  const sortedEntries = Object.entries(pronunciationDict).sort((a, b) => b[0].length - a[0].length);
-  for (const [word, phonetic] of sortedEntries) {
-    processedText = processedText.replace(new RegExp(word, 'g'), phonetic);
-  }
+  // IMPORTANT: pronunciationDict (which injects tashkeel) is intentionally NOT
+  // applied. eleven_multilingual_v2 reads natural unvocalized Arabic better
+  // than over-vocalized text — diacritics from our dict were making the
+  // delivery sound stiff/robotic. Dict object stays defined above so we can
+  // turn it back on per-voice if needed, but the replace loop is disabled.
 
   const cleanText = processedText.slice(0, 3000);
   if (!cleanText) throw new Error('نص الصوت فارغ');
   const v = String(voiceId || '').trim();
   if (!v || v.length < 10) throw new Error('voiceId غير صالح لـ ElevenLabs');
 
-  console.log('[TTS] Clean text (no tashkeel):', cleanText.substring(0, 100) + '...');
+  console.log('[TTS] Clean (no auto-tashkeel) text:', cleanText.substring(0, 100) + '...');
 
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(v)}`;
   const outDir = path.join(os.tmpdir(), 'video-gen', 'tts');
@@ -337,8 +340,16 @@ async function elevenLabsTTSToMp3(text, voiceId) {
     url,
     {
       text: cleanText,
+      // eleven_multilingual_v2 — the cinematic Arabic model. Do NOT swap to
+      // Turbo / v1 / monolingual variants; they sound noticeably rougher in Arabic.
       model_id: 'eleven_multilingual_v2',
-      voice_settings: { stability: 0.6, similarity_boost: 0.8, style: 0.15, use_speaker_boost: true }
+      // Balanced settings per owner spec — flexibility + clarity, no stylization.
+      voice_settings: {
+        stability: 0.45,
+        similarity_boost: 0.75,
+        style: 0.0,
+        use_speaker_boost: true,
+      },
     },
     {
       responseType: 'arraybuffer',
