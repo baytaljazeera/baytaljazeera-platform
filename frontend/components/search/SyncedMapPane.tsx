@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useState, useRef, memo, useCallback } from "react";
-import { MapPin, Navigation, X, Bed, Bath, Maximize2, Key, CalendarDays } from "lucide-react";
+import { MapPin, Navigation, X, Bed, Bath, Maximize2, Key, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSearchMapStore } from "@/lib/stores/searchMapStore";
 
 export type PropertyMarker = {
@@ -49,10 +49,12 @@ function ListingSidebar({
   marker,
   onClose,
   isMobile,
+  isClosing,
 }: {
   marker: PropertyMarker | null;
   onClose: () => void;
   isMobile: boolean;
+  isClosing: boolean;
 }) {
   const [imgIdx, setImgIdx] = useState(0);
 
@@ -73,14 +75,21 @@ function ListingSidebar({
   const isSale = marker.purpose === "بيع" || marker.purpose === "للبيع";
   const tintBg = isSale ? "bg-rose-50" : "bg-emerald-50";
   const tintBorder = isSale ? "border-rose-200" : "border-emerald-200";
+  // Tween via inline classes: when isClosing flips true the card fades and
+  // lifts slightly. Parent unmounts the marker ~180ms later so this animation
+  // gets to play.
+  const motionClass = isClosing
+    ? "opacity-0 -translate-y-1 scale-[0.98]"
+    : "opacity-100 translate-y-0 scale-100";
   return (
     <div
-      className={`absolute z-[2000] map-sidebar-enter ${
+      className={`absolute z-[2000] map-sidebar-enter transition-all duration-200 ease-out ${motionClass} ${
         isMobile
           ? "left-0 right-0 top-0"
           : "right-3 top-3 w-[280px]"
       }`}
       dir="rtl"
+      onClick={(e) => e.stopPropagation()}
     >
       <div className={`relative ${tintBg} rounded-2xl shadow-2xl border ${tintBorder} overflow-hidden`}>
         {/* close */}
@@ -104,16 +113,21 @@ function ListingSidebar({
               />
               {imgs.length > 1 && (
                 <>
+                  {/* SVG arrows (not bidi-flipped like the single-chevron chars
+                      were under dir="rtl") — both point outward, away from the
+                      image center. */}
                   <button
                     type="button"
+                    aria-label="السابق"
                     onClick={(e) => { e.preventDefault(); setImgIdx((i) => (i - 1 + imgs.length) % imgs.length); }}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-black/55 text-white flex items-center justify-center text-sm hover:bg-black/75"
-                  >›</button>
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-black/55 text-white flex items-center justify-center hover:bg-black/75"
+                  ><ChevronRight className="w-3.5 h-3.5" /></button>
                   <button
                     type="button"
+                    aria-label="التالي"
                     onClick={(e) => { e.preventDefault(); setImgIdx((i) => (i + 1) % imgs.length); }}
-                    className="absolute left-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-black/55 text-white flex items-center justify-center text-sm hover:bg-black/75"
-                  >‹</button>
+                    className="absolute left-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-black/55 text-white flex items-center justify-center hover:bg-black/75"
+                  ><ChevronLeft className="w-3.5 h-3.5" /></button>
                   <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1">
                     {imgs.map((_, i) => (
                       <span
@@ -228,6 +242,18 @@ const MapController = memo(function MapController({
   return null;
 });
 
+/* ─── Map click handler — dismisses the sidebar on empty-area clicks ──────── */
+const MapClickHandler = memo(function MapClickHandler({
+  useMapEventsHook,
+  onMapClick,
+}: {
+  useMapEventsHook: any;
+  onMapClick: () => void;
+}) {
+  useMapEventsHook({ click: onMapClick });
+  return null;
+});
+
 /* ─── Main inner component ────────────────────────────────────────────────── */
 function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps) {
   /* leaflet dynamic imports */
@@ -237,6 +263,7 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
   const [Marker,        setMarker]        = useState<any>(null);
   const [Popup,         setPopup]         = useState<any>(null);
   const [useMap,        setUseMap]        = useState<any>(null);
+  const [useMapEvents,  setUseMapEvents]  = useState<any>(null);
 
   const mapRef = useRef<any>(null);
 
@@ -249,6 +276,10 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
   const [selectedMarker, setSelectedMarker] = useState<PropertyMarker | null>(null);
   const [hoveredMarker,  setHoveredMarker]  = useState<PropertyMarker | null>(null);
   const [isMobile,       setIsMobile]       = useState(false);
+  // Two-phase close: flip isClosing on, let the CSS transition play, then drop
+  // the marker. Keeps the close gesture from feeling like a hard cut.
+  const [isClosing,      setIsClosing]      = useState(false);
+  const closeTimerRef                      = useRef<number | null>(null);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -305,13 +336,14 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
       try {
         const L = (await import("leaflet")).default;
         await import("leaflet/dist/leaflet.css");
-        const { MapContainer: MC, TileLayer: TL, Marker: M, Popup: P, useMap: UM } = await import("react-leaflet");
+        const { MapContainer: MC, TileLayer: TL, Marker: M, Popup: P, useMap: UM, useMapEvents: UME } = await import("react-leaflet");
         setLeaflet(L);
         setMapContainer(() => MC);
         setTileLayer(() => TL);
         setMarker(() => M);
         setPopup(() => P);
         setUseMap(() => UM);
+        setUseMapEvents(() => UME);
       } catch (e) { console.error("Leaflet load failed", e); }
     })();
   }, []);
@@ -331,13 +363,26 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
     return () => clearInterval(t);
   }, [leaflet]);
 
-  /* close sidebar */
+  /* close sidebar — animate out, then unmount */
   const closeSidebar = useCallback(() => {
-    setSelectedMarker(null);
-    setActiveListingId(null);
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    setIsClosing(true);
+    closeTimerRef.current = window.setTimeout(() => {
+      setSelectedMarker(null);
+      setActiveListingId(null);
+      setIsClosing(false);
+      closeTimerRef.current = null;
+    }, 180);
   }, [setActiveListingId]);
 
-  if (!leaflet || !MapContainer || !TileLayer || !Marker || !Popup || !useMap) {
+  useEffect(() => () => {
+    if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+  }, []);
+
+  if (!leaflet || !MapContainer || !TileLayer || !Marker || !Popup || !useMap || !useMapEvents) {
     return (
       <div className="w-full h-full bg-[#001a2c] rounded-xl flex items-center justify-center">
         <div className="text-center">
@@ -430,6 +475,7 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
         marker={selectedMarker}
         onClose={closeSidebar}
         isMobile={isMobile}
+        isClosing={isClosing}
       />
 
       <MapContainer
@@ -451,6 +497,11 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
           mapVersion={mapVersion}
           suspended={locationEnabled}
         />
+
+        {/* Click on empty map area dismisses the sidebar. Leaflet's map-level
+            click does NOT fire for marker clicks, so selecting a different
+            listing still works without bouncing through a close→open cycle. */}
+        <MapClickHandler useMapEventsHook={useMapEvents} onMapClick={closeSidebar} />
 
         {/* user location */}
         {userLocation && (
