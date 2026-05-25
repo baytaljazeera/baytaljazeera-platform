@@ -343,11 +343,12 @@ async function elevenLabsTTSToMp3(text, voiceId) {
       // eleven_multilingual_v2 — the cinematic Arabic model. Do NOT swap to
       // Turbo / v1 / monolingual variants; they sound noticeably rougher in Arabic.
       model_id: 'eleven_multilingual_v2',
-      // Balanced settings per owner spec — flexibility + clarity, no stylization.
+      // Re-tuned voice_settings per owner spec — more human emotional contour,
+      // higher fidelity to the cloned voice.
       voice_settings: {
-        stability: 0.45,
-        similarity_boost: 0.75,
-        style: 0.0,
+        stability: 0.38,            // lower → more natural rise/fall
+        similarity_boost: 0.80,     // higher → closer to original voice timbre
+        style: 0.0,                 // no stylization
         use_speaker_boost: true,
       },
     },
