@@ -64,14 +64,15 @@ function ListingSidebar({
   const statusCfg = DEAL_STATUS_CONFIG[marker.deal_status || "active"] || DEAL_STATUS_CONFIG.active;
   const listingUrl = `/listing/${marker.id}`;
 
-  // Mobile: full-width bottom sheet. Desktop: compact 280px card floating at
-  // bottom-right of the map (doesn't block the marker the user just clicked).
+  // Mobile: top-anchored panel so it stays in view above the keyboard / footer.
+  // Desktop: compact 280px card floating at top-right of the map — owner asked
+  // for the preview to sit "في الأعلى" instead of dropping to the bottom.
   return (
     <div
       className={`absolute z-[2000] map-sidebar-enter ${
         isMobile
-          ? "left-0 right-0 bottom-0"
-          : "right-3 bottom-3 w-[280px]"
+          ? "left-0 right-0 top-0"
+          : "right-3 top-3 w-[280px]"
       }`}
       dir="rtl"
     >
@@ -285,7 +286,7 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
       if (Number.isFinite(lat) && Number.isFinite(lng)) {
         // Calmer neighborhood-level zoom (~35% less tight than zoom 15) so
         // the surroundings stay visible when the user picks a listing.
-        mapRef.current.flyTo([lat, lng], 13, { animate: true, duration: 0.9 });
+        mapRef.current.flyTo([lat, lng], 12, { animate: true, duration: 1.0 });
       }
     }
   }, [activeListingId, markers]);
@@ -467,7 +468,7 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
                 const lng = parseFloat(String(marker.lng));
                 if (mapRef.current && Number.isFinite(lat) && Number.isFinite(lng)) {
                   // Match list-click behavior: calmer zoom that keeps context visible.
-                  mapRef.current.flyTo([lat, lng], 13, { animate: true, duration: 0.9 });
+                  mapRef.current.flyTo([lat, lng], 12, { animate: true, duration: 1.0 });
                 }
               },
               dblclick: () => {
