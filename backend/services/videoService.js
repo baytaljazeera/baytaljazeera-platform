@@ -91,7 +91,77 @@ function normalizeArabicNumbers(text) {
   result = result.replace(/(?:1|١)\s+(حمام|حمامات)/g, 'حَمَّام وَاحِد');
   result = result.replace(/(?:1|١)\s+(موقف|مواقف)/g, 'مَوقِف وَاحِد');
   result = result.replace(/(?:1|١)\s+(مسبح)/g, 'مَسبَح وَاحِد');
+
+  // Final sweep: any digit sequence that survived the specific patterns above
+  // gets fully spelled out so ElevenLabs never reads raw digits aloud.
+  // Handles both Western (0-9) and Arabic-Indic (٠-٩) digits, with optional
+  // thousand separators (commas, spaces, Arabic comma).
+  result = result.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+  result = result.replace(/(?<!\d)(\d{1,3}(?:[,،\s]\d{3})+|\d+)(?!\d)/g, (match) => {
+    const digits = match.replace(/[,،\s]/g, "");
+    const n = parseInt(digits, 10);
+    if (!Number.isFinite(n)) return match;
+    if (digits.length > 9) return match; // skip absurdly large numbers (years, IDs, etc.)
+    return numberToArabicWords(n);
+  });
   return result;
+}
+
+// ─── Generic Arabic number-to-words (0 → 999,999,999) ──────────────────────
+// Covers room counts, areas, floor numbers — anything ElevenLabs would
+// otherwise read as raw digits. The output is intentionally unvocalized in
+// most places; the pronunciationDict later applies tashkeel to common stems.
+function numberToArabicWords(n) {
+  if (!Number.isFinite(n)) return "";
+  if (n === 0) return "صفر";
+  if (n < 0) return "سالب " + numberToArabicWords(-n);
+
+  const onesM = ["", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة"];
+  const teensM = ["عشرة", "أحد عشر", "اثنا عشر", "ثلاثة عشر", "أربعة عشر", "خمسة عشر", "ستة عشر", "سبعة عشر", "ثمانية عشر", "تسعة عشر"];
+  const tensM = ["", "", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون", "سبعون", "ثمانون", "تسعون"];
+  const hundredsM = ["", "مائة", "مائتان", "ثلاثمائة", "أربعمائة", "خمسمائة", "ستمائة", "سبعمائة", "ثمانمائة", "تسعمائة"];
+
+  function under1000(x) {
+    if (x === 0) return "";
+    if (x < 10) return onesM[x];
+    if (x < 20) return teensM[x - 10];
+    if (x < 100) {
+      const t = Math.floor(x / 10);
+      const u = x % 10;
+      if (u === 0) return tensM[t];
+      return onesM[u] + " و" + tensM[t];
+    }
+    const h = Math.floor(x / 100);
+    const r = x % 100;
+    if (r === 0) return hundredsM[h];
+    return hundredsM[h] + " و" + under1000(r);
+  }
+
+  function thousandsPart(k) {
+    if (k === 0) return "";
+    if (k === 1) return "ألف";
+    if (k === 2) return "ألفان";
+    if (k >= 3 && k <= 10) return under1000(k) + " آلاف";
+    return under1000(k) + " ألف";
+  }
+
+  function millionsPart(m) {
+    if (m === 0) return "";
+    if (m === 1) return "مليون";
+    if (m === 2) return "مليونان";
+    if (m >= 3 && m <= 10) return under1000(m) + " ملايين";
+    return under1000(m) + " مليون";
+  }
+
+  const millions = Math.floor(n / 1_000_000);
+  const thousands = Math.floor((n % 1_000_000) / 1000);
+  const rest = n % 1000;
+
+  const parts = [];
+  if (millions > 0) parts.push(millionsPart(millions));
+  if (thousands > 0) parts.push(thousandsPart(thousands));
+  if (rest > 0) parts.push(under1000(rest));
+  return parts.join(" و");
 }
 
 async function elevenLabsTTSToMp3(text, voiceId) {
