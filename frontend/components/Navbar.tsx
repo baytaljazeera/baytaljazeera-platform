@@ -183,17 +183,24 @@ function NavbarContent() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showNotificationDropdown]);
 
-  // Close user menu when clicking outside
+  // Close user menu when clicking outside OR pressing Escape
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
         setShowUserMenu(false);
       }
     }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setShowUserMenu(false);
+    }
     if (showUserMenu) {
       document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleKey);
     }
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKey);
+    };
   }, [showUserMenu]);
 
   const markNotificationAsRead = async (id: number) => {
@@ -282,26 +289,80 @@ function NavbarContent() {
     { href: "/plans", label: "الباقات", icon: Package },
   ];
 
-  const userMenuItems = [
-    { href: "/account", label: "حسابي", icon: User },
-    { href: "/favorites", label: "المفضلة", icon: Heart, badge: favoritesCount },
-    { href: "/my-listings", label: "إعلاناتي", icon: FileText, badgeRejected: userBadges.listingsRejected, badgeApproved: userBadges.listingsApproved, badgePending: userBadges.listingsPending },
-    { href: "/invoices", label: "فواتيري", icon: Receipt, badgeNew: userBadges.invoicesNew },
+  // Grouped menu structure. Each item carries its own raw badge fields and
+  // a group tag; the renderer collapses multi-color badges into a single
+  // "most urgent" pill and shows section headers between groups.
+  const userMenuGroups: Array<{
+    key: string;
+    title: string;
+    items: Array<{
+      href: string;
+      label: string;
+      icon: any;
+      badge?: number;
+      badgeNew?: number;
+      badgePending?: number;
+      badgeRejected?: number;
+      badgeApproved?: number;
+    }>;
+  }> = [
     {
-      href: "/account/my-tickets",
-      label: "طلبات الدعم",
-      icon: Ticket,
-      badge: Number(userBadges.ticketsNew) || 0,
+      key: "profile",
+      title: "حسابي",
+      items: [
+        { href: "/account", label: "حسابي", icon: User },
+        { href: "/favorites", label: "المفضلة", icon: Heart, badge: favoritesCount },
+      ],
     },
-    { href: "/my-complaints", label: "شكاواي", icon: AlertTriangle, badgeNew: userBadges.complaintsNew, badgePending: userBadges.complaintsPending },
-    { href: "/messages", label: "الاستفسارات العقارية", icon: MessageCircle, badge: unreadMessages },
-    { href: "/inbox", label: "الإشعارات", icon: Bell, badge: unreadNotifications },
-    ...(ambassadorEnabled ? [{ href: "/referral", label: "سفراء البيت", icon: Building2, badgeNew: userBadges.ambassadorRewards }] : []),
+    {
+      key: "listings",
+      title: "إعلاناتي وفواتيري",
+      items: [
+        { href: "/my-listings", label: "إعلاناتي", icon: FileText, badgeRejected: userBadges.listingsRejected, badgeApproved: userBadges.listingsApproved, badgePending: userBadges.listingsPending },
+        { href: "/invoices", label: "فواتيري", icon: Receipt, badgeNew: userBadges.invoicesNew },
+        ...(ambassadorEnabled ? [{ href: "/referral", label: "سفراء البيت", icon: Building2, badgeNew: userBadges.ambassadorRewards }] : []),
+      ],
+    },
+    {
+      key: "support",
+      title: "الدعم والإشعارات",
+      items: [
+        { href: "/messages", label: "الاستفسارات العقارية", icon: MessageCircle, badge: unreadMessages },
+        { href: "/account/my-tickets", label: "طلبات الدعم", icon: Ticket, badge: Number(userBadges.ticketsNew) || 0 },
+        { href: "/my-complaints", label: "شكاواي", icon: AlertTriangle, badgeNew: userBadges.complaintsNew, badgePending: userBadges.complaintsPending },
+        // Bell in the navbar already shows the unread count; we hide the
+        // duplicate badge here to reduce noise (the link itself stays).
+        { href: "/inbox", label: "الإشعارات", icon: Bell },
+      ],
+    },
   ];
 
   const isUserMenuItemActive = (href: string) => {
     if (href === "/account/my-tickets") return pathname.startsWith("/account/my-tickets");
     return pathname === href;
+  };
+
+  // Collapse the per-item badge stack into one "most urgent" pill.
+  // Order: rejected (action needed) > new (fresh signal) > pending > approved > generic.
+  const pickSmartBadge = (item: {
+    badge?: number;
+    badgeNew?: number;
+    badgePending?: number;
+    badgeRejected?: number;
+    badgeApproved?: number;
+  }) => {
+    const fmt = (n: number) => (n > 99 ? "99+" : String(n));
+    if (item.badgeRejected && item.badgeRejected > 0)
+      return { text: fmt(item.badgeRejected), cls: "bg-red-500 text-white", pulse: false };
+    if (item.badgeNew && item.badgeNew > 0)
+      return { text: fmt(item.badgeNew), cls: "bg-red-500 text-white", pulse: true };
+    if (item.badgePending && item.badgePending > 0)
+      return { text: fmt(item.badgePending), cls: "bg-amber-500 text-[#1a1a1a]", pulse: false };
+    if (item.badgeApproved && item.badgeApproved > 0)
+      return { text: fmt(item.badgeApproved), cls: "bg-emerald-500 text-white", pulse: false };
+    if (item.badge && item.badge > 0)
+      return { text: fmt(item.badge), cls: "bg-[#D4AF37] text-[#002845]", pulse: false };
+    return null;
   };
 
   const getTierName = (tier?: string) => {
@@ -455,98 +516,115 @@ function NavbarContent() {
           <AnimatePresence>
             {showUserMenu && (
               <motion.div
-                initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                initial={{ opacity: 0, y: -8, scale: 0.97 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                transition={{ duration: 0.15 }}
-                className="absolute left-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-[50000]"
+                exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                className="absolute left-0 mt-3 w-[300px] bg-white/95 backdrop-blur-xl rounded-2xl shadow-[0_20px_50px_-12px_rgba(0,40,69,0.25)] border border-slate-200/60 overflow-hidden z-[50000]"
+                dir="rtl"
               >
-                <div className="px-4 py-3 border-b border-slate-100">
-                  <p className="text-sm font-bold text-[#003366] truncate">{user.name}</p>
-                  <p className="text-xs text-slate-500 truncate">{user.email}</p>
+                {/* — Header — avatar circle + name + email + tier pill — */}
+                <div className="px-4 pt-4 pb-3.5 bg-gradient-to-b from-[#FAF7F2] to-white border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#002845] to-[#003366] text-white flex items-center justify-center font-bold text-base ring-2 ring-[#D4AF37]/30 shrink-0">
+                      {(user.name || "?").trim().charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-[#002845] truncate">{user.name}</p>
+                      <p className="text-[11px] text-slate-500 truncate">{user.email}</p>
+                    </div>
+                  </div>
                   {user.tier && (
-                    <div className="flex items-center gap-1 mt-2">
+                    <div className="mt-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-[#D4AF37]/15 to-[#E8C882]/10 border border-[#D4AF37]/30">
                       <Crown className="w-3 h-3 text-[#D4AF37]" />
-                      <span className="text-xs font-medium text-[#D4AF37]">
+                      <span className="text-[10.5px] font-bold text-[#9a7d28] tracking-wide">
                         {getTierName(user.tier)}
                       </span>
                     </div>
                   )}
                 </div>
 
-                {userMenuItems.map((item) => {
-                  const { href, label, icon: Icon, badge, badgeNew, badgePending, badgeRejected, badgeApproved } = item as any;
-                  return (
-                    <Link
-                      key={href}
-                      href={href}
-                      onClick={() => setShowUserMenu(false)}
-                      className={`flex items-center justify-between px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition ${
-                        isUserMenuItemActive(href) ? 'bg-slate-50 text-[#003366] font-medium' : ''
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Icon className="w-4 h-4 text-[#D4AF37]" />
-                        <span>{label}</span>
+                {/* — Primary CTA — */}
+                <div className="px-3 pt-3">
+                  <Link
+                    href="/listings/new"
+                    onClick={() => setShowUserMenu(false)}
+                    className="flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] font-bold text-[13px] shadow-sm hover:shadow-md active:scale-[0.98] transition"
+                  >
+                    <PlusCircle className="w-4 h-4" />
+                    أضف إعلانك
+                  </Link>
+                </div>
+
+                {/* — Grouped sections — */}
+                <div className="px-1.5 py-2 space-y-1">
+                  {userMenuGroups.map((group, gi) => (
+                    <div key={group.key}>
+                      <div className="px-3 pt-2.5 pb-1">
+                        <span className="text-[10px] font-bold tracking-[0.08em] text-slate-400 uppercase">
+                          {group.title}
+                        </span>
                       </div>
-                  <div className="flex items-center gap-1.5">
-                    {/* شارة مقبول - أخضر */}
-                    {badgeApproved !== undefined && badgeApproved > 0 && (
-                      <span className="bg-green-500 text-white text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center">
-                        {badgeApproved > 99 ? '99+' : badgeApproved}
-                      </span>
-                    )}
-                    {/* شارة قيد الانتظار - أصفر */}
-                    {badgePending !== undefined && badgePending > 0 && (
-                      <span className="bg-yellow-500 text-black text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center">
-                        {badgePending > 99 ? '99+' : badgePending}
-                      </span>
-                    )}
-                    {/* شارة غير مقبول - أحمر */}
-                    {badgeRejected !== undefined && badgeRejected > 0 && (
-                      <span className="bg-red-500 text-white text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center">
-                        {badgeRejected > 99 ? '99+' : badgeRejected}
-                      </span>
-                    )}
-                    {/* شارة جديد - أحمر */}
-                    {badgeNew !== undefined && badgeNew > 0 && (
-                      <span className="bg-red-500 text-white text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center animate-pulse">
-                        {badgeNew > 99 ? '99+' : badgeNew}
-                      </span>
-                    )}
-                    {/* شارة عادية (للرسائل والإشعارات) */}
-                    {badge !== undefined && badge > 0 && (
-                      <span
-                        className={`bg-red-500 text-white text-mobile-xs font-bold px-2 py-1 rounded-full min-w-[22px] h-[22px] flex items-center justify-center ${
-                          href === "/account/my-tickets" ? "unread-badge-breathe" : ""
-                        }`}
-                      >
-                        {badge > 99 ? '99+' : badge}
-                      </span>
-                    )}
-                  </div>
-                    </Link>
-                  );
-                })}
+                      {group.items.map((item) => {
+                        const Icon = item.icon;
+                        const badge = pickSmartBadge(item);
+                        const active = isUserMenuItemActive(item.href);
+                        // Support-group icons use a slate tint so the gold accent
+                        // is reserved for the higher-affinity profile/listings rows.
+                        const iconColor = group.key === "support" ? "text-slate-500" : "text-[#D4AF37]";
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            onClick={() => setShowUserMenu(false)}
+                            className={`group relative flex items-center justify-between gap-3 px-3 py-2 mx-0 rounded-lg text-[13px] transition ${
+                              active ? "bg-[#D4AF37]/10 text-[#002845] font-semibold" : "text-slate-700 hover:bg-slate-50"
+                            }`}
+                          >
+                            {active && (
+                              <span className="absolute right-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-full bg-[#D4AF37]" />
+                            )}
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <Icon className={`w-4 h-4 shrink-0 ${active ? "text-[#D4AF37]" : iconColor}`} />
+                              <span className="truncate">{item.label}</span>
+                            </div>
+                            {badge && (
+                              <span className={`text-[10.5px] font-bold px-1.5 min-w-[20px] h-[20px] flex items-center justify-center rounded-full shrink-0 ${badge.cls} ${badge.pulse ? "animate-pulse" : ""}`}>
+                                {badge.text}
+                              </span>
+                            )}
+                          </Link>
+                        );
+                      })}
+                      {gi < userMenuGroups.length - 1 && (
+                        <div className="mx-3 my-1.5 h-px bg-slate-100" />
+                      )}
+                    </div>
+                  ))}
+                </div>
 
                 {user.role === 'admin' && (
-                  <Link
-                    href="/admin/reports"
-                    onClick={() => setShowUserMenu(false)}
-                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
-                  >
-                    <Settings className="w-4 h-4 text-[#D4AF37]" />
-                    <span>لوحة التحكم</span>
-                  </Link>
+                  <div className="px-1.5 pb-1">
+                    <div className="mx-3 my-1 h-px bg-slate-100" />
+                    <Link
+                      href="/admin/reports"
+                      onClick={() => setShowUserMenu(false)}
+                      className="flex items-center gap-2.5 px-3 py-2 mx-0 rounded-lg text-[13px] text-slate-700 hover:bg-slate-50 transition"
+                    >
+                      <Settings className="w-4 h-4 text-[#D4AF37]" />
+                      <span>لوحة التحكم</span>
+                    </Link>
+                  </div>
                 )}
 
-                <div className="border-t border-slate-100 mt-2 pt-2">
+                {/* — Logout (danger) — */}
+                <div className="px-1.5 pb-2 pt-1 border-t border-slate-100 mt-1 bg-slate-50/40">
                   <button
                     onClick={handleLogout}
-                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition w-full"
+                    className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-[13px] text-red-600 hover:bg-red-50 transition"
                   >
                     <LogOut className="w-4 h-4" />
-                    <span>تسجيل الخروج</span>
+                    <span className="font-semibold">تسجيل الخروج</span>
                   </button>
                 </div>
               </motion.div>
@@ -578,65 +656,57 @@ function NavbarContent() {
             <p className="text-xs text-slate-500">{user.email}</p>
           </div>
           
-          {userMenuItems.map((item) => {
-            const { href, label, icon: Icon, badge, badgeNew, badgePending, badgeRejected, badgeApproved } = item as any;
-            return (
-              <Link
-                key={href}
-                href={href}
-                onClick={closeMobileMenu}
-                className={`flex items-center justify-between px-4 py-3 rounded-xl hover:bg-slate-50 transition ${
-                  isUserMenuItemActive(href) ? "bg-slate-100 text-[#003366] font-semibold" : ""
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon className="w-5 h-5 text-[#D4AF37]" />
-                  <span className="text-[#003366] font-medium">{label}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  {/* أخضر = مقبول */}
-                  {badgeApproved !== undefined && badgeApproved > 0 && (
-                    <span className="bg-green-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                      {badgeApproved > 99 ? '99+' : badgeApproved}
-                    </span>
-                  )}
-                  {/* أصفر = قيد الانتظار */}
-                  {badgePending !== undefined && badgePending > 0 && (
-                    <span className="bg-yellow-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                      {badgePending > 99 ? '99+' : badgePending}
-                    </span>
-                  )}
-                  {/* أحمر = غير مقبول */}
-                  {badgeRejected !== undefined && badgeRejected > 0 && (
-                    <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                      {badgeRejected > 99 ? '99+' : badgeRejected}
-                    </span>
-                  )}
-                  {badgeNew !== undefined && badgeNew > 0 && (
-                    <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center animate-pulse">
-                      {badgeNew > 99 ? '99+' : badgeNew}
-                    </span>
-                  )}
-                  {badge !== undefined && badge > 0 && (
-                    <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                      {badge > 99 ? '99+' : badge}
-                    </span>
-                  )}
-                </div>
-              </Link>
-            );
-          })}
+          {userMenuGroups.map((group, gi) => (
+            <div key={group.key}>
+              <div className="px-4 pt-3 pb-1">
+                <span className="text-[10px] font-bold tracking-[0.08em] text-slate-400 uppercase">
+                  {group.title}
+                </span>
+              </div>
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const badge = pickSmartBadge(item);
+                const active = isUserMenuItemActive(item.href);
+                const iconColor = group.key === "support" ? "text-slate-500" : "text-[#D4AF37]";
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={closeMobileMenu}
+                    className={`flex items-center justify-between px-4 py-3 rounded-xl transition ${
+                      active ? "bg-[#D4AF37]/10 text-[#002845] font-semibold" : "hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon className={`w-5 h-5 ${active ? "text-[#D4AF37]" : iconColor}`} />
+                      <span className="text-[#003366] font-medium">{item.label}</span>
+                    </div>
+                    {badge && (
+                      <span className={`text-xs font-bold px-2 min-w-[22px] h-[22px] flex items-center justify-center rounded-full ${badge.cls} ${badge.pulse ? "animate-pulse" : ""}`}>
+                        {badge.text}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+              {gi < userMenuGroups.length - 1 && (
+                <div className="mx-4 my-2 h-px bg-slate-100" />
+              )}
+            </div>
+          ))}
 
-          <button
-            onClick={() => {
-              handleLogout();
-              closeMobileMenu();
-            }}
-            className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50 transition w-full text-red-600"
-          >
-            <LogOut className="w-5 h-5" />
-            <span className="font-medium">تسجيل الخروج</span>
-          </button>
+          <div className="mt-2 pt-2 border-t border-slate-100">
+            <button
+              onClick={() => {
+                handleLogout();
+                closeMobileMenu();
+              }}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50 transition w-full text-red-600"
+            >
+              <LogOut className="w-5 h-5" />
+              <span className="font-medium">تسجيل الخروج</span>
+            </button>
+          </div>
         </div>
       );
     }
