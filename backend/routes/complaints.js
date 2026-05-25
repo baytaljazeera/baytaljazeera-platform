@@ -20,11 +20,14 @@ const COMPLAINTS_ADMIN_ROLES = [
 ];
 
 router.post("/", complaintLimiter, asyncHandler(async (req, res) => {
-  const { category, subject, details, userName, userEmail, userPhone, invoice_id, complaint_type } = req.body;
+  const { category, subject, details, userName, userEmail, userPhone, invoice_id, complaint_type, priority } = req.body;
 
   if (!category || !subject || !details) {
     return res.status(400).json({ error: "جميع الحقول مطلوبة", errorAr: "يرجى ملء جميع الحقول المطلوبة" });
   }
+
+  const validPriorities = ['low', 'medium', 'high', 'urgent'];
+  const actualPriority = validPriorities.includes(priority) ? priority : 'medium';
 
   let userId = null;
   const token = req.cookies?.token || req.headers.authorization?.replace('Bearer ', '');
@@ -55,9 +58,9 @@ router.post("/", complaintLimiter, asyncHandler(async (req, res) => {
   const actualComplaintType = validComplaintTypes.includes(complaint_type) ? complaint_type : 'general';
 
   const result = await db.query(
-    `INSERT INTO account_complaints (user_id, user_name, user_email, user_phone, category, subject, details, invoice_id, complaint_type, status, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'new', NOW()) RETURNING *`,
-    [userId, userName, userEmail, userPhone, category, subject, details, validatedInvoiceId, actualComplaintType]
+    `INSERT INTO account_complaints (user_id, user_name, user_email, user_phone, category, subject, details, invoice_id, complaint_type, priority, status, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new', NOW()) RETURNING *`,
+    [userId, userName, userEmail, userPhone, category, subject, details, validatedInvoiceId, actualComplaintType, actualPriority]
   );
 
   res.status(201).json({ ok: true, complaint: result.rows[0], message: "تم استلام شكواك بنجاح" });
@@ -191,6 +194,14 @@ router.patch("/:id", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), as
     return res.status(400).json({ error: "حالة غير صحيحة" });
   }
 
+  // Snapshot of pre-update state so we can decide whether to notify the
+  // customer (only when admin_note actually changes, or status transitions).
+  const before = await db.query(
+    `SELECT user_id, admin_note, status, subject FROM account_complaints WHERE id = $1`,
+    [id]
+  );
+  const prev = before.rows[0];
+
   const sc = getAccountComplaintScope(req.user.role, req.user.id, 4);
   const scopeSql = sc.clause ? ` AND ${sc.clause}` : '';
 
@@ -203,6 +214,30 @@ router.patch("/:id", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), as
   );
 
   if (result.rows.length === 0) return res.status(404).json({ error: "الشكوى غير موجودة" });
+
+  // Notify the customer when the admin meaningfully updated the complaint —
+  // either added/changed a note or moved status to a terminal/active state.
+  if (prev && prev.user_id) {
+    const noteChanged = typeof adminNote === 'string' && adminNote.trim() && adminNote !== prev.admin_note;
+    const statusChanged = status && status !== prev.status;
+    if (noteChanged || statusChanged) {
+      const title = noteChanged ? "رد جديد على شكواك" : "تحديث حالة شكواك";
+      const body = noteChanged
+        ? `تم الرد على شكواك: ${prev.subject || ''}`.trim()
+        : `تم تحديث حالة شكواك (${status}): ${prev.subject || ''}`.trim();
+      try {
+        await db.query(
+          `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+           VALUES ($1, $2, $3, 'complaint_reply', $4, NOW())`,
+          [prev.user_id, title, body, '/my-complaints']
+        );
+      } catch (e) {
+        // Don't fail the admin's update because we couldn't queue a notification.
+        console.error('[complaints] notification insert failed', e.message);
+      }
+    }
+  }
+
   res.json({ ok: true, complaint: result.rows[0], message: "تم تحديث الشكوى بنجاح" });
 }));
 

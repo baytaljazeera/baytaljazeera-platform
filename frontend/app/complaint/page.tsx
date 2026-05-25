@@ -61,6 +61,10 @@ function ComplaintPageContent() {
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | "">("");
 
+  // Customer-visible urgency. Default "medium"; "urgent" is intentionally
+  // dramatic so it stays a deliberate choice.
+  const [priority, setPriority] = useState<"low" | "medium" | "high" | "urgent">("medium");
+
   useEffect(() => {
     if (typeFromUrl && categories.some(c => c.value === typeFromUrl)) {
       setCategory(typeFromUrl);
@@ -147,6 +151,7 @@ function ComplaintPageContent() {
         body: JSON.stringify({
           category,
           complaint_type: complaintType,
+          priority,
           subject: subject.trim(),
           details: details.trim(),
           userName,
@@ -301,6 +306,30 @@ function ComplaintPageContent() {
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          {/* الأولوية — أربع درجات تتدرّج لونياً */}
+          <div>
+            <label className="block text-sm font-medium text-[#002845] mb-3">
+              مدى استعجال شكواك
+            </label>
+            <div className="grid grid-cols-4 gap-2">
+              {([
+                { value: "low",    label: "منخفض",  cls: "border-slate-200 text-slate-600",          active: "border-slate-500 bg-slate-100 text-slate-800" },
+                { value: "medium", label: "متوسط",  cls: "border-slate-200 text-slate-600",          active: "border-amber-400 bg-amber-50 text-amber-800" },
+                { value: "high",   label: "عالٍ",   cls: "border-slate-200 text-slate-600",          active: "border-orange-400 bg-orange-50 text-orange-800" },
+                { value: "urgent", label: "عاجل",   cls: "border-slate-200 text-slate-600",          active: "border-red-400 bg-red-50 text-red-800" },
+              ] as const).map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => setPriority(p.value)}
+                  className={`px-3 py-2.5 rounded-xl border-2 text-sm font-bold transition ${priority === p.value ? p.active : p.cls + " hover:border-slate-300"}`}
+                >
+                  {p.label}
+                </button>
+              ))}
             </div>
           </div>
 
