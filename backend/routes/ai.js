@@ -1380,14 +1380,15 @@ async function createSlideshowVideo(imagePaths, outputPath, promoText, duration 
   for (let i = 0; i < validPaths.length; i++) {
     const movement = cameraMovements[i % cameraMovements.length];
     
-    // Scale, apply Ken Burns zoom/pan, then a cinematic color grade chain:
-    //   • curves (rgb)   — soft S-curve for "filmic" contrast (deep shadows, gentle highlight roll-off)
-    //   • colorbalance   — push midtones/shadows warm (oranges/ambers) for luxury feel
-    //   • eq             — fine-tune contrast + saturation + slight gamma lift
-    //   • unsharp        — subtle edge enhancement (won't crunch faces/textures)
-    //   • vignette       — softer than before (PI/4.5 vs PI/5) so corners darken naturally
+    // Scale, apply Ken Burns zoom/pan, then a LIGHTWEIGHT cinematic color grade:
+    //   • eq with per-channel gamma → cheap "filmic warm" tilt (gamma_r>1 lifts oranges,
+    //     gamma_b<1 cools blue highlights). Single fused filter, no curves/colorbalance
+    //     which are 3-4× more CPU-intensive on Render's shared cores.
+    //   • unsharp small kernel only → fast edge enhancement.
+    //   • vignette PI/4.5 → soft corners.
+    // Restores the previous ~render time while keeping most of the cinematic feel.
     filters.push(
-      `[${i}:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,scale=8000:-1,zoompan=z='${movement.zoom}':x='${movement.x}':y='${movement.y}':d=${frames}:s=${W}x${H}:fps=${fps},curves=preset=increase_contrast,colorbalance=rs=0.05:gs=0.02:bs=-0.05:rm=0.06:gm=0.0:bm=-0.06:rh=0.02:gh=0.0:bh=-0.03,eq=contrast=1.06:brightness=0.015:saturation=1.10:gamma=1.02,unsharp=5:5:0.6:5:5:0.0,vignette=PI/4.5,format=yuv420p[v${i}]`
+      `[${i}:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,scale=8000:-1,zoompan=z='${movement.zoom}':x='${movement.x}':y='${movement.y}':d=${frames}:s=${W}x${H}:fps=${fps},eq=contrast=1.10:brightness=0.02:saturation=1.18:gamma=1.03:gamma_r=1.05:gamma_b=0.96,unsharp=3:3:0.4,vignette=PI/4.5,format=yuv420p[v${i}]`
     );
   }
   

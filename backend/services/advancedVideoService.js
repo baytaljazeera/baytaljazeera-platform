@@ -567,10 +567,11 @@ async function createAdvancedSlideshow(imagePaths, outputPath, promoText, option
   for (let i = 0; i < validPaths.length; i++) {
     const frames = Math.round(slideDuration * fps);
     const effect = kenBurnsEffects[i % kenBurnsEffects.length];
-    // Cinematic color grade (same chain as routes/ai.js main slideshow): curves S-curve,
-    // warm color balance, slight gamma lift, gentle sharpening, soft vignette.
+    // Lightweight cinematic grade (matches routes/ai.js main slideshow after rollback):
+    // single fused eq with per-channel gamma for warm filmic tilt + cheap sharpen + vignette.
+    // Avoids curves+colorbalance which doubled FFmpeg render time on Render's shared CPU.
     filters.push(
-      `[${i}:v]scale=8000:-1,zoompan=z='${effect.zoom}':x='${effect.x}':y='${effect.y}':d=${frames}:s=${W}x${H}:fps=${fps},curves=preset=increase_contrast,colorbalance=rs=0.05:gs=0.02:bs=-0.05:rm=0.06:gm=0.0:bm=-0.06:rh=0.02:gh=0.0:bh=-0.03,eq=contrast=1.06:brightness=0.015:saturation=1.10:gamma=1.02,unsharp=5:5:0.6:5:5:0.0,vignette=PI/4.5,format=yuv420p[v${i}]`
+      `[${i}:v]scale=8000:-1,zoompan=z='${effect.zoom}':x='${effect.x}':y='${effect.y}':d=${frames}:s=${W}x${H}:fps=${fps},eq=contrast=1.10:brightness=0.02:saturation=1.18:gamma=1.03:gamma_r=1.05:gamma_b=0.96,unsharp=3:3:0.4,vignette=PI/4.5,format=yuv420p[v${i}]`
     );
   }
 
