@@ -1659,6 +1659,7 @@ router.post("/user/generate-advanced-video", authMiddleware, videoGenerationLimi
 const LUXURY_USAGE = new Map(); // userId -> { count, lastResetMs }
 const LUXURY_DAILY_LIMIT = parseInt(process.env.LUXURY_DAILY_LIMIT || "1", 10);
 const LUXURY_BYPASS_CODE = process.env.LUXURY_BYPASS_CODE || "M333M333M333";
+const ULTRA_BYPASS_CODE = process.env.ULTRA_BYPASS_CODE || "MMM2099";
 
 function checkLuxuryQuota(userId, providedBypassCode) {
   // Bypass code for the owner's testing — must match env exactly.
@@ -1692,14 +1693,28 @@ router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyn
   const requestedTier = String(req.body.tier || "standard").toLowerCase();
   const bypassCode = req.body.bypassCode || req.get("x-bypass-code") || null;
 
-  // ── Tier 3: Ultra Cinematic — locked during pre-launch ──
+  // ── Tier 3: Ultra Cinematic (Gemini Veo) ──
+  // Locked by default; opens with the ULTRA_BYPASS_CODE for owner testing.
+  // Each successful generation costs ~$2-6 on Google's billing — heavy gate
+  // means we never accept it from a normal user during pre-launch.
   if (requestedTier === "ultra") {
-    return res.status(403).json({
-      error: "هذه الميزة متاحة فقط للباقات المدفوعة المميزة. ستُفتح قريباً.",
-      errorEn: "This feature is locked for premium tiers.",
-      tier: "ultra",
-      locked: true,
-    });
+    if (!bypassCode || bypassCode !== ULTRA_BYPASS_CODE) {
+      return res.status(403).json({
+        error: "هذه الميزة متاحة فقط للباقات المدفوعة المميزة. ستُفتح قريباً.",
+        errorEn: "This feature is locked for premium tiers.",
+        tier: "ultra",
+        locked: true,
+      });
+    }
+    // Bypass accepted — fail fast if Gemini isn't actually configured.
+    if (!genAI) {
+      return res.status(503).json({
+        error: "خدمة Gemini Veo غير مفعّلة على الخادم. أضف GEMINI_API_KEY في Environment على Render قبل التجربة.",
+        errorEn: "Gemini Veo not configured (missing GEMINI_API_KEY).",
+        tier: "ultra",
+      });
+    }
+    console.log(`[Ultra] 🔓 Bypass code accepted for user ${userId} — kicking off real Veo generation (~$2-6 cost).`);
   }
 
   // ── Tier 2: Luxury — rate-limit + bypass code ──
@@ -1797,6 +1812,7 @@ router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyn
 
   const { generateListingSlideshow } = require('../services/videoService');
   const { generateHybridLuxuryVideo } = require('../services/luxuryVideoOrchestrator');
+  const { generateUltraVeoVideo } = require('../services/ultraVideoOrchestrator');
   const openAiVoices = ['onyx', 'ash', 'fable', 'echo', 'alloy'];
   const isOpenAiVoice = openAiVoices.includes(String(videoVoice || '').toLowerCase());
   const listingData = {
@@ -1816,11 +1832,15 @@ router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyn
   };
   const targetId = listingId || `temp_${Date.now()}`;
 
-  // Tier-aware dispatch. Standard keeps the existing FFmpeg flow exactly;
-  // Luxury runs the hybrid (Replicate opening shot + FFmpeg slideshow + concat).
-  const generationPromise = requestedTier === "luxury"
-    ? generateHybridLuxuryVideo(targetId, cleanImages, listingData)
-    : generateListingSlideshow(targetId, cleanImages, listingData);
+  // Tier-aware dispatch. Standard = existing FFmpeg flow (unchanged).
+  // Luxury = hybrid Replicate-opening + FFmpeg slideshow + concat.
+  // Ultra  = full Veo generation (bypass code already verified above).
+  const generationPromise =
+    requestedTier === "ultra"
+      ? generateUltraVeoVideo(targetId, cleanImages, listingData)
+      : requestedTier === "luxury"
+        ? generateHybridLuxuryVideo(targetId, cleanImages, listingData)
+        : generateListingSlideshow(targetId, cleanImages, listingData);
 
   generationPromise
     .then((result) => {

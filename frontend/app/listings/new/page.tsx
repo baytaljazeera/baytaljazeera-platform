@@ -4240,22 +4240,24 @@ export default function NewListingPage() {
                           </p>
                         </button>
 
-                        {/* Tier 3 — Ultra (locked) */}
+                        {/* Tier 3 — Ultra (click-to-unlock with owner code) */}
                         <button
                           type="button"
-                          disabled
-                          aria-disabled="true"
-                          onClick={() => toast.message("هذه الميزة قادمة في الباقة المميزة 👑", { duration: 2500 })}
-                          className="relative text-right rounded-xl border-2 border-slate-200 bg-slate-50 p-3 cursor-not-allowed opacity-70"
+                          onClick={() => setVideoTier("ultra")}
+                          className={`relative text-right rounded-xl border-2 p-3 transition ${
+                            videoTier === "ultra"
+                              ? "border-purple-500 bg-purple-50 shadow-md"
+                              : "border-slate-200 bg-white hover:border-purple-400/60"
+                          }`}
                         >
                           <div className="absolute top-2 left-2 text-base">🔒</div>
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xl grayscale">👑</span>
-                            <span className="font-bold text-sm text-slate-500">سينمائي خارق</span>
-                            <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded">قريباً</span>
+                            <span className="text-xl">👑</span>
+                            <span className="font-bold text-sm text-[#002845]">سينمائي خارق</span>
+                            <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded font-bold">يتطلب كود</span>
                           </div>
-                          <p className="text-[11px] text-slate-500 leading-snug">
-                            فيديو AI متكامل بكل اللقطات — للباقة المميزة
+                          <p className="text-[11px] text-[#002845]/60 leading-snug">
+                            فيديو AI متكامل من Gemini Veo — للباقة المميزة
                           </p>
                         </button>
                       </div>
@@ -4274,6 +4276,29 @@ export default function NewListingPage() {
                             dir="ltr"
                             className="w-full px-3 py-2 text-sm rounded-lg border border-[#D4AF37]/40 bg-white focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]/30 outline-none"
                           />
+                        </div>
+                      )}
+
+                      {/* Ultra bypass code + cost warning (owner testing of Gemini Veo) */}
+                      {videoTier === "ultra" && (
+                        <div className="mt-3 p-3 rounded-xl bg-gradient-to-l from-purple-50 to-fuchsia-50 border border-purple-300">
+                          <p className="text-[11px] text-purple-900 mb-2 leading-relaxed">
+                            👑 <strong>المستوى السينمائي الخارق (Gemini Veo)</strong> — يولّد فيديو AI متكامل بحركة حقيقية.
+                          </p>
+                          <p className="text-[11px] text-red-700 mb-2 leading-relaxed">
+                            ⚠️ <strong>تنبيه تكلفة:</strong> كل توليد ناجح يكلّف ~$2-$6 من رصيد Google (تُخصم فوراً). وقت التوليد: 3-8 دقائق.
+                          </p>
+                          <input
+                            type="text"
+                            value={luxuryBypassCode}
+                            onChange={(e) => setLuxuryBypassCode(e.target.value)}
+                            placeholder="كود التجربة (إلزامي للـ Ultra)"
+                            dir="ltr"
+                            className="w-full px-3 py-2 text-sm rounded-lg border border-purple-400 bg-white focus:border-purple-600 focus:ring-1 focus:ring-purple-400 outline-none"
+                          />
+                          <p className="text-[10px] text-purple-700/70 mt-1.5">
+                            بدون كود صالح، السيرفر يرفض الطلب فوراً (403) قبل أي صرف.
+                          </p>
                         </div>
                       )}
                     </div>
