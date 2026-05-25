@@ -75,6 +75,11 @@ type QuotaOption = {
     highlightsAllowed: number;
     supportLevel: number;
     features: string[];
+    // Video tier permissions (new — comes from plan.video_config.allowed_tiers
+    // via /api/quota/options-for-listing). Used to gate the 3-tier picker.
+    videoEnabled?: boolean;
+    allowedTiers?: ("standard" | "luxury" | "ultra")[];
+    maxRegenerations?: number;
   };
 };
 
@@ -4202,111 +4207,176 @@ export default function NewListingPage() {
                     </div>
 
                     {/* ─── 3-Tier video selector ─── */}
-                    <div className="mb-5">
-                      <p className="text-xs font-semibold text-[#002845]/80 mb-2">اختر مستوى الفيديو</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        {/* Tier 1 — Standard */}
-                        <button
-                          type="button"
-                          onClick={() => setVideoTier("standard")}
-                          className={`relative text-right rounded-xl border-2 p-3 transition ${
-                            videoTier === "standard"
-                              ? "border-[#D4AF37] bg-amber-50 shadow-md"
-                              : "border-slate-200 bg-white hover:border-[#D4AF37]/50"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xl">🎬</span>
-                            <span className="font-bold text-sm text-[#002845]">قياسي</span>
-                            <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded">مجاناً</span>
-                          </div>
-                          <p className="text-[11px] text-[#002845]/60 leading-snug">
-                            سلايد شو سينمائي بحركة كاميرا وصوت تعليق
-                          </p>
-                        </button>
+                    {(() => {
+                      const planAllowedTiers = new Set(
+                        selectedBucket?.benefits?.allowedTiers || ["standard"]
+                      );
+                      const tierMeta = {
+                        standard: planAllowedTiers.has("standard"),
+                        luxury: planAllowedTiers.has("luxury"),
+                        ultra: planAllowedTiers.has("ultra"),
+                      };
+                      const planName = selectedBucket?.planName || "باقتك الحالية";
 
-                        {/* Tier 2 — Luxury */}
-                        <button
-                          type="button"
-                          onClick={() => setVideoTier("luxury")}
-                          className={`relative text-right rounded-xl border-2 p-3 transition ${
-                            videoTier === "luxury"
-                              ? "border-[#D4AF37] bg-amber-50 shadow-md"
-                              : "border-slate-200 bg-white hover:border-[#D4AF37]/50"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xl">✨</span>
-                            <span className="font-bold text-sm text-[#002845]">فاخر</span>
-                            <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-[#D4AF37]/20 text-[#B8860B] rounded font-bold">تجربة</span>
-                          </div>
-                          <p className="text-[11px] text-[#002845]/60 leading-snug">
-                            لقطة افتتاحية AI متحركة + سلايد شو — فيديو واحد/يوم
-                          </p>
-                        </button>
+                      const lockToast = (tierLabel: string) =>
+                        toast.message(`المستوى "${tierLabel}" غير متاح في ${planName}. ارتقِ بباقتك لتفعيله، أو استخدم كود تجربة مسموح به.`, {
+                          duration: 4000,
+                        });
 
-                        {/* Tier 3 — Ultra (click-to-unlock with owner code) */}
-                        <button
-                          type="button"
-                          onClick={() => setVideoTier("ultra")}
-                          className={`relative text-right rounded-xl border-2 p-3 transition ${
-                            videoTier === "ultra"
-                              ? "border-purple-500 bg-purple-50 shadow-md"
-                              : "border-slate-200 bg-white hover:border-purple-400/60"
-                          }`}
-                        >
-                          <div className="absolute top-2 left-2 text-base">🔒</div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xl">👑</span>
-                            <span className="font-bold text-sm text-[#002845]">سينمائي خارق</span>
-                            <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded font-bold">يتطلب كود</span>
-                          </div>
-                          <p className="text-[11px] text-[#002845]/60 leading-snug">
-                            فيديو AI متكامل من Gemini Veo — للباقة المميزة
+                      // Clicking a locked card still selects it visually so the user can
+                      // enter a bypass code; backend will enforce the real gate.
+                      const handleTierClick = (t: "standard" | "luxury" | "ultra", allowed: boolean) => {
+                        setVideoTier(t);
+                        if (!allowed) {
+                          const labels = { standard: "القياسي", luxury: "الفاخر", ultra: "السينمائي الخارق" };
+                          lockToast(labels[t]);
+                        }
+                      };
+
+                      return (
+                        <div className="mb-5">
+                          <p className="text-xs font-semibold text-[#002845]/80 mb-2">
+                            اختر مستوى الفيديو
+                            <span className="ml-2 text-[10px] text-[#002845]/50">
+                              ({planName} — المتاح: {Array.from(planAllowedTiers).map((t) => ({ standard: "قياسي", luxury: "فاخر", ultra: "خارق" }[t as string])).filter(Boolean).join(" · ")})
+                            </span>
                           </p>
-                        </button>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            {/* Tier 1 — Standard */}
+                            <button
+                              type="button"
+                              onClick={() => handleTierClick("standard", tierMeta.standard)}
+                              className={`relative text-right rounded-xl border-2 p-3 transition ${
+                                videoTier === "standard"
+                                  ? "border-[#D4AF37] bg-amber-50 shadow-md"
+                                  : tierMeta.standard
+                                    ? "border-slate-200 bg-white hover:border-[#D4AF37]/50"
+                                    : "border-slate-200 bg-slate-50 opacity-70 hover:border-amber-300"
+                              }`}
+                            >
+                              {!tierMeta.standard && <div className="absolute top-2 left-2 text-base">🔒</div>}
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`text-xl ${!tierMeta.standard ? "grayscale" : ""}`}>🎬</span>
+                                <span className="font-bold text-sm text-[#002845]">قياسي</span>
+                                <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded ${
+                                  tierMeta.standard ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
+                                }`}>
+                                  {tierMeta.standard ? "مجاناً" : "غير متاح"}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-[#002845]/60 leading-snug">
+                                سلايد شو سينمائي بحركة كاميرا وصوت تعليق
+                              </p>
+                            </button>
+
+                            {/* Tier 2 — Luxury */}
+                            <button
+                              type="button"
+                              onClick={() => handleTierClick("luxury", tierMeta.luxury)}
+                              className={`relative text-right rounded-xl border-2 p-3 transition ${
+                                videoTier === "luxury"
+                                  ? "border-[#D4AF37] bg-amber-50 shadow-md"
+                                  : tierMeta.luxury
+                                    ? "border-slate-200 bg-white hover:border-[#D4AF37]/50"
+                                    : "border-slate-200 bg-slate-50 opacity-70 hover:border-amber-300"
+                              }`}
+                            >
+                              {!tierMeta.luxury && <div className="absolute top-2 left-2 text-base">🔒</div>}
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`text-xl ${!tierMeta.luxury ? "grayscale" : ""}`}>✨</span>
+                                <span className="font-bold text-sm text-[#002845]">فاخر</span>
+                                <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                  tierMeta.luxury ? "bg-[#D4AF37]/20 text-[#B8860B]" : "bg-slate-200 text-slate-600"
+                                }`}>
+                                  {tierMeta.luxury ? "تجربة" : "للترقية"}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-[#002845]/60 leading-snug">
+                                لقطة افتتاحية AI متحركة + سلايد شو — فيديو واحد/يوم
+                              </p>
+                            </button>
+
+                            {/* Tier 3 — Ultra */}
+                            <button
+                              type="button"
+                              onClick={() => handleTierClick("ultra", tierMeta.ultra)}
+                              className={`relative text-right rounded-xl border-2 p-3 transition ${
+                                videoTier === "ultra"
+                                  ? "border-purple-500 bg-purple-50 shadow-md"
+                                  : tierMeta.ultra
+                                    ? "border-slate-200 bg-white hover:border-purple-400/60"
+                                    : "border-slate-200 bg-slate-50 opacity-70 hover:border-purple-300"
+                              }`}
+                            >
+                              <div className="absolute top-2 left-2 text-base">🔒</div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`text-xl ${!tierMeta.ultra ? "grayscale" : ""}`}>👑</span>
+                                <span className="font-bold text-sm text-[#002845]">سينمائي خارق</span>
+                                <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                  tierMeta.ultra ? "bg-purple-100 text-purple-700" : "bg-slate-200 text-slate-600"
+                                }`}>
+                                  {tierMeta.ultra ? "متاح" : "يتطلب كود"}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-[#002845]/60 leading-snug">
+                                فيديو AI متكامل من Gemini Veo — للباقة المميزة
+                              </p>
+                            </button>
+                          </div>
+
+                          {/* Plan-locked nudge directly under the cards */}
+                          {!tierMeta[videoTier] && (
+                            <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900">
+                              ⚠️ المستوى المحدد غير مفعّل في باقتك ({planName}). يمكنك:
+                              <ul className="list-disc list-inside mt-1.5 space-y-0.5">
+                                <li>اختيار "قياسي" لإكمال التوليد مجاناً.</li>
+                                <li>أو ترقية باقتك ليفتح هذا المستوى تلقائياً.</li>
+                                <li>أو إدخال كود تجربة صالح أدناه (للمالك فقط).</li>
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    {/* Luxury bypass code (owner testing) */}
+                    {videoTier === "luxury" && (
+                      <div className="mt-3 p-3 rounded-xl bg-gradient-to-l from-amber-50 to-yellow-50 border border-[#D4AF37]/40">
+                        <p className="text-[11px] text-[#002845]/70 mb-2">
+                          ✨ المستوى الفاخر مرة واحدة في اليوم لكل حساب. إن كان لديك كود تجربة، أدخله هنا لتجاوز الحد.
+                        </p>
+                        <input
+                          type="text"
+                          value={luxuryBypassCode}
+                          onChange={(e) => setLuxuryBypassCode(e.target.value)}
+                          placeholder="كود التجربة (اختياري)"
+                          dir="ltr"
+                          className="w-full px-3 py-2 text-sm rounded-lg border border-[#D4AF37]/40 bg-white focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]/30 outline-none"
+                        />
                       </div>
+                    )}
 
-                      {/* Luxury bypass code (owner testing) */}
-                      {videoTier === "luxury" && (
-                        <div className="mt-3 p-3 rounded-xl bg-gradient-to-l from-amber-50 to-yellow-50 border border-[#D4AF37]/40">
-                          <p className="text-[11px] text-[#002845]/70 mb-2">
-                            ✨ المستوى الفاخر مرة واحدة في اليوم لكل حساب. إن كان لديك كود تجربة، أدخله هنا لتجاوز الحد.
-                          </p>
-                          <input
-                            type="text"
-                            value={luxuryBypassCode}
-                            onChange={(e) => setLuxuryBypassCode(e.target.value)}
-                            placeholder="كود التجربة (اختياري)"
-                            dir="ltr"
-                            className="w-full px-3 py-2 text-sm rounded-lg border border-[#D4AF37]/40 bg-white focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]/30 outline-none"
-                          />
-                        </div>
-                      )}
-
-                      {/* Ultra bypass code + cost warning (owner testing of Gemini Veo) */}
-                      {videoTier === "ultra" && (
-                        <div className="mt-3 p-3 rounded-xl bg-gradient-to-l from-purple-50 to-fuchsia-50 border border-purple-300">
-                          <p className="text-[11px] text-purple-900 mb-2 leading-relaxed">
-                            👑 <strong>المستوى السينمائي الخارق (Gemini Veo)</strong> — يولّد فيديو AI متكامل بحركة حقيقية.
-                          </p>
-                          <p className="text-[11px] text-red-700 mb-2 leading-relaxed">
-                            ⚠️ <strong>تنبيه تكلفة:</strong> كل توليد ناجح يكلّف ~$2-$6 من رصيد Google (تُخصم فوراً). وقت التوليد: 3-8 دقائق.
-                          </p>
-                          <input
-                            type="text"
-                            value={luxuryBypassCode}
-                            onChange={(e) => setLuxuryBypassCode(e.target.value)}
-                            placeholder="كود التجربة (إلزامي للـ Ultra)"
-                            dir="ltr"
-                            className="w-full px-3 py-2 text-sm rounded-lg border border-purple-400 bg-white focus:border-purple-600 focus:ring-1 focus:ring-purple-400 outline-none"
-                          />
-                          <p className="text-[10px] text-purple-700/70 mt-1.5">
-                            بدون كود صالح، السيرفر يرفض الطلب فوراً (403) قبل أي صرف.
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                    {/* Ultra bypass code + cost warning (owner testing of Gemini Veo) */}
+                    {videoTier === "ultra" && (
+                      <div className="mt-3 p-3 rounded-xl bg-gradient-to-l from-purple-50 to-fuchsia-50 border border-purple-300">
+                        <p className="text-[11px] text-purple-900 mb-2 leading-relaxed">
+                          👑 <strong>المستوى السينمائي الخارق (Gemini Veo)</strong> — يولّد فيديو AI متكامل بحركة حقيقية.
+                        </p>
+                        <p className="text-[11px] text-red-700 mb-2 leading-relaxed">
+                          ⚠️ <strong>تنبيه تكلفة:</strong> كل توليد ناجح يكلّف ~$2-$6 من رصيد Google (تُخصم فوراً). وقت التوليد: 3-8 دقائق.
+                        </p>
+                        <input
+                          type="text"
+                          value={luxuryBypassCode}
+                          onChange={(e) => setLuxuryBypassCode(e.target.value)}
+                          placeholder="كود التجربة (إلزامي للـ Ultra)"
+                          dir="ltr"
+                          className="w-full px-3 py-2 text-sm rounded-lg border border-purple-400 bg-white focus:border-purple-600 focus:ring-1 focus:ring-purple-400 outline-none"
+                        />
+                        <p className="text-[10px] text-purple-700/70 mt-1.5">
+                          بدون كود صالح، السيرفر يرفض الطلب فوراً (403) قبل أي صرف.
+                        </p>
+                      </div>
+                    )}
 
                     {/* ١ الجودة — ٢ الصوت (واضح بدون إرباك) */}
                     <div className="space-y-4 mb-4">

@@ -106,7 +106,7 @@ router.get("/options-for-listing", authMiddleware, asyncHandler(async (req, res)
   const now = new Date();
 
   const result = await db.query(`
-    SELECT 
+    SELECT
       qb.id as bucket_id,
       qb.plan_id,
       qb.total_slots,
@@ -129,7 +129,8 @@ router.get("/options-for-listing", authMiddleware, asyncHandler(async (req, res)
       p.support_level,
       p.header_bg_color,
       p.body_bg_color,
-      p.sort_order
+      p.sort_order,
+      p.video_config
     FROM quota_buckets qb
     JOIN plans p ON qb.plan_id = p.id
     LEFT JOIN user_plans up ON qb.user_plan_id = up.id
@@ -138,11 +139,29 @@ router.get("/options-for-listing", authMiddleware, asyncHandler(async (req, res)
     ORDER BY p.sort_order ASC, qb.expires_at ASC NULLS LAST
   `, [userId]);
 
+  // Normalize the video_config JSON into a frontend-friendly shape:
+  // { videoEnabled, allowedTiers, maxRegenerations }.
+  function videoBenefits(cfg) {
+    const vc = (cfg && typeof cfg === "object") ? cfg : {};
+    const enabled = vc.enabled !== false;
+    let allowedTiers;
+    if (Array.isArray(vc.allowed_tiers) && vc.allowed_tiers.length > 0) {
+      allowedTiers = vc.allowed_tiers.map((t) => String(t).toLowerCase());
+    } else {
+      const legacy = String(vc.tier || "").toLowerCase();
+      if (legacy === "cinematic" || legacy === "luxury") allowedTiers = ["standard", "luxury"];
+      else if (legacy === "ultra") allowedTiers = ["standard", "luxury", "ultra"];
+      else allowedTiers = ["standard"];
+    }
+    return { enabled, allowedTiers, maxRegenerations: vc.max_regenerations };
+  }
+
   const options = result.rows
     .map(bucket => {
       const remaining = remainingInBucket(bucket, now);
       if (remaining <= 0) return null;
 
+      const v = videoBenefits(bucket.video_config);
       return {
         bucketId: bucket.bucket_id,
         planId: bucket.plan_id,
@@ -164,7 +183,12 @@ router.get("/options-for-listing", authMiddleware, asyncHandler(async (req, res)
           aiSupportLevel: bucket.ai_support_level,
           highlightsAllowed: bucket.highlights_allowed,
           supportLevel: bucket.support_level,
-          features: bucket.plan_features || []
+          features: bucket.plan_features || [],
+          // New: video tier permissions exposed to the listing-create UI so it
+          // can show all 3 tiers as a teaser, with locked ones gated by plan.
+          videoEnabled: v.enabled,
+          allowedTiers: v.allowedTiers,
+          maxRegenerations: v.maxRegenerations,
         }
       };
     })
