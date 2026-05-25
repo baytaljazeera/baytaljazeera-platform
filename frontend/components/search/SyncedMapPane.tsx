@@ -144,10 +144,14 @@ function ListingSidebar({
               <MapPin className="w-8 h-8 text-gray-300" />
             </div>
           )}
-          {/* status pill */}
-          <span className={`absolute top-2 right-2 text-[9px] px-1.5 py-0.5 rounded-full ${statusCfg.bg} ${statusCfg.color} font-medium`}>
-            {statusCfg.label}
-          </span>
+          {/* status pill — "نشط" is the default state, no badge needed.
+              Anything else (sold/rented/negotiating/archived) gets a badge
+              so the user notices the exception. */}
+          {marker.deal_status && marker.deal_status !== "active" && (
+            <span className={`absolute top-2 right-2 text-[9px] px-1.5 py-0.5 rounded-full ${statusCfg.bg} ${statusCfg.color} font-medium`}>
+              {statusCfg.label}
+            </span>
+          )}
           {/* purpose pill on image — icon reinforces meaning at a glance:
               key for ownership/sale, calendar for time-bound rental */}
           <span className={`absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full font-bold backdrop-blur-sm inline-flex items-center gap-1 ${

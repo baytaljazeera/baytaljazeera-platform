@@ -38,6 +38,7 @@ import {
   Square,
   ChevronDown,
   ChevronLeft,
+  ChevronRight,
   Map,
   List,
   X,
@@ -46,6 +47,22 @@ import {
   Eye,
   Key,
   CalendarDays,
+  Home,
+  Building2,
+  Search as SearchIcon,
+  Tag,
+  Check,
+  Clock,
+  Coins,
+  Ruler,
+  Bed,
+  Waves,
+  Trees,
+  Car,
+  MoveVertical,
+  BadgeCheck,
+  Handshake,
+  Settings2,
 } from "lucide-react";
 import { useSearchMapStore } from "@/lib/stores/searchMapStore";
 import { useCurrencyStore } from "@/lib/stores/currencyStore";
@@ -1084,15 +1101,39 @@ function SearchPage() {
         </div>
       );
     } else {
+      // Split promo from organic listings: promos render as a single top row
+      // (max 3) instead of being intermixed with real cards. Otherwise the
+      // gold/navy gradient cards visually compete with the new tinted ones
+      // and feel like ads sprinkled through the grid.
+      const promoListings = filteredListings.filter((l) => l.is_promotional).slice(0, 3);
+      const organicListings = filteredListings.filter((l) => !l.is_promotional);
       content = (
-        <div className="flex gap-4 relative">
-          {/* 🏠 قائمة العقارات - 70% أو 100% حسب حالة الخريطة */}
-          <div 
+        <div className="flex flex-col gap-4 relative">
+          {promoListings.length > 0 && (
+            <div className="grid gap-3 md:gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+              {promoListings.map((item) => {
+                const currentIsFavorite = favoritesSet.has(item.id);
+                return (
+                  <PropertyCard
+                    key={item.id}
+                    listing={item}
+                    isFavorite={currentIsFavorite}
+                    onToggleFavorite={() => toggleFavorite(item.id, !currentIsFavorite)}
+                    isActive={false}
+                    syncedMapMode={false}
+                  />
+                );
+              })}
+            </div>
+          )}
+          <div className="flex gap-4 relative">
+          {/* قائمة العقارات - 70% أو 100% حسب حالة الخريطة */}
+          <div
             ref={listingsContainerRef}
             className={`transition-all duration-300 ${showMiniMap ? 'w-full lg:w-[70%]' : 'w-full'}`}
           >
             <div className="grid gap-4 md:gap-6 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-              {filteredListings.map((item) => {
+              {organicListings.map((item) => {
                 const currentIsFavorite = favoritesSet.has(item.id);
                 return (
                   <PropertyCard
@@ -1204,6 +1245,7 @@ function SearchPage() {
               <span>الخريطة</span>
             </button>
           )}
+          </div>
         </div>
       );
     }
@@ -1345,7 +1387,7 @@ function SearchPage() {
 
   return (
     <div
-      className="min-h-screen flex flex-col"
+      className="min-h-screen flex flex-col relative"
       style={{
         backgroundImage: "url('/patterns/hero-2.png')",
         backgroundSize: "cover",
@@ -1354,7 +1396,10 @@ function SearchPage() {
       }}
       dir="rtl"
     >
-      <div className="flex-1">
+      {/* محايد الخلفية: طبقة كريمي شبه شفافة تخفّف زحام النمط
+          عشان الباقة + البطاقات الملونة تتنفّس. */}
+      <div className="absolute inset-0 bg-[#FAF7F2]/85 pointer-events-none" aria-hidden="true" />
+      <div className="flex-1 relative">
         <div className="max-w-7xl mx-auto w-full pt-3 pb-4 px-4 md:px-8 space-y-3">
           {/* شريط الفلاتر الرئيسي - موحد للخريطة والقائمة - sticky ملتصق بالـ navbar */}
           <div className="sticky top-[75px] z-[100]" ref={filterBarRef}>
@@ -1413,7 +1458,7 @@ function SearchPage() {
                       filters.hasParking,
                     ].filter(Boolean).length;
                     return count > 0 ? (
-                      <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[22px] h-[22px] text-mobile-xs font-bold bg-red-500 text-white rounded-full px-1.5">{count > 99 ? '99+' : count}</span>
+                      <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[22px] h-[22px] text-mobile-xs font-bold bg-[#D4AF37] text-[#002845] ring-2 ring-[#002845] rounded-full px-1.5">{count > 99 ? '99+' : count}</span>
                     ) : null;
                   })()}
                 </button>
@@ -1427,7 +1472,7 @@ function SearchPage() {
                 {/* المدينة - أولاً */}
                 <div className="relative">
                   <FilterChip
-                    icon="📍"
+                    icon={<MapPin className="w-3.5 h-3.5" />}
                     label={filters.city || "المدينة"}
                     title={filters.city || "المدينة"}
                     active={!!filters.city}
@@ -1440,11 +1485,12 @@ function SearchPage() {
                 </div>
 
                 {/* بحث */}
-                <div className="w-32">
+                <div className="w-32 relative">
+                  <SearchIcon className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/60 pointer-events-none" />
                   <input
                     type="text"
-                    className="w-full rounded-full bg-white/15 border border-white/30 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#D4AF37] placeholder:text-white/60 text-white"
-                    placeholder="🔍 ابحث بالحي..."
+                    className="w-full rounded-full bg-white/15 border border-white/30 ps-3 pe-8 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#D4AF37] placeholder:text-white/60 text-white"
+                    placeholder="ابحث بالحي..."
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
                   />
@@ -1454,51 +1500,53 @@ function SearchPage() {
                 <div className="flex rounded-full overflow-hidden border border-[#D4AF37]/50 shadow-sm" style={{height: "34px"}}>
                   <button
                     onClick={() => handleUsageClick("residential")}
-                    className={`flex items-center gap-1 px-3 text-xs font-bold transition touch-manipulation ${
+                    className={`flex items-center gap-1.5 px-3 text-xs font-bold transition touch-manipulation ${
                       usageTab === "all" || usageTab === "residential"
                         ? "bg-[#D4AF37] text-[#002845]"
                         : "bg-[#002845]/80 text-white/60 hover:text-white"
                     }`}
                   >
-                    🏠 سكني
+                    <Home className="w-3.5 h-3.5" /> سكني
                   </button>
                   <div className="w-px bg-[#D4AF37]/40 self-stretch" />
                   <button
                     onClick={() => handleUsageClick("commercial")}
-                    className={`flex items-center gap-1 px-3 text-xs font-bold transition touch-manipulation ${
+                    className={`flex items-center gap-1.5 px-3 text-xs font-bold transition touch-manipulation ${
                       usageTab === "all" || usageTab === "commercial"
                         ? "bg-[#D4AF37] text-[#002845]"
                         : "bg-[#002845]/80 text-white/60 hover:text-white"
                     }`}
                   >
-                    🏢 تجاري
+                    <Building2 className="w-3.5 h-3.5" /> تجاري
                   </button>
                 </div>
 
-                {/* نوع العرض + حالة الصفقة - مجموعة واحدة مهمة */}
+                {/* نوع العرض + حالة الصفقة - مجموعة واحدة مهمة.
+                    ألوان البيع/الإيجار توافق نفس عائلة ألوان البطاقات
+                    (وردي للبيع، منت للإيجار) عشان نوع = لون موحّد عبر الصفحة. */}
                 <div className="flex items-center gap-1 bg-gradient-to-l from-[#D4AF37]/20 to-[#D4AF37]/10 px-2 py-1 rounded-xl border border-[#D4AF37]/30">
                   {/* نوع العرض - Split Chip */}
                   <div className="flex rounded-lg overflow-hidden border border-[#D4AF37]/40" style={{height: "34px"}}>
                     <button
                       onClick={() => handlePurposeClick("sell")}
-                      className={`flex items-center gap-1 px-3 text-xs font-bold transition touch-manipulation ${
+                      className={`flex items-center gap-1.5 px-3 text-xs font-bold transition touch-manipulation ${
                         purposeTab === "all" || purposeTab === "sell"
-                          ? "bg-[#8B0000] text-white"
+                          ? "bg-rose-600 text-white"
                           : "bg-transparent text-white/60 hover:text-white"
                       }`}
                     >
-                      🏷️ بيع
+                      <Key className="w-3.5 h-3.5" /> بيع
                     </button>
                     <div className="w-px bg-[#D4AF37]/40 self-stretch" />
                     <button
                       onClick={() => handlePurposeClick("rent")}
-                      className={`flex items-center gap-1 px-3 text-xs font-bold transition touch-manipulation ${
+                      className={`flex items-center gap-1.5 px-3 text-xs font-bold transition touch-manipulation ${
                         purposeTab === "all" || purposeTab === "rent"
-                          ? "bg-[#0B6B4C] text-white"
+                          ? "bg-emerald-600 text-white"
                           : "bg-transparent text-white/60 hover:text-white"
                       }`}
                     >
-                      🔑 إيجار
+                      <CalendarDays className="w-3.5 h-3.5" /> إيجار
                     </button>
                   </div>
 
@@ -1509,39 +1557,34 @@ function SearchPage() {
                     <button
                       onClick={() => setActivePanel(activePanel === "dealStatus" ? "none" : "dealStatus")}
                       className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-1.5 ${
-                        filters.dealStatus === "active" 
-                          ? "bg-emerald-500 text-white" 
+                        filters.dealStatus === "active"
+                          ? "bg-emerald-500 text-white"
                           : filters.dealStatus === "negotiating"
                             ? "bg-amber-500 text-white"
                             : filters.dealStatus === "sold"
-                              ? "bg-red-600 text-white"
+                              ? "bg-rose-600 text-white"
                               : filters.dealStatus === "rented"
                                 ? "bg-blue-600 text-white"
                                 : "bg-white/20 text-white"
                       }`}
                     >
-                      {filters.dealStatus === "active"
-                        ? "✅ نشط"
-                        : filters.dealStatus === "negotiating"
-                          ? "🤝 قيد التفاوض"
-                          : filters.dealStatus === "sold"
-                            ? "✔️ تم البيع"
-                            : filters.dealStatus === "rented"
-                              ? "✔️ تم التأجير"
-                              : filters.dealStatus === "all"
-                                ? "📋 الكل"
-                                : "📋 الحالة"}
+                      {filters.dealStatus === "active" ? (<><BadgeCheck className="w-3.5 h-3.5" /> نشط</>)
+                        : filters.dealStatus === "negotiating" ? (<><Handshake className="w-3.5 h-3.5" /> قيد التفاوض</>)
+                        : filters.dealStatus === "sold" ? (<><Check className="w-3.5 h-3.5" /> تم البيع</>)
+                        : filters.dealStatus === "rented" ? (<><Check className="w-3.5 h-3.5" /> تم التأجير</>)
+                        : filters.dealStatus === "all" ? (<><Tag className="w-3.5 h-3.5" /> الكل</>)
+                        : (<><Tag className="w-3.5 h-3.5" /> الحالة</>)}
                     </button>
                     {activePanel === "dealStatus" && (
                       <div className="absolute top-full right-0 mt-1 z-[9999]">
                         <div className="bg-[#002845] rounded-xl shadow-lg border border-[#D4AF37]/40 p-2">
                           <div className="flex gap-1.5">
                             {([
-                              { value: "all", label: "📋 الكل", color: "bg-[#D4AF37] text-[#002845]" },
-                              { value: "active", label: "✅ نشط", color: "bg-emerald-500 text-white" },
-                              { value: "negotiating", label: "🤝 قيد التفاوض", color: "bg-amber-500 text-white" },
-                              { value: "sold", label: "✔️ تم البيع", color: "bg-red-600 text-white" },
-                              { value: "rented", label: "✔️ تم التأجير", color: "bg-blue-600 text-white" },
+                              { value: "all", label: "الكل", icon: <Tag className="w-3.5 h-3.5" />, color: "bg-[#D4AF37] text-[#002845]" },
+                              { value: "active", label: "نشط", icon: <BadgeCheck className="w-3.5 h-3.5" />, color: "bg-emerald-500 text-white" },
+                              { value: "negotiating", label: "قيد التفاوض", icon: <Handshake className="w-3.5 h-3.5" />, color: "bg-amber-500 text-white" },
+                              { value: "sold", label: "تم البيع", icon: <Check className="w-3.5 h-3.5" />, color: "bg-rose-600 text-white" },
+                              { value: "rented", label: "تم التأجير", icon: <Check className="w-3.5 h-3.5" />, color: "bg-blue-600 text-white" },
                             ] as const).map(status => (
                               <button
                                 key={status.value}
@@ -1549,12 +1592,13 @@ function SearchPage() {
                                   setFilters(prev => ({ ...prev, dealStatus: status.value })); 
                                   setActivePanel("none"); 
                                 }}
-                                className={`px-3 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap ${
-                                  filters.dealStatus === status.value 
-                                    ? status.color 
+                                className={`px-3 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap inline-flex items-center gap-1.5 ${
+                                  filters.dealStatus === status.value
+                                    ? status.color
                                     : "bg-white/20 text-white hover:bg-white/30"
                                 }`}
                               >
+                                {status.icon}
                                 {status.label}
                               </button>
                             ))}
@@ -1568,7 +1612,7 @@ function SearchPage() {
                 {/* نوع العقار */}
                 <div className="relative">
                   <FilterChip
-                    icon="🏠"
+                    icon={<Home className="w-3.5 h-3.5" />}
                     label="النوع"
                     title="نوع العقار"
                     active={!!filters.propertyTypes?.length}
@@ -1584,7 +1628,7 @@ function SearchPage() {
                 {/* السعر */}
                 <div className="relative">
                   <FilterChip
-                    icon="💰"
+                    icon={<Coins className="w-3.5 h-3.5" />}
                     label="السعر"
                     title="السعر"
                     active={!!(filters.minPrice || filters.maxPrice)}
@@ -1600,7 +1644,7 @@ function SearchPage() {
                 {/* المساحة */}
                 <div className="relative hidden sm:block">
                   <FilterChip
-                    icon="📐"
+                    icon={<Ruler className="w-3.5 h-3.5" />}
                     label="المساحة"
                     title="المساحة"
                     active={!!(filters.minLandArea || filters.maxLandArea)}
@@ -1616,7 +1660,7 @@ function SearchPage() {
                 {/* الغرف */}
                 <div className="relative hidden sm:block">
                   <FilterChip
-                    icon="🛏️"
+                    icon={<Bed className="w-3.5 h-3.5" />}
                     label={filters.bedrooms ? `غرف: ${filters.bedrooms}+` : "غرف"}
                     title="عدد الغرف"
                     active={!!filters.bedrooms}
@@ -1632,7 +1676,7 @@ function SearchPage() {
                 {/* الحمامات */}
                 <div className="relative hidden md:block">
                   <FilterChip
-                    icon="🚿"
+                    icon={<Bath className="w-3.5 h-3.5" />}
                     label={filters.bathrooms ? `حمام: ${filters.bathrooms}+` : "حمام"}
                     title="عدد الحمامات"
                     active={!!filters.bathrooms}
@@ -1650,7 +1694,7 @@ function SearchPage() {
                   <FilterChip
                     icon={
                       <span className="flex items-center gap-1">
-                        <span>⚙️</span>
+                        <Settings2 className="w-3.5 h-3.5" />
                         {[filters.hasPool, filters.hasGarden, filters.hasElevator, filters.hasParking].filter(Boolean).length > 0 && (
                           <span className="inline-flex items-center justify-center w-4 h-4 text-[8px] font-bold bg-[#002845] text-white rounded-full">
                             {[filters.hasPool, filters.hasGarden, filters.hasElevator, filters.hasParking].filter(Boolean).length}
@@ -1667,12 +1711,12 @@ function SearchPage() {
                     <div className="absolute top-full right-0 mt-1 z-[9999]">
                       <div className="bg-[#002845] rounded-xl shadow-lg border border-[#D4AF37]/40 p-2.5">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <button onClick={() => setFilters(prev => ({ ...prev, hasPool: !prev.hasPool }))} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition ${filters.hasPool ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}>🏊 مسبح</button>
-                          <button onClick={() => setFilters(prev => ({ ...prev, hasGarden: !prev.hasGarden }))} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition ${filters.hasGarden ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}>🌳 حديقة</button>
-                          <button onClick={() => setFilters(prev => ({ ...prev, hasElevator: !prev.hasElevator }))} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition ${filters.hasElevator ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}>🛗 مصعد</button>
-                          <button onClick={() => setFilters(prev => ({ ...prev, hasParking: !prev.hasParking }))} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition ${filters.hasParking ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}>🚗 مواقف</button>
+                          <button onClick={() => setFilters(prev => ({ ...prev, hasPool: !prev.hasPool }))} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition ${filters.hasPool ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}><Waves className="w-3.5 h-3.5" /> مسبح</button>
+                          <button onClick={() => setFilters(prev => ({ ...prev, hasGarden: !prev.hasGarden }))} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition ${filters.hasGarden ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}><Trees className="w-3.5 h-3.5" /> حديقة</button>
+                          <button onClick={() => setFilters(prev => ({ ...prev, hasElevator: !prev.hasElevator }))} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition ${filters.hasElevator ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}><MoveVertical className="w-3.5 h-3.5" /> مصعد</button>
+                          <button onClick={() => setFilters(prev => ({ ...prev, hasParking: !prev.hasParking }))} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition ${filters.hasParking ? "bg-[#D4AF37] text-[#002845]" : "bg-white/20 text-white hover:bg-white/30"}`}><Car className="w-3.5 h-3.5" /> مواقف</button>
                           {(filters.hasPool || filters.hasGarden || filters.hasElevator || filters.hasParking) && (
-                            <button onClick={() => setFilters(prev => ({ ...prev, hasPool: undefined, hasGarden: undefined, hasElevator: undefined, hasParking: undefined }))} className="text-xs text-red-400 hover:text-red-300 font-semibold">✕ مسح</button>
+                            <button onClick={() => setFilters(prev => ({ ...prev, hasPool: undefined, hasGarden: undefined, hasElevator: undefined, hasParking: undefined }))} className="inline-flex items-center gap-1 text-xs text-red-400 hover:text-red-300 font-semibold"><X className="w-3 h-3" /> مسح</button>
                           )}
                         </div>
                       </div>
@@ -1815,7 +1859,7 @@ function SearchPage() {
 
                   {/* البحث بالحي */}
                   <div>
-                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">🔍 البحث بالحي</h4>
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3 inline-flex items-center gap-2"><SearchIcon className="w-4 h-4" /> البحث بالحي</h4>
                     <input
                       type="text"
                       placeholder="ابحث بالحي أو الموقع..."
@@ -1855,52 +1899,53 @@ function SearchPage() {
 
                   {/* نوع العرض - Split Chip */}
                   <div>
-                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">📋 نوع العرض</h4>
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3 inline-flex items-center gap-2"><Tag className="w-4 h-4" /> نوع العرض</h4>
                     <div className="flex rounded-2xl overflow-hidden border-2 border-[#D4AF37]/40 bg-slate-100" style={{minHeight: "52px"}}>
                       <button
                         onClick={() => handlePurposeClick("sell")}
                         className={`flex-1 flex items-center justify-center gap-2 text-mobile-base font-bold transition touch-manipulation active:scale-95 ${
                           purposeTab === "all" || purposeTab === "sell"
-                            ? "bg-[#8B0000] text-white"
+                            ? "bg-rose-600 text-white"
                             : "text-slate-500"
                         }`}
                       >
-                        🏷️ بيع
+                        <Key className="w-4 h-4" /> بيع
                       </button>
                       <div className="w-0.5 bg-[#D4AF37]/40 self-stretch" />
                       <button
                         onClick={() => handlePurposeClick("rent")}
                         className={`flex-1 flex items-center justify-center gap-2 text-mobile-base font-bold transition touch-manipulation active:scale-95 ${
                           purposeTab === "all" || purposeTab === "rent"
-                            ? "bg-[#0B6B4C] text-white"
+                            ? "bg-emerald-600 text-white"
                             : "text-slate-500"
                         }`}
                       >
-                        🔑 إيجار
+                        <CalendarDays className="w-4 h-4" /> إيجار
                       </button>
                     </div>
                   </div>
 
                   {/* حالة الصفقة */}
                   <div>
-                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">🤝 حالة الصفقة</h4>
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3 inline-flex items-center gap-2"><Handshake className="w-4 h-4" /> حالة الصفقة</h4>
                     <div className="flex flex-wrap gap-2">
                       {([
-                        { value: "all", label: "📋 الكل" },
-                        { value: "active", label: "✅ نشط" },
-                        { value: "negotiating", label: "🤝 قيد التفاوض" },
-                        { value: "sold", label: "✔️ تم البيع" },
-                        { value: "rented", label: "✔️ تم التأجير" },
+                        { value: "all", label: "الكل", icon: <Tag className="w-4 h-4" /> },
+                        { value: "active", label: "نشط", icon: <BadgeCheck className="w-4 h-4" /> },
+                        { value: "negotiating", label: "قيد التفاوض", icon: <Handshake className="w-4 h-4" /> },
+                        { value: "sold", label: "تم البيع", icon: <Check className="w-4 h-4" /> },
+                        { value: "rented", label: "تم التأجير", icon: <Check className="w-4 h-4" /> },
                       ] as const).map((status) => (
                         <button
                           key={status.value}
                           onClick={() => setFilters(prev => ({ ...prev, dealStatus: status.value }))}
-                          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${
+                          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 inline-flex items-center gap-2 ${
                             filters.dealStatus === status.value
                               ? "bg-[#D4AF37] text-[#002845]"
                               : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                           }`}
                         >
+                          {status.icon}
                           {status.label}
                         </button>
                       ))}
@@ -1909,7 +1954,7 @@ function SearchPage() {
 
                   {/* نوع العقار */}
                   <div>
-                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">🏠 نوع العقار</h4>
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3 inline-flex items-center gap-2"><Home className="w-4 h-4" /> نوع العقار</h4>
                     <div className="flex flex-wrap gap-2">
                       {(usageTab === "residential" ? RESIDENTIAL_TYPES : usageTab === "commercial" ? COMMERCIAL_TYPES : [...RESIDENTIAL_TYPES, ...COMMERCIAL_TYPES]).map(type => (
                         <button
@@ -1940,7 +1985,7 @@ function SearchPage() {
 
                   {/* السعر */}
                   <div>
-                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">💰 السعر</h4>
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3 inline-flex items-center gap-2"><Coins className="w-4 h-4" /> السعر</h4>
                     <div className="flex gap-3">
                       <input
                         type="number"
@@ -1961,7 +2006,7 @@ function SearchPage() {
 
                   {/* المساحة */}
                   <div>
-                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">📐 المساحة (م²)</h4>
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3 inline-flex items-center gap-2"><Ruler className="w-4 h-4" /> المساحة (م²)</h4>
                     <div className="flex gap-3">
                       <input
                         type="number"
@@ -1982,7 +2027,7 @@ function SearchPage() {
 
                   {/* الغرف */}
                   <div>
-                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">🛏️ عدد الغرف</h4>
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3 inline-flex items-center gap-2"><Bed className="w-4 h-4" /> عدد الغرف</h4>
                     <div className="flex flex-wrap gap-2">
                       <button
                         onClick={() => setFilters(prev => ({ ...prev, bedrooms: undefined }))}
@@ -2004,7 +2049,7 @@ function SearchPage() {
 
                   {/* الحمامات */}
                   <div>
-                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">🚿 عدد الحمامات</h4>
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3 inline-flex items-center gap-2"><Bath className="w-4 h-4" /> عدد الحمامات</h4>
                     <div className="flex flex-wrap gap-2">
                       <button
                         onClick={() => setFilters(prev => ({ ...prev, bathrooms: undefined }))}
@@ -2026,31 +2071,31 @@ function SearchPage() {
 
                   {/* المرافق */}
                   <div>
-                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3">⚙️ المرافق</h4>
+                    <h4 className="text-[#003366] text-mobile-base font-bold mb-3 inline-flex items-center gap-2"><Settings2 className="w-4 h-4" /> المرافق</h4>
                     <div className="flex flex-wrap gap-2">
-                      <button 
-                        onClick={() => setFilters(prev => ({ ...prev, hasPool: !prev.hasPool }))} 
-                        className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${filters.hasPool ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                      <button
+                        onClick={() => setFilters(prev => ({ ...prev, hasPool: !prev.hasPool }))}
+                        className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 inline-flex items-center gap-2 ${filters.hasPool ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
                       >
-                        🏊 مسبح
+                        <Waves className="w-4 h-4" /> مسبح
                       </button>
-                      <button 
-                        onClick={() => setFilters(prev => ({ ...prev, hasGarden: !prev.hasGarden }))} 
-                        className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${filters.hasGarden ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                      <button
+                        onClick={() => setFilters(prev => ({ ...prev, hasGarden: !prev.hasGarden }))}
+                        className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 inline-flex items-center gap-2 ${filters.hasGarden ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
                       >
-                        🌳 حديقة
+                        <Trees className="w-4 h-4" /> حديقة
                       </button>
-                      <button 
-                        onClick={() => setFilters(prev => ({ ...prev, hasElevator: !prev.hasElevator }))} 
-                        className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${filters.hasElevator ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                      <button
+                        onClick={() => setFilters(prev => ({ ...prev, hasElevator: !prev.hasElevator }))}
+                        className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 inline-flex items-center gap-2 ${filters.hasElevator ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
                       >
-                        🛗 مصعد
+                        <MoveVertical className="w-4 h-4" /> مصعد
                       </button>
-                      <button 
-                        onClick={() => setFilters(prev => ({ ...prev, hasParking: !prev.hasParking }))} 
-                        className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 ${filters.hasParking ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                      <button
+                        onClick={() => setFilters(prev => ({ ...prev, hasParking: !prev.hasParking }))}
+                        className={`min-h-[44px] px-4 py-2.5 rounded-xl text-mobile-sm font-semibold transition touch-manipulation active:scale-95 inline-flex items-center gap-2 ${filters.hasParking ? "bg-[#D4AF37] text-[#002845]" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
                       >
-                        🚗 مواقف
+                        <Car className="w-4 h-4" /> مواقف
                       </button>
                     </div>
                   </div>
@@ -2815,11 +2860,12 @@ function CityPanel({
         </div>
 
         <div className="relative mb-2.5">
+          <SearchIcon className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50 pointer-events-none" />
           <input
             ref={searchInputRef}
             type="text"
-            className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-1.5 text-[11px] text-white placeholder:text-white/50 focus:outline-none focus:ring-1 focus:ring-[#D4AF37]"
-            placeholder="🔍 ابحث عن مدينة..."
+            className="w-full rounded-lg bg-white/10 border border-white/20 ps-3 pe-8 py-1.5 text-[11px] text-white placeholder:text-white/50 focus:outline-none focus:ring-1 focus:ring-[#D4AF37]"
+            placeholder="ابحث عن مدينة..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onClick={(e) => e.stopPropagation()}
@@ -3078,7 +3124,7 @@ function PropertyCard({
                   }}
                   className="absolute top-1/2 -translate-y-1/2 right-1.5 w-8 h-8 rounded-full bg-black/45 hover:bg-black/65 text-white flex items-center justify-center shadow-md transition opacity-0 group-hover:opacity-100 sm:opacity-100"
                 >
-                  ‹
+                  <ChevronRight className="w-4 h-4" />
                 </button>
                 <button
                   type="button"
@@ -3090,7 +3136,7 @@ function PropertyCard({
                   }}
                   className="absolute top-1/2 -translate-y-1/2 left-1.5 w-8 h-8 rounded-full bg-black/45 hover:bg-black/65 text-white flex items-center justify-center shadow-md transition opacity-0 group-hover:opacity-100 sm:opacity-100"
                 >
-                  ›
+                  <ChevronLeft className="w-4 h-4" />
                 </button>
                 <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-0.5 bg-black/40 rounded-full pointer-events-none">
                   {galleryImages.map((_, i) => (
@@ -3124,23 +3170,42 @@ function PropertyCard({
           {isSale ? "للبيع" : "للإيجار"}
         </div>
 
-        {/* زر القلب - مخفي للإعلانات الترويجية */}
+        {/* أزرار العائمة - واتساب + قلب (مكدسة عمودياً) */}
         {!isPromo && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onToggleFavorite();
-            }}
-            className="absolute top-2 sm:top-3 left-2 sm:left-3 w-10 h-10 sm:w-9 sm:h-9 rounded-full bg-white/95 flex items-center justify-center shadow-lg active:scale-90 transition"
-          >
-            {isFavorite ? (
-              <Heart className="w-5 h-5 text-red-500 fill-red-500" />
-            ) : (
-              <Heart className="w-5 h-5 text-gray-400 hover:text-red-400" />
+          <div className="absolute top-2 sm:top-3 left-2 sm:left-3 flex flex-col gap-1.5">
+            <button
+              type="button"
+              aria-label={isFavorite ? "إزالة من المفضلة" : "إضافة للمفضلة"}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onToggleFavorite();
+              }}
+              className="w-10 h-10 sm:w-9 sm:h-9 rounded-full bg-white/75 backdrop-blur-sm flex items-center justify-center shadow active:scale-90 transition"
+            >
+              {isFavorite ? (
+                <Heart className="w-5 h-5 text-red-500 fill-red-500" />
+              ) : (
+                <Heart className="w-5 h-5 text-gray-500" />
+              )}
+            </button>
+            {waPhone && (
+              <a
+                href={`https://wa.me/${waPhone}?text=${encodeURIComponent(
+                  `السلام عليكم، استفسار عن إعلانكم: ${listing.title}\n${typeof window !== "undefined" ? window.location.origin : "https://www.baytaljazeera.com"}/listing/${listing.id}`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="تواصل عبر واتساب"
+                onClick={(e) => e.stopPropagation()}
+                className="w-10 h-10 sm:w-9 sm:h-9 rounded-full bg-[#1B5E3A]/95 backdrop-blur-sm flex items-center justify-center shadow active:scale-90 transition hover:bg-[#2D7A4E]"
+              >
+                <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                </svg>
+              </a>
             )}
-          </button>
+          </div>
         )}
       </div>
 
@@ -3196,24 +3261,6 @@ function PropertyCard({
             <Eye className="w-3.5 h-3.5" />
             عرض تفاصيل الإعلان
             <ChevronLeft className="w-3.5 h-3.5 transition group-hover/btn:-translate-x-1" />
-          </a>
-        )}
-
-        {/* زر WhatsApp مباشر — يظهر فقط لو الإعلان حقيقي وعنده رقم */}
-        {!isPromo && waPhone && (
-          <a
-            href={`https://wa.me/${waPhone}?text=${encodeURIComponent(
-              `السلام عليكم، استفسار عن إعلانكم: ${listing.title}\n${typeof window !== "undefined" ? window.location.origin : "https://www.baytaljazeera.com"}/listing/${listing.id}`
-            )}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="mt-2 inline-flex items-center justify-center gap-1.5 w-full py-2 rounded-xl bg-gradient-to-r from-[#1B5E3A] to-[#2D7A4E] text-white text-xs font-bold shadow-sm hover:from-[#256B45] hover:to-[#3A8A5A] transition"
-          >
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-            </svg>
-            تواصل عبر واتساب
           </a>
         )}
 
