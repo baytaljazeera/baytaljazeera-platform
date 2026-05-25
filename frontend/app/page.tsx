@@ -70,7 +70,7 @@ function HeroSection() {
         sizes="100vw"
         priority
         loading="eager"
-        className="object-cover opacity-40"
+        className="object-cover opacity-40 hero-ken-burns"
       />
       {/* النقش الإسلامي - مخفي على الجوال للسرعة */}
       <Image

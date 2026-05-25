@@ -531,6 +531,24 @@ button.popup-dot-btn,
   animation: float 3s ease-in-out infinite;
 }
 
+/* Slow Ken Burns on hero image — gentle 7% zoom + tiny pan over 24s,
+   alternates direction so it never "snaps back". Disabled on touch-only
+   devices (mobile) and for users who prefer reduced motion. */
+@keyframes heroKenBurns {
+  0%   { transform: scale(1)    translate3d(0, 0, 0); }
+  100% { transform: scale(1.07) translate3d(-1.5%, 1%, 0); }
+}
+.hero-ken-burns {
+  animation: heroKenBurns 24s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@media (hover: none) and (pointer: coarse) {
+  .hero-ken-burns { animation: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-ken-burns { animation: none; }
+}
+
 .gold-shimmer-text {
   background: linear-gradient(90deg, #D4AF37 0%, #E8C882 25%, #D4AF37 50%, #E8C882 75%, #D4AF37 100%);
   background-size: 200% auto;
