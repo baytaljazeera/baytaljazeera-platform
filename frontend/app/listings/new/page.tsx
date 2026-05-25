@@ -4173,8 +4173,9 @@ export default function NewListingPage() {
                   )}
                 </div>
 
-                {/* زر اختياري لإظهار قسم الفيديو (مخفي افتراضياً لتقليل الإرباك ووقت التوليد) */}
-                {!showVideoSection && (selectedBucket?.benefits?.maxVideos || 0) > 0 && (
+                {/* "إضافة فيديو" CTA — يظهر دائماً حتى لو الباقة لا تشمل الفيديو،
+                    ليكون "tease" يعرّف المستخدم بالميزة ويحفّز الترقية. */}
+                {!showVideoSection && (
                   <button
                     type="button"
                     onClick={() => setShowVideoSection(true)}
@@ -4184,17 +4185,19 @@ export default function NewListingPage() {
                       <Film className="w-6 h-6 text-[#D4AF37]" />
                     </div>
                     <div className="flex-1 text-right">
-                      <p className="font-bold text-[#002845]">إضافة فيديو للإعلان (اختياري)</p>
+                      <p className="font-bold text-[#002845]">إضافة فيديو للإعلان {(selectedBucket?.benefits?.maxVideos || 0) === 0 ? '(يحتاج ترقية)' : '(اختياري)'}</p>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        ارفع فيديو من جوالك، أو ولّد فيديو ترويجي بالذكاء الاصطناعي. يمكن تخطّيها — الصور كافية لمعظم الإعلانات.
+                        {(selectedBucket?.benefits?.maxVideos || 0) === 0
+                          ? 'استعرض مستويات الفيديو المتاحة بعد الترقية: قياسي مجاناً، فاخر بـ AI، أو سينمائي خارق.'
+                          : 'ارفع فيديو من جوالك، أو ولّد فيديو ترويجي بالذكاء الاصطناعي. يمكن تخطّيها — الصور كافية لمعظم الإعلانات.'}
                       </p>
                     </div>
                     <ChevronLeft className="w-5 h-5 text-slate-400 group-hover:text-[#D4AF37] transition" />
                   </button>
                 )}
 
-                {/* فيديو ترويجي — ترتيب: صور (أعلى) ← صوت ← جودة ← توليد */}
-                {showVideoSection && (selectedBucket?.benefits?.maxVideos || 0) > 0 && imagePreviews.length > 0 && (
+                {/* فيديو ترويجي — يظهر دائماً عند توفر صور؛ زر "ولّد" نفسه يفرض حد maxVideos */}
+                {showVideoSection && imagePreviews.length > 0 && (
                   <div className="mb-6 p-5 bg-gradient-to-br from-amber-50 via-[#D4AF37]/10 to-[#002845]/5 rounded-2xl border-2 border-[#D4AF37]/40 shadow-lg shadow-[#D4AF37]/10">
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-12 h-12 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-xl flex items-center justify-center shadow-lg shadow-[#D4AF37]/30">
@@ -4586,30 +4589,67 @@ export default function NewListingPage() {
                     ) : (
                       <div className="space-y-3">
                         <p className="text-xs text-[#002845]/70">فيديو سينمائي 16:9 مع نص ترويجي تلقائي — يُرفق مع الإعلان عند النشر.</p>
-                        <button
-                          type="button"
-                          onClick={handleGenerateVideo}
-                          disabled={
-                            !form.propertyType || 
-                            videoLoading || 
-                            images.length === 0 ||
-                            ((selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && selectedImagesForVideo.size === 0)
-                          }
-                          className="w-full flex items-center justify-center gap-3 px-6 py-4 md:py-5 bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] rounded-xl hover:shadow-lg hover:shadow-[#D4AF37]/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-bold text-base md:text-lg shadow-lg active:scale-95 touch-manipulation"
-                        >
-                          {videoLoading ? (
+                        {(() => {
+                          const planMaxVideos = selectedBucket?.benefits?.maxVideos || 0;
+                          const noVideoQuota = planMaxVideos === 0;
+                          const hasBypass = !!luxuryBypassCode.trim();
+                          // Block generation when the plan has 0 video allowance AND no bypass code.
+                          const blockedByQuota = noVideoQuota && !hasBypass;
+                          return (
                             <>
-                              <Loader2 className="w-5 h-5 md:w-6 md:h-6 animate-spin" />
-                              <span>جاري التوليد...</span>
+                              <button
+                                type="button"
+                                onClick={
+                                  blockedByQuota
+                                    ? () => toast.message(
+                                        `باقتك "${selectedBucket?.planName || 'الحالية'}" لا تتضمن أي فيديو لكل إعلان. ارتقِ بباقتك لتفعيل التوليد، أو استخدم كود تجربة صالح.`,
+                                        { duration: 4500 }
+                                      )
+                                    : handleGenerateVideo
+                                }
+                                disabled={
+                                  videoLoading ||
+                                  (!blockedByQuota && (
+                                    !form.propertyType ||
+                                    images.length === 0 ||
+                                    ((selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && selectedImagesForVideo.size === 0)
+                                  ))
+                                }
+                                className={`w-full flex items-center justify-center gap-3 px-6 py-4 md:py-5 rounded-xl transition-all font-bold text-base md:text-lg shadow-lg active:scale-95 touch-manipulation ${
+                                  blockedByQuota
+                                    ? 'bg-slate-200 text-slate-600 cursor-pointer hover:bg-slate-300'
+                                    : 'bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#002845] hover:shadow-lg hover:shadow-[#D4AF37]/30 disabled:opacity-50 disabled:cursor-not-allowed'
+                                }`}
+                              >
+                                {videoLoading ? (
+                                  <>
+                                    <Loader2 className="w-5 h-5 md:w-6 md:h-6 animate-spin" />
+                                    <span>جاري التوليد...</span>
+                                  </>
+                                ) : blockedByQuota ? (
+                                  <>
+                                    <Lock className="w-5 h-5 md:w-6 md:h-6" />
+                                    <span>الفيديو غير متاح في باقتك — ارتقِ للتفعيل</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <BrainCircuit className="w-5 h-5 md:w-6 md:h-6" />
+                                    <span>توليد فيديو بالذكاء الاصطناعي</span>
+                                    <Sparkles className="w-4 h-4 md:w-5 md:h-5" />
+                                  </>
+                                )}
+                              </button>
+                              {blockedByQuota && (
+                                <a
+                                  href="/upgrade"
+                                  className="block text-center text-xs text-amber-700 underline hover:text-amber-900"
+                                >
+                                  عرض الباقات والترقية ←
+                                </a>
+                              )}
                             </>
-                          ) : (
-                            <>
-                              <BrainCircuit className="w-5 h-5 md:w-6 md:h-6" />
-                              <span>توليد فيديو بالذكاء الاصطناعي</span>
-                              <Sparkles className="w-4 h-4 md:w-5 md:h-5" />
-                            </>
-                          )}
-                        </button>
+                          );
+                        })()}
                         {!form.propertyType && (
                           <p className="text-xs text-amber-600 text-center">
                             ⚠️ يرجى اختيار نوع العقار أولاً من الخطوة السابقة
