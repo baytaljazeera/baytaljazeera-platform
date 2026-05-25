@@ -4327,15 +4327,52 @@ export default function NewListingPage() {
                             </button>
                           </div>
 
-                          {/* Plan-locked nudge directly under the cards */}
+                          {/* Plan-locked nudge — visually elevated upgrade card */}
                           {!tierMeta[videoTier] && (
-                            <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900">
-                              ⚠️ المستوى المحدد غير مفعّل في باقتك ({planName}). يمكنك:
-                              <ul className="list-disc list-inside mt-1.5 space-y-0.5">
-                                <li>اختيار "قياسي" لإكمال التوليد مجاناً.</li>
-                                <li>أو ترقية باقتك ليفتح هذا المستوى تلقائياً.</li>
-                                <li>أو إدخال كود تجربة صالح أدناه (للمالك فقط).</li>
-                              </ul>
+                            <div className="mt-4 relative overflow-hidden rounded-2xl shadow-xl">
+                              {/* Background gradient */}
+                              <div className="absolute inset-0 bg-gradient-to-br from-[#002845] via-[#003d66] to-[#001830]"></div>
+                              {/* Decorative shimmer */}
+                              <div className="absolute -top-10 -right-10 w-40 h-40 bg-[#D4AF37]/30 rounded-full blur-3xl"></div>
+                              <div className="absolute -bottom-8 -left-8 w-32 h-32 bg-purple-500/20 rounded-full blur-3xl"></div>
+
+                              <div className="relative p-5 flex flex-col sm:flex-row items-center sm:items-start gap-4">
+                                {/* Crown icon */}
+                                <div className="shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br from-[#D4AF37] to-[#B8860B] flex items-center justify-center shadow-lg shadow-[#D4AF37]/30">
+                                  <Crown className="w-8 h-8 text-[#002845]" />
+                                </div>
+
+                                <div className="flex-1 text-center sm:text-right">
+                                  <p className="text-[#D4AF37] text-xs font-bold tracking-wide uppercase mb-1">ميزة حصرية للباقات الأعلى</p>
+                                  <h4 className="text-white text-lg sm:text-xl font-bold mb-1.5">
+                                    {videoTier === "luxury" && "افتح اللقطة السينمائية الفاخرة"}
+                                    {videoTier === "ultra" && "افتح فيديو AI سينمائي خارق"}
+                                    {videoTier === "standard" && "افتح ميزة توليد الفيديو"}
+                                  </h4>
+                                  <p className="text-white/80 text-xs sm:text-sm leading-relaxed mb-3">
+                                    {videoTier === "luxury" && "اجعل أول 5 ثوانٍ من فيديو إعلانك لقطة حركية حقيقية من الذكاء الاصطناعي."}
+                                    {videoTier === "ultra" && "أنتج فيديو AI متكامل بحركات كاميرا سينمائية حقيقية — جودة دور المزادات الفاخرة."}
+                                    {videoTier === "standard" && "ارفع مستوى عرض إعلانك بفيديو ترويجي احترافي ينتجه نظامنا تلقائياً."}
+                                  </p>
+                                  <div className="flex flex-col sm:flex-row gap-2 items-center justify-center sm:justify-start">
+                                    <a
+                                      href="/upgrade"
+                                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] rounded-xl font-bold text-sm shadow-lg shadow-[#D4AF37]/40 hover:shadow-[#D4AF37]/60 hover:scale-[1.02] transition-all active:scale-95"
+                                    >
+                                      <Crown className="w-4 h-4" />
+                                      ارتقِ بباقتك الآن
+                                      <ArrowLeft className="w-4 h-4" />
+                                    </a>
+                                    <button
+                                      type="button"
+                                      onClick={() => setVideoTier("standard")}
+                                      className="text-xs text-white/60 hover:text-white/90 underline transition"
+                                    >
+                                      أو تابع بالمستوى القياسي مجاناً
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
                           )}
                         </div>
