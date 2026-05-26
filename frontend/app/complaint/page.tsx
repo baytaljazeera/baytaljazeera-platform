@@ -4,7 +4,7 @@ import { API_URL, getAuthHeaders } from "@/lib/api";
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -76,9 +76,15 @@ function ComplaintPageContent() {
   }, []);
 
   // Lazy-load the user's invoices the first time they pick "شكوى مالية".
+  // We deliberately do NOT include `invoicesLoading` in the dep array — when
+  // the fetcher flipped it to true the effect re-ran, its cleanup cancelled
+  // the in-flight request, and the loading flag never reset, leaving the
+  // picker stuck on "جاري تحميل فواتيرك...". Also reset loading in finally
+  // regardless of cancellation so the spinner always terminates.
+  const invoicesFetchedRef = useRef(false);
   useEffect(() => {
-    if (category !== "billing" || invoices.length > 0 || invoicesLoading) return;
-    let cancelled = false;
+    if (category !== "billing" || invoicesFetchedRef.current) return;
+    invoicesFetchedRef.current = true;
     (async () => {
       setInvoicesLoading(true);
       try {
@@ -86,18 +92,20 @@ function ComplaintPageContent() {
           credentials: "include",
           headers: getAuthHeaders(),
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          console.warn("invoices fetch failed:", res.status);
+          return;
+        }
         const data = await res.json();
         const list: UserInvoice[] = Array.isArray(data) ? data : (data.invoices || []);
-        if (!cancelled) setInvoices(list);
-      } catch (_) {
-        // silent — invoice picker is optional
+        setInvoices(list);
+      } catch (err) {
+        console.warn("invoices fetch error:", err);
       } finally {
-        if (!cancelled) setInvoicesLoading(false);
+        setInvoicesLoading(false);
       }
     })();
-    return () => { cancelled = true; };
-  }, [category, invoices.length, invoicesLoading]);
+  }, [category]);
 
   async function fetchUser() {
     try {
