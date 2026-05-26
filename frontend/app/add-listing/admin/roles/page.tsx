@@ -350,14 +350,21 @@ function AdminRolesPageContent() {
   }
 
   async function fetchCustomRoles() {
+    // Phase 3.6 — show BOTH default and custom roles in the "إضافة دور" tab.
+    // The new endpoint /api/permissions/all-roles merges defaults +
+    // custom_roles rows. Falls back to the old custom-roles endpoint if the
+    // new one isn't deployed yet.
     try {
-      const res = await fetch(`${API_URL}/api/permissions/custom-roles`, { credentials: "include", headers: getAuthHeaders() });
+      let res = await fetch(`${API_URL}/api/permissions/all-roles`, { credentials: "include", headers: getAuthHeaders() });
+      if (!res.ok && res.status === 404) {
+        res = await fetch(`${API_URL}/api/permissions/custom-roles`, { credentials: "include", headers: getAuthHeaders() });
+      }
       if (res.ok) {
         const data = await res.json();
         setCustomRoles(data.roles || []);
       }
     } catch (err) {
-      console.error("Error fetching custom roles:", err);
+      console.error("Error fetching roles:", err);
     }
   }
 
@@ -903,66 +910,110 @@ function AdminRolesPageContent() {
             {customRoles.length === 0 ? (
               <div className="text-center py-12">
                 <Shield className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                <p className="text-slate-500 text-lg">لا توجد أدوار مخصصة</p>
-                <p className="text-slate-400 text-sm mt-1">اضغط على "إنشاء دور جديد" لإضافة دور</p>
+                <p className="text-slate-500 text-lg">لا توجد أدوار</p>
+                <p className="text-slate-400 text-sm mt-1">اضغط على "إنشاء دور جديد" لإضافة دور مخصص</p>
               </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {customRoles.map((role) => {
-                  const Icon = getIconComponent(role.icon || 'Shield');
-                  return (
-                    <div
-                      key={role.key}
-                      className="p-4 rounded-xl border-2 border-slate-200 hover:border-slate-300 transition bg-white"
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div
-                          className="w-12 h-12 rounded-xl flex items-center justify-center text-white"
-                          style={{ backgroundColor: role.color || '#6B7280' }}
+            ) : (() => {
+              // Phase 3.6 — split into "افتراضية" + "مخصصة" sections so the
+              // hierarchy reads naturally: system roles first, then any
+              // custom ones the owner has built. Defaults can be edited
+              // (label/color/icon/capabilities) but never deleted.
+              const defaults = customRoles.filter((r: any) => r.isDefault);
+              const customs = customRoles.filter((r: any) => !r.isDefault);
+              const renderCard = (role: any) => {
+                const Icon = getIconComponent(role.icon || 'Shield');
+                const isDefault = !!role.isDefault;
+                return (
+                  <div
+                    key={role.key}
+                    className={`p-4 rounded-xl border-2 transition bg-white ${
+                      isDefault ? "border-[#D4AF37]/40 hover:border-[#D4AF37]" : "border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white" style={{ backgroundColor: role.color || '#6B7280' }}>
+                        <Icon className="w-6 h-6" />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingRole(role);
+                            setNewRole({
+                              key: role.key,
+                              label: role.label,
+                              description: role.description || '',
+                              color: role.color || '#6B7280',
+                              icon: role.icon || 'Shield',
+                              has_inbox: false, inbox_title: '', section_key: '',
+                              can_receive_transfers: (role as any).can_receive_transfers ?? true,
+                              can_be_assigned: (role as any).can_be_assigned ?? true,
+                              can_reply_to_customers: (role as any).can_reply_to_customers ?? false,
+                              can_see_sensitive_finance: (role as any).can_see_sensitive_finance ?? false,
+                              can_close_complaints: (role as any).can_close_complaints ?? false
+                            });
+                            setShowCreateRoleModal(true);
+                          }}
+                          className="p-2 hover:bg-slate-100 rounded-lg transition"
+                          title="تعديل"
                         >
-                          <Icon className="w-6 h-6" />
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              setEditingRole(role);
-                              setNewRole({
-                                key: role.key,
-                                label: role.label,
-                                description: role.description || '',
-                                color: role.color || '#6B7280',
-                                icon: role.icon || 'Shield',
-                                has_inbox: false, inbox_title: '', section_key: '',
-                                can_receive_transfers: (role as any).can_receive_transfers ?? true,
-                                can_be_assigned: (role as any).can_be_assigned ?? true,
-                                can_reply_to_customers: (role as any).can_reply_to_customers ?? false,
-                                can_see_sensitive_finance: (role as any).can_see_sensitive_finance ?? false,
-                                can_close_complaints: (role as any).can_close_complaints ?? false
-                              });
-                              setShowCreateRoleModal(true);
-                            }}
-                            className="p-2 hover:bg-slate-100 rounded-lg transition"
-                          >
-                            <Edit2 className="w-4 h-4 text-slate-500" />
-                          </button>
+                          <Edit2 className="w-4 h-4 text-slate-500" />
+                        </button>
+                        {!isDefault && (
                           <button
                             onClick={() => deleteRole(role.key)}
                             className="p-2 hover:bg-red-50 rounded-lg transition"
+                            title="حذف"
                           >
                             <Trash2 className="w-4 h-4 text-red-500" />
                           </button>
-                        </div>
+                        )}
                       </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-bold text-[#002845]">{role.label}</h3>
-                      <p className="text-xs text-slate-400 mt-1">المفتاح: {role.key}</p>
-                      {role.description && (
-                        <p className="text-sm text-slate-500 mt-2">{role.description}</p>
+                      {isDefault && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded border bg-[#D4AF37]/10 text-[#9a7d28] border-[#D4AF37]/30 font-bold">
+                          افتراضي
+                        </span>
+                      )}
+                      {role.hasOverride && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200">
+                          مُعدّل
+                        </span>
                       )}
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    <p className="text-xs text-slate-400 mt-1">المفتاح: {role.key}</p>
+                    {role.description && (
+                      <p className="text-sm text-slate-500 mt-2">{role.description}</p>
+                    )}
+                  </div>
+                );
+              };
+              return (
+                <div className="space-y-6">
+                  {defaults.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-1 h-5 rounded-full bg-[#D4AF37]" />
+                        <h3 className="text-sm font-bold text-[#002845]">الأدوار الافتراضية</h3>
+                        <span className="text-xs text-slate-400">({defaults.length})</span>
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{defaults.map(renderCard)}</div>
+                    </div>
+                  )}
+                  {customs.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-1 h-5 rounded-full bg-slate-400" />
+                        <h3 className="text-sm font-bold text-[#002845]">أدوار مخصصة</h3>
+                        <span className="text-xs text-slate-400">({customs.length})</span>
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{customs.map(renderCard)}</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

@@ -40,11 +40,18 @@ const ALL_PERMISSIONS = [
   { key: 'settings', label: 'الإعدادات' },
 ];
 
+// Includes every admin-grade role the system recognizes. super_admin and
+// admin sit at the top; the four functional roles follow. Display label /
+// color / icon can be overridden by a custom_roles row with the same key
+// (used to be impossible — POST blocked default keys — now editable via
+// the upserting PUT endpoint below).
 const DEFAULT_ADMIN_ROLES = [
-  { key: 'content_admin', label: 'إدارة المحتوى', color: '#8B5CF6', icon: 'FileText', isDefault: true },
-  { key: 'support_admin', label: 'الدعم الفني', color: '#3B82F6', icon: 'Headphones', isDefault: true },
-  { key: 'finance_admin', label: 'إدارة المالية', color: '#10B981', icon: 'Wallet', isDefault: true },
-  { key: 'admin_manager', label: 'مدير إداري', color: '#0EA5E9', icon: 'Settings', isDefault: true },
+  { key: 'super_admin',   label: 'المدير العام',   color: '#D4AF37', icon: 'Crown',       isDefault: true, description: 'مالك المنصة — كل الصلاحيات' },
+  { key: 'admin',         label: 'مدير',           color: '#1F2937', icon: 'Shield',      isDefault: true, description: 'صلاحيات إدارية كاملة' },
+  { key: 'admin_manager', label: 'مدير إداري',     color: '#0EA5E9', icon: 'Settings',    isDefault: true, description: 'تنسيق بين الأقسام' },
+  { key: 'finance_admin', label: 'إدارة المالية',  color: '#10B981', icon: 'Wallet',      isDefault: true, description: 'الفواتير، الاسترداد، الاشتراكات' },
+  { key: 'support_admin', label: 'الدعم الفني',    color: '#3B82F6', icon: 'Headset',     isDefault: true, description: 'الشكاوى والدعم العام' },
+  { key: 'content_admin', label: 'إدارة المحتوى',  color: '#8B5CF6', icon: 'FileText',    isDefault: true, description: 'الإعلانات والعرض والخريطة' },
 ];
 
 async function logAuditAction(action_type, data, req) {
@@ -72,16 +79,47 @@ async function logAuditAction(action_type, data, req) {
 }
 
 async function getAllRoles() {
-  const customRolesResult = await db.query(
-    "SELECT key, label, color, icon, description FROM custom_roles WHERE is_active = true ORDER BY created_at"
-  );
-  
-  const customRoles = customRolesResult.rows.map(r => ({
-    ...r,
-    isDefault: false
-  }));
-  
-  return [...DEFAULT_ADMIN_ROLES, ...customRoles];
+  // Pull every row from custom_roles. Two ways a row can show up there:
+  //   (a) genuinely-custom role created via the UI
+  //   (b) override row for a default role — same key as a DEFAULT entry,
+  //       used to customize label/color/icon without code changes
+  let customRows = [];
+  try {
+    const r = await db.query(
+      `SELECT key, label, color, icon, description,
+              can_receive_transfers, can_be_assigned, can_reply_to_customers,
+              can_see_sensitive_finance, can_close_complaints
+       FROM custom_roles WHERE is_active = true ORDER BY created_at`
+    );
+    customRows = r.rows;
+  } catch (e) {
+    // Fall back to the legacy shape if the capability columns aren't deployed yet.
+    if (e && e.code === '42703') {
+      const r = await db.query(
+        `SELECT key, label, color, icon, description FROM custom_roles WHERE is_active = true ORDER BY created_at`
+      );
+      customRows = r.rows;
+    } else { throw e; }
+  }
+  const byKey = new Map();
+  for (const r of customRows) byKey.set(r.key, r);
+
+  const defaults = DEFAULT_ADMIN_ROLES.map(d => {
+    const o = byKey.get(d.key);
+    return o
+      ? { ...d, label: o.label || d.label, description: o.description ?? d.description, color: o.color || d.color, icon: o.icon || d.icon,
+          can_receive_transfers: o.can_receive_transfers, can_be_assigned: o.can_be_assigned,
+          can_reply_to_customers: o.can_reply_to_customers, can_see_sensitive_finance: o.can_see_sensitive_finance,
+          can_close_complaints: o.can_close_complaints,
+          isDefault: true, hasOverride: true }
+      : { ...d, isDefault: true, hasOverride: false };
+  });
+
+  const customs = customRows
+    .filter(r => !DEFAULT_ADMIN_ROLES.find(d => d.key === r.key))
+    .map(r => ({ ...r, isDefault: false }));
+
+  return [...defaults, ...customs];
 }
 
 router.get("/list", authMiddleware, requireRoles('super_admin', 'admin'), asyncHandler(async (req, res) => {
@@ -367,6 +405,24 @@ router.get("/custom-roles", authMiddleware, requireRoles('super_admin', 'admin')
 }));
 
 /**
+ * Phase 3.6 — return EVERY admin role (defaults + customs) in one list.
+ * Defaults carry isDefault=true and can_delete=false so the UI hides the
+ * delete button. Their label/color/icon reflect any override row from
+ * custom_roles with the same key.
+ */
+router.get("/all-roles", authMiddleware, requireRoles('super_admin', 'admin'), asyncHandler(async (req, res) => {
+  const roles = await getAllRoles();
+  // UI hints
+  res.json({
+    roles: roles.map(r => ({
+      ...r,
+      can_delete: !r.isDefault,
+      can_edit: true,
+    })),
+  });
+}));
+
+/**
  * Phase 3 — list nav sections for the "create role" modal's section
  * dropdown (where should the auto-provisioned sidebar link live?).
  * Falls back gracefully if the Phase 1 nav tables don't exist yet.
@@ -515,43 +571,86 @@ router.put("/custom-roles/:key", authMiddleware, requireRoles('super_admin'), as
           can_see_sensitive_finance, can_close_complaints } = req.body;
 
   const existing = await db.query("SELECT * FROM custom_roles WHERE key = $1", [key]);
-  if (existing.rows.length === 0) {
+  const isDefaultKey = !!DEFAULT_ADMIN_ROLES.find(d => d.key === key);
+  if (existing.rows.length === 0 && !isDefaultKey) {
     return res.status(404).json({ error: "الدور غير موجود" });
   }
 
-  const oldRole = existing.rows[0];
+  // For default-key roles with no row yet, seed an override row using the
+  // hardcoded defaults as the base — then apply the body's changes on top.
+  const oldRole = existing.rows[0] || (() => {
+    const d = DEFAULT_ADMIN_ROLES.find(r => r.key === key);
+    return { key, label: d?.label, description: d?.description, color: d?.color, icon: d?.icon,
+             can_receive_transfers: true, can_be_assigned: true,
+             can_reply_to_customers: false, can_see_sensitive_finance: false,
+             can_close_complaints: false };
+  })();
   const pick = (v, d) => (v === undefined || v === null ? d : !!v);
 
   let result;
   try {
-    result = await db.query(
-      `UPDATE custom_roles SET
-         label = $1, description = $2, color = $3, icon = $4,
-         can_receive_transfers = $5, can_be_assigned = $6,
-         can_reply_to_customers = $7, can_see_sensitive_finance = $8,
-         can_close_complaints = $9,
-         updated_at = CURRENT_TIMESTAMP
-       WHERE key = $10 RETURNING *`,
-      [
-        label || oldRole.label,
-        description ?? oldRole.description,
-        color || oldRole.color,
-        icon || oldRole.icon,
-        pick(can_receive_transfers, oldRole.can_receive_transfers ?? true),
-        pick(can_be_assigned, oldRole.can_be_assigned ?? true),
-        pick(can_reply_to_customers, oldRole.can_reply_to_customers ?? false),
-        pick(can_see_sensitive_finance, oldRole.can_see_sensitive_finance ?? false),
-        pick(can_close_complaints, oldRole.can_close_complaints ?? false),
-        key,
-      ]
-    );
+    if (existing.rows.length === 0 && isDefaultKey) {
+      // First-time override for a default role — INSERT.
+      result = await db.query(
+        `INSERT INTO custom_roles
+           (key, label, description, color, icon, created_by,
+            can_receive_transfers, can_be_assigned, can_reply_to_customers,
+            can_see_sensitive_finance, can_close_complaints)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         RETURNING *`,
+        [
+          key,
+          label || oldRole.label,
+          description ?? oldRole.description,
+          color || oldRole.color,
+          icon || oldRole.icon,
+          req.user.id,
+          pick(can_receive_transfers, oldRole.can_receive_transfers),
+          pick(can_be_assigned, oldRole.can_be_assigned),
+          pick(can_reply_to_customers, oldRole.can_reply_to_customers),
+          pick(can_see_sensitive_finance, oldRole.can_see_sensitive_finance),
+          pick(can_close_complaints, oldRole.can_close_complaints),
+        ]
+      );
+    } else {
+      result = await db.query(
+        `UPDATE custom_roles SET
+           label = $1, description = $2, color = $3, icon = $4,
+           can_receive_transfers = $5, can_be_assigned = $6,
+           can_reply_to_customers = $7, can_see_sensitive_finance = $8,
+           can_close_complaints = $9,
+           updated_at = CURRENT_TIMESTAMP
+         WHERE key = $10 RETURNING *`,
+        [
+          label || oldRole.label,
+          description ?? oldRole.description,
+          color || oldRole.color,
+          icon || oldRole.icon,
+          pick(can_receive_transfers, oldRole.can_receive_transfers ?? true),
+          pick(can_be_assigned, oldRole.can_be_assigned ?? true),
+          pick(can_reply_to_customers, oldRole.can_reply_to_customers ?? false),
+          pick(can_see_sensitive_finance, oldRole.can_see_sensitive_finance ?? false),
+          pick(can_close_complaints, oldRole.can_close_complaints ?? false),
+          key,
+        ]
+      );
+    }
   } catch (e) {
     if (e && e.code === '42703') {
-      result = await db.query(
-        `UPDATE custom_roles SET label = $1, description = $2, color = $3, icon = $4, updated_at = CURRENT_TIMESTAMP
-         WHERE key = $5 RETURNING *`,
-        [label || oldRole.label, description ?? oldRole.description, color || oldRole.color, icon || oldRole.icon, key]
-      );
+      // capability columns missing — degrade to label/desc/color/icon only
+      if (existing.rows.length === 0 && isDefaultKey) {
+        result = await db.query(
+          `INSERT INTO custom_roles (key, label, description, color, icon, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+          [key, label || oldRole.label, description ?? oldRole.description, color || oldRole.color, icon || oldRole.icon, req.user.id]
+        );
+      } else {
+        result = await db.query(
+          `UPDATE custom_roles SET label = $1, description = $2, color = $3, icon = $4, updated_at = CURRENT_TIMESTAMP
+           WHERE key = $5 RETURNING *`,
+          [label || oldRole.label, description ?? oldRole.description, color || oldRole.color, icon || oldRole.icon, key]
+        );
+      }
     } else { throw e; }
   }
   
