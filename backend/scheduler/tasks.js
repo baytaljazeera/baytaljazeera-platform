@@ -167,65 +167,96 @@ async function updateExchangeRates() {
 }
 
 /**
- * Find complaints whose SLA window has elapsed without resolution and notify
- * the assigned role + every super_admin/admin. The breach_notified_at column
- * is set the first time we escalate so admins don't get spammed every tick.
+ * Sweep both account_complaints and support_tickets for SLA breaches and
+ * notify the assigned role + every super_admin/admin. breach_notified_at
+ * is set the first time we escalate so admins don't get re-pinged each tick.
  *
- * Idempotent — guarded by:
- *   - sla_due_at < NOW()           (only breached rows)
+ * Each sweep is idempotent — guarded by:
+ *   - sla_due_at < NOW()                  (only breached rows)
  *   - status NOT IN closed/dismissed/resolved
- *   - breach_notified_at IS NULL    (only escalate once)
+ *   - breach_notified_at IS NULL          (only escalate once)
  *
- * Failure modes are logged but never thrown so the scheduler keeps ticking.
+ * Failures are logged but never thrown so the scheduler keeps ticking.
  */
+async function sweepSlaBreaches({ table, primaryKey, link, subjectField, kindAr, notifType }) {
+  const breached = await db.query(
+    `SELECT ${primaryKey} AS id, ${subjectField} AS subject, priority, auto_assigned_role, sla_hours, sla_due_at
+     FROM ${table}
+     WHERE sla_due_at IS NOT NULL
+       AND sla_due_at < NOW()
+       AND breach_notified_at IS NULL
+       AND status NOT IN ('closed', 'resolved', 'dismissed')
+     LIMIT 200`
+  );
+
+  if (breached.rows.length === 0) return 0;
+
+  let notified = 0;
+  for (const row of breached.rows) {
+    const targetRoles = ['super_admin', 'admin'];
+    if (row.auto_assigned_role && !targetRoles.includes(row.auto_assigned_role)) {
+      targetRoles.push(row.auto_assigned_role);
+    }
+    try {
+      await db.query(
+        `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+         SELECT u.id, $1, $2, $3, $4, NOW()
+         FROM users u
+         WHERE u.role = ANY($5::text[])
+           AND COALESCE(u.is_active, true) = true`,
+        [
+          `تجاوز SLA ${kindAr} — أولوية ${row.priority || 'medium'}`,
+          `${row.subject || ''} (انتهى وقت الاستجابة المسموح ${row.sla_hours || ''} ساعة)`,
+          notifType,
+          link,
+          targetRoles,
+        ]
+      );
+      await db.query(
+        `UPDATE ${table} SET breach_notified_at = NOW() WHERE ${primaryKey} = $1`,
+        [row.id]
+      );
+      notified++;
+    } catch (innerErr) {
+      console.error(`[CRON] خطأ في تصعيد ${table}`, row.id, innerErr.message);
+    }
+  }
+  return notified;
+}
+
 async function escalateComplaintsSlaBreaches() {
   try {
-    const breached = await db.query(`
-      SELECT id, subject, priority, auto_assigned_role, sla_hours, sla_due_at
-      FROM account_complaints
-      WHERE sla_due_at IS NOT NULL
-        AND sla_due_at < NOW()
-        AND breach_notified_at IS NULL
-        AND status NOT IN ('closed', 'resolved', 'dismissed')
-      LIMIT 200
-    `);
-
-    if (breached.rows.length === 0) return 0;
-
-    let notified = 0;
-    for (const c of breached.rows) {
-      const targetRoles = ['super_admin', 'admin'];
-      if (c.auto_assigned_role && !targetRoles.includes(c.auto_assigned_role)) {
-        targetRoles.push(c.auto_assigned_role);
-      }
-      try {
-        await db.query(
-          `INSERT INTO notifications (user_id, title, body, type, link, created_at)
-           SELECT u.id,
-                  $1, $2, 'complaint_sla_breach', '/add-listing/admin/customer-service', NOW()
-           FROM users u
-           WHERE u.role = ANY($3::text[])
-             AND COALESCE(u.is_active, true) = true`,
-          [
-            `تجاوز SLA لشكوى — أولوية ${c.priority || 'medium'}`,
-            `${c.subject || ''} (انتهى وقت الاستجابة المسموح ${c.sla_hours || ''} ساعة)`,
-            targetRoles,
-          ]
-        );
-        await db.query(
-          `UPDATE account_complaints SET breach_notified_at = NOW() WHERE id = $1`,
-          [c.id]
-        );
-        notified++;
-      } catch (innerErr) {
-        console.error('[CRON] خطأ في تصعيد شكوى', c.id, innerErr.message);
-      }
+    let total = 0;
+    try {
+      total += await sweepSlaBreaches({
+        table: 'account_complaints',
+        primaryKey: 'id',
+        link: '/add-listing/admin/customer-service',
+        subjectField: 'subject',
+        kindAr: 'لشكوى',
+        notifType: 'complaint_sla_breach',
+      });
+    } catch (e) {
+      // 42703 happens during rollout when sla_due_at/breach_notified_at
+      // hasn't migrated yet — just skip this sweep.
+      if (!(e && e.code === '42703')) throw e;
     }
-
-    console.log(`⚠️  [CRON] تم تصعيد ${notified} شكوى متجاوزة SLA`);
-    return notified;
+    try {
+      total += await sweepSlaBreaches({
+        table: 'support_tickets',
+        primaryKey: 'id',
+        link: '/add-listing/admin/customer-service',
+        subjectField: 'subject',
+        kindAr: 'لتذكرة دعم',
+        notifType: 'ticket_sla_breach',
+      });
+    } catch (e) {
+      if (!(e && e.code === '42703')) throw e;
+    }
+    if (total > 0) console.log(`⚠️  [CRON] تم تصعيد ${total} عنصر متجاوز SLA`);
+    return total;
   } catch (error) {
-    console.error('❌ [CRON] خطأ في فحص SLA للشكاوى:', error.message);
+    console.error('❌ [CRON] خطأ في فحص SLA:', error.message);
     return 0;
   }
 }

@@ -55,16 +55,25 @@ const DEPARTMENT_CONFIG = {
   }
 };
 
-function getSmartRouting(department, priority) {
+function getSmartRouting(department, priority, plan_tier) {
   const config = DEPARTMENT_CONFIG[department] || DEPARTMENT_CONFIG.technical;
   let slaHours = config.sla_hours;
-  
+
   if (priority === 'high') slaHours = Math.floor(slaHours / 2);
   if (priority === 'urgent') slaHours = Math.floor(slaHours / 4);
-  
+
+  // Premium-tier boost — mirrors the complaint router so both surfaces honor
+  // the customer's paid SLA: royal = 0.5x, featured = 0.75x. Loose match on
+  // English code or Arabic name so either passes.
+  const t = String(plan_tier || "").toLowerCase();
+  const isRoyal    = /royal|ملكي|elite|enterprise|عمل/.test(t);
+  const isFeatured = /featured|مميز|premium|تميز|صفوة/.test(t);
+  if (isRoyal) slaHours = Math.ceil(slaHours * 0.5);
+  else if (isFeatured) slaHours = Math.ceil(slaHours * 0.75);
+
   return {
     role: config.role,
-    sla_hours: Math.max(slaHours, 4)
+    sla_hours: Math.max(slaHours, 2),
   };
 }
 
@@ -190,29 +199,91 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
   }
   
   const ticketNumber = generateTicketNumber();
-  const routing = getSmartRouting(department, priority || 'medium');
+
+  // Snapshot the customer's locale and active plan for use both by routing
+  // (tier shortens SLA for premium customers) and by the admin UI later
+  // (shows due-by time in customer's local zone, language hint, etc.).
+  // Wrapped in try/catch so a missing users.country column (rolling deploy)
+  // doesn't block ticket creation.
+  let customerCountry = null, customerTimezone = null, customerLanguage = null, planTier = null;
+  if (userId) {
+    try {
+      const meta = await db.query(
+        `SELECT u.country, u.timezone, u.preferred_language,
+                COALESCE(p.code, p.name) AS plan_tier
+         FROM users u
+         LEFT JOIN user_plans up
+           ON up.user_id = u.id
+          AND up.status = 'active'
+          AND (up.expires_at IS NULL OR up.expires_at > NOW())
+         LEFT JOIN plans p ON p.id = up.plan_id
+         WHERE u.id = $1
+         ORDER BY up.started_at DESC NULLS LAST
+         LIMIT 1`,
+        [userId]
+      );
+      const m = meta.rows[0] || {};
+      customerCountry  = m.country || null;
+      customerTimezone = m.timezone || null;
+      customerLanguage = m.preferred_language || null;
+      planTier         = m.plan_tier || null;
+    } catch (err) {
+      if (err && err.code !== '42703') console.error('[support] meta lookup failed', err.message);
+    }
+  }
+
+  const routing = getSmartRouting(department, priority || 'medium', planTier);
   const deptConfig = DEPARTMENT_CONFIG[department];
-  
-  const result = await db.query(
-    `INSERT INTO support_tickets 
-     (user_id, ticket_number, department, subcategory, category, priority, subject, description, auto_assigned_role, sla_hours, source)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-     RETURNING *`,
-    [
-      userId, 
-      ticketNumber, 
-      department,
-      subcategory || null,
-      categoryValue,
-      priority || 'medium', 
-      subject, 
-      description,
-      routing.role,
-      routing.sla_hours,
-      source
-    ]
-  );
-  
+
+  // Resilient INSERT ladder — try richest shape first, drop snapshot then
+  // sla_due_at on 42703 so deploys can land before the migration finishes.
+  let result;
+  try {
+    result = await db.query(
+      `INSERT INTO support_tickets
+       (user_id, ticket_number, department, subcategory, category, priority, subject, description,
+        auto_assigned_role, sla_hours, sla_due_at,
+        plan_tier, customer_country, customer_timezone, customer_language,
+        source)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+               $9, $10, NOW() + ($10 || ' hours')::interval,
+               $11, $12, $13, $14,
+               $15)
+       RETURNING *`,
+      [userId, ticketNumber, department, subcategory || null, categoryValue,
+       priority || 'medium', subject, description,
+       routing.role, routing.sla_hours,
+       planTier, customerCountry, customerTimezone, customerLanguage,
+       source]
+    );
+  } catch (err1) {
+    if (!(err1 && err1.code === '42703')) throw err1;
+    try {
+      result = await db.query(
+        `INSERT INTO support_tickets
+         (user_id, ticket_number, department, subcategory, category, priority, subject, description,
+          auto_assigned_role, sla_hours, sla_due_at, source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+                 $9, $10, NOW() + ($10 || ' hours')::interval, $11)
+         RETURNING *`,
+        [userId, ticketNumber, department, subcategory || null, categoryValue,
+         priority || 'medium', subject, description,
+         routing.role, routing.sla_hours, source]
+      );
+    } catch (err2) {
+      if (!(err2 && err2.code === '42703')) throw err2;
+      result = await db.query(
+        `INSERT INTO support_tickets
+         (user_id, ticket_number, department, subcategory, category, priority, subject, description, auto_assigned_role, sla_hours, source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         RETURNING *`,
+        [userId, ticketNumber, department, subcategory || null, categoryValue,
+         priority || 'medium', subject, description,
+         routing.role, routing.sla_hours, source]
+      );
+    }
+  }
+
   const ticket = result.rows[0];
 
   try {
