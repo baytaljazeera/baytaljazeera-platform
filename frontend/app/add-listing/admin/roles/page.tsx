@@ -160,6 +160,10 @@ function AdminRolesPageContent() {
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<string>("");
+  // Track the signed-in user's id too so the role-edit modal can disable
+  // the "demote me" path — guards owners from accidentally locking
+  // themselves out (the backend rejects this too in admin.js).
+  const [currentUserId, setCurrentUserId] = useState<string>("");
 
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [adminRoles, setAdminRoles] = useState<AdminRole[]>([]);
@@ -235,6 +239,7 @@ function AdminRolesPageContent() {
       if (res.ok) {
         const data = await res.json();
         setCurrentUserRole(data.role);
+        setCurrentUserId(String(data.id ?? data.user?.id ?? ""));
       }
     } catch (err) {
       console.error('Error fetching user:', err);
@@ -1548,11 +1553,30 @@ function AdminRolesPageContent() {
               </div>
 
               <div className="p-3 max-h-[50vh] overflow-y-auto">
+                {/* Self-edit guard: if the signed-in user is looking at their
+                    own row AND is currently super_admin, block any action
+                    that would demote them. Backend rejects this too — UI
+                    just makes the reason obvious. */}
+                {(() => {
+                  const isSelf = currentUserId && String(selectedUser.id) === String(currentUserId);
+                  const isSuper = selectedUser.role === 'super_admin';
+                  if (isSelf && isSuper) {
+                    return (
+                      <div className="mb-3 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800 flex items-start gap-2">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        <span>هذا حسابك. لا يمكنك تخفيض دورك من super_admin بنفسك حتى لا تفقد الوصول. اطلب من super_admin آخر تعديل دورك عند الحاجة.</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
                 <p className="text-[10px] text-slate-400 mb-2 px-1">الأدوار الإدارية</p>
                 <div className="space-y-2">
                   {ROLES.filter(r => r.id !== 'user').map((role) => {
                     const Icon = role.icon;
                     const isSelected = selectedUser.role === role.id;
+                    const isSelf = !!currentUserId && String(selectedUser.id) === String(currentUserId);
+                    const wouldDemoteSelfFromSuper = isSelf && selectedUser.role === 'super_admin' && role.id !== 'super_admin';
 
                     return (
                       <button
@@ -1568,7 +1592,8 @@ function AdminRolesPageContent() {
                             }
                           });
                         }}
-                        disabled={updating || isSelected}
+                        disabled={updating || isSelected || wouldDemoteSelfFromSuper}
+                        title={wouldDemoteSelfFromSuper ? "لا يمكنك تخفيض دورك بنفسك" : undefined}
                         className={`w-full p-2.5 rounded-lg border-2 transition-all text-right flex items-center gap-2.5 ${
                           isSelected
                             ? "border-[#D4AF37] bg-[#D4AF37]/10"
@@ -1612,7 +1637,8 @@ function AdminRolesPageContent() {
                         }
                       });
                     }}
-                    disabled={updating || selectedUser.role === 'user'}
+                    disabled={updating || selectedUser.role === 'user' || (currentUserId !== "" && String(selectedUser.id) === String(currentUserId))}
+                    title={currentUserId !== "" && String(selectedUser.id) === String(currentUserId) ? "لا يمكنك تجريد حسابك بنفسك" : undefined}
                     className={`w-full p-2.5 rounded-lg border-2 transition-all text-right flex items-center gap-2.5 ${
                       selectedUser.role === 'user'
                         ? "border-red-300 bg-red-50"

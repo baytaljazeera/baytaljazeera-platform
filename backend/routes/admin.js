@@ -213,7 +213,35 @@ router.patch("/users/:id/role", authMiddleware, requireRoles('super_admin'), asy
   const oldUser = await db.query("SELECT name, role FROM users WHERE id = $1", [id]);
   const oldRole = oldUser.rows[0]?.role || 'user';
   const userName = oldUser.rows[0]?.name || 'Unknown';
-  
+
+  // Footgun guards: we never want the platform to end up with zero
+  // super_admins (would lock the owner out forever) and we don't want
+  // the requester to accidentally demote themselves.
+  const targetIdInt = parseInt(id, 10);
+  const requesterIdInt = parseInt(req.user?.id, 10);
+  const isSelf = Number.isFinite(targetIdInt) && Number.isFinite(requesterIdInt) && targetIdInt === requesterIdInt;
+  const isDemotingFromSuper = oldRole === 'super_admin' && role !== 'super_admin';
+
+  if (isSelf && isDemotingFromSuper) {
+    return res.status(403).json({
+      error: "لا يمكنك تخفيض دور حسابك من super_admin بنفسك. اطلب من super_admin آخر تعديل دورك.",
+      errorEn: "Cannot demote yourself from super_admin. Ask another super_admin to do it."
+    });
+  }
+
+  if (isDemotingFromSuper) {
+    const remaining = await db.query(
+      "SELECT COUNT(*)::int AS n FROM users WHERE role = 'super_admin' AND id <> $1",
+      [id]
+    );
+    if ((remaining.rows[0]?.n || 0) === 0) {
+      return res.status(403).json({
+        error: "لا يمكن تخفيض دور آخر super_admin. عيّن super_admin آخر أولاً ثم أعد المحاولة.",
+        errorEn: "Cannot demote the last super_admin. Promote another super_admin first."
+      });
+    }
+  }
+
   const result = await db.query(
     "UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name, email, role",
     [role, id]
