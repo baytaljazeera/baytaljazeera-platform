@@ -5,6 +5,7 @@ import { API_URL, getAuthHeaders } from "@/lib/api";
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { 
   Headset, MessageCircle, Clock, CheckCircle, AlertCircle, Search, RefreshCw, 
   Send, User, Mail, Phone, ExternalLink, FileText, Calendar, X, 
@@ -115,9 +116,14 @@ export default function CustomerServicePage() {
   // load if there are more new complaints than new tickets — otherwise the
   // owner could submit a financial complaint and not see it because the
   // page landed on the wrong tab. Once they manually click a tab we stop
-  // auto-switching for the rest of the session.
-  const [activeTab, setActiveTab] = useState<TabType>("support");
-  const [userPickedTab, setUserPickedTab] = useState(false);
+  // auto-switching for the rest of the session. A ?tab=… query string
+  // (e.g. from the Finance Inbox deep links) also pins the tab and
+  // suppresses auto-switching.
+  const searchParams = useSearchParams();
+  const tabFromUrl = searchParams?.get("tab");
+  const initialTab: TabType = tabFromUrl === "complaints" ? "complaints" : "support";
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+  const [userPickedTab, setUserPickedTab] = useState(tabFromUrl === "complaints" || tabFromUrl === "support");
   const switchTab = (t: TabType) => {
     setUserPickedTab(true);
     setActiveTab(t);

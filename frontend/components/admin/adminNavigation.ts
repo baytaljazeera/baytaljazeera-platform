@@ -99,12 +99,6 @@ export const adminSections: AdminSection[] = [
         childRoutes: ["/admin/complaints", "/admin/support"],
       },
       {
-        href: "/admin/customer-conversations",
-        label: "مراقبة المحادثات",
-        icon: Eye,
-        permissionKey: "support",
-      },
-      {
         href: "/admin/omni-inbox",
         label: "البريد الموحد",
         icon: Inbox,
@@ -112,10 +106,10 @@ export const adminSections: AdminSection[] = [
         childRoutes: ["/admin/messages"],
       },
       {
-        href: "/admin/whatsapp",
-        label: "واتساب",
-        icon: MessageCircle,
-        permissionKey: "marketing",
+        href: "/admin/customer-conversations",
+        label: "مراقبة المحادثات",
+        icon: Eye,
+        permissionKey: "support",
       },
     ],
   },
@@ -137,6 +131,12 @@ export const adminSections: AdminSection[] = [
     icon: Wallet,
     colorClass: "text-green-400",
     links: [
+      {
+        href: "/admin/finance-inbox",
+        label: "صندوق الوصول المالي",
+        icon: Inbox,
+        permissionKey: "finance",
+      },
       {
         href: "/admin/finance",
         label: "المالية والمدفوعات",
@@ -165,6 +165,12 @@ export const adminSections: AdminSection[] = [
         permissionKey: "marketing",
       },
       {
+        href: "/admin/whatsapp",
+        label: "واتساب",
+        icon: MessageCircle,
+        permissionKey: "marketing",
+      },
+      {
         href: "/admin/news",
         label: "شريط الأخبار",
         icon: Newspaper,
@@ -184,12 +190,6 @@ export const adminSections: AdminSection[] = [
     icon: Lock,
     colorClass: "text-slate-400",
     links: [
-      {
-        href: "/admin/feedback/overview",
-        label: "تغذية راجعة المستخدمين",
-        icon: MessageCirclePlus,
-        permissionKey: "support",
-      },
       {
         href: "/admin/roles?tab=applications",
         label: "طلبات الإدارة",
