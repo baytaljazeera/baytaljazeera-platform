@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const db = require('../db');
+const notifier = require('../services/notificationService');
 
 async function checkExpiringEliteReservations() {
   try {
@@ -198,20 +199,16 @@ async function sweepSlaBreaches({ table, primaryKey, link, subjectField, kindAr,
       targetRoles.push(row.auto_assigned_role);
     }
     try {
-      await db.query(
-        `INSERT INTO notifications (user_id, title, body, type, link, created_at)
-         SELECT u.id, $1, $2, $3, $4, NOW()
-         FROM users u
-         WHERE u.role = ANY($5::text[])
-           AND COALESCE(u.is_active, true) = true`,
-        [
-          `تجاوز SLA ${kindAr} — أولوية ${row.priority || 'medium'}`,
-          `${row.subject || ''} (انتهى وقت الاستجابة المسموح ${row.sla_hours || ''} ساعة)`,
-          notifType,
-          link,
-          targetRoles,
-        ]
-      );
+      await notifier.escalation({
+        roles: targetRoles,
+        title: `تجاوز SLA ${kindAr} — أولوية ${row.priority || 'medium'}`,
+        body: `${row.subject || ''} (انتهى وقت الاستجابة المسموح ${row.sla_hours || ''} ساعة)`,
+        type: notifType,
+        link,
+        priority: row.priority === 'low' ? 'high' : 'urgent',
+        sourceType: table === 'support_tickets' ? 'ticket' : 'complaint',
+        sourceId: row.id,
+      });
       await db.query(
         `UPDATE ${table} SET breach_notified_at = NOW() WHERE ${primaryKey} = $1`,
         [row.id]

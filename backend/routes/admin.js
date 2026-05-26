@@ -2019,4 +2019,169 @@ router.get("/inboxes/:key/items", authMiddleware, asyncHandler(async (req, res) 
   }
 }));
 
+/**
+ * Executive overview — purpose-built dashboard for super_admin / admin.
+ *
+ * Returns a compact JSON the frontend can render as the executive board:
+ *   - KPIs across the major domains (listings, complaints, finance, HR)
+ *   - Bottlenecks (SLA breaches, pending approvals)
+ *   - Operational health indicators (open complaints by role, oldest pending)
+ *   - Complaints heatmap (by status x priority)
+ *
+ * Every block is wrapped in its own try/catch so partial schema availability
+ * still returns a usable payload. The whole endpoint is gated to executive
+ * roles.
+ */
+router.get('/executive-overview', authMiddleware, requireRoles('super_admin', 'admin', 'admin_manager'), asyncHandler(async (req, res) => {
+  const out = {
+    generated_at: new Date().toISOString(),
+    kpis: {
+      listings_pending: 0,
+      listings_new_7d: 0,
+      complaints_open: 0,
+      complaints_breached_sla: 0,
+      complaints_new_24h: 0,
+      revenue_7d: 0,
+      revenue_30d: 0,
+      employees_active: 0,
+      contracts_expiring_30d: 0,
+      vacations_pending: 0,
+    },
+    bottlenecks: {
+      complaints_by_role: [],
+      oldest_pending_complaints: [],
+      pending_approvals_count: 0,
+    },
+    health: {
+      sla_breach_rate_24h: 0,
+      avg_response_time_hours: null,
+    },
+    heatmap: {
+      by_status_priority: [],
+    },
+  };
+
+  // --- KPIs ---
+  try {
+    const r = await db.query(`
+      SELECT
+        (SELECT COUNT(*)::int FROM properties WHERE status='pending') AS listings_pending,
+        (SELECT COUNT(*)::int FROM properties WHERE created_at > NOW() - INTERVAL '7 days') AS listings_new_7d
+    `);
+    Object.assign(out.kpis, r.rows[0]);
+  } catch {}
+  try {
+    const r = await db.query(`
+      SELECT
+        (SELECT COUNT(*)::int FROM account_complaints
+          WHERE status IN ('new','pending')
+            AND COALESCE(deleted_at, NULL) IS NULL) AS complaints_open,
+        (SELECT COUNT(*)::int FROM account_complaints
+          WHERE sla_due_at IS NOT NULL
+            AND sla_due_at < NOW()
+            AND status NOT IN ('closed','resolved','dismissed')) AS complaints_breached_sla,
+        (SELECT COUNT(*)::int FROM account_complaints
+          WHERE created_at > NOW() - INTERVAL '24 hours') AS complaints_new_24h
+    `);
+    Object.assign(out.kpis, r.rows[0]);
+  } catch {}
+  try {
+    const r = await db.query(`
+      SELECT
+        COALESCE(SUM(CASE WHEN up.started_at > NOW() - INTERVAL '7 days'  THEN p.price ELSE 0 END), 0)::numeric AS revenue_7d,
+        COALESCE(SUM(CASE WHEN up.started_at > NOW() - INTERVAL '30 days' THEN p.price ELSE 0 END), 0)::numeric AS revenue_30d
+      FROM user_plans up
+      JOIN plans p ON up.plan_id = p.id
+      WHERE up.status IN ('active', 'expired')
+    `);
+    out.kpis.revenue_7d  = Number(r.rows[0]?.revenue_7d || 0);
+    out.kpis.revenue_30d = Number(r.rows[0]?.revenue_30d || 0);
+  } catch {}
+  try {
+    const r = await db.query(`
+      SELECT
+        (SELECT COUNT(*)::int FROM users WHERE role IS NOT NULL AND role <> 'user' AND COALESCE(is_active, true) = true) AS employees_active,
+        (SELECT COUNT(*)::int FROM employee_contracts WHERE status='active' AND end_date IS NOT NULL AND end_date <= CURRENT_DATE + INTERVAL '30 days' AND COALESCE(deleted_at, NULL) IS NULL) AS contracts_expiring_30d,
+        (SELECT COUNT(*)::int FROM hr_vacation_requests WHERE status='pending') AS vacations_pending
+    `);
+    Object.assign(out.kpis, r.rows[0]);
+  } catch {}
+
+  // --- Bottlenecks ---
+  try {
+    const r = await db.query(`
+      SELECT auto_assigned_role AS role, COUNT(*)::int AS open_count,
+             COUNT(*) FILTER (WHERE sla_due_at < NOW())::int AS breached
+      FROM account_complaints
+      WHERE status IN ('new','pending')
+        AND COALESCE(deleted_at, NULL) IS NULL
+      GROUP BY auto_assigned_role
+      ORDER BY open_count DESC
+      LIMIT 10
+    `);
+    out.bottlenecks.complaints_by_role = r.rows;
+  } catch {}
+  try {
+    const r = await db.query(`
+      SELECT id, subject, auto_assigned_role, priority,
+             created_at, sla_due_at,
+             EXTRACT(EPOCH FROM (NOW() - created_at))/3600 AS hours_open
+      FROM account_complaints
+      WHERE status IN ('new','pending')
+        AND COALESCE(deleted_at, NULL) IS NULL
+      ORDER BY created_at ASC
+      LIMIT 10
+    `);
+    out.bottlenecks.oldest_pending_complaints = r.rows;
+  } catch {}
+  try {
+    const r = await db.query(`
+      SELECT (
+        (SELECT COUNT(*) FROM properties WHERE status='pending')
+        + (SELECT COUNT(*) FROM hr_vacation_requests WHERE status='pending')
+        + (SELECT COUNT(*) FROM membership_requests WHERE status='pending')
+      )::int AS pending_approvals_count
+    `);
+    out.bottlenecks.pending_approvals_count = r.rows[0]?.pending_approvals_count || 0;
+  } catch {}
+
+  // --- Health ---
+  try {
+    const r = await db.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE sla_due_at < NOW() AND status NOT IN ('closed','resolved','dismissed'))::float
+          / NULLIF(COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '24 hours'), 0) AS breach_rate
+      FROM account_complaints
+      WHERE sla_due_at IS NOT NULL
+    `);
+    out.health.sla_breach_rate_24h = r.rows[0]?.breach_rate ? Math.round(r.rows[0].breach_rate * 100) / 100 : 0;
+  } catch {}
+  try {
+    const r = await db.query(`
+      SELECT AVG(EXTRACT(EPOCH FROM (replied_at - created_at))/3600)::float AS avg_hours
+      FROM (
+        SELECT c.created_at, MIN(e.created_at) AS replied_at
+        FROM account_complaints c
+        JOIN complaint_events e ON e.complaint_id = c.id AND e.event_type IN ('admin_reply','status_changed')
+        WHERE c.created_at > NOW() - INTERVAL '30 days'
+        GROUP BY c.id, c.created_at
+      ) t
+    `);
+    out.health.avg_response_time_hours = r.rows[0]?.avg_hours ? Math.round(r.rows[0].avg_hours * 10) / 10 : null;
+  } catch {}
+
+  // --- Heatmap ---
+  try {
+    const r = await db.query(`
+      SELECT status, COALESCE(priority, 'medium') AS priority, COUNT(*)::int AS n
+      FROM account_complaints
+      WHERE COALESCE(deleted_at, NULL) IS NULL
+      GROUP BY status, priority
+    `);
+    out.heatmap.by_status_priority = r.rows;
+  } catch {}
+
+  res.json(out);
+}));
+
 module.exports = router;

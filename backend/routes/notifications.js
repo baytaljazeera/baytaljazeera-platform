@@ -79,6 +79,131 @@ router.patch("/read-all", authMiddleware, asyncHandler(async (req, res) => {
   res.json({ ok: true, message: "تم تحديد الكل كمقروء" });
 }));
 
+/**
+ * Notification center view — grouped + filterable.
+ *
+ * Query params:
+ *   category=directive|transfer|assignment|escalation|reply|mention|complaint|system
+ *   unread=1                 — only unread
+ *   priority=high|urgent     — filter by priority
+ *   q=string                 — substring search on title/body
+ *   limit, offset            — pagination
+ *
+ * Returns:
+ *   { items, total, counts: { byCategory: {...}, unread, urgent } }
+ */
+router.get("/center", authMiddleware, asyncHandler(async (req, res) => {
+  const limit  = Math.min(parseInt(req.query.limit) || 30, 100);
+  const offset = parseInt(req.query.offset) || 0;
+  const category = (req.query.category || '').trim() || null;
+  const unread = req.query.unread === '1' || req.query.unread === 'true';
+  const priority = (req.query.priority || '').trim() || null;
+  const q = (req.query.q || '').trim() || null;
+
+  const where = ['user_id = $1'];
+  const params = [req.user.id];
+  if (category) { params.push(category); where.push(`category = $${params.length}`); }
+  if (priority) { params.push(priority); where.push(`priority = $${params.length}`); }
+  if (unread)   { where.push(`read_at IS NULL`); }
+  if (q)        { params.push(`%${q}%`); where.push(`(title ILIKE $${params.length} OR body ILIKE $${params.length})`); }
+
+  const itemsQ = `
+    SELECT id, title, body, type, link, category, priority,
+           source_type, source_id, actor_user_id, actor_name_snapshot,
+           read_at, created_at
+    FROM notifications
+    WHERE ${where.join(' AND ')}
+    ORDER BY (read_at IS NOT NULL), created_at DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `;
+
+  let items = [];
+  let total = 0;
+  let countsByCategory = {};
+  let unreadTotal = 0;
+  let urgentTotal = 0;
+
+  try {
+    const r = await db.query(itemsQ, params);
+    items = r.rows;
+    const t = await db.query(
+      `SELECT COUNT(*)::int AS n FROM notifications WHERE ${where.join(' AND ')}`,
+      params
+    );
+    total = t.rows[0]?.n || 0;
+    const c = await db.query(
+      `SELECT COALESCE(category,'system') AS category, COUNT(*)::int AS n
+       FROM notifications
+       WHERE user_id = $1 AND read_at IS NULL
+       GROUP BY 1`,
+      [req.user.id]
+    );
+    countsByCategory = Object.fromEntries(c.rows.map(x => [x.category, x.n]));
+    const u = await db.query(
+      `SELECT COUNT(*)::int AS n FROM notifications WHERE user_id = $1 AND read_at IS NULL`,
+      [req.user.id]
+    );
+    unreadTotal = u.rows[0]?.n || 0;
+    const ug = await db.query(
+      `SELECT COUNT(*)::int AS n FROM notifications
+       WHERE user_id = $1 AND read_at IS NULL AND priority IN ('high','urgent')`,
+      [req.user.id]
+    );
+    urgentTotal = ug.rows[0]?.n || 0;
+  } catch (e) {
+    if (e && (e.code === '42703' || e.code === '42P01')) {
+      // Older DB without category/priority — fall back to plain list.
+      const fallback = await db.query(
+        `SELECT id, title, body, type, link, read_at, created_at
+         FROM notifications WHERE user_id = $1
+         ORDER BY (read_at IS NOT NULL), created_at DESC
+         LIMIT $2 OFFSET $3`,
+        [req.user.id, limit, offset]
+      );
+      items = fallback.rows;
+      const t = await db.query(`SELECT COUNT(*)::int n FROM notifications WHERE user_id = $1`, [req.user.id]);
+      total = t.rows[0]?.n || 0;
+      const u = await db.query(`SELECT COUNT(*)::int n FROM notifications WHERE user_id = $1 AND read_at IS NULL`, [req.user.id]);
+      unreadTotal = u.rows[0]?.n || 0;
+    } else {
+      throw e;
+    }
+  }
+
+  res.json({
+    items,
+    total,
+    counts: { byCategory: countsByCategory, unread: unreadTotal, urgent: urgentTotal },
+    page: { limit, offset },
+  });
+}));
+
+/**
+ * "Assigned to me" view — notifications whose category is in
+ * [directive, assignment, transfer, escalation] and the actor isn't the user.
+ * Useful for the home/dashboard "you have N pending actions" widget.
+ */
+router.get("/for-me", authMiddleware, asyncHandler(async (req, res) => {
+  try {
+    const r = await db.query(
+      `SELECT id, title, body, link, category, priority, source_type, source_id,
+              actor_name_snapshot, read_at, created_at
+       FROM notifications
+       WHERE user_id = $1
+         AND category IN ('directive','assignment','transfer','escalation','mention')
+       ORDER BY (read_at IS NOT NULL), priority DESC NULLS LAST, created_at DESC
+       LIMIT 50`,
+      [req.user.id]
+    );
+    res.json({ items: r.rows });
+  } catch (e) {
+    if (e && (e.code === '42703' || e.code === '42P01')) {
+      return res.json({ items: [] });
+    }
+    throw e;
+  }
+}));
+
 router.get("/recent", authMiddleware, asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit) || 5;
   

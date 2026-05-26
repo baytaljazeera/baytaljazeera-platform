@@ -20,6 +20,8 @@ const router = express.Router();
 const db = require('../db');
 const { authMiddleware, requireRoles } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
+const notifier = require('../services/notificationService');
+const { requireReason, recordDestructive, softDelete } = require('../services/auditSafety');
 
 const HR_ROLES = ['super_admin', 'admin', 'admin_manager'];
 
@@ -197,7 +199,349 @@ router.get('/employees/:id', authMiddleware, hrGate, asyncHandler(async (req, re
     };
   }
 
-  res.json({ user, inboxes, directives, contracts, evaluations, averages });
+  // HR depth — warnings, vacation requests, attachments. Each block is
+  // 42P01-tolerant so a stale env without the new tables still returns
+  // the basic profile.
+  let warnings = [];
+  let vacations = [];
+  let attachments = [];
+  try {
+    const wr = await db.query(
+      `SELECT id, warning_type, severity, note, issued_by, issued_by_name_snapshot,
+              acknowledged_at, created_at
+       FROM hr_warnings
+       WHERE user_id = $1 AND deleted_at IS NULL
+       ORDER BY created_at DESC LIMIT 50`,
+      [id]
+    );
+    warnings = wr.rows;
+  } catch (e) {
+    if (!(e && e.code === '42P01')) console.warn('[hr/employee] warnings query failed:', e.message);
+  }
+  try {
+    const vr = await db.query(
+      `SELECT id, start_date, end_date, day_count, request_type, status,
+              reason, decided_by_name_snapshot, decided_at, decision_note, created_at
+       FROM hr_vacation_requests
+       WHERE user_id = $1
+       ORDER BY created_at DESC LIMIT 50`,
+      [id]
+    );
+    vacations = vr.rows;
+  } catch (e) {
+    if (!(e && e.code === '42P01')) console.warn('[hr/employee] vacations query failed:', e.message);
+  }
+  try {
+    const ar = await db.query(
+      `SELECT id, category, file_name, file_path, mime_type,
+              uploaded_by_name_snapshot, created_at
+       FROM hr_attachments
+       WHERE user_id = $1 AND deleted_at IS NULL
+       ORDER BY created_at DESC LIMIT 100`,
+      [id]
+    );
+    attachments = ar.rows;
+  } catch (e) {
+    if (!(e && e.code === '42P01')) console.warn('[hr/employee] attachments query failed:', e.message);
+  }
+
+  res.json({ user, inboxes, directives, contracts, evaluations, averages, warnings, vacations, attachments });
+}));
+
+/**
+ * Warning ledger — issue / list / acknowledge / soft-delete.
+ * Soft delete requires `reason` (Action Safety Layer).
+ */
+router.post('/warnings', authMiddleware, hrGate, asyncHandler(async (req, res) => {
+  const { user_id, warning_type, severity, note } = req.body || {};
+  if (!user_id || !note) return res.status(400).json({ error: 'الموظف والملاحظة مطلوبان' });
+  const validSeverity = ['low', 'medium', 'high'].includes(severity) ? severity : 'low';
+  const validType = ['verbal', 'written', 'final'].includes(warning_type) ? warning_type : 'verbal';
+  try {
+    const r = await db.query(
+      `INSERT INTO hr_warnings (user_id, warning_type, severity, note, issued_by, issued_by_name_snapshot)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [user_id, validType, validSeverity, note.trim(), req.user.id, req.user.name || req.user.email || null]
+    );
+    // Notify the employee.
+    try {
+      await notifier.notify({
+        userIds: [user_id],
+        title: validType === 'final' ? 'تنبيه نهائي من إدارة الموارد البشرية' : 'تنبيه إداري جديد',
+        body: note.trim().slice(0, 200),
+        link: '/my-account',
+        category: 'system',
+        type: 'hr_warning',
+        priority: validSeverity === 'high' ? 'high' : 'medium',
+        sourceType: 'hr_warning',
+        sourceId: r.rows[0]?.id || null,
+        actor: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role },
+      });
+    } catch {}
+    res.status(201).json({ warning: r.rows[0] });
+  } catch (e) {
+    if (e && e.code === '42P01') return res.status(503).json({ error: 'جدول التحذيرات لم يُهيَّأ بعد' });
+    throw e;
+  }
+}));
+
+router.post('/warnings/:id/acknowledge', authMiddleware, asyncHandler(async (req, res) => {
+  // Employee acknowledges their own warning (no hrGate required — but it
+  // must be the user's own warning).
+  const { id } = req.params;
+  const r = await db.query('SELECT user_id FROM hr_warnings WHERE id = $1 AND deleted_at IS NULL', [id]);
+  if (r.rows.length === 0) return res.status(404).json({ error: 'غير موجود' });
+  if (String(r.rows[0].user_id) !== String(req.user.id)) {
+    return res.status(403).json({ error: 'غير مصرح' });
+  }
+  await db.query('UPDATE hr_warnings SET acknowledged_at = NOW() WHERE id = $1', [id]);
+  res.json({ ok: true });
+}));
+
+router.delete('/warnings/:id', authMiddleware, hrGate, requireReason(), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  try {
+    const out = await softDelete(req, { table: 'hr_warnings', id });
+    if (!out.ok) return res.status(404).json({ error: out.error || 'لم يتم العثور' });
+    res.json({ ok: true, message: 'تم حذف التحذير' });
+  } catch (e) {
+    if (e.message.includes('reason required')) return res.status(400).json({ error: 'السبب مطلوب' });
+    throw e;
+  }
+}));
+
+/**
+ * Vacation / leave workflow — employee submits, HR decides.
+ *
+ * POST    /vacations                — employee creates a request
+ * GET     /vacations                — HR list (?status=pending|approved|rejected)
+ * PATCH   /vacations/:id/decide     — HR approves/rejects (with note)
+ */
+router.post('/vacations', authMiddleware, asyncHandler(async (req, res) => {
+  const { start_date, end_date, request_type, reason } = req.body || {};
+  if (!start_date || !end_date) return res.status(400).json({ error: 'تواريخ البداية والنهاية مطلوبة' });
+  const validType = ['annual', 'sick', 'emergency', 'unpaid', 'other'].includes(request_type) ? request_type : 'annual';
+  // day_count = end-start+1 if both valid
+  let days = null;
+  try {
+    const a = new Date(start_date); const b = new Date(end_date);
+    days = Math.max(1, Math.round((b - a) / 86400000) + 1);
+  } catch {}
+  try {
+    const r = await db.query(
+      `INSERT INTO hr_vacation_requests (user_id, start_date, end_date, day_count, request_type, reason)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [req.user.id, start_date, end_date, days, validType, reason || null]
+    );
+    // Notify HR roles.
+    try {
+      await notifier.notifyRoles({
+        roles: HR_ROLES,
+        title: 'طلب إجازة جديد',
+        body: `${req.user.name || req.user.email} — ${validType} (${days || ''} يوم)`,
+        link: '/add-listing/admin/hr',
+        category: 'system',
+        type: 'hr_vacation_request',
+        priority: 'medium',
+        sourceType: 'hr_vacation',
+        sourceId: r.rows[0]?.id || null,
+        actor: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role },
+      });
+    } catch {}
+    res.status(201).json({ vacation: r.rows[0] });
+  } catch (e) {
+    if (e && e.code === '42P01') return res.status(503).json({ error: 'جدول الإجازات لم يُهيَّأ بعد' });
+    throw e;
+  }
+}));
+
+router.get('/vacations', authMiddleware, hrGate, asyncHandler(async (req, res) => {
+  const status = req.query.status;
+  const params = [];
+  let where = '';
+  if (status) { params.push(status); where = `WHERE v.status = $${params.length}`; }
+  try {
+    const r = await db.query(
+      `SELECT v.*, u.name AS employee_name, u.email AS employee_email, u.role AS employee_role
+       FROM hr_vacation_requests v
+       LEFT JOIN users u ON u.id = v.user_id
+       ${where}
+       ORDER BY (v.status = 'pending') DESC, v.created_at DESC
+       LIMIT 200`,
+      params
+    );
+    res.json({ vacations: r.rows });
+  } catch (e) {
+    if (e && e.code === '42P01') return res.json({ vacations: [] });
+    throw e;
+  }
+}));
+
+router.get('/vacations/mine', authMiddleware, asyncHandler(async (req, res) => {
+  try {
+    const r = await db.query(
+      `SELECT * FROM hr_vacation_requests WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`,
+      [req.user.id]
+    );
+    res.json({ vacations: r.rows });
+  } catch (e) {
+    if (e && e.code === '42P01') return res.json({ vacations: [] });
+    throw e;
+  }
+}));
+
+router.patch('/vacations/:id/decide', authMiddleware, hrGate, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { decision, note } = req.body || {};
+  if (!['approved', 'rejected'].includes(decision)) {
+    return res.status(400).json({ error: 'القرار يجب أن يكون approved أو rejected' });
+  }
+  const before = await db.query('SELECT * FROM hr_vacation_requests WHERE id = $1', [id]);
+  if (before.rows.length === 0) return res.status(404).json({ error: 'الطلب غير موجود' });
+  if (before.rows[0].status !== 'pending') {
+    return res.status(409).json({ error: 'تم البت في الطلب مسبقاً' });
+  }
+  const r = await db.query(
+    `UPDATE hr_vacation_requests
+       SET status = $1, decided_by = $2, decided_by_name_snapshot = $3,
+           decided_at = NOW(), decision_note = $4, updated_at = NOW()
+     WHERE id = $5 RETURNING *`,
+    [decision, req.user.id, req.user.name || req.user.email || null, note || null, id]
+  );
+  // Notify the employee of the decision.
+  try {
+    await notifier.notify({
+      userIds: [r.rows[0].user_id],
+      title: decision === 'approved' ? 'تمت الموافقة على طلب إجازتك' : 'تم رفض طلب إجازتك',
+      body: note || (decision === 'approved' ? 'وافقت إدارة الموارد البشرية على طلبك.' : 'يرجى التواصل مع إدارة الموارد البشرية.'),
+      link: '/my-account',
+      category: 'system',
+      type: 'hr_vacation_decision',
+      priority: decision === 'approved' ? 'medium' : 'high',
+      sourceType: 'hr_vacation',
+      sourceId: id,
+      actor: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role },
+    });
+  } catch {}
+  await recordDestructive(req, {
+    action: `DECIDE_VACATION_${decision.toUpperCase()}`,
+    resourceType: 'hr_vacation_requests',
+    resourceId: id,
+    before: before.rows[0],
+    after: r.rows[0],
+    reason: note || decision,
+  });
+  res.json({ vacation: r.rows[0] });
+}));
+
+/**
+ * Contract renewal alerts — endpoints the dashboard uses to flag contracts
+ * expiring within N days.
+ */
+router.get('/contracts/expiring', authMiddleware, hrGate, asyncHandler(async (req, res) => {
+  const days = Math.max(1, Math.min(180, parseInt(req.query.days, 10) || 30));
+  try {
+    const r = await db.query(
+      `SELECT c.id, c.user_id, c.start_date, c.end_date, c.contract_type, c.status,
+              u.name AS employee_name, u.email AS employee_email, u.role AS employee_role,
+              (c.end_date - CURRENT_DATE)::int AS days_remaining
+       FROM employee_contracts c
+       LEFT JOIN users u ON u.id = c.user_id
+       WHERE c.status = 'active'
+         AND c.end_date IS NOT NULL
+         AND c.end_date <= CURRENT_DATE + ($1 || ' days')::interval
+         AND COALESCE(c.deleted_at, NULL) IS NULL
+       ORDER BY c.end_date ASC`,
+      [String(days)]
+    );
+    res.json({ contracts: r.rows, window_days: days });
+  } catch (e) {
+    if (e && e.code === '42P01') return res.json({ contracts: [], window_days: days });
+    throw e;
+  }
+}));
+
+router.delete('/contracts/:id', authMiddleware, hrGate, requireReason(), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  try {
+    const out = await softDelete(req, { table: 'employee_contracts', id });
+    if (!out.ok) return res.status(404).json({ error: out.error || 'لم يتم العثور' });
+    res.json({ ok: true, message: 'تم إنهاء العقد' });
+  } catch (e) {
+    if (e.message.includes('reason required')) return res.status(400).json({ error: 'السبب مطلوب' });
+    throw e;
+  }
+}));
+
+/**
+ * Attachments — per-employee file references categorized by type
+ * (id, contract, certification, evaluation_doc, general).
+ *
+ * The file itself is uploaded via the existing upload pipeline; this
+ * endpoint just records the reference.
+ */
+router.post('/attachments', authMiddleware, hrGate, asyncHandler(async (req, res) => {
+  const { user_id, category, file_name, file_path, mime_type } = req.body || {};
+  if (!user_id || !file_name) return res.status(400).json({ error: 'الموظف واسم الملف مطلوبان' });
+  const validCat = ['id', 'contract', 'certification', 'evaluation_doc', 'general'].includes(category) ? category : 'general';
+  try {
+    const r = await db.query(
+      `INSERT INTO hr_attachments (user_id, category, file_name, file_path, mime_type, uploaded_by, uploaded_by_name_snapshot)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [user_id, validCat, file_name, file_path || null, mime_type || null, req.user.id, req.user.name || req.user.email || null]
+    );
+    res.status(201).json({ attachment: r.rows[0] });
+  } catch (e) {
+    if (e && e.code === '42P01') return res.status(503).json({ error: 'جدول المرفقات لم يُهيَّأ بعد' });
+    throw e;
+  }
+}));
+
+router.delete('/attachments/:id', authMiddleware, hrGate, requireReason(), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  try {
+    const out = await softDelete(req, { table: 'hr_attachments', id });
+    if (!out.ok) return res.status(404).json({ error: out.error || 'لم يتم العثور' });
+    res.json({ ok: true, message: 'تم حذف المرفق' });
+  } catch (e) {
+    if (e.message.includes('reason required')) return res.status(400).json({ error: 'السبب مطلوب' });
+    throw e;
+  }
+}));
+
+/**
+ * Dashboard widget — HR overview counters (used by /admin/dashboard exec view).
+ */
+router.get('/overview', authMiddleware, hrGate, asyncHandler(async (req, res) => {
+  const out = {
+    employees_total: 0,
+    employees_active: 0,
+    contracts_active: 0,
+    contracts_expiring_30d: 0,
+    vacations_pending: 0,
+    warnings_open: 0,
+  };
+  try {
+    const r = await db.query(`SELECT
+      (SELECT COUNT(*)::int FROM users WHERE role IS NOT NULL AND role <> 'user') AS employees_total,
+      (SELECT COUNT(*)::int FROM users WHERE role IS NOT NULL AND role <> 'user' AND COALESCE(is_active, true) = true) AS employees_active`);
+    Object.assign(out, r.rows[0]);
+  } catch {}
+  try {
+    const r = await db.query(`SELECT
+      (SELECT COUNT(*)::int FROM employee_contracts WHERE status='active' AND COALESCE(deleted_at, NULL) IS NULL) AS contracts_active,
+      (SELECT COUNT(*)::int FROM employee_contracts WHERE status='active' AND end_date IS NOT NULL AND end_date <= CURRENT_DATE + INTERVAL '30 days') AS contracts_expiring_30d`);
+    Object.assign(out, r.rows[0]);
+  } catch {}
+  try {
+    const r = await db.query(`SELECT COUNT(*)::int AS n FROM hr_vacation_requests WHERE status='pending'`);
+    out.vacations_pending = r.rows[0]?.n || 0;
+  } catch {}
+  try {
+    const r = await db.query(`SELECT COUNT(*)::int AS n FROM hr_warnings WHERE deleted_at IS NULL AND acknowledged_at IS NULL`);
+    out.warnings_open = r.rows[0]?.n || 0;
+  } catch {}
+  res.json(out);
 }));
 
 /**

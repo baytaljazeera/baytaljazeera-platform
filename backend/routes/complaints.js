@@ -5,6 +5,7 @@ const db = require('../db');
 const { authMiddleware, requireRoles, JWT_SECRET, JWT_VERIFY_OPTIONS } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { getAccountComplaintScope, getComplaintSmartRouting } = require('../utils/customerServiceScope');
+const notifier = require('../services/notificationService');
 
 // Rate limiter on complaint submission was removed per owner request:
 // legitimate users were hitting the 3/hour cap. If we see abuse we can
@@ -254,24 +255,17 @@ router.post("/", complaintLimiter, asyncHandler(async (req, res) => {
   try {
     const link = '/add-listing/admin/customer-service';
     const labelAr = autoAssignedRole === 'finance_admin' ? 'محاسبية' : 'دعم';
-    await db.query(
-      `INSERT INTO notifications (user_id, title, body, type, link, created_at)
-       SELECT u.id,
-              $1,
-              $2,
-              'complaint_assigned',
-              $3,
-              NOW()
-       FROM users u
-       WHERE u.role = $4
-         AND COALESCE(u.is_active, true) = true`,
-      [
-        `شكوى جديدة (${labelAr})`,
-        `${subject} — أولوية: ${actualPriority}`,
-        link,
-        autoAssignedRole,
-      ]
-    );
+    await notifier.notifyRoles({
+      roles: [autoAssignedRole],
+      title: `شكوى جديدة (${labelAr})`,
+      body: `${subject} — أولوية: ${actualPriority}`,
+      type: 'complaint_assigned',
+      category: 'complaint',
+      priority: actualPriority,
+      link,
+      sourceType: 'complaint',
+      sourceId: result.rows[0]?.id || null,
+    });
   } catch (e) {
     console.error('[complaints] assignment notification failed', e.message);
   }
@@ -516,11 +510,15 @@ router.post("/:id/reply", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES
     }
     if (row.user_id) {
       try {
-        await db.query(
-          `INSERT INTO notifications (user_id, title, body, type, link, created_at)
-           VALUES ($1, $2, $3, 'complaint_reply', $4, NOW())`,
-          [row.user_id, "رد جديد على شكواك", `${row.subject || ''}`.trim(), '/my-complaints']
-        );
+        await notifier.reply({
+          userIds: [row.user_id],
+          title: "رد جديد على شكواك",
+          body: `${row.subject || ''}`.trim(),
+          link: '/my-complaints',
+          sourceType: 'complaint',
+          sourceId: id,
+          actor: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role },
+        });
       } catch (e) {
         console.warn('[complaints] /reply notification failed', e.message);
       }
@@ -720,12 +718,17 @@ router.post("/:id/directive", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_R
     if (title && notifyUserIds.size > 0) {
       const body = `${subject} — ${kind === 'assignment' && validPriority ? `أولوية: ${validPriority} · ` : ''}${message.trim().slice(0, 80)}`;
       const link = '/add-listing/admin/customer-service?tab=complaints';
-      const idArr = Array.from(notifyUserIds);
-      await db.query(
-        `INSERT INTO notifications (user_id, title, body, type, link, created_at)
-         SELECT UNNEST($1::bigint[]), $2, $3, 'complaint_directive', $4, NOW()`,
-        [idArr, title, body, link]
-      );
+      const fn = kind === 'assignment' ? notifier.assignment : notifier.directive;
+      await fn({
+        userIds: Array.from(notifyUserIds),
+        title,
+        body,
+        link,
+        priority: validPriority || 'medium',
+        sourceType: 'complaint',
+        sourceId: id,
+        actor: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role },
+      });
     }
   } catch (e) {
     console.warn('[complaints] directive notification failed', e.message);
@@ -904,11 +907,15 @@ router.patch("/:id", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), as
       ? `تم الرد على شكواك: ${prev.subject || ''}`.trim()
       : `تم تحديث حالة شكواك (${status}): ${prev.subject || ''}`.trim();
     try {
-      await db.query(
-        `INSERT INTO notifications (user_id, title, body, type, link, created_at)
-         VALUES ($1, $2, $3, 'complaint_reply', $4, NOW())`,
-        [prev.user_id, title, body, '/my-complaints']
-      );
+      await notifier.reply({
+        userIds: [prev.user_id],
+        title,
+        body,
+        link: '/my-complaints',
+        sourceType: 'complaint',
+        sourceId: id,
+        actor: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role },
+      });
     } catch (e) {
       console.error('[complaints] notification insert failed', e.message);
     }
@@ -1023,22 +1030,19 @@ async function transferComplaintHandler(req, res, fixedTargetRole) {
   // Notify users in the receiving role. For admin/super_admin we notify both
   // roles (executive escalation = whoever's available at the top).
   try {
-    const notifyRoles = targetRole === 'admin' || targetRole === 'super_admin'
+    const targetRolesForNotify = targetRole === 'admin' || targetRole === 'super_admin'
       ? ['admin', 'super_admin']
       : [targetRole];
-    await db.query(
-      `INSERT INTO notifications (user_id, title, body, type, link, created_at)
-       SELECT u.id, $1, $2, 'complaint_transferred', $3, NOW()
-       FROM users u
-       WHERE u.role = ANY($4::text[])
-         AND COALESCE(u.is_active, true) = true`,
-      [
-        `شكوى مُحوّلة إليك (${cfg.labelAr})`,
-        `${row.subject || ''} — أولوية: ${row.priority || 'medium'}`,
-        cfg.link,
-        notifyRoles,
-      ]
-    );
+    await notifier.transfer({
+      roles: targetRolesForNotify,
+      title: `شكوى مُحوّلة إليك (${cfg.labelAr})`,
+      body: `${row.subject || ''} — أولوية: ${row.priority || 'medium'}`,
+      link: cfg.link,
+      priority: row.priority || 'medium',
+      sourceType: 'complaint',
+      sourceId: id,
+      actor: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role },
+    });
   } catch (e) {
     console.error('[complaints] transfer notification failed', e.message);
   }

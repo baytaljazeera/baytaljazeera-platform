@@ -663,31 +663,98 @@ router.put("/custom-roles/:key", authMiddleware, requireRoles('super_admin'), as
   res.json({ role: result.rows[0], message: "تم تحديث الدور بنجاح" });
 }));
 
-router.delete("/custom-roles/:key", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
+// Soft-deletes a custom role. Action Safety Layer applies: actor must
+// provide a `reason` (>= 4 chars) in body, snapshot is captured, role is
+// flagged is_active=false + deleted_at=NOW(), and role_permissions rows are
+// kept (not hard-deleted) so we can restore later. Default keys cannot be
+// removed (they're hardcoded, not in custom_roles).
+const { requireReason, recordDestructive } = require('../services/auditSafety');
+
+router.delete("/custom-roles/:key", authMiddleware, requireRoles('super_admin'), requireReason(), asyncHandler(async (req, res) => {
   const { key } = req.params;
-  
+
   const existing = await db.query("SELECT * FROM custom_roles WHERE key = $1", [key]);
   if (existing.rows.length === 0) {
     return res.status(404).json({ error: "الدور غير موجود" });
   }
-  
+  const before = existing.rows[0];
+
   const usersWithRole = await db.query("SELECT COUNT(*) FROM users WHERE role = $1", [key]);
   if (parseInt(usersWithRole.rows[0].count) > 0) {
-    return res.status(400).json({ 
-      error: `لا يمكن حذف الدور لأنه مستخدم من قبل ${usersWithRole.rows[0].count} مستخدم` 
+    return res.status(400).json({
+      error: `لا يمكن حذف الدور لأنه مستخدم من قبل ${usersWithRole.rows[0].count} مستخدم`
     });
   }
-  
-  await db.query("UPDATE custom_roles SET is_active = false WHERE key = $1", [key]);
-  
-  await db.query("DELETE FROM role_permissions WHERE role = $1", [key]);
-  
+
+  // Soft deactivation — preserves the row + role_permissions so a restore
+  // can put the role back. is_active=false hides it from the role picker.
+  try {
+    await db.query(
+      `UPDATE custom_roles
+         SET is_active = false,
+             deleted_at = NOW(),
+             deleted_by = $2,
+             deleted_reason = $3
+       WHERE key = $1`,
+      [key, req.user.id || null, req.auditReason]
+    );
+  } catch (e) {
+    // Older DB without deleted_* columns — fall back to is_active flag only.
+    if (e && e.code === '42703') {
+      await db.query("UPDATE custom_roles SET is_active = false WHERE key = $1", [key]);
+    } else {
+      throw e;
+    }
+  }
+
+  // We INTENTIONALLY keep role_permissions rows so restore works. They are
+  // gated by `is_active=false` already (custom role merger won't surface
+  // an inactive role to any UI).
   await logAuditAction('DELETE_CUSTOM_ROLE', {
     target_role: key,
-    old_value: existing.rows[0]
+    old_value: before,
+    reason: req.auditReason,
   }, req);
-  
-  res.json({ message: "تم حذف الدور بنجاح" });
+  await recordDestructive(req, {
+    action: 'SOFT_DELETE_CUSTOM_ROLE',
+    resourceType: 'custom_roles',
+    resourceId: key,
+    before,
+    reason: req.auditReason,
+  });
+
+  res.json({ message: "تم تعطيل الدور (يمكن استرجاعه من سجل التدقيق)", restorable: true });
+}));
+
+// Restore a soft-deleted custom role. Audit-logged.
+router.post("/custom-roles/:key/restore", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
+  const { key } = req.params;
+  const r = await db.query("SELECT * FROM custom_roles WHERE key = $1", [key]);
+  if (r.rows.length === 0) return res.status(404).json({ error: "الدور غير موجود" });
+  const before = r.rows[0];
+  try {
+    await db.query(
+      `UPDATE custom_roles
+         SET is_active = true, deleted_at = NULL, deleted_by = NULL, deleted_reason = NULL
+       WHERE key = $1`,
+      [key]
+    );
+  } catch (e) {
+    if (e && e.code === '42703') {
+      await db.query("UPDATE custom_roles SET is_active = true WHERE key = $1", [key]);
+    } else {
+      throw e;
+    }
+  }
+  await recordDestructive(req, {
+    action: 'RESTORE_CUSTOM_ROLE',
+    resourceType: 'custom_roles',
+    resourceId: key,
+    before,
+    after: { ...before, is_active: true, deleted_at: null },
+    reason: (req.body?.reason || 'restored from audit log').toString().trim() || 'restored',
+  });
+  res.json({ ok: true, message: "تم استرجاع الدور" });
 }));
 
 module.exports = router;

@@ -342,6 +342,98 @@ async function runDatabaseInit() {
          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
        )`,
+      // ─────────────────────────────────────────────────────────────
+      // Phase 6 — System Integrity Pass (Administrative OS)
+      // Soft-delete + audit-reason columns on destructive surfaces, so
+      // deletes leave a recoverable trail instead of erasing history.
+      `ALTER TABLE IF EXISTS custom_roles        ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+      `ALTER TABLE IF EXISTS custom_roles        ADD COLUMN IF NOT EXISTS deleted_by UUID`,
+      `ALTER TABLE IF EXISTS custom_roles        ADD COLUMN IF NOT EXISTS deleted_reason TEXT`,
+      `ALTER TABLE IF EXISTS employee_contracts  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+      `ALTER TABLE IF EXISTS employee_contracts  ADD COLUMN IF NOT EXISTS deleted_by UUID`,
+      `ALTER TABLE IF EXISTS employee_contracts  ADD COLUMN IF NOT EXISTS deleted_reason TEXT`,
+      `ALTER TABLE IF EXISTS account_complaints  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+      `ALTER TABLE IF EXISTS account_complaints  ADD COLUMN IF NOT EXISTS deleted_by UUID`,
+      `ALTER TABLE IF EXISTS account_complaints  ADD COLUMN IF NOT EXISTS deleted_reason TEXT`,
+      `ALTER TABLE IF EXISTS admin_inboxes       ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+      `ALTER TABLE IF EXISTS admin_nav_links     ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+      `ALTER TABLE IF EXISTS admin_nav_sections  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+      // admin_audit_logs gets structured reason + before/after snapshots so
+      // destructive operations are queryable, not buried in details JSONB.
+      `ALTER TABLE IF EXISTS admin_audit_logs    ADD COLUMN IF NOT EXISTS reason TEXT`,
+      `ALTER TABLE IF EXISTS admin_audit_logs    ADD COLUMN IF NOT EXISTS before_snapshot JSONB`,
+      `ALTER TABLE IF EXISTS admin_audit_logs    ADD COLUMN IF NOT EXISTS after_snapshot JSONB`,
+      // Critical missing indexes — hot paths identified by audit.
+      `CREATE INDEX IF NOT EXISTS idx_role_permissions_role_key ON role_permissions (role, permission_key)`,
+      `CREATE INDEX IF NOT EXISTS idx_account_complaints_user ON account_complaints (user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_account_complaints_status ON account_complaints (status)`,
+      `CREATE INDEX IF NOT EXISTS idx_account_complaints_role ON account_complaints (auto_assigned_role)`,
+      `CREATE INDEX IF NOT EXISTS idx_account_complaints_sla_due ON account_complaints (sla_due_at) WHERE sla_due_at IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_account_complaints_alive ON account_complaints (status, created_at DESC) WHERE deleted_at IS NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_complaint_events_target_user ON complaint_events (target_user_id) WHERE target_user_id IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_complaint_events_target_role ON complaint_events (target_role) WHERE target_role IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_complaint_events_visibility ON complaint_events (visibility)`,
+      `CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_admin ON admin_audit_logs (admin_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_action ON admin_audit_logs (action)`,
+      `CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created ON admin_audit_logs (created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_notifications_unread_user ON notifications (user_id, created_at DESC) WHERE read_at IS NULL`,
+      // Notifications event-typing — lets the notification center group by
+      // category and link back to source records (complaint, directive, etc).
+      `ALTER TABLE IF EXISTS notifications ADD COLUMN IF NOT EXISTS category VARCHAR(32)`,
+      `ALTER TABLE IF EXISTS notifications ADD COLUMN IF NOT EXISTS priority VARCHAR(16) NOT NULL DEFAULT 'medium'`,
+      `ALTER TABLE IF EXISTS notifications ADD COLUMN IF NOT EXISTS source_type VARCHAR(32)`,
+      `ALTER TABLE IF EXISTS notifications ADD COLUMN IF NOT EXISTS source_id BIGINT`,
+      `ALTER TABLE IF EXISTS notifications ADD COLUMN IF NOT EXISTS actor_user_id UUID`,
+      `ALTER TABLE IF EXISTS notifications ADD COLUMN IF NOT EXISTS actor_name_snapshot VARCHAR(200)`,
+      `CREATE INDEX IF NOT EXISTS idx_notifications_category ON notifications (category) WHERE category IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_notifications_source ON notifications (source_type, source_id) WHERE source_type IS NOT NULL`,
+      // HR depth — warnings ledger, vacation/leave workflow, attachment categories.
+      `CREATE TABLE IF NOT EXISTS hr_warnings (
+         id BIGSERIAL PRIMARY KEY,
+         user_id UUID NOT NULL,
+         warning_type VARCHAR(32) NOT NULL DEFAULT 'verbal',
+         severity VARCHAR(16) NOT NULL DEFAULT 'low',
+         note TEXT NOT NULL,
+         issued_by UUID NULL,
+         issued_by_name_snapshot VARCHAR(200) NULL,
+         acknowledged_at TIMESTAMPTZ NULL,
+         deleted_at TIMESTAMPTZ NULL,
+         deleted_by UUID NULL,
+         deleted_reason TEXT NULL,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_hr_warnings_user ON hr_warnings (user_id, created_at DESC) WHERE deleted_at IS NULL`,
+      `CREATE TABLE IF NOT EXISTS hr_vacation_requests (
+         id BIGSERIAL PRIMARY KEY,
+         user_id UUID NOT NULL,
+         start_date DATE NOT NULL,
+         end_date DATE NOT NULL,
+         day_count INTEGER NULL,
+         request_type VARCHAR(32) NOT NULL DEFAULT 'annual',
+         status VARCHAR(16) NOT NULL DEFAULT 'pending',
+         reason TEXT NULL,
+         decided_by UUID NULL,
+         decided_by_name_snapshot VARCHAR(200) NULL,
+         decided_at TIMESTAMPTZ NULL,
+         decision_note TEXT NULL,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_hr_vacation_user_status ON hr_vacation_requests (user_id, status)`,
+      `CREATE INDEX IF NOT EXISTS idx_hr_vacation_pending ON hr_vacation_requests (status, created_at DESC) WHERE status = 'pending'`,
+      `CREATE TABLE IF NOT EXISTS hr_attachments (
+         id BIGSERIAL PRIMARY KEY,
+         user_id UUID NOT NULL,
+         category VARCHAR(32) NOT NULL DEFAULT 'general',
+         file_name VARCHAR(255) NOT NULL,
+         file_path VARCHAR(500) NULL,
+         mime_type VARCHAR(120) NULL,
+         uploaded_by UUID NULL,
+         uploaded_by_name_snapshot VARCHAR(200) NULL,
+         deleted_at TIMESTAMPTZ NULL,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_hr_attachments_user_cat ON hr_attachments (user_id, category) WHERE deleted_at IS NULL`,
     ];
     let patched = 0;
     for (const sql of schemaPatches) {
