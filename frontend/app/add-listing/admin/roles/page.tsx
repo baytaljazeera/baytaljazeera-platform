@@ -186,6 +186,13 @@ function AdminRolesPageContent() {
   const [newRole, setNewRole] = useState({
     key: '', label: '', description: '', color: '#6B7280', icon: 'Shield',
     has_inbox: false, inbox_title: '', section_key: '',
+    // Phase 3.5 capability flags. Defaults mirror the backend's safe defaults
+    // (transfers/assignments yes, customer-reply/finance/close no).
+    can_receive_transfers: true,
+    can_be_assigned: true,
+    can_reply_to_customers: false,
+    can_see_sensitive_finance: false,
+    can_close_complaints: false,
   });
   const [navSections, setNavSections] = useState<Array<{ key: string; label: string }>>([]);
   const [savingRole, setSavingRole] = useState(false);
@@ -415,7 +422,7 @@ function AdminRolesPageContent() {
         setSuccessModal({ show: true, message: (isEditing ? "تم تحديث الدور بنجاح" : "تم إنشاء الدور بنجاح") + provisionedMsg });
         setShowCreateRoleModal(false);
         setEditingRole(null);
-        setNewRole({ key: '', label: '', description: '', color: '#6B7280', icon: 'Shield', has_inbox: false, inbox_title: '', section_key: '' });
+        setNewRole({ key: '', label: '', description: '', color: '#6B7280', icon: 'Shield', has_inbox: false, inbox_title: '', section_key: '', can_receive_transfers: true, can_be_assigned: true, can_reply_to_customers: false, can_see_sensitive_finance: false, can_close_complaints: false });
         fetchCustomRoles();
         fetchPermissionsList();
       } else {
@@ -876,7 +883,7 @@ function AdminRolesPageContent() {
             <button
               onClick={() => {
                 setEditingRole(null);
-                setNewRole({ key: '', label: '', description: '', color: '#6B7280', icon: 'Shield', has_inbox: false, inbox_title: '', section_key: '' });
+                setNewRole({ key: '', label: '', description: '', color: '#6B7280', icon: 'Shield', has_inbox: false, inbox_title: '', section_key: '', can_receive_transfers: true, can_be_assigned: true, can_reply_to_customers: false, can_see_sensitive_finance: false, can_close_complaints: false });
                 setShowCreateRoleModal(true);
               }}
               className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold transition"
@@ -925,7 +932,12 @@ function AdminRolesPageContent() {
                                 description: role.description || '',
                                 color: role.color || '#6B7280',
                                 icon: role.icon || 'Shield',
-                                has_inbox: false, inbox_title: '', section_key: ''
+                                has_inbox: false, inbox_title: '', section_key: '',
+                                can_receive_transfers: (role as any).can_receive_transfers ?? true,
+                                can_be_assigned: (role as any).can_be_assigned ?? true,
+                                can_reply_to_customers: (role as any).can_reply_to_customers ?? false,
+                                can_see_sensitive_finance: (role as any).can_see_sensitive_finance ?? false,
+                                can_close_complaints: (role as any).can_close_complaints ?? false
                               });
                               setShowCreateRoleModal(true);
                             }}
@@ -1788,6 +1800,34 @@ function AdminRolesPageContent() {
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Phase 3.5 — capability flags. Five booleans that describe
+                    what this role CAN do in the system. These drive future
+                    filtering (e.g. transfer dropdown shows only roles where
+                    can_receive_transfers=true) and audit display. */}
+                <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-2">
+                  <p className="text-sm font-bold text-[#002845] mb-2">صلاحيات الدور</p>
+                  {[
+                    { k: 'can_receive_transfers',     label: 'يستقبل تحويلات الشكاوى',          hint: 'تظهر هذا الدور كخيار في قائمة "تحويل" بالشكاوى.' },
+                    { k: 'can_be_assigned',           label: 'يمكن تعيين مهام له',              hint: 'يمكن اختياره مستقبلاً في توجيهات داخلية أو تكليفات.' },
+                    { k: 'can_reply_to_customers',    label: 'يمكنه الرد المباشر على العملاء',  hint: 'بدون هذا، الدور يحفظ ملاحظات داخلية فقط ولا تصل للعميل.' },
+                    { k: 'can_see_sensitive_finance', label: 'يرى بيانات مالية حساسة',         hint: 'فواتير، اشتراكات، استرداد، أرقام معاملات.' },
+                    { k: 'can_close_complaints',      label: 'يستطيع إغلاق الشكاوى',             hint: 'إنهاء الحالة باعتمادها أو رفضها.' },
+                  ].map((row) => (
+                    <label key={row.k} className="flex items-start gap-2 cursor-pointer py-1">
+                      <input
+                        type="checkbox"
+                        checked={!!(newRole as any)[row.k]}
+                        onChange={(e) => setNewRole(prev => ({ ...prev, [row.k]: e.target.checked } as any))}
+                        className="mt-1 w-4 h-4 rounded border-slate-300 text-[#D4AF37] focus:ring-[#D4AF37]"
+                      />
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-[#002845]">{row.label}</p>
+                        <p className="text-[10px] text-slate-500">{row.hint}</p>
+                      </div>
+                    </label>
+                  ))}
                 </div>
 
                 {/* Phase 3 — auto-provision a department inbox + sidebar

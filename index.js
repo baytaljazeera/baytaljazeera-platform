@@ -291,6 +291,12 @@ async function runDatabaseInit() {
          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
        )`,
       `CREATE INDEX IF NOT EXISTS idx_admin_nav_links_section_sort ON admin_nav_links (section_key, sort_order)`,
+      // 20260527030000 custom_roles capability flags (Phase 3.5)
+      `ALTER TABLE IF EXISTS custom_roles ADD COLUMN IF NOT EXISTS can_receive_transfers BOOLEAN NOT NULL DEFAULT true`,
+      `ALTER TABLE IF EXISTS custom_roles ADD COLUMN IF NOT EXISTS can_be_assigned BOOLEAN NOT NULL DEFAULT true`,
+      `ALTER TABLE IF EXISTS custom_roles ADD COLUMN IF NOT EXISTS can_reply_to_customers BOOLEAN NOT NULL DEFAULT false`,
+      `ALTER TABLE IF EXISTS custom_roles ADD COLUMN IF NOT EXISTS can_see_sensitive_finance BOOLEAN NOT NULL DEFAULT false`,
+      `ALTER TABLE IF EXISTS custom_roles ADD COLUMN IF NOT EXISTS can_close_complaints BOOLEAN NOT NULL DEFAULT false`,
       // 20260527000000 admin_inboxes (Phase 2 — generic Inbox Engine)
       `CREATE TABLE IF NOT EXISTS admin_inboxes (
          key VARCHAR(64) PRIMARY KEY,

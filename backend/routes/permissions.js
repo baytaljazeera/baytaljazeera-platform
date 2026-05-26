@@ -228,7 +228,9 @@ router.get("/nav-sections", authMiddleware, requireRoles('super_admin'), asyncHa
 
 router.post("/custom-roles", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
   const { key, label, description, color, icon,
-          has_inbox, inbox_title, section_key } = req.body;
+          has_inbox, inbox_title, section_key,
+          can_receive_transfers, can_be_assigned, can_reply_to_customers,
+          can_see_sensitive_finance, can_close_complaints } = req.body;
 
   if (!key || !label) {
     return res.status(400).json({ error: "المفتاح والاسم مطلوبان" });
@@ -249,11 +251,40 @@ router.post("/custom-roles", authMiddleware, requireRoles('super_admin'), asyncH
     return res.status(400).json({ error: "هذا المفتاح مستخدم بالفعل" });
   }
 
-  const result = await db.query(
-    `INSERT INTO custom_roles (key, label, description, color, icon, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [key, label, description || null, color || '#6B7280', icon || 'Shield', req.user.id]
-  );
+  // Boolean coercion — accept undefined as "use default", true/false strings as well as actual booleans.
+  const b = (v, d) => (v === undefined || v === null ? d : !!v);
+  const flags = {
+    can_receive_transfers:     b(can_receive_transfers, true),
+    can_be_assigned:           b(can_be_assigned, true),
+    can_reply_to_customers:    b(can_reply_to_customers, false),
+    can_see_sensitive_finance: b(can_see_sensitive_finance, false),
+    can_close_complaints:      b(can_close_complaints, false),
+  };
+
+  // Resilient INSERT — try with the new flag columns first; if any are
+  // missing on this env (rolling deploy), fall back to the legacy shape.
+  let result;
+  try {
+    result = await db.query(
+      `INSERT INTO custom_roles
+         (key, label, description, color, icon, created_by,
+          can_receive_transfers, can_be_assigned, can_reply_to_customers,
+          can_see_sensitive_finance, can_close_complaints)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       RETURNING *`,
+      [key, label, description || null, color || '#6B7280', icon || 'Shield', req.user.id,
+       flags.can_receive_transfers, flags.can_be_assigned, flags.can_reply_to_customers,
+       flags.can_see_sensitive_finance, flags.can_close_complaints]
+    );
+  } catch (e) {
+    if (e && e.code === '42703') {
+      result = await db.query(
+        `INSERT INTO custom_roles (key, label, description, color, icon, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [key, label, description || null, color || '#6B7280', icon || 'Shield', req.user.id]
+      );
+    } else { throw e; }
+  }
 
   // Phase 3 — auto-provision an inbox + sidebar entry when the requester
   // checks "create inbox for this role". Two INSERTs wrapped so the role
@@ -305,7 +336,7 @@ router.post("/custom-roles", authMiddleware, requireRoles('super_admin'), asyncH
 
   await logAuditAction('CREATE_CUSTOM_ROLE', {
     target_role: key,
-    new_value: { key, label, description, color, icon, has_inbox: !!has_inbox, section_key: section_key || null, provisioned }
+    new_value: { key, label, description, color, icon, has_inbox: !!has_inbox, section_key: section_key || null, provisioned, flags }
   }, req);
 
   res.status(201).json({
@@ -319,20 +350,50 @@ router.post("/custom-roles", authMiddleware, requireRoles('super_admin'), asyncH
 
 router.put("/custom-roles/:key", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
   const { key } = req.params;
-  const { label, description, color, icon } = req.body;
-  
+  const { label, description, color, icon,
+          can_receive_transfers, can_be_assigned, can_reply_to_customers,
+          can_see_sensitive_finance, can_close_complaints } = req.body;
+
   const existing = await db.query("SELECT * FROM custom_roles WHERE key = $1", [key]);
   if (existing.rows.length === 0) {
     return res.status(404).json({ error: "الدور غير موجود" });
   }
-  
+
   const oldRole = existing.rows[0];
-  
-  const result = await db.query(
-    `UPDATE custom_roles SET label = $1, description = $2, color = $3, icon = $4, updated_at = CURRENT_TIMESTAMP
-     WHERE key = $5 RETURNING *`,
-    [label || oldRole.label, description ?? oldRole.description, color || oldRole.color, icon || oldRole.icon, key]
-  );
+  const pick = (v, d) => (v === undefined || v === null ? d : !!v);
+
+  let result;
+  try {
+    result = await db.query(
+      `UPDATE custom_roles SET
+         label = $1, description = $2, color = $3, icon = $4,
+         can_receive_transfers = $5, can_be_assigned = $6,
+         can_reply_to_customers = $7, can_see_sensitive_finance = $8,
+         can_close_complaints = $9,
+         updated_at = CURRENT_TIMESTAMP
+       WHERE key = $10 RETURNING *`,
+      [
+        label || oldRole.label,
+        description ?? oldRole.description,
+        color || oldRole.color,
+        icon || oldRole.icon,
+        pick(can_receive_transfers, oldRole.can_receive_transfers ?? true),
+        pick(can_be_assigned, oldRole.can_be_assigned ?? true),
+        pick(can_reply_to_customers, oldRole.can_reply_to_customers ?? false),
+        pick(can_see_sensitive_finance, oldRole.can_see_sensitive_finance ?? false),
+        pick(can_close_complaints, oldRole.can_close_complaints ?? false),
+        key,
+      ]
+    );
+  } catch (e) {
+    if (e && e.code === '42703') {
+      result = await db.query(
+        `UPDATE custom_roles SET label = $1, description = $2, color = $3, icon = $4, updated_at = CURRENT_TIMESTAMP
+         WHERE key = $5 RETURNING *`,
+        [label || oldRole.label, description ?? oldRole.description, color || oldRole.color, icon || oldRole.icon, key]
+      );
+    } else { throw e; }
+  }
   
   await logAuditAction('UPDATE_CUSTOM_ROLE', {
     target_role: key,
