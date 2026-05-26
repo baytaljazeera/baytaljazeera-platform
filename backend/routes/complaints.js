@@ -366,22 +366,33 @@ router.patch("/:id", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), as
 }));
 
 /**
- * Transfer a complaint from support → finance after triage. The owner uses
- * this when a support agent decides a complaint is actually a financial
- * issue. Updates the assignment, fires a notification to every active
- * finance_admin, and appends a system line to admin_note so there's an
- * audit trail of who handed it off.
+ * Transfer a complaint to a different role's queue. The agent picks the
+ * destination at triage time — finance for billing/refund, executive for
+ * cases that need owner attention, etc. Updates auto_assigned_role,
+ * notifies the receiving role, and appends an audit line to admin_note.
  *
- * Allowed for any admin role that can edit complaints; the receiving role
- * (finance_admin) doesn't gate this — handoff direction is fixed.
+ * Body: { target_role: 'finance_admin' | 'admin' | 'super_admin' | 'content_admin' | 'admin_manager', note?: string }
  */
-router.patch("/:id/transfer-to-finance", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), asyncHandler(async (req, res) => {
+const TRANSFER_TARGETS = {
+  finance_admin:   { labelAr: "المالية",       link: "/add-listing/admin/finance-inbox" },
+  admin:           { labelAr: "الإدارة العليا", link: "/add-listing/admin/customer-service?tab=complaints" },
+  super_admin:     { labelAr: "الإدارة العليا", link: "/add-listing/admin/customer-service?tab=complaints" },
+  content_admin:   { labelAr: "فريق المحتوى",   link: "/add-listing/admin/customer-service?tab=complaints" },
+  admin_manager:   { labelAr: "مدير الإدارة",   link: "/add-listing/admin/customer-service?tab=complaints" },
+};
+
+async function transferComplaintHandler(req, res, fixedTargetRole) {
   const { id } = req.params;
   const { note } = req.body || {};
+  const targetRole = fixedTargetRole || (req.body && req.body.target_role);
 
-  // Read fields one-by-one resilient style: priority may not exist yet on
-  // some envs (migration 20260525000000 hasn't run). If the column is
-  // missing, fall back to a minimal select.
+  if (!TRANSFER_TARGETS[targetRole]) {
+    return res.status(400).json({ error: "وجهة التحويل غير صالحة" });
+  }
+  const cfg = TRANSFER_TARGETS[targetRole];
+
+  // Resilient SELECT — priority column may be missing on envs that haven't
+  // picked up migration 20260525000000 yet; fall back to a minimal select.
   let row;
   try {
     const before = await db.query(
@@ -405,38 +416,53 @@ router.patch("/:id/transfer-to-finance", authMiddleware, requireRoles(...COMPLAI
     return res.status(400).json({ error: "لا يمكن تحويل شكوى مغلقة" });
   }
 
-  const transferLine = `\n— تم التحويل إلى المالية بواسطة ${req.user?.name || req.user?.email || 'admin'} (${new Date().toISOString()})${note ? ` — ${note}` : ''}`;
+  const transferLine = `\n— تم التحويل إلى ${cfg.labelAr} بواسطة ${req.user?.name || req.user?.email || 'admin'} (${new Date().toISOString()})${note ? ` — ${note}` : ''}`;
   const newAdminNote = (row.admin_note || '') + transferLine;
 
   await db.query(
     `UPDATE account_complaints
-     SET auto_assigned_role = 'finance_admin',
-         admin_note = $1,
+     SET auto_assigned_role = $1,
+         admin_note = $2,
          updated_at = NOW()
-     WHERE id = $2`,
-    [newAdminNote, id]
+     WHERE id = $3`,
+    [targetRole, newAdminNote, id]
   );
 
-  // Notify every active finance_admin so the transferred ticket appears in
-  // their inbox / bell instead of waiting to be discovered.
+  // Notify users in the receiving role. For admin/super_admin we notify both
+  // roles (executive escalation = whoever's available at the top).
   try {
+    const notifyRoles = targetRole === 'admin' || targetRole === 'super_admin'
+      ? ['admin', 'super_admin']
+      : [targetRole];
     await db.query(
       `INSERT INTO notifications (user_id, title, body, type, link, created_at)
        SELECT u.id, $1, $2, 'complaint_transferred', $3, NOW()
        FROM users u
-       WHERE u.role = 'finance_admin'
+       WHERE u.role = ANY($4::text[])
          AND COALESCE(u.is_active, true) = true`,
       [
-        'شكوى مُحوّلة إليك (المالية)',
+        `شكوى مُحوّلة إليك (${cfg.labelAr})`,
         `${row.subject || ''} — أولوية: ${row.priority || 'medium'}`,
-        '/add-listing/admin/finance-inbox',
+        cfg.link,
+        notifyRoles,
       ]
     );
   } catch (e) {
     console.error('[complaints] transfer notification failed', e.message);
   }
 
-  res.json({ ok: true, message: "تم تحويل الشكوى إلى المالية" });
+  res.json({ ok: true, target: targetRole, label: cfg.labelAr, message: `تم تحويل الشكوى إلى ${cfg.labelAr}` });
+}
+
+// Generic transfer — agent picks destination via body.
+router.patch("/:id/transfer", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), asyncHandler(async (req, res) => {
+  return transferComplaintHandler(req, res, null);
+}));
+
+// Backward-compat: keep the old /transfer-to-finance route so any in-flight
+// frontend builds don't break.
+router.patch("/:id/transfer-to-finance", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), asyncHandler(async (req, res) => {
+  return transferComplaintHandler(req, res, 'finance_admin');
 }));
 
 module.exports = router;

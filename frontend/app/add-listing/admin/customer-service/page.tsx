@@ -148,11 +148,12 @@ export default function CustomerServicePage() {
   const [actionType, setActionType] = useState("");
   const [adminNote, setAdminNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  // Native confirm() for the "تحويل للمالية" handoff looked jarring on a
-  // polished admin surface, so we use this state to drive an in-platform
-  // modal that lets the agent attach an optional note before sending.
+  // Native confirm() for the transfer handoff looked jarring on a polished
+  // admin surface, so we use this state to drive an in-platform modal that
+  // lets the agent choose WHERE to transfer and optionally attach a note.
   const [transferTarget, setTransferTarget] = useState<AccountComplaint | null>(null);
   const [transferNote, setTransferNote] = useState("");
+  const [transferRole, setTransferRole] = useState<string>("finance_admin");
   const [transferring, setTransferring] = useState(false);
   
   const [loading, setLoading] = useState(true);
@@ -417,25 +418,27 @@ export default function CustomerServicePage() {
     }
   };
 
-  // Open the in-platform transfer confirmation modal. The actual handoff
-  // fires from executeTransfer below after the agent (optionally) attaches
-  // a triage note explaining why this is being escalated.
+  // Open the in-platform transfer modal. The actual handoff fires from
+  // executeTransfer below after the agent picks a destination + (optionally)
+  // attaches a triage note explaining why.
   const openTransferModal = (complaint: AccountComplaint) => {
     setTransferTarget(complaint);
     setTransferNote("");
+    setTransferRole("finance_admin");
   };
   const executeTransfer = async () => {
     if (!transferTarget) return;
     setTransferring(true);
     try {
-      const res = await fetch(`${API_URL}/api/account-complaints/${transferTarget.id}/transfer-to-finance`, {
+      const res = await fetch(`${API_URL}/api/account-complaints/${transferTarget.id}/transfer`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
-        body: JSON.stringify({ note: transferNote.trim() || undefined }),
+        body: JSON.stringify({ target_role: transferRole, note: transferNote.trim() || undefined }),
       });
       if (res.ok) {
-        toast.success("تم تحويل الشكوى للمالية");
+        const data = await res.json().catch(() => ({} as any));
+        toast.success(data.message || "تم تحويل الشكوى");
         setTransferTarget(null);
         setTransferNote("");
         await Promise.all([fetchComplaints(), fetchComplaintStats()]);
@@ -925,10 +928,10 @@ export default function CustomerServicePage() {
                               <button
                                 onClick={() => openTransferModal(complaint)}
                                 className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-[#D4AF37]/15 text-[#9a7d28] border border-[#D4AF37]/40 rounded-xl hover:bg-[#D4AF37]/25 transition text-sm font-medium"
-                                title="نقل المسؤولية إلى فريق المالية"
+                                title="نقل المسؤولية إلى قسم آخر"
                               >
                                 <Building2 className="w-4 h-4" />
-                                تحويل للمالية
+                                تحويل
                               </button>
                             )}
                           </>
@@ -953,10 +956,10 @@ export default function CustomerServicePage() {
                               <button
                                 onClick={() => openTransferModal(complaint)}
                                 className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-[#D4AF37]/15 text-[#9a7d28] border border-[#D4AF37]/40 rounded-xl hover:bg-[#D4AF37]/25 transition text-sm font-medium"
-                                title="نقل المسؤولية إلى فريق المالية"
+                                title="نقل المسؤولية إلى قسم آخر"
                               >
                                 <Building2 className="w-4 h-4" />
-                                تحويل للمالية
+                                تحويل
                               </button>
                             )}
                           </>
@@ -1080,15 +1083,14 @@ export default function CustomerServicePage() {
         </div>
       )}
 
-      {/* Transfer-to-finance confirmation modal — replaces the native
-          window.confirm() that looked jarring on a polished admin surface. */}
+      {/* Transfer modal — agent picks destination + optional reason. */}
       {transferTarget && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden">
-            <div className="px-5 py-4 bg-gradient-to-l from-[#FFF7E0] to-white border-b border-[#D4AF37]/30 flex items-center justify-between">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="px-5 py-4 bg-gradient-to-l from-[#FFF7E0] to-white border-b border-[#D4AF37]/30 flex items-center justify-between shrink-0">
               <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
                 <Building2 className="w-5 h-5 text-[#D4AF37]" />
-                تحويل الشكوى للمالية
+                تحويل الشكوى
               </h3>
               <button
                 onClick={() => { if (!transferring) setTransferTarget(null); }}
@@ -1099,7 +1101,7 @@ export default function CustomerServicePage() {
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
+            <div className="p-5 space-y-4 overflow-y-auto">
               <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
                 <p className="text-[10px] text-slate-400 mb-1">الشكوى</p>
                 <p className="text-sm font-semibold text-[#002845] truncate">{transferTarget.subject || "—"}</p>
@@ -1108,9 +1110,41 @@ export default function CustomerServicePage() {
                 )}
               </div>
 
-              <p className="text-sm text-slate-600 leading-relaxed">
-                ستنتقل المسؤولية إلى فريق المالية. سيصلهم إشعار فوري، وستبقى الشكوى مفتوحة في القائمة مع تسجيل عملية التحويل في سجل الملاحظات.
-              </p>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-2">
+                  إلى أين تريد التحويل؟
+                </label>
+                <div className="grid grid-cols-1 gap-2">
+                  {[
+                    { role: "finance_admin", label: "المالية", hint: "مشاكل الفواتير، الاسترداد، الاشتراكات", icon: "💰" },
+                    { role: "content_admin", label: "فريق المحتوى", hint: "الإعلانات، الخريطة، مشاكل العرض", icon: "📋" },
+                    { role: "admin_manager", label: "مدير الإدارة", hint: "حالات تحتاج تنسيق بين الأقسام", icon: "🎯" },
+                    { role: "admin",         label: "الإدارة العليا", hint: "تصعيد للقيادة — حالات استثنائية", icon: "👑" },
+                  ].map((opt) => {
+                    const selected = transferRole === opt.role;
+                    return (
+                      <button
+                        key={opt.role}
+                        type="button"
+                        onClick={() => setTransferRole(opt.role)}
+                        disabled={transferring}
+                        className={`text-right p-3 rounded-xl border-2 transition flex items-center gap-3 ${
+                          selected
+                            ? "border-[#D4AF37] bg-[#D4AF37]/10"
+                            : "border-slate-200 hover:border-slate-300 bg-white"
+                        } disabled:opacity-50`}
+                      >
+                        <span className="text-xl shrink-0">{opt.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-bold ${selected ? "text-[#002845]" : "text-slate-700"}`}>{opt.label}</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">{opt.hint}</p>
+                        </div>
+                        {selected && <CheckCircle className="w-4 h-4 text-[#D4AF37] shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1.5">
@@ -1124,24 +1158,24 @@ export default function CustomerServicePage() {
                   className="w-full p-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 resize-none"
                 />
               </div>
+            </div>
 
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setTransferTarget(null)}
-                  disabled={transferring}
-                  className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition disabled:opacity-50 text-sm font-medium"
-                >
-                  إلغاء
-                </button>
-                <button
-                  onClick={executeTransfer}
-                  disabled={transferring}
-                  className="flex-1 px-4 py-2.5 bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] rounded-lg hover:shadow-md transition disabled:opacity-50 text-sm font-bold inline-flex items-center justify-center gap-2"
-                >
-                  {transferring ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Building2 className="w-4 h-4" />}
-                  {transferring ? "جاري التحويل..." : "تأكيد التحويل"}
-                </button>
-              </div>
+            <div className="flex gap-2 p-5 pt-3 border-t border-slate-100 shrink-0">
+              <button
+                onClick={() => setTransferTarget(null)}
+                disabled={transferring}
+                className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition disabled:opacity-50 text-sm font-medium"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={executeTransfer}
+                disabled={transferring}
+                className="flex-1 px-4 py-2.5 bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] rounded-lg hover:shadow-md transition disabled:opacity-50 text-sm font-bold inline-flex items-center justify-center gap-2"
+              >
+                {transferring ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Building2 className="w-4 h-4" />}
+                {transferring ? "جاري التحويل..." : "تأكيد التحويل"}
+              </button>
             </div>
           </div>
         </div>
