@@ -48,7 +48,7 @@ type Complaint = {
 };
 
 type AuditEvent = {
-  id: number;
+  id: number | string;
   event_type: string;
   actor_user_id: number | null;
   actor_name_snapshot: string | null;
@@ -60,8 +60,26 @@ type AuditEvent = {
   to_status: string | null;
   note: string | null;
   visibility?: string | null;
+  target_kind?: string | null;
+  target_user_id?: number | null;
+  target_role?: string | null;
+  target_name_snapshot?: string | null;
+  target_email_snapshot?: string | null;
+  due_at?: string | null;
+  assignment_priority?: string | null;
+  assignment_status?: string | null;
+  read_at?: string | null;
   created_at: string;
 };
+
+type StaffMember = {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+};
+
+type DirectiveKind = "note" | "department" | "user" | "assignment";
 
 const PRIORITY_LABEL: Record<string, string> = { urgent: "عاجل", high: "عالٍ", medium: "متوسط", low: "منخفض" };
 const PRIORITY_COLOR: Record<string, string> = {
@@ -95,7 +113,9 @@ const EVENT_LABEL: Record<string, string> = {
   created: "أنشأ الشكوى",
   status_changed: "غيّر الحالة",
   note_added: "أضاف ملاحظة",
-  internal_note: "توجيه داخلي للفريق",
+  internal_note: "ملاحظة داخلية",
+  directive: "توجيه",
+  assignment: "تكليف رسمي",
   admin_reply: "رد مباشر للعميل",
   transferred: "حوّل الشكوى",
   reopened: "أعاد فتح الشكوى",
@@ -141,18 +161,41 @@ export default function ExecutiveInboxPage() {
   const [eventsById, setEventsById] = useState<Record<number, AuditEvent[]>>({});
   const [eventsLoadingId, setEventsLoadingId] = useState<number | null>(null);
 
-  // Action-modal state — four distinct flows:
-  //   internal  → POST /reply  with visibility=internal
-  //   customer  → POST /reply  with visibility=customer_visible
-  //   transfer  → PATCH /transfer  with target_role
-  //   close     → PATCH /  with status=closed
+  // Action-modal state — five distinct flows:
+  //   customer   → POST /reply  with visibility=customer_visible
+  //   directive  → POST /directive (rich: kind + recipient + assignment fields)
+  //   transfer   → PATCH /transfer  with target_role
+  //   close      → PATCH / with status=closed
   const [actionModal, setActionModal] = useState<{
-    kind: "internal" | "customer" | "transfer" | "close";
+    kind: "customer" | "directive" | "transfer" | "close";
     complaint: Complaint;
     note: string;
     targetRole: string;
+    // Directive-specific
+    directiveKind?: DirectiveKind;
+    directiveTargetRole?: string;
+    directiveTargetUserId?: number | "";
+    directiveDueAt?: string;
+    directivePriority?: "low" | "medium" | "high" | "urgent";
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Staff directory — lazy-loaded the first time a directive modal opens.
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const ensureStaff = useCallback(async () => {
+    if (staff.length > 0 || staffLoading) return;
+    setStaffLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/account-complaints/_/staff`, {
+        credentials: "include", headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStaff(data.staff || []);
+      }
+    } catch {} finally { setStaffLoading(false); }
+  }, [staff.length, staffLoading]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -196,9 +239,8 @@ export default function ExecutiveInboxPage() {
     }
   };
 
-  // Internal-only note OR customer-visible reply — same endpoint, only the
-  // visibility flag differs.
-  const submitReply = async (visibility: "internal" | "customer_visible") => {
+  // Customer-visible reply — fires notification + mirrors to admin_note.
+  const submitCustomerReply = async () => {
     if (!actionModal) return;
     setSubmitting(true);
     try {
@@ -206,13 +248,41 @@ export default function ExecutiveInboxPage() {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
-        body: JSON.stringify({ visibility, message: actionModal.note }),
+        body: JSON.stringify({ visibility: "customer_visible", message: actionModal.note }),
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `HTTP ${res.status}`);
-      }
-      toast.success(visibility === "customer_visible" ? "تم إرسال الرد للعميل" : "تم حفظ التوجيه الداخلي");
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `HTTP ${res.status}`); }
+      toast.success("تم إرسال الرد للعميل");
+      const cid = actionModal.complaint.id;
+      setActionModal(null);
+      setEventsById((p) => { const n = { ...p }; delete n[cid]; return n; });
+      await load();
+    } catch (e: any) {
+      toast.error(e?.message || "خطأ في الحفظ");
+    } finally { setSubmitting(false); }
+  };
+
+  // Internal directive — kind picks the routing semantics.
+  const submitDirective = async () => {
+    if (!actionModal || actionModal.kind !== "directive") return;
+    const dk = actionModal.directiveKind || "note";
+    const body: any = { kind: dk, message: actionModal.note };
+    if (dk === "department") body.target_role = actionModal.directiveTargetRole;
+    if (dk === "user" || dk === "assignment") body.target_user_id = actionModal.directiveTargetUserId;
+    if (dk === "assignment") {
+      if (actionModal.directiveDueAt) body.due_at = actionModal.directiveDueAt;
+      if (actionModal.directivePriority) body.priority = actionModal.directivePriority;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${API_URL}/api/account-complaints/${actionModal.complaint.id}/directive`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `HTTP ${res.status}`); }
+      const data = await res.json();
+      toast.success(data.message || "تم حفظ التوجيه");
       const cid = actionModal.complaint.id;
       setActionModal(null);
       setEventsById((p) => { const n = { ...p }; delete n[cid]; return n; });
@@ -407,6 +477,17 @@ export default function ExecutiveInboxPage() {
                           events.map((ev) => {
                             const isCustomerVisible = ev.visibility === "customer_visible";
                             const railColor = isCustomerVisible ? "border-[#D4AF37]" : "border-slate-300";
+                            // Build a "→ المستلم" label for routed/assigned events
+                            const recipientChip = (() => {
+                              if (ev.target_kind === "department" && ev.target_role) {
+                                return `قسم: ${ROLE_LABEL[ev.target_role] || ev.target_role}`;
+                              }
+                              if ((ev.target_kind === "user" || ev.target_kind === "assignment") && ev.target_name_snapshot) {
+                                const role = ev.actor_role_snapshot && ev.actor_role_snapshot !== ev.target_kind ? "" : "";
+                                return `${ev.target_name_snapshot}${ev.target_email_snapshot ? ` · ${ev.target_email_snapshot}` : ""}`;
+                              }
+                              return null;
+                            })();
                             return (
                               <div key={ev.id} className={`border-r-2 ${railColor} pr-2 py-1.5 text-xs`}>
                                 <p className="font-semibold text-[#002845] flex items-center gap-1.5 flex-wrap">
@@ -430,13 +511,39 @@ export default function ExecutiveInboxPage() {
                                       </span>
                                     )
                                   )}
+                                  {ev.target_kind === "assignment" && ev.assignment_status && (
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded border ${
+                                      ev.assignment_status === "completed" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                      : ev.assignment_status === "cancelled" ? "bg-slate-100 text-slate-500 border-slate-200"
+                                      : "bg-amber-50 text-amber-700 border-amber-200"
+                                    }`}>
+                                      {ev.assignment_status === "completed" ? "منجز"
+                                       : ev.assignment_status === "cancelled" ? "ملغي"
+                                       : "قيد التنفيذ"}
+                                    </span>
+                                  )}
                                 </p>
                                 <p className="text-slate-500 mt-0.5 text-[11px]">
+                                  <span className="font-semibold text-slate-600">من:</span>{" "}
                                   {ev.actor_name_snapshot || "النظام"}
                                   {ev.actor_email_snapshot && <> · {ev.actor_email_snapshot}</>}
                                   {ev.actor_role_snapshot && <> · {ROLE_LABEL[ev.actor_role_snapshot] || ev.actor_role_snapshot}</>}
-                                  <span className="mx-1.5 text-slate-300">|</span>
-                                  {formatFullDate(ev.created_at)}
+                                </p>
+                                {recipientChip && (
+                                  <p className="text-slate-500 mt-0.5 text-[11px]">
+                                    <span className="font-semibold text-slate-600">إلى:</span> {recipientChip}
+                                  </p>
+                                )}
+                                <p className="text-slate-400 mt-0.5 text-[10px]">{formatFullDate(ev.created_at)}
+                                  {ev.due_at && (
+                                    <> · <span className="font-semibold text-slate-600">استحقاق:</span> {formatFullDate(ev.due_at)}</>
+                                  )}
+                                  {ev.assignment_priority && (
+                                    <> · أولوية: {ev.assignment_priority}</>
+                                  )}
+                                  {ev.read_at && (
+                                    <> · <span className="text-emerald-600">تمت قراءته {formatFullDate(ev.read_at)}</span></>
+                                  )}
                                 </p>
                                 {ev.note && (
                                   <p className={`mt-1 p-1.5 rounded whitespace-pre-wrap text-[11px] ${
@@ -462,11 +569,20 @@ export default function ExecutiveInboxPage() {
                       <MessageCircle className="w-3.5 h-3.5" /> رد مباشر للعميل
                     </button>
                     <button
-                      onClick={() => setActionModal({ kind: "internal", complaint: c, note: "", targetRole: "" })}
+                      onClick={() => {
+                        setActionModal({
+                          kind: "directive", complaint: c, note: "", targetRole: "",
+                          directiveKind: "note",
+                          directiveTargetRole: "support_admin",
+                          directiveTargetUserId: "",
+                          directivePriority: "medium",
+                        });
+                        ensureStaff();
+                      }}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700 text-white hover:bg-slate-800 transition text-xs font-medium"
-                      title="ملاحظة داخلية للفريق فقط — لا يراها العميل"
+                      title="ملاحظة / توجيه / تكليف — كلها داخلية لا يراها العميل"
                     >
-                      <Lock className="w-3.5 h-3.5" /> توجيه داخلي للفريق
+                      <Lock className="w-3.5 h-3.5" /> توجيه داخلي
                     </button>
                     <button
                       onClick={() => setActionModal({ kind: "transfer", complaint: c, note: "", targetRole: "content_admin" })}
@@ -488,36 +604,57 @@ export default function ExecutiveInboxPage() {
         )}
       </div>
 
-      {/* Action modal — four kinds, each with explicit messaging so the
-          agent knows exactly who will see the message. */}
+      {/* Action modal — 4 kinds, each makes the recipient unmistakable. */}
       {actionModal && (() => {
         const k = actionModal.kind;
         const isCustomerReply = k === "customer";
-        const isInternal = k === "internal";
+        const isDirective = k === "directive";
         const isTransfer = k === "transfer";
         const isClose = k === "close";
-        const submit = isCustomerReply
-          ? () => submitReply("customer_visible")
-          : isInternal
-            ? () => submitReply("internal")
-            : isTransfer
-              ? submitTransfer
-              : submitClose;
+        const dk = actionModal.directiveKind || "note";
+
+        const submit = isCustomerReply ? submitCustomerReply
+          : isDirective ? submitDirective
+          : isTransfer ? submitTransfer
+          : submitClose;
+
+        const directiveValid =
+          dk === "note" ? !!actionModal.note.trim()
+          : dk === "department" ? !!(actionModal.directiveTargetRole && actionModal.note.trim())
+          : dk === "user" ? !!(actionModal.directiveTargetUserId && actionModal.note.trim())
+          : dk === "assignment" ? !!(actionModal.directiveTargetUserId && actionModal.note.trim())
+          : false;
         const disabled = submitting
-          || ((isCustomerReply || isInternal) && !actionModal.note.trim())
+          || (isCustomerReply && !actionModal.note.trim())
+          || (isDirective && !directiveValid)
           || (isTransfer && !actionModal.targetRole);
+
+        const ROLE_OPTIONS = [
+          { value: "support_admin", label: "🎧 الدعم" },
+          { value: "finance_admin", label: "💰 المالية" },
+          { value: "content_admin", label: "📋 المحتوى" },
+          { value: "admin_manager", label: "🎯 مدير الإدارة" },
+          { value: "admin", label: "👑 الإدارة العليا" },
+        ];
+        const dirKinds: { value: DirectiveKind; label: string; hint: string; icon: any }[] = [
+          { value: "note", label: "ملاحظة داخلية", hint: "تُحفظ في السجل، لا تُرسل إشعاراً لأحد", icon: FileText },
+          { value: "department", label: "توجيه لقسم", hint: "تُرسل لكل أعضاء القسم المختار", icon: Building2 },
+          { value: "user", label: "توجيه لموظف", hint: "تُرسل للموظف المُختار فقط", icon: UserIcon },
+          { value: "assignment", label: "تكليف رسمي", hint: "تكليف بمسؤول + أولوية + موعد استحقاق", icon: Crown },
+        ];
+
         return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden">
-              <div className={`px-5 py-3.5 border-b flex items-center justify-between ${
+            <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden max-h-[92vh] flex flex-col">
+              <div className={`px-5 py-3.5 border-b flex items-center justify-between shrink-0 ${
                 isCustomerReply ? "bg-gradient-to-l from-[#FFF7E0] to-white border-[#D4AF37]/30"
-                : isInternal    ? "bg-slate-50 border-slate-200"
+                : isDirective   ? "bg-slate-50 border-slate-200"
                 : isTransfer    ? "bg-amber-50 border-amber-200"
                                 : "bg-emerald-50 border-emerald-200"
               }`}>
                 <h3 className="text-sm font-bold text-[#002845] inline-flex items-center gap-2">
                   {isCustomerReply && <><MessageCircle className="w-4 h-4 text-[#D4AF37]" /> رد مباشر للعميل</>}
-                  {isInternal     && <><Lock className="w-4 h-4 text-slate-600" /> توجيه داخلي للفريق</>}
+                  {isDirective    && <><Lock className="w-4 h-4 text-slate-600" /> توجيه داخلي</>}
                   {isTransfer     && <><Building2 className="w-4 h-4 text-amber-600" /> إعادة تحويل الشكوى</>}
                   {isClose        && <><CheckCircle className="w-4 h-4 text-emerald-600" /> إغلاق الشكوى</>}
                 </h3>
@@ -526,22 +663,115 @@ export default function ExecutiveInboxPage() {
                 </button>
               </div>
 
-              <div className="p-4 space-y-3">
-                {/* Disclosure banner — make visibility unmistakable */}
+              <div className="p-4 space-y-3 overflow-y-auto">
                 {isCustomerReply && (
                   <div className="px-3 py-2 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[11px] text-[#9a7d28] inline-flex items-start gap-1.5">
                     <Send className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                    <span>هذه الرسالة <b>ستظهر للعميل</b> في صفحة شكاواه ويصله إشعار فوري. اكتبها بصيغة مهنية مباشرة.</span>
+                    <span>هذه الرسالة <b>ستظهر للعميل</b> ويصله إشعار فوري.</span>
                   </div>
                 )}
-                {isInternal && (
+                {isDirective && (
                   <div className="px-3 py-2 rounded-lg bg-slate-100 border border-slate-200 text-[11px] text-slate-700 inline-flex items-start gap-1.5">
                     <EyeOff className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                    <span>توجيه <b>للفريق الداخلي فقط</b>. لا يظهر للعميل أبداً، يُحفظ في سجل الأحداث كمرجع للقيادة.</span>
+                    <span>كل أنواع التوجيه الداخلي <b>لا تظهر للعميل أبداً</b>. اختر نوع التوجيه ثم المستلم.</span>
                   </div>
                 )}
 
                 <p className="text-xs text-slate-500 truncate">الشكوى: {actionModal.complaint.subject}</p>
+
+                {isDirective && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1.5">نوع التوجيه</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {dirKinds.map((opt) => {
+                          const Icon = opt.icon;
+                          const selected = dk === opt.value;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => setActionModal({ ...actionModal, directiveKind: opt.value })}
+                              className={`text-right p-2.5 rounded-lg border-2 transition flex items-start gap-2 ${
+                                selected ? "border-[#D4AF37] bg-[#D4AF37]/10" : "border-slate-200 hover:border-slate-300 bg-white"
+                              }`}
+                            >
+                              <Icon className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${selected ? "text-[#9a7d28]" : "text-slate-500"}`} />
+                              <div className="min-w-0 flex-1">
+                                <p className={`text-[12px] font-bold ${selected ? "text-[#002845]" : "text-slate-700"}`}>{opt.label}</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">{opt.hint}</p>
+                              </div>
+                              {selected && <CheckCircle className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {dk === "department" && (
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1.5">القسم المستهدف</label>
+                        <select
+                          value={actionModal.directiveTargetRole || ""}
+                          onChange={(e) => setActionModal({ ...actionModal, directiveTargetRole: e.target.value })}
+                          className="w-full p-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 bg-white"
+                        >
+                          {ROLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                        <p className="text-[10px] text-slate-500 mt-1">سيصل الإشعار لكل أعضاء القسم النشطين.</p>
+                      </div>
+                    )}
+
+                    {(dk === "user" || dk === "assignment") && (
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1.5">الموظف المستلم</label>
+                        {staffLoading ? (
+                          <p className="text-xs text-slate-400 py-2">جاري تحميل قائمة الموظفين...</p>
+                        ) : (
+                          <select
+                            value={String(actionModal.directiveTargetUserId || "")}
+                            onChange={(e) => setActionModal({ ...actionModal, directiveTargetUserId: e.target.value ? Number(e.target.value) : "" })}
+                            className="w-full p-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 bg-white"
+                          >
+                            <option value="">— اختر موظف —</option>
+                            {staff.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name} — {ROLE_LABEL[s.role] || s.role} — {s.email}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    )}
+
+                    {dk === "assignment" && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 mb-1.5">الأولوية</label>
+                          <select
+                            value={actionModal.directivePriority || "medium"}
+                            onChange={(e) => setActionModal({ ...actionModal, directivePriority: e.target.value as any })}
+                            className="w-full p-2 text-sm border border-slate-200 rounded-lg bg-white"
+                          >
+                            <option value="low">منخفض</option>
+                            <option value="medium">متوسط</option>
+                            <option value="high">عالٍ</option>
+                            <option value="urgent">عاجل</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 mb-1.5">تاريخ الاستحقاق</label>
+                          <input
+                            type="datetime-local"
+                            value={actionModal.directiveDueAt || ""}
+                            onChange={(e) => setActionModal({ ...actionModal, directiveDueAt: e.target.value })}
+                            className="w-full p-2 text-sm border border-slate-200 rounded-lg bg-white"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
 
                 {isTransfer && (
                   <div>
@@ -561,36 +791,38 @@ export default function ExecutiveInboxPage() {
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">
                     {isCustomerReply ? "نص الرسالة للعميل"
-                      : isInternal ? "نص التوجيه الداخلي"
+                      : isDirective ? (dk === "assignment" ? "تفاصيل التكليف" : "نص الرسالة")
                       : isTransfer ? "سبب إعادة التحويل (اختياري)"
                                    : "ملاحظة الإغلاق (اختياري)"}
                   </label>
                   <textarea
                     value={actionModal.note}
                     onChange={(e) => setActionModal({ ...actionModal, note: e.target.value })}
-                    rows={4}
+                    rows={3}
                     placeholder={isCustomerReply ? "السلام عليكم..." : ""}
                     className="w-full p-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 resize-none"
                   />
                 </div>
               </div>
 
-              <div className="flex gap-2 p-4 pt-2 border-t border-slate-100">
+              <div className="flex gap-2 p-4 pt-2 border-t border-slate-100 shrink-0">
                 <button onClick={() => setActionModal(null)} disabled={submitting} className="flex-1 px-3 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-sm font-medium disabled:opacity-50">إلغاء</button>
                 <button
                   onClick={submit}
                   disabled={disabled}
                   className={`flex-1 px-3 py-2 rounded-lg text-sm font-bold disabled:opacity-50 inline-flex items-center justify-center gap-1.5 ${
                     isCustomerReply ? "bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845]"
-                    : isInternal    ? "bg-slate-700 text-white hover:bg-slate-800"
+                    : isDirective   ? "bg-slate-700 text-white hover:bg-slate-800"
                     : isTransfer    ? "bg-amber-600 text-white hover:bg-amber-700"
                                     : "bg-emerald-600 text-white hover:bg-emerald-700"
                   }`}
                 >
                   {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> :
                     isCustomerReply ? <Send className="w-3.5 h-3.5" /> :
-                    isInternal     ? <Lock className="w-3.5 h-3.5" /> : null}
-                  {isCustomerReply ? "إرسال للعميل" : isInternal ? "حفظ كتوجيه داخلي" : "تأكيد"}
+                    isDirective     ? <Lock className="w-3.5 h-3.5" /> : null}
+                  {isCustomerReply ? "إرسال للعميل"
+                    : isDirective ? (dk === "note" ? "حفظ الملاحظة" : dk === "department" ? "إرسال للقسم" : dk === "user" ? "إرسال للموظف" : "إنشاء التكليف")
+                    : "تأكيد"}
                 </button>
               </div>
             </div>

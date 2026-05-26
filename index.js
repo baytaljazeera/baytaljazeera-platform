@@ -250,6 +250,16 @@ async function runDatabaseInit() {
       `CREATE INDEX IF NOT EXISTS idx_complaint_events_type ON complaint_events (event_type)`,
       // 20260526150000 visibility split — internal vs customer_visible
       `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS visibility VARCHAR(16) NOT NULL DEFAULT 'internal'`,
+      // 20260526180000 explicit routing on internal directives
+      `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS target_kind VARCHAR(16)`,
+      `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS target_user_id BIGINT`,
+      `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS target_role VARCHAR(64)`,
+      `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS target_name_snapshot VARCHAR(200)`,
+      `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS target_email_snapshot VARCHAR(200)`,
+      `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ`,
+      `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS assignment_priority VARCHAR(16)`,
+      `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS assignment_status VARCHAR(16)`,
+      `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ`,
     ];
     let patched = 0;
     for (const sql of schemaPatches) {

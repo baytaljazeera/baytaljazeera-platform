@@ -36,59 +36,74 @@ async function logComplaintEvent({
   fromStatus, toStatus,
   note,
   visibility = 'internal',  // 'internal' (staff-only) or 'customer_visible'
+  // Explicit-routing fields (only set for directive events)
+  targetKind = null, targetUserId = null, targetRole = null,
+  targetName = null, targetEmail = null,
+  dueAt = null, assignmentPriority = null, assignmentStatus = null,
 }) {
-  // Try with visibility column first. If the column doesn't exist yet
-  // (42703), fall back to the older shape. We never break the caller.
+  // Try the fullest insert first. Each fallback drops the columns added in
+  // the latest migration so the route keeps working through rollouts.
+  const fullSql = `INSERT INTO complaint_events
+       (complaint_id, event_type,
+        actor_user_id, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
+        from_role, to_role, from_status, to_status, note, visibility,
+        target_kind, target_user_id, target_role,
+        target_name_snapshot, target_email_snapshot,
+        due_at, assignment_priority, assignment_status, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,NOW())`;
+  const fullParams = [
+    complaintId, eventType,
+    actor?.id || null, actor?.name || null, actor?.email || null, actor?.role || null,
+    fromRole || null, toRole || null, fromStatus || null, toStatus || null,
+    note || null, visibility,
+    targetKind, targetUserId, targetRole,
+    targetName, targetEmail,
+    dueAt, assignmentPriority, assignmentStatus,
+  ];
+  try {
+    await db.query(fullSql, fullParams);
+    return;
+  } catch (err) {
+    if (!(err && err.code === '42703')) {
+      console.warn('[complaint_events] insert failed:', err.code || err.message);
+      return;
+    }
+    // Fall through to legacy shapes.
+  }
+  // Fallback A — drop the routing fields, keep visibility.
   try {
     await db.query(
       `INSERT INTO complaint_events
          (complaint_id, event_type,
           actor_user_id, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
           from_role, to_role, from_status, to_status, note, visibility, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())`,
-      [
-        complaintId, eventType,
-        actor?.id || null,
-        actor?.name || null,
-        actor?.email || null,
-        actor?.role || null,
-        fromRole || null,
-        toRole || null,
-        fromStatus || null,
-        toStatus || null,
-        note || null,
-        visibility,
-      ]
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())`,
+      [complaintId, eventType,
+       actor?.id || null, actor?.name || null, actor?.email || null, actor?.role || null,
+       fromRole || null, toRole || null, fromStatus || null, toStatus || null,
+       note || null, visibility]
     );
-  } catch (err) {
-    if (err && err.code === '42703') {
-      try {
-        await db.query(
-          `INSERT INTO complaint_events
-             (complaint_id, event_type,
-              actor_user_id, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
-              from_role, to_role, from_status, to_status, note, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
-          [
-            complaintId, eventType,
-            actor?.id || null,
-            actor?.name || null,
-            actor?.email || null,
-            actor?.role || null,
-            fromRole || null,
-            toRole || null,
-            fromStatus || null,
-            toStatus || null,
-            note || null,
-          ]
-        );
-        return;
-      } catch (err2) {
-        console.warn('[complaint_events] fallback insert failed:', err2.code || err2.message);
-        return;
-      }
+    return;
+  } catch (errA) {
+    if (!(errA && errA.code === '42703')) {
+      console.warn('[complaint_events] fallback A failed:', errA.code || errA.message);
+      return;
     }
-    console.warn('[complaint_events] insert failed:', err.code || err.message);
+  }
+  // Fallback B — drop visibility too.
+  try {
+    await db.query(
+      `INSERT INTO complaint_events
+         (complaint_id, event_type,
+          actor_user_id, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
+          from_role, to_role, from_status, to_status, note, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())`,
+      [complaintId, eventType,
+       actor?.id || null, actor?.name || null, actor?.email || null, actor?.role || null,
+       fromRole || null, toRole || null, fromStatus || null, toStatus || null, note || null]
+    );
+  } catch (errB) {
+    console.warn('[complaint_events] fallback B failed:', errB.code || errB.message);
   }
 }
 
@@ -397,7 +412,11 @@ router.get("/:id/events", authMiddleware, asyncHandler(async (req, res) => {
     const r = await db.query(
       `SELECT id, event_type,
               actor_user_id, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
-              from_role, to_role, from_status, to_status, note, visibility, created_at
+              from_role, to_role, from_status, to_status, note, visibility,
+              target_kind, target_user_id, target_role,
+              target_name_snapshot, target_email_snapshot,
+              due_at, assignment_priority, assignment_status, read_at,
+              created_at
        FROM complaint_events
        WHERE complaint_id = $1
        ORDER BY created_at ASC, id ASC`,
@@ -513,6 +532,151 @@ router.post("/:id/reply", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES
   });
 
   res.json({ ok: true, visibility, message: visibility === 'customer_visible' ? "تم إرسال الرد للعميل" : "تم حفظ التوجيه الداخلي" });
+}));
+
+/**
+ * Staff directory used to populate the "توجيه لموظف" picker. Returns just
+ * the fields we need for the picker — id, name, email, role — for every
+ * active staff member (anyone whose role isn't 'user').
+ */
+router.get("/_/staff", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), asyncHandler(async (req, res) => {
+  const r = await db.query(
+    `SELECT id, name, email, role
+     FROM users
+     WHERE role IS NOT NULL AND role <> 'user'
+       AND COALESCE(is_active, true) = true
+     ORDER BY role, name NULLS LAST`
+  );
+  res.json({ staff: r.rows });
+}));
+
+/**
+ * Explicit-routing directive on a complaint. Replaces the vague "internal
+ * note" with four discrete kinds:
+ *
+ *   kind='note'        — general internal note, no specific recipient.
+ *                        Stays visible to all staff who can see the complaint.
+ *   kind='department'  — routed to a role queue. Notifies every active user
+ *                        with that role. Body: { target_role }.
+ *   kind='user'        — routed to a specific staff member. Notifies only
+ *                        them. Body: { target_user_id }.
+ *   kind='assignment'  — formal assignment to a specific staff member with
+ *                        due date + priority + 'pending' status. Body:
+ *                        { target_user_id, due_at?, priority? }.
+ *
+ * All directives are visibility='internal' — the customer never sees them.
+ */
+router.post("/:id/directive", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { kind, message, target_role, target_user_id, due_at, priority } = req.body || {};
+
+  if (!message || typeof message !== 'string' || !message.trim()) {
+    return res.status(400).json({ error: "نص الرسالة مطلوب" });
+  }
+  if (!['note', 'department', 'user', 'assignment'].includes(kind)) {
+    return res.status(400).json({ error: "نوع التوجيه غير صالح" });
+  }
+
+  // Validate the complaint exists.
+  const lookup = await db.query(`SELECT id, subject FROM account_complaints WHERE id = $1`, [id]);
+  if (lookup.rows.length === 0) return res.status(404).json({ error: "الشكوى غير موجودة" });
+  const subject = lookup.rows[0].subject || '';
+
+  // Resolve recipient — varies by kind.
+  let targetUserRow = null;
+  let resolvedTargetRole = null;
+  if (kind === 'department') {
+    const allowedRoles = ['support_admin', 'finance_admin', 'content_admin', 'admin_manager', 'admin', 'super_admin'];
+    if (!allowedRoles.includes(target_role)) {
+      return res.status(400).json({ error: "القسم المستهدف غير صالح" });
+    }
+    resolvedTargetRole = target_role;
+  } else if (kind === 'user' || kind === 'assignment') {
+    if (!target_user_id) return res.status(400).json({ error: "معرف الموظف مطلوب" });
+    const u = await db.query(
+      `SELECT id, name, email, role FROM users WHERE id = $1 AND COALESCE(is_active, true) = true`,
+      [target_user_id]
+    );
+    if (u.rows.length === 0) return res.status(404).json({ error: "الموظف غير موجود" });
+    targetUserRow = u.rows[0];
+  }
+
+  // Validate assignment-specific fields.
+  let validDueAt = null;
+  let validPriority = null;
+  let assignmentStatus = null;
+  if (kind === 'assignment') {
+    assignmentStatus = 'pending';
+    if (due_at) {
+      const d = new Date(due_at);
+      if (!Number.isNaN(d.getTime())) validDueAt = d.toISOString();
+    }
+    if (['low', 'medium', 'high', 'urgent'].includes(priority)) validPriority = priority;
+    else validPriority = 'medium';
+  }
+
+  // Write the audit event with full routing context.
+  const eventType =
+    kind === 'note' ? 'internal_note' :
+    kind === 'assignment' ? 'assignment' : 'directive';
+
+  await logComplaintEvent({
+    complaintId: id,
+    eventType,
+    actor: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role },
+    note: message.trim(),
+    visibility: 'internal',
+    targetKind: kind,
+    targetUserId: targetUserRow?.id || null,
+    targetRole: resolvedTargetRole,
+    targetName: targetUserRow?.name || null,
+    targetEmail: targetUserRow?.email || null,
+    dueAt: validDueAt,
+    assignmentPriority: validPriority,
+    assignmentStatus,
+  });
+
+  // Notify recipients per kind.
+  try {
+    const title =
+      kind === 'assignment' ? "تكليف رسمي على شكوى" :
+      kind === 'user' || kind === 'department' ? "توجيه على شكوى" :
+      null; // 'note' fires no notification — it's a general memo
+
+    if (title) {
+      const body = `${subject} — ${kind === 'assignment' && validPriority ? `أولوية: ${validPriority} · ` : ''}${(message.trim().slice(0, 80))}`;
+      const link = '/add-listing/admin/customer-service?tab=complaints';
+      if (kind === 'department') {
+        await db.query(
+          `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+           SELECT u.id, $1, $2, 'complaint_directive', $3, NOW()
+           FROM users u WHERE u.role = $4 AND COALESCE(u.is_active, true) = true`,
+          [title, body, link, resolvedTargetRole]
+        );
+      } else if (targetUserRow) {
+        await db.query(
+          `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+           VALUES ($1, $2, $3, 'complaint_directive', $4, NOW())`,
+          [targetUserRow.id, title, body, link]
+        );
+      }
+    }
+  } catch (e) {
+    console.warn('[complaints] directive notification failed', e.message);
+  }
+
+  res.json({
+    ok: true,
+    kind,
+    target: kind === 'department' ? { role: resolvedTargetRole } :
+            (kind === 'user' || kind === 'assignment') ? { id: targetUserRow.id, name: targetUserRow.name, email: targetUserRow.email, role: targetUserRow.role } :
+            null,
+    message:
+      kind === 'note' ? "تم حفظ الملاحظة الداخلية" :
+      kind === 'department' ? "تم إرسال التوجيه للقسم" :
+      kind === 'user' ? "تم إرسال التوجيه للموظف" :
+      "تم إنشاء التكليف",
+  });
 }));
 
 router.get("/mine", authMiddleware, asyncHandler(async (req, res) => {
