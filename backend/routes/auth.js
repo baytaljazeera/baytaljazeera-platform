@@ -507,11 +507,28 @@ router.get("/me", asyncHandler(async (req, res) => {
     return res.status(401).json({ error: "انتهت صلاحية الجلسة", errorEn: "Session expired" });
   }
   
-  const result = await db.query(
-    `SELECT id, email, name, phone, whatsapp, role, email_verified_at, phone_verified_at, created_at
-     FROM users WHERE id = $1`,
-    [payload.userId]
-  );
+  // Try to read the international fields (country/timezone/preferred_language)
+  // added by migration 20260525130000. If the columns don't exist yet in this
+  // environment, fall back to the legacy column set so /me keeps responding.
+  let result;
+  try {
+    result = await db.query(
+      `SELECT id, email, name, phone, whatsapp, role, email_verified_at, phone_verified_at, created_at,
+              country, timezone, preferred_language
+       FROM users WHERE id = $1`,
+      [payload.userId]
+    );
+  } catch (err) {
+    if (err && err.code === '42703') {
+      result = await db.query(
+        `SELECT id, email, name, phone, whatsapp, role, email_verified_at, phone_verified_at, created_at
+         FROM users WHERE id = $1`,
+        [payload.userId]
+      );
+    } else {
+      throw err;
+    }
+  }
   
   const user = result.rows[0];
   if (!user) {
