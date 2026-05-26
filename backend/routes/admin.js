@@ -1925,4 +1925,98 @@ router.get("/sidebar-config", authMiddleware, asyncHandler(async (req, res) => {
   }
 }));
 
+/**
+ * Phase 2 — Generic Inbox Engine.
+ *
+ *   GET /api/admin/inboxes/:key        → inbox config (title/icon/accent/desc)
+ *   GET /api/admin/inboxes/:key/items  → filtered items per source_kind
+ *
+ * Both endpoints enforce required_roles when set. source_kind='complaints'
+ * is the only kind shipped in this phase — tickets/refunds variants can
+ * layer on by extending the switch.
+ */
+async function loadInboxConfig(key) {
+  const r = await db.query(
+    `SELECT key, title, icon_name, accent_color, source_kind, source_filter,
+            required_roles, count_source, description, sort_order, is_active
+     FROM admin_inboxes
+     WHERE key = $1`,
+    [key]
+  );
+  return r.rows[0] || null;
+}
+
+function userAllowedOnInbox(user, inbox) {
+  if (!inbox) return false;
+  if (!inbox.is_active) return false;
+  const role = user?.role;
+  if (role === 'super_admin' || role === 'admin') return true;
+  const required = Array.isArray(inbox.required_roles) ? inbox.required_roles : null;
+  if (!required || required.length === 0) {
+    // Default: only staff can open. (No customers.)
+    return role && role !== 'user';
+  }
+  return required.includes(role);
+}
+
+router.get("/inboxes/:key", authMiddleware, asyncHandler(async (req, res) => {
+  try {
+    const inbox = await loadInboxConfig(req.params.key);
+    if (!inbox) return res.status(404).json({ error: "الصندوق غير موجود" });
+    if (!userAllowedOnInbox(req.user, inbox)) return res.status(403).json({ error: "غير مصرح" });
+    res.json({ inbox });
+  } catch (e) {
+    if (e && e.code === '42P01') return res.status(404).json({ error: "محرك الصناديق لم يُهيَّأ بعد" });
+    throw e;
+  }
+}));
+
+router.get("/inboxes/:key/items", authMiddleware, asyncHandler(async (req, res) => {
+  try {
+    const inbox = await loadInboxConfig(req.params.key);
+    if (!inbox) return res.status(404).json({ error: "الصندوق غير موجود" });
+    if (!userAllowedOnInbox(req.user, inbox)) return res.status(403).json({ error: "غير مصرح" });
+
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    const filter = inbox.source_filter || {};
+
+    if (inbox.source_kind === 'complaints') {
+      // Build a parameterized WHERE from the JSON filter. Only allow known
+      // columns so a malformed source_filter can't drift into arbitrary SQL.
+      const ALLOWED = new Set(['auto_assigned_role', 'status', 'priority', 'category', 'complaint_type']);
+      const conds = [`status NOT IN ('closed','resolved','dismissed')`];
+      const params = [];
+      let p = 1;
+      for (const [k, v] of Object.entries(filter)) {
+        if (!ALLOWED.has(k)) continue;
+        if (Array.isArray(v)) {
+          conds.push(`${k} = ANY($${p}::text[])`);
+          params.push(v);
+        } else {
+          conds.push(`${k} = $${p}`);
+          params.push(v);
+        }
+        p++;
+      }
+      const r = await db.query(
+        `SELECT id, subject, details, priority, category, complaint_type, status,
+                user_name, user_email, invoice_id, created_at,
+                sla_due_at, plan_tier, auto_assigned_role, admin_note
+         FROM account_complaints
+         WHERE ${conds.join(' AND ')}
+         ORDER BY created_at DESC
+         LIMIT ${limit}`,
+        params
+      );
+      return res.json({ inbox, items: r.rows });
+    }
+
+    // Future source kinds layer on here.
+    res.json({ inbox, items: [], note: `source_kind=${inbox.source_kind} not implemented yet` });
+  } catch (e) {
+    if (e && e.code === '42P01') return res.json({ inbox: null, items: [], note: 'engine_not_provisioned' });
+    throw e;
+  }
+}));
+
 module.exports = router;
