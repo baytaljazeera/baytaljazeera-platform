@@ -21,6 +21,49 @@ const COMPLAINTS_ADMIN_ROLES = [
   'admin_manager',
 ];
 
+/**
+ * Append an event to the complaint audit timeline. Snapshots the actor's
+ * name/email/role at the moment of the action so future role changes don't
+ * rewrite history. Best-effort — failures are logged but don't break the
+ * caller (we don't want a notifications table issue to block a customer
+ * submission).
+ */
+async function logComplaintEvent({
+  complaintId,
+  eventType,
+  actor,                  // { id, name, email, role } — may be null for system events
+  fromRole, toRole,
+  fromStatus, toStatus,
+  note,
+}) {
+  try {
+    await db.query(
+      `INSERT INTO complaint_events
+         (complaint_id, event_type,
+          actor_user_id, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
+          from_role, to_role, from_status, to_status, note, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
+      [
+        complaintId, eventType,
+        actor?.id || null,
+        actor?.name || null,
+        actor?.email || null,
+        actor?.role || null,
+        fromRole || null,
+        toRole || null,
+        fromStatus || null,
+        toStatus || null,
+        note || null,
+      ]
+    );
+  } catch (err) {
+    // 42P01 = relation does not exist — happens if the migration / schema
+    // ensure hasn't been run yet. Log and move on; we don't break the API
+    // call because audit logging failed.
+    console.warn('[complaint_events] insert failed:', err.code || err.message);
+  }
+}
+
 router.post("/", complaintLimiter, asyncHandler(async (req, res) => {
   const { category, subject, details, userName, userEmail, userPhone, invoice_id, complaint_type, priority } = req.body;
 
@@ -187,7 +230,42 @@ router.post("/", complaintLimiter, asyncHandler(async (req, res) => {
     console.error('[complaints] assignment notification failed', e.message);
   }
 
+  // Audit log — "created" event with the customer as actor (snapshot their
+  // name/email so it shows up correctly even if they update their profile
+  // later).
+  await logComplaintEvent({
+    complaintId: result.rows[0].id,
+    eventType: 'created',
+    actor: userId ? { id: userId, name: userName, email: userEmail, role: 'user' } : null,
+    toRole: autoAssignedRole,
+    toStatus: 'new',
+    note: `أولوية: ${actualPriority}${validatedInvoiceId ? ` — فاتورة #${validatedInvoiceId}` : ''}`,
+  });
+
   res.status(201).json({ ok: true, complaint: result.rows[0], message: "تم استلام شكواك بنجاح" });
+}));
+
+/**
+ * GET the audit timeline for a complaint. Used by the executive inbox card
+ * expand view + any future detail page.
+ */
+router.get("/:id/events", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  try {
+    const r = await db.query(
+      `SELECT id, event_type,
+              actor_user_id, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
+              from_role, to_role, from_status, to_status, note, created_at
+       FROM complaint_events
+       WHERE complaint_id = $1
+       ORDER BY created_at ASC, id ASC`,
+      [id]
+    );
+    res.json({ events: r.rows });
+  } catch (err) {
+    if (err && err.code === '42P01') return res.json({ events: [] });
+    throw err;
+  }
 }));
 
 router.get("/mine", authMiddleware, asyncHandler(async (req, res) => {
@@ -341,25 +419,42 @@ router.patch("/:id", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), as
 
   // Notify the customer when the admin meaningfully updated the complaint —
   // either added/changed a note or moved status to a terminal/active state.
-  if (prev && prev.user_id) {
-    const noteChanged = typeof adminNote === 'string' && adminNote.trim() && adminNote !== prev.admin_note;
-    const statusChanged = status && status !== prev.status;
-    if (noteChanged || statusChanged) {
-      const title = noteChanged ? "رد جديد على شكواك" : "تحديث حالة شكواك";
-      const body = noteChanged
-        ? `تم الرد على شكواك: ${prev.subject || ''}`.trim()
-        : `تم تحديث حالة شكواك (${status}): ${prev.subject || ''}`.trim();
-      try {
-        await db.query(
-          `INSERT INTO notifications (user_id, title, body, type, link, created_at)
-           VALUES ($1, $2, $3, 'complaint_reply', $4, NOW())`,
-          [prev.user_id, title, body, '/my-complaints']
-        );
-      } catch (e) {
-        // Don't fail the admin's update because we couldn't queue a notification.
-        console.error('[complaints] notification insert failed', e.message);
-      }
+  const noteChanged = typeof adminNote === 'string' && adminNote.trim() && adminNote !== prev?.admin_note;
+  const statusChanged = status && prev && status !== prev.status;
+  if (prev && prev.user_id && (noteChanged || statusChanged)) {
+    const title = noteChanged ? "رد جديد على شكواك" : "تحديث حالة شكواك";
+    const body = noteChanged
+      ? `تم الرد على شكواك: ${prev.subject || ''}`.trim()
+      : `تم تحديث حالة شكواك (${status}): ${prev.subject || ''}`.trim();
+    try {
+      await db.query(
+        `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+         VALUES ($1, $2, $3, 'complaint_reply', $4, NOW())`,
+        [prev.user_id, title, body, '/my-complaints']
+      );
+    } catch (e) {
+      console.error('[complaints] notification insert failed', e.message);
     }
+  }
+
+  // Audit log entries — separate events for status change and note added
+  // so the timeline reads naturally.
+  if (statusChanged) {
+    await logComplaintEvent({
+      complaintId: id,
+      eventType: 'status_changed',
+      actor: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role },
+      fromStatus: prev.status,
+      toStatus: status,
+    });
+  }
+  if (noteChanged) {
+    await logComplaintEvent({
+      complaintId: id,
+      eventType: 'note_added',
+      actor: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role },
+      note: typeof adminNote === 'string' ? adminNote.trim() : null,
+    });
   }
 
   res.json({ ok: true, complaint: result.rows[0], message: "تم تحديث الشكوى بنجاح" });
@@ -416,6 +511,17 @@ async function transferComplaintHandler(req, res, fixedTargetRole) {
     return res.status(400).json({ error: "لا يمكن تحويل شكوى مغلقة" });
   }
 
+  // Capture previous assignment so we can log it as from_role on the
+  // audit event below.
+  let previousRole = null;
+  try {
+    const prevRow = await db.query(
+      `SELECT auto_assigned_role FROM account_complaints WHERE id = $1`,
+      [id]
+    );
+    previousRole = prevRow.rows[0]?.auto_assigned_role || null;
+  } catch {}
+
   const transferLine = `\n— تم التحويل إلى ${cfg.labelAr} بواسطة ${req.user?.name || req.user?.email || 'admin'} (${new Date().toISOString()})${note ? ` — ${note}` : ''}`;
   const newAdminNote = (row.admin_note || '') + transferLine;
 
@@ -427,6 +533,15 @@ async function transferComplaintHandler(req, res, fixedTargetRole) {
      WHERE id = $3`,
     [targetRole, newAdminNote, id]
   );
+
+  await logComplaintEvent({
+    complaintId: id,
+    eventType: 'transferred',
+    actor: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role },
+    fromRole: previousRole,
+    toRole: targetRole,
+    note: note || null,
+  });
 
   // Notify users in the receiving role. For admin/super_admin we notify both
   // roles (executive escalation = whoever's available at the top).

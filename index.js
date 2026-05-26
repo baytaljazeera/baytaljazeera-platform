@@ -230,6 +230,24 @@ async function runDatabaseInit() {
       `ALTER TABLE IF EXISTS support_tickets ADD COLUMN IF NOT EXISTS customer_country varchar(2)`,
       `ALTER TABLE IF EXISTS support_tickets ADD COLUMN IF NOT EXISTS customer_timezone varchar(64)`,
       `ALTER TABLE IF EXISTS support_tickets ADD COLUMN IF NOT EXISTS customer_language varchar(16)`,
+      // 20260526120000 complaint_events — audit timeline
+      `CREATE TABLE IF NOT EXISTS complaint_events (
+         id BIGSERIAL PRIMARY KEY,
+         complaint_id BIGINT NOT NULL,
+         event_type VARCHAR(32) NOT NULL,
+         actor_user_id BIGINT NULL,
+         actor_name_snapshot VARCHAR(200) NULL,
+         actor_email_snapshot VARCHAR(200) NULL,
+         actor_role_snapshot VARCHAR(64) NULL,
+         from_role VARCHAR(64) NULL,
+         to_role VARCHAR(64) NULL,
+         from_status VARCHAR(32) NULL,
+         to_status VARCHAR(32) NULL,
+         note TEXT NULL,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_complaint_events_complaint_at ON complaint_events (complaint_id, created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_complaint_events_type ON complaint_events (event_type)`,
     ];
     let patched = 0;
     for (const sql of schemaPatches) {
