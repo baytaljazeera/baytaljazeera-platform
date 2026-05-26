@@ -217,6 +217,65 @@ router.get("/audit-log", authMiddleware, requireRoles('super_admin'), asyncHandl
     if (!(e && e.code === '42P01')) throw e;
   }
 
+  // Pull complaint events too — transfers / replies / directives / status
+  // changes are admin actions and belong in the unified feed.
+  let complaintRows = [];
+  try {
+    const cRes = await db.query(
+      action_type
+        ? `SELECT 'complaint_event'::text AS source,
+                  event_type AS action_type,
+                  NULL::text AS target_role,
+                  actor_user_id::text AS target_user_id,
+                  NULL::text AS target_user_name,
+                  actor_user_id AS changed_by_id,
+                  actor_name_snapshot AS changed_by_name,
+                  NULL::jsonb AS old_value,
+                  jsonb_build_object(
+                    'complaint_id', complaint_id,
+                    'note', note,
+                    'from_role', from_role,
+                    'to_role', to_role,
+                    'from_status', from_status,
+                    'to_status', to_status,
+                    'visibility', visibility,
+                    'target_kind', target_kind
+                  ) AS new_value,
+                  NULL::text AS ip_address,
+                  NULL::text AS user_agent,
+                  created_at
+           FROM complaint_events WHERE event_type = $1
+           ORDER BY created_at DESC LIMIT ${SLICE}`
+        : `SELECT 'complaint_event'::text AS source,
+                  event_type AS action_type,
+                  NULL::text AS target_role,
+                  actor_user_id::text AS target_user_id,
+                  NULL::text AS target_user_name,
+                  actor_user_id AS changed_by_id,
+                  actor_name_snapshot AS changed_by_name,
+                  NULL::jsonb AS old_value,
+                  jsonb_build_object(
+                    'complaint_id', complaint_id,
+                    'note', note,
+                    'from_role', from_role,
+                    'to_role', to_role,
+                    'from_status', from_status,
+                    'to_status', to_status,
+                    'visibility', visibility,
+                    'target_kind', target_kind
+                  ) AS new_value,
+                  NULL::text AS ip_address,
+                  NULL::text AS user_agent,
+                  created_at
+           FROM complaint_events
+           ORDER BY created_at DESC LIMIT ${SLICE}`,
+      action_type ? [action_type] : []
+    );
+    complaintRows = cRes.rows;
+  } catch (e) {
+    if (!(e && e.code === '42P01')) throw e;
+  }
+
   try {
     // admin_audit_logs columns: admin_id, action, resource_type, resource_id, details JSONB, created_at.
     // Map into the same shape — details JSONB becomes new_value so the UI's
@@ -258,8 +317,32 @@ router.get("/audit-log", authMiddleware, requireRoles('super_admin'), asyncHandl
     if (!(e && e.code === '42P01')) throw e;
   }
 
-  const merged = [...permRows, ...adminRows]
+  // Optional source filter (multi-value via repeating ?source=...)
+  const sourceFilter = []
+    .concat(req.query.source || [])
+    .filter(Boolean);
+  let merged = [...permRows, ...adminRows, ...complaintRows]
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  if (sourceFilter.length > 0) {
+    merged = merged.filter(r => sourceFilter.includes(r.source));
+  }
+  // Optional actor filter (by name or email substring)
+  if (req.query.actor) {
+    const q = String(req.query.actor).toLowerCase();
+    merged = merged.filter(r =>
+      String(r.changed_by_name || '').toLowerCase().includes(q)
+    );
+  }
+  // Optional date range
+  if (req.query.from) {
+    const t = Date.parse(req.query.from);
+    if (!Number.isNaN(t)) merged = merged.filter(r => new Date(r.created_at).getTime() >= t);
+  }
+  if (req.query.to) {
+    const t = Date.parse(req.query.to);
+    if (!Number.isNaN(t)) merged = merged.filter(r => new Date(r.created_at).getTime() <= t + 86_400_000);
+  }
+
   const total = merged.length;
   const slice = merged.slice(offset, offset + limitNum);
 
@@ -268,7 +351,11 @@ router.get("/audit-log", authMiddleware, requireRoles('super_admin'), asyncHandl
     total,
     page: pageNum,
     totalPages: Math.max(1, Math.ceil(total / limitNum)),
-    sources: { permissions: permRows.length, admin_action: adminRows.length },
+    sources: {
+      permissions: permRows.length,
+      admin_action: adminRows.length,
+      complaint_event: complaintRows.length,
+    },
   });
 }));
 
