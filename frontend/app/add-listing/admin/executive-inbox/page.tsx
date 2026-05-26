@@ -24,6 +24,7 @@ import {
   Crown, RefreshCcw, ChevronDown, ChevronUp,
   Loader2, AlertTriangle, MessageSquarePlus, Building2, CheckCircle,
   User as UserIcon, Mail, Clock, FileText, History, X,
+  Lock, MessageCircle, EyeOff, Send,
 } from "lucide-react";
 
 type Complaint = {
@@ -58,6 +59,7 @@ type AuditEvent = {
   from_status: string | null;
   to_status: string | null;
   note: string | null;
+  visibility?: string | null;
   created_at: string;
 };
 
@@ -92,7 +94,9 @@ const STATUS_COLOR: Record<string, string> = {
 const EVENT_LABEL: Record<string, string> = {
   created: "أنشأ الشكوى",
   status_changed: "غيّر الحالة",
-  note_added: "أضاف توجيهاً",
+  note_added: "أضاف ملاحظة",
+  internal_note: "توجيه داخلي للفريق",
+  admin_reply: "رد مباشر للعميل",
   transferred: "حوّل الشكوى",
   reopened: "أعاد فتح الشكوى",
 };
@@ -137,9 +141,13 @@ export default function ExecutiveInboxPage() {
   const [eventsById, setEventsById] = useState<Record<number, AuditEvent[]>>({});
   const [eventsLoadingId, setEventsLoadingId] = useState<number | null>(null);
 
-  // Action-modal state — used for "add note" and "re-transfer" and "close"
+  // Action-modal state — four distinct flows:
+  //   internal  → POST /reply  with visibility=internal
+  //   customer  → POST /reply  with visibility=customer_visible
+  //   transfer  → PATCH /transfer  with target_role
+  //   close     → PATCH /  with status=closed
   const [actionModal, setActionModal] = useState<{
-    kind: "note" | "transfer" | "close";
+    kind: "internal" | "customer" | "transfer" | "close";
     complaint: Complaint;
     note: string;
     targetRole: string;
@@ -188,20 +196,26 @@ export default function ExecutiveInboxPage() {
     }
   };
 
-  const submitNote = async () => {
+  // Internal-only note OR customer-visible reply — same endpoint, only the
+  // visibility flag differs.
+  const submitReply = async (visibility: "internal" | "customer_visible") => {
     if (!actionModal) return;
     setSubmitting(true);
     try {
-      const res = await fetch(`${API_URL}/api/account-complaints/${actionModal.complaint.id}`, {
-        method: "PATCH",
+      const res = await fetch(`${API_URL}/api/account-complaints/${actionModal.complaint.id}/reply`, {
+        method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
-        body: JSON.stringify({ adminNote: actionModal.note }),
+        body: JSON.stringify({ visibility, message: actionModal.note }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      toast.success("تم حفظ التوجيه");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      toast.success(visibility === "customer_visible" ? "تم إرسال الرد للعميل" : "تم حفظ التوجيه الداخلي");
+      const cid = actionModal.complaint.id;
       setActionModal(null);
-      setEventsById((p) => { const n = { ...p }; delete n[actionModal.complaint.id]; return n; });
+      setEventsById((p) => { const n = { ...p }; delete n[cid]; return n; });
       await load();
     } catch (e: any) {
       toast.error(e?.message || "خطأ في الحفظ");
@@ -390,41 +404,69 @@ export default function ExecutiveInboxPage() {
                         ) : events.length === 0 ? (
                           <p className="text-xs text-slate-400 text-center py-3">لا توجد أحداث مسجلة</p>
                         ) : (
-                          events.map((ev) => (
-                            <div key={ev.id} className="border-r-2 border-[#D4AF37]/40 pr-2 py-1.5 text-xs">
-                              <p className="font-semibold text-[#002845]">
-                                {EVENT_LABEL[ev.event_type] || ev.event_type}
-                                {ev.from_role && ev.to_role && (
-                                  <> — {ROLE_LABEL[ev.from_role] || ev.from_role} → {ROLE_LABEL[ev.to_role] || ev.to_role}</>
+                          events.map((ev) => {
+                            const isCustomerVisible = ev.visibility === "customer_visible";
+                            const railColor = isCustomerVisible ? "border-[#D4AF37]" : "border-slate-300";
+                            return (
+                              <div key={ev.id} className={`border-r-2 ${railColor} pr-2 py-1.5 text-xs`}>
+                                <p className="font-semibold text-[#002845] flex items-center gap-1.5 flex-wrap">
+                                  <span>
+                                    {EVENT_LABEL[ev.event_type] || ev.event_type}
+                                    {ev.from_role && ev.to_role && (
+                                      <> — {ROLE_LABEL[ev.from_role] || ev.from_role} → {ROLE_LABEL[ev.to_role] || ev.to_role}</>
+                                    )}
+                                    {ev.from_status && ev.to_status && (
+                                      <> — {STATUS_LABEL[ev.from_status] || ev.from_status} → {STATUS_LABEL[ev.to_status] || ev.to_status}</>
+                                    )}
+                                  </span>
+                                  {ev.visibility && (
+                                    isCustomerVisible ? (
+                                      <span className="text-[9px] px-1.5 py-0.5 rounded border bg-[#D4AF37]/10 border-[#D4AF37]/30 text-[#9a7d28] inline-flex items-center gap-1">
+                                        <MessageCircle className="w-2.5 h-2.5" /> للعميل
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] px-1.5 py-0.5 rounded border bg-slate-100 border-slate-200 text-slate-600 inline-flex items-center gap-1">
+                                        <Lock className="w-2.5 h-2.5" /> داخلي
+                                      </span>
+                                    )
+                                  )}
+                                </p>
+                                <p className="text-slate-500 mt-0.5 text-[11px]">
+                                  {ev.actor_name_snapshot || "النظام"}
+                                  {ev.actor_email_snapshot && <> · {ev.actor_email_snapshot}</>}
+                                  {ev.actor_role_snapshot && <> · {ROLE_LABEL[ev.actor_role_snapshot] || ev.actor_role_snapshot}</>}
+                                  <span className="mx-1.5 text-slate-300">|</span>
+                                  {formatFullDate(ev.created_at)}
+                                </p>
+                                {ev.note && (
+                                  <p className={`mt-1 p-1.5 rounded whitespace-pre-wrap text-[11px] ${
+                                    isCustomerVisible ? "bg-[#D4AF37]/5 border border-[#D4AF37]/20 text-[#5c4a18]" : "bg-slate-50 text-slate-700"
+                                  }`}>{ev.note}</p>
                                 )}
-                                {ev.from_status && ev.to_status && (
-                                  <> — {STATUS_LABEL[ev.from_status] || ev.from_status} → {STATUS_LABEL[ev.to_status] || ev.to_status}</>
-                                )}
-                              </p>
-                              <p className="text-slate-500 mt-0.5 text-[11px]">
-                                {ev.actor_name_snapshot || "النظام"}
-                                {ev.actor_email_snapshot && <> · {ev.actor_email_snapshot}</>}
-                                {ev.actor_role_snapshot && <> · {ROLE_LABEL[ev.actor_role_snapshot] || ev.actor_role_snapshot}</>}
-                                <span className="mx-1.5 text-slate-300">|</span>
-                                {formatFullDate(ev.created_at)}
-                              </p>
-                              {ev.note && (
-                                <p className="mt-1 p-1.5 bg-slate-50 rounded text-slate-700 whitespace-pre-wrap text-[11px]">{ev.note}</p>
-                              )}
-                            </div>
-                          ))
+                              </div>
+                            );
+                          })
                         )}
                       </div>
                     )}
                   </div>
 
-                  {/* Action row */}
+                  {/* Action row — four explicit flows so the agent never
+                      guesses whether their message reaches the customer. */}
                   <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/40 flex items-center justify-end gap-2 flex-wrap">
                     <button
-                      onClick={() => setActionModal({ kind: "note", complaint: c, note: "", targetRole: "" })}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 transition text-xs font-medium"
+                      onClick={() => setActionModal({ kind: "customer", complaint: c, note: "", targetRole: "" })}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] hover:shadow-md transition text-xs font-bold"
+                      title="رسالة تُرسل للعميل وتظهر في صفحته"
                     >
-                      <MessageSquarePlus className="w-3.5 h-3.5" /> إضافة توجيه
+                      <MessageCircle className="w-3.5 h-3.5" /> رد مباشر للعميل
+                    </button>
+                    <button
+                      onClick={() => setActionModal({ kind: "internal", complaint: c, note: "", targetRole: "" })}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700 text-white hover:bg-slate-800 transition text-xs font-medium"
+                      title="ملاحظة داخلية للفريق فقط — لا يراها العميل"
+                    >
+                      <Lock className="w-3.5 h-3.5" /> توجيه داخلي للفريق
                     </button>
                     <button
                       onClick={() => setActionModal({ kind: "transfer", complaint: c, note: "", targetRole: "content_admin" })}
@@ -446,63 +488,115 @@ export default function ExecutiveInboxPage() {
         )}
       </div>
 
-      {/* Action modal — shared shell for note / transfer / close */}
-      {actionModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-l from-[#FFF7E0] to-white">
-              <h3 className="text-sm font-bold text-[#002845]">
-                {actionModal.kind === "note" && "إضافة توجيه إداري"}
-                {actionModal.kind === "transfer" && "إعادة تحويل الشكوى"}
-                {actionModal.kind === "close" && "إغلاق الشكوى"}
-              </h3>
-              <button onClick={() => !submitting && setActionModal(null)} disabled={submitting} className="p-1 hover:bg-white rounded-lg">
-                <X className="w-4 h-4 text-slate-500" />
-              </button>
-            </div>
-            <div className="p-4 space-y-3">
-              <p className="text-xs text-slate-500 truncate">{actionModal.complaint.subject}</p>
-              {actionModal.kind === "transfer" && (
+      {/* Action modal — four kinds, each with explicit messaging so the
+          agent knows exactly who will see the message. */}
+      {actionModal && (() => {
+        const k = actionModal.kind;
+        const isCustomerReply = k === "customer";
+        const isInternal = k === "internal";
+        const isTransfer = k === "transfer";
+        const isClose = k === "close";
+        const submit = isCustomerReply
+          ? () => submitReply("customer_visible")
+          : isInternal
+            ? () => submitReply("internal")
+            : isTransfer
+              ? submitTransfer
+              : submitClose;
+        const disabled = submitting
+          || ((isCustomerReply || isInternal) && !actionModal.note.trim())
+          || (isTransfer && !actionModal.targetRole);
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden">
+              <div className={`px-5 py-3.5 border-b flex items-center justify-between ${
+                isCustomerReply ? "bg-gradient-to-l from-[#FFF7E0] to-white border-[#D4AF37]/30"
+                : isInternal    ? "bg-slate-50 border-slate-200"
+                : isTransfer    ? "bg-amber-50 border-amber-200"
+                                : "bg-emerald-50 border-emerald-200"
+              }`}>
+                <h3 className="text-sm font-bold text-[#002845] inline-flex items-center gap-2">
+                  {isCustomerReply && <><MessageCircle className="w-4 h-4 text-[#D4AF37]" /> رد مباشر للعميل</>}
+                  {isInternal     && <><Lock className="w-4 h-4 text-slate-600" /> توجيه داخلي للفريق</>}
+                  {isTransfer     && <><Building2 className="w-4 h-4 text-amber-600" /> إعادة تحويل الشكوى</>}
+                  {isClose        && <><CheckCircle className="w-4 h-4 text-emerald-600" /> إغلاق الشكوى</>}
+                </h3>
+                <button onClick={() => !submitting && setActionModal(null)} disabled={submitting} className="p-1 hover:bg-white rounded-lg">
+                  <X className="w-4 h-4 text-slate-500" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-3">
+                {/* Disclosure banner — make visibility unmistakable */}
+                {isCustomerReply && (
+                  <div className="px-3 py-2 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[11px] text-[#9a7d28] inline-flex items-start gap-1.5">
+                    <Send className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <span>هذه الرسالة <b>ستظهر للعميل</b> في صفحة شكاواه ويصله إشعار فوري. اكتبها بصيغة مهنية مباشرة.</span>
+                  </div>
+                )}
+                {isInternal && (
+                  <div className="px-3 py-2 rounded-lg bg-slate-100 border border-slate-200 text-[11px] text-slate-700 inline-flex items-start gap-1.5">
+                    <EyeOff className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <span>توجيه <b>للفريق الداخلي فقط</b>. لا يظهر للعميل أبداً، يُحفظ في سجل الأحداث كمرجع للقيادة.</span>
+                  </div>
+                )}
+
+                <p className="text-xs text-slate-500 truncate">الشكوى: {actionModal.complaint.subject}</p>
+
+                {isTransfer && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1.5">إلى أي قسم؟</label>
+                    <select
+                      value={actionModal.targetRole}
+                      onChange={(e) => setActionModal({ ...actionModal, targetRole: e.target.value })}
+                      className="w-full p-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 bg-white"
+                    >
+                      <option value="content_admin">📋 فريق المحتوى</option>
+                      <option value="finance_admin">💰 المالية</option>
+                      <option value="admin_manager">🎯 مدير الإدارة</option>
+                    </select>
+                  </div>
+                )}
+
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1.5">إلى أي قسم؟</label>
-                  <select
-                    value={actionModal.targetRole}
-                    onChange={(e) => setActionModal({ ...actionModal, targetRole: e.target.value })}
-                    className="w-full p-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 bg-white"
-                  >
-                    <option value="content_admin">📋 فريق المحتوى</option>
-                    <option value="finance_admin">💰 المالية</option>
-                    <option value="admin_manager">🎯 مدير الإدارة</option>
-                  </select>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    {isCustomerReply ? "نص الرسالة للعميل"
+                      : isInternal ? "نص التوجيه الداخلي"
+                      : isTransfer ? "سبب إعادة التحويل (اختياري)"
+                                   : "ملاحظة الإغلاق (اختياري)"}
+                  </label>
+                  <textarea
+                    value={actionModal.note}
+                    onChange={(e) => setActionModal({ ...actionModal, note: e.target.value })}
+                    rows={4}
+                    placeholder={isCustomerReply ? "السلام عليكم..." : ""}
+                    className="w-full p-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 resize-none"
+                  />
                 </div>
-              )}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  {actionModal.kind === "close" ? "ملاحظة الإغلاق (اختياري)" : "ملاحظة"}
-                </label>
-                <textarea
-                  value={actionModal.note}
-                  onChange={(e) => setActionModal({ ...actionModal, note: e.target.value })}
-                  rows={3}
-                  placeholder={actionModal.kind === "transfer" ? "سبب إعادة التحويل..." : "أكتب التوجيه..."}
-                  className="w-full p-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 resize-none"
-                />
+              </div>
+
+              <div className="flex gap-2 p-4 pt-2 border-t border-slate-100">
+                <button onClick={() => setActionModal(null)} disabled={submitting} className="flex-1 px-3 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-sm font-medium disabled:opacity-50">إلغاء</button>
+                <button
+                  onClick={submit}
+                  disabled={disabled}
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-bold disabled:opacity-50 inline-flex items-center justify-center gap-1.5 ${
+                    isCustomerReply ? "bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845]"
+                    : isInternal    ? "bg-slate-700 text-white hover:bg-slate-800"
+                    : isTransfer    ? "bg-amber-600 text-white hover:bg-amber-700"
+                                    : "bg-emerald-600 text-white hover:bg-emerald-700"
+                  }`}
+                >
+                  {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> :
+                    isCustomerReply ? <Send className="w-3.5 h-3.5" /> :
+                    isInternal     ? <Lock className="w-3.5 h-3.5" /> : null}
+                  {isCustomerReply ? "إرسال للعميل" : isInternal ? "حفظ كتوجيه داخلي" : "تأكيد"}
+                </button>
               </div>
             </div>
-            <div className="flex gap-2 p-4 pt-2 border-t border-slate-100">
-              <button onClick={() => setActionModal(null)} disabled={submitting} className="flex-1 px-3 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-sm font-medium disabled:opacity-50">إلغاء</button>
-              <button
-                onClick={actionModal.kind === "note" ? submitNote : actionModal.kind === "transfer" ? submitTransfer : submitClose}
-                disabled={submitting || (actionModal.kind === "note" && !actionModal.note.trim()) || (actionModal.kind === "transfer" && !actionModal.targetRole)}
-                className="flex-1 px-3 py-2 bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] rounded-lg text-sm font-bold disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
-              >
-                {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                تأكيد
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

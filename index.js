@@ -248,6 +248,8 @@ async function runDatabaseInit() {
        )`,
       `CREATE INDEX IF NOT EXISTS idx_complaint_events_complaint_at ON complaint_events (complaint_id, created_at)`,
       `CREATE INDEX IF NOT EXISTS idx_complaint_events_type ON complaint_events (event_type)`,
+      // 20260526150000 visibility split — internal vs customer_visible
+      `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS visibility VARCHAR(16) NOT NULL DEFAULT 'internal'`,
     ];
     let patched = 0;
     for (const sql of schemaPatches) {

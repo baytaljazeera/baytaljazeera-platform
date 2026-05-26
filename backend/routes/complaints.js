@@ -35,14 +35,17 @@ async function logComplaintEvent({
   fromRole, toRole,
   fromStatus, toStatus,
   note,
+  visibility = 'internal',  // 'internal' (staff-only) or 'customer_visible'
 }) {
+  // Try with visibility column first. If the column doesn't exist yet
+  // (42703), fall back to the older shape. We never break the caller.
   try {
     await db.query(
       `INSERT INTO complaint_events
          (complaint_id, event_type,
           actor_user_id, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
-          from_role, to_role, from_status, to_status, note, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
+          from_role, to_role, from_status, to_status, note, visibility, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())`,
       [
         complaintId, eventType,
         actor?.id || null,
@@ -54,12 +57,37 @@ async function logComplaintEvent({
         fromStatus || null,
         toStatus || null,
         note || null,
+        visibility,
       ]
     );
   } catch (err) {
-    // 42P01 = relation does not exist — happens if the migration / schema
-    // ensure hasn't been run yet. Log and move on; we don't break the API
-    // call because audit logging failed.
+    if (err && err.code === '42703') {
+      try {
+        await db.query(
+          `INSERT INTO complaint_events
+             (complaint_id, event_type,
+              actor_user_id, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
+              from_role, to_role, from_status, to_status, note, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
+          [
+            complaintId, eventType,
+            actor?.id || null,
+            actor?.name || null,
+            actor?.email || null,
+            actor?.role || null,
+            fromRole || null,
+            toRole || null,
+            fromStatus || null,
+            toStatus || null,
+            note || null,
+          ]
+        );
+        return;
+      } catch (err2) {
+        console.warn('[complaint_events] fallback insert failed:', err2.code || err2.message);
+        return;
+      }
+    }
     console.warn('[complaint_events] insert failed:', err.code || err.message);
   }
 }
@@ -246,26 +274,123 @@ router.post("/", complaintLimiter, asyncHandler(async (req, res) => {
 }));
 
 /**
- * GET the audit timeline for a complaint. Used by the executive inbox card
- * expand view + any future detail page.
+ * GET the audit timeline for a complaint.
+ *   Staff (any COMPLAINTS_ADMIN_ROLES): see everything.
+ *   Customer (role=user): see only their own complaint AND only events
+ *     marked visibility=customer_visible.
  */
-router.get("/:id/events", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), asyncHandler(async (req, res) => {
+router.get("/:id/events", authMiddleware, asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const role = req.user?.role;
+  const isStaff = COMPLAINTS_ADMIN_ROLES.includes(role);
+
+  // For non-staff, verify ownership first so we don't leak the existence of
+  // an arbitrary complaint via a 200 with empty events vs a 404.
+  if (!isStaff) {
+    const own = await db.query(`SELECT user_id FROM account_complaints WHERE id = $1`, [id]);
+    if (own.rows.length === 0) return res.status(404).json({ error: 'الشكوى غير موجودة' });
+    if (own.rows[0].user_id !== req.user.id) return res.status(403).json({ error: 'غير مصرح' });
+  }
+
+  // Try visibility-aware SELECT. Falls back if the column hasn't been
+  // added yet — in that case staff see everything (the old behavior) and
+  // customers see nothing (safe default).
   try {
-    const r = await db.query(
-      `SELECT id, event_type,
-              actor_user_id, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
-              from_role, to_role, from_status, to_status, note, created_at
-       FROM complaint_events
-       WHERE complaint_id = $1
-       ORDER BY created_at ASC, id ASC`,
-      [id]
-    );
+    const sql = isStaff
+      ? `SELECT id, event_type,
+                actor_user_id, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
+                from_role, to_role, from_status, to_status, note, visibility, created_at
+         FROM complaint_events
+         WHERE complaint_id = $1
+         ORDER BY created_at ASC, id ASC`
+      : `SELECT id, event_type,
+                actor_name_snapshot, actor_role_snapshot,
+                from_status, to_status, note, visibility, created_at
+         FROM complaint_events
+         WHERE complaint_id = $1 AND visibility = 'customer_visible'
+         ORDER BY created_at ASC, id ASC`;
+    const r = await db.query(sql, [id]);
     res.json({ events: r.rows });
   } catch (err) {
     if (err && err.code === '42P01') return res.json({ events: [] });
+    if (err && err.code === '42703') {
+      // visibility column missing — give staff a degraded view (no
+      // visibility field) and customers an empty stream rather than crash.
+      if (!isStaff) return res.json({ events: [] });
+      const r = await db.query(
+        `SELECT id, event_type,
+                actor_user_id, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
+                from_role, to_role, from_status, to_status, note, created_at
+         FROM complaint_events
+         WHERE complaint_id = $1
+         ORDER BY created_at ASC, id ASC`,
+        [id]
+      );
+      return res.json({ events: r.rows });
+    }
     throw err;
   }
+}));
+
+/**
+ * Add a reply on a complaint — either internal (staff-only) or customer-
+ * visible. Customer-visible replies ALSO push a notification to the
+ * customer's bell and update admin_note so the legacy /my-complaints
+ * surface still shows the most recent message.
+ *
+ * Body: { visibility: 'internal' | 'customer_visible', message: string }
+ */
+router.post("/:id/reply", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { visibility, message } = req.body || {};
+  if (!message || typeof message !== 'string' || !message.trim()) {
+    return res.status(400).json({ error: "نص الرد مطلوب" });
+  }
+  if (visibility !== 'internal' && visibility !== 'customer_visible') {
+    return res.status(400).json({ error: "visibility غير صالح" });
+  }
+
+  const lookup = await db.query(
+    `SELECT id, user_id, subject FROM account_complaints WHERE id = $1`,
+    [id]
+  );
+  if (lookup.rows.length === 0) return res.status(404).json({ error: "الشكوى غير موجودة" });
+  const row = lookup.rows[0];
+
+  // For customer-visible replies, mirror the latest message into admin_note
+  // so the existing /my-complaints page (which reads admin_note) keeps
+  // showing the latest customer-facing reply without UI changes there.
+  if (visibility === 'customer_visible') {
+    try {
+      await db.query(
+        `UPDATE account_complaints SET admin_note = $1, updated_at = NOW() WHERE id = $2`,
+        [message.trim(), id]
+      );
+    } catch (e) {
+      console.warn('[complaints] /reply admin_note update failed', e.message);
+    }
+    if (row.user_id) {
+      try {
+        await db.query(
+          `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+           VALUES ($1, $2, $3, 'complaint_reply', $4, NOW())`,
+          [row.user_id, "رد جديد على شكواك", `${row.subject || ''}`.trim(), '/my-complaints']
+        );
+      } catch (e) {
+        console.warn('[complaints] /reply notification failed', e.message);
+      }
+    }
+  }
+
+  await logComplaintEvent({
+    complaintId: id,
+    eventType: visibility === 'customer_visible' ? 'admin_reply' : 'internal_note',
+    actor: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role },
+    note: message.trim(),
+    visibility,
+  });
+
+  res.json({ ok: true, visibility, message: visibility === 'customer_visible' ? "تم إرسال الرد للعميل" : "تم حفظ التوجيه الداخلي" });
 }));
 
 router.get("/mine", authMiddleware, asyncHandler(async (req, res) => {
