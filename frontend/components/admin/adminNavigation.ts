@@ -23,6 +23,7 @@ import {
   RotateCcw,
   MessageCircle,
   Inbox,
+  Crown,
 } from "lucide-react";
 
 export type AdminLink = {
@@ -56,10 +57,13 @@ export const adminSections: AdminSection[] = [
         permissionKey: "dashboard",
       },
       {
+        // Reserved for the top of the org chart only. Visibility is also
+        // hard-gated by role in AdminSidebar (super_admin / admin) — the
+        // permissionKey here is just so it shows in nav when role matches.
         href: "/admin/executive-inbox",
         label: "صندوق الإدارة العليا",
-        icon: Inbox,
-        permissionKey: "dashboard",
+        icon: Crown,
+        permissionKey: "executive_inbox",
       },
     ],
   },

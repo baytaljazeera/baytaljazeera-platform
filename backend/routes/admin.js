@@ -107,7 +107,10 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
       MAX(CASE WHEN key = 'finance_inbox_new' THEN cnt END) as finance_inbox_new,
       MAX(CASE WHEN key = 'executive_inbox_new' THEN cnt END) as executive_inbox_new
     FROM counts
-  `, [], 30000);
+  `, [], 5000);
+  // ↑ 5s cache so the gold executive badge feels responsive after a
+  // transfer — was 30s which made the owner think the route was broken
+  // ("I transferred but the badge didn't update").
   
   const row = { ...(cached.rows[0] || {}) };
   const role = req.user.role;

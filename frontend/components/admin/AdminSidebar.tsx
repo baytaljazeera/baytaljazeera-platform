@@ -277,15 +277,23 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
   };
 
   const getFilteredSections = () => {
+    // The executive inbox is reserved for the top of the org chart — only
+    // super_admin and admin should see it in the sidebar.
+    const isExecutive = userRole === "super_admin" || userRole === "admin";
+
     return adminSections.map(section => {
       const filteredLinks = section.links.filter(link => {
+        if (link.href === "/admin/executive-inbox" && !isExecutive) return false;
+
         const hasPermission =
           isSuperAdmin ||
           userPermissions.includes(link.permissionKey) ||
           (link.permissionKey === "support_internal" &&
-            userPermissions.includes("messages"));
+            userPermissions.includes("messages")) ||
+          // executive_inbox is a hard-coded role gate, not a perm in the DB
+          (link.permissionKey === "executive_inbox" && isExecutive);
         if (!hasPermission) return false;
-        
+
         if (loadingVisibility || visibleSections.length === 0) return true;
         const sectionKey = getSectionKeyFromHref(link.href);
         // Always show feedback + whatsapp even if not yet registered in sidebar visibility settings
@@ -405,6 +413,10 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
                         const isNavigating = navigatingTo === item.href;
 
                         const { newCount, inProgressCount } = getCounts(item.href);
+                        // Executive inbox gets a distinct gold treatment —
+                        // it's a privileged surface and shouldn't blend in
+                        // with the other support/finance links.
+                        const isExecutiveLink = item.href === "/admin/executive-inbox";
 
                         return (
                           <button
@@ -412,26 +424,34 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
                             onClick={() => handleNavigation(item.href)}
                             disabled={isNavigating}
                             className={`w-full min-h-[48px] flex items-center gap-3 md:gap-2.5 rounded-lg px-3 md:px-3 py-3 md:py-2.5 text-mobile-base md:text-[13px] transition-all duration-150 cursor-pointer group/item touch-manipulation active:scale-95 ${
-                              active 
+                              active
                                 ? item.isReport
                                   ? "bg-gradient-to-l from-red-500/20 to-red-600/10 text-red-400 font-bold border-r-2 border-red-500"
-                                  : "bg-gradient-to-l from-[#D4AF37]/20 to-[#D4AF37]/5 text-[#D4AF37] font-bold border-r-2 border-[#D4AF37]"
-                                : isNavigating 
+                                  : isExecutiveLink
+                                    ? "bg-gradient-to-l from-[#D4AF37]/30 to-[#D4AF37]/10 text-[#D4AF37] font-bold border-r-2 border-[#D4AF37]"
+                                    : "bg-gradient-to-l from-[#D4AF37]/20 to-[#D4AF37]/5 text-[#D4AF37] font-bold border-r-2 border-[#D4AF37]"
+                                : isNavigating
                                   ? "bg-white/10 text-white"
                                   : item.isReport
                                     ? "text-white/70 hover:bg-red-500/10 hover:text-red-400 active:bg-red-500/15"
-                                    : "text-white/70 hover:bg-white/5 hover:text-white active:bg-white/10"
+                                    : isExecutiveLink
+                                      ? "text-[#E8C882] hover:bg-[#D4AF37]/10 hover:text-[#D4AF37] active:bg-[#D4AF37]/15"
+                                      : "text-white/70 hover:bg-white/5 hover:text-white active:bg-white/10"
                             }`}
                           >
                             {isNavigating ? (
                               <Loader2 className="w-5 h-5 md:w-4 md:h-4 animate-spin shrink-0" />
                             ) : (
-                              <Icon className={`w-5 h-5 md:w-4 md:h-4 transition-transform duration-150 group-hover/item:scale-110 shrink-0 ${active ? "" : "opacity-60"}`} />
+                              <Icon className={`w-5 h-5 md:w-4 md:h-4 transition-transform duration-150 group-hover/item:scale-110 shrink-0 ${active || isExecutiveLink ? "" : "opacity-60"} ${isExecutiveLink && newCount > 0 ? "animate-pulse text-[#D4AF37]" : ""}`} />
                             )}
                             <span className="flex-1 text-right truncate">{item.label}</span>
                             <div className="flex items-center gap-1.5 md:gap-1 shrink-0">
                               {newCount > 0 && (
-                                <span className="unread-badge-breathe min-w-[22px] h-[22px] md:min-w-[18px] md:h-[18px] flex items-center justify-center text-xs md:text-[10px] font-bold bg-red-500 text-white rounded-full px-1.5 md:px-1 shadow-lg shadow-red-500/30">
+                                <span className={
+                                  isExecutiveLink
+                                    ? "unread-badge-breathe min-w-[22px] h-[22px] md:min-w-[18px] md:h-[18px] flex items-center justify-center text-xs md:text-[10px] font-bold bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] ring-2 ring-[#D4AF37]/40 rounded-full px-1.5 md:px-1 shadow-lg shadow-[#D4AF37]/40"
+                                    : "unread-badge-breathe min-w-[22px] h-[22px] md:min-w-[18px] md:h-[18px] flex items-center justify-center text-xs md:text-[10px] font-bold bg-red-500 text-white rounded-full px-1.5 md:px-1 shadow-lg shadow-red-500/30"
+                                }>
                                   {newCount > 99 ? '99+' : newCount}
                                 </span>
                               )}
