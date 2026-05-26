@@ -69,6 +69,11 @@ type AuditEvent = {
   assignment_priority?: string | null;
   assignment_status?: string | null;
   read_at?: string | null;
+  recipients?: {
+    users?: Array<{ id: number; name: string; email: string; role: string }>;
+    roles?: Array<{ role: string; member_count: number }>;
+    everyone?: boolean;
+  } | null;
   created_at: string;
 };
 
@@ -171,10 +176,12 @@ export default function ExecutiveInboxPage() {
     complaint: Complaint;
     note: string;
     targetRole: string;
-    // Directive-specific
+    // Directive-specific (multi-recipient)
     directiveKind?: DirectiveKind;
-    directiveTargetRole?: string;
-    directiveTargetUserId?: number | "";
+    directiveUserIds?: number[];     // selected staff
+    directiveRoles?: string[];       // selected whole-department(s)
+    directiveEveryone?: boolean;     // notify all active staff
+    directiveStaffSearch?: string;   // text filter on the staff picker
     directiveDueAt?: string;
     directivePriority?: "low" | "medium" | "high" | "urgent";
   } | null>(null);
@@ -261,13 +268,19 @@ export default function ExecutiveInboxPage() {
     } finally { setSubmitting(false); }
   };
 
-  // Internal directive — kind picks the routing semantics.
+  // Multi-recipient directive.
   const submitDirective = async () => {
     if (!actionModal || actionModal.kind !== "directive") return;
     const dk = actionModal.directiveKind || "note";
-    const body: any = { kind: dk, message: actionModal.note };
-    if (dk === "department") body.target_role = actionModal.directiveTargetRole;
-    if (dk === "user" || dk === "assignment") body.target_user_id = actionModal.directiveTargetUserId;
+    const body: any = {
+      kind: dk,
+      message: actionModal.note,
+      recipients: {
+        user_ids: actionModal.directiveUserIds || [],
+        roles: actionModal.directiveRoles || [],
+        everyone: !!actionModal.directiveEveryone,
+      },
+    };
     if (dk === "assignment") {
       if (actionModal.directiveDueAt) body.due_at = actionModal.directiveDueAt;
       if (actionModal.directivePriority) body.priority = actionModal.directivePriority;
@@ -477,17 +490,33 @@ export default function ExecutiveInboxPage() {
                           events.map((ev) => {
                             const isCustomerVisible = ev.visibility === "customer_visible";
                             const railColor = isCustomerVisible ? "border-[#D4AF37]" : "border-slate-300";
-                            // Build a "→ المستلم" label for routed/assigned events
-                            const recipientChip = (() => {
+                            // Build the recipient summary.  Prefers the new
+                            // recipients JSONB (multi); falls back to the legacy
+                            // single-target fields for older events.
+                            const recipientLines: string[] = [];
+                            if (ev.recipients) {
+                              if (ev.recipients.everyone) {
+                                recipientLines.push("الجميع (كل أعضاء الفريق النشطين)");
+                              }
+                              if (ev.recipients.roles && ev.recipients.roles.length > 0) {
+                                for (const r of ev.recipients.roles) {
+                                  recipientLines.push(`${ROLE_LABEL[r.role] || r.role} (${r.member_count} أعضاء)`);
+                                }
+                              }
+                              if (ev.recipients.users && ev.recipients.users.length > 0) {
+                                for (const u of ev.recipients.users) {
+                                  recipientLines.push(`${u.name}${u.email ? ` · ${u.email}` : ""}`);
+                                }
+                              }
+                            } else {
+                              // Legacy single-target fallback
                               if (ev.target_kind === "department" && ev.target_role) {
-                                return `قسم: ${ROLE_LABEL[ev.target_role] || ev.target_role}`;
+                                recipientLines.push(`قسم: ${ROLE_LABEL[ev.target_role] || ev.target_role}`);
                               }
                               if ((ev.target_kind === "user" || ev.target_kind === "assignment") && ev.target_name_snapshot) {
-                                const role = ev.actor_role_snapshot && ev.actor_role_snapshot !== ev.target_kind ? "" : "";
-                                return `${ev.target_name_snapshot}${ev.target_email_snapshot ? ` · ${ev.target_email_snapshot}` : ""}`;
+                                recipientLines.push(`${ev.target_name_snapshot}${ev.target_email_snapshot ? ` · ${ev.target_email_snapshot}` : ""}`);
                               }
-                              return null;
-                            })();
+                            }
                             return (
                               <div key={ev.id} className={`border-r-2 ${railColor} pr-2 py-1.5 text-xs`}>
                                 <p className="font-semibold text-[#002845] flex items-center gap-1.5 flex-wrap">
@@ -529,10 +558,15 @@ export default function ExecutiveInboxPage() {
                                   {ev.actor_email_snapshot && <> · {ev.actor_email_snapshot}</>}
                                   {ev.actor_role_snapshot && <> · {ROLE_LABEL[ev.actor_role_snapshot] || ev.actor_role_snapshot}</>}
                                 </p>
-                                {recipientChip && (
-                                  <p className="text-slate-500 mt-0.5 text-[11px]">
-                                    <span className="font-semibold text-slate-600">إلى:</span> {recipientChip}
-                                  </p>
+                                {recipientLines.length > 0 && (
+                                  <div className="text-slate-500 mt-0.5 text-[11px]">
+                                    <span className="font-semibold text-slate-600">إلى:</span>
+                                    <ul className="list-disc pr-4 mt-0.5 space-y-0.5">
+                                      {recipientLines.map((line, i) => (
+                                        <li key={i}>{line}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
                                 )}
                                 <p className="text-slate-400 mt-0.5 text-[10px]">{formatFullDate(ev.created_at)}
                                   {ev.due_at && (
@@ -573,8 +607,10 @@ export default function ExecutiveInboxPage() {
                         setActionModal({
                           kind: "directive", complaint: c, note: "", targetRole: "",
                           directiveKind: "note",
-                          directiveTargetRole: "support_admin",
-                          directiveTargetUserId: "",
+                          directiveUserIds: [],
+                          directiveRoles: [],
+                          directiveEveryone: false,
+                          directiveStaffSearch: "",
                           directivePriority: "medium",
                         });
                         ensureStaff();
@@ -618,11 +654,16 @@ export default function ExecutiveInboxPage() {
           : isTransfer ? submitTransfer
           : submitClose;
 
+        const hasAnyRecipient = !!(
+          (actionModal.directiveUserIds && actionModal.directiveUserIds.length > 0)
+          || (actionModal.directiveRoles && actionModal.directiveRoles.length > 0)
+          || actionModal.directiveEveryone
+        );
         const directiveValid =
           dk === "note" ? !!actionModal.note.trim()
-          : dk === "department" ? !!(actionModal.directiveTargetRole && actionModal.note.trim())
-          : dk === "user" ? !!(actionModal.directiveTargetUserId && actionModal.note.trim())
-          : dk === "assignment" ? !!(actionModal.directiveTargetUserId && actionModal.note.trim())
+          : dk === "department" ? !!(hasAnyRecipient && actionModal.note.trim())
+          : dk === "user" ? !!(hasAnyRecipient && actionModal.note.trim())
+          : dk === "assignment" ? !!(hasAnyRecipient && actionModal.note.trim())
           : false;
         const disabled = submitting
           || (isCustomerReply && !actionModal.note.trim())
@@ -708,41 +749,192 @@ export default function ExecutiveInboxPage() {
                       </div>
                     </div>
 
-                    {dk === "department" && (
-                      <div>
-                        <label className="block text-xs font-bold text-slate-600 mb-1.5">القسم المستهدف</label>
-                        <select
-                          value={actionModal.directiveTargetRole || ""}
-                          onChange={(e) => setActionModal({ ...actionModal, directiveTargetRole: e.target.value })}
-                          className="w-full p-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 bg-white"
-                        >
-                          {ROLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                        <p className="text-[10px] text-slate-500 mt-1">سيصل الإشعار لكل أعضاء القسم النشطين.</p>
-                      </div>
-                    )}
+                    {(dk === "department" || dk === "user" || dk === "assignment") && (() => {
+                      // Helpers for the multi-recipient picker.
+                      const sUserIds = actionModal.directiveUserIds || [];
+                      const sRoles = actionModal.directiveRoles || [];
+                      const everyone = !!actionModal.directiveEveryone;
+                      const search = (actionModal.directiveStaffSearch || "").toLowerCase().trim();
+                      const filteredStaff = staff.filter((s) => {
+                        if (!search) return true;
+                        return (
+                          (s.name || "").toLowerCase().includes(search) ||
+                          (s.email || "").toLowerCase().includes(search) ||
+                          (ROLE_LABEL[s.role] || s.role || "").toLowerCase().includes(search)
+                        );
+                      });
+                      const toggleUser = (uid: number) => {
+                        setActionModal({
+                          ...actionModal,
+                          directiveUserIds: sUserIds.includes(uid) ? sUserIds.filter(x => x !== uid) : [...sUserIds, uid],
+                          directiveEveryone: false,
+                        });
+                      };
+                      const toggleRole = (role: string) => {
+                        setActionModal({
+                          ...actionModal,
+                          directiveRoles: sRoles.includes(role) ? sRoles.filter(x => x !== role) : [...sRoles, role],
+                          directiveEveryone: false,
+                        });
+                      };
+                      const toggleEveryone = () => {
+                        setActionModal({
+                          ...actionModal,
+                          directiveEveryone: !everyone,
+                          directiveUserIds: !everyone ? [] : sUserIds,
+                          directiveRoles: !everyone ? [] : sRoles,
+                        });
+                      };
+                      const clearAll = () => {
+                        setActionModal({
+                          ...actionModal,
+                          directiveUserIds: [],
+                          directiveRoles: [],
+                          directiveEveryone: false,
+                          directiveStaffSearch: "",
+                        });
+                      };
+                      // Total notification count preview — explicit users + role
+                      // expansion (use staff array as a snapshot of who's active).
+                      const previewIds = new Set<number>(sUserIds);
+                      if (everyone) staff.forEach((s) => previewIds.add(s.id));
+                      else if (sRoles.length > 0) {
+                        for (const s of staff) if (sRoles.includes(s.role)) previewIds.add(s.id);
+                      }
+                      const previewCount = previewIds.size;
 
-                    {(dk === "user" || dk === "assignment") && (
-                      <div>
-                        <label className="block text-xs font-bold text-slate-600 mb-1.5">الموظف المستلم</label>
-                        {staffLoading ? (
-                          <p className="text-xs text-slate-400 py-2">جاري تحميل قائمة الموظفين...</p>
-                        ) : (
-                          <select
-                            value={String(actionModal.directiveTargetUserId || "")}
-                            onChange={(e) => setActionModal({ ...actionModal, directiveTargetUserId: e.target.value ? Number(e.target.value) : "" })}
-                            className="w-full p-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 bg-white"
-                          >
-                            <option value="">— اختر موظف —</option>
-                            {staff.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.name} — {ROLE_LABEL[s.role] || s.role} — {s.email}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                    )}
+                      return (
+                        <div className="space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-slate-600">المستلمون</label>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={toggleEveryone}
+                                className={`text-[10px] px-2 py-1 rounded-full border font-bold ${
+                                  everyone ? "bg-[#D4AF37] border-[#D4AF37] text-[#002845]" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"
+                                }`}
+                              >
+                                {everyone ? "✓ الجميع" : "اختيار الجميع"}
+                              </button>
+                              {(sUserIds.length > 0 || sRoles.length > 0 || everyone) && (
+                                <button type="button" onClick={clearAll} className="text-[10px] text-red-500 hover:underline">مسح</button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Selected chips */}
+                          {(sUserIds.length > 0 || sRoles.length > 0 || everyone) && (
+                            <div className="flex items-center gap-1.5 flex-wrap p-2 rounded-lg bg-slate-50 border border-slate-100">
+                              {everyone && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#D4AF37]/15 text-[#9a7d28] text-[11px] font-bold border border-[#D4AF37]/30">
+                                  <Crown className="w-3 h-3" /> الجميع
+                                  <button onClick={toggleEveryone} className="hover:text-red-600"><X className="w-3 h-3" /></button>
+                                </span>
+                              )}
+                              {sRoles.map((r) => (
+                                <span key={r} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[11px] font-medium">
+                                  <Building2 className="w-3 h-3" /> {ROLE_LABEL[r] || r}
+                                  <button onClick={() => toggleRole(r)} className="hover:text-red-600"><X className="w-3 h-3" /></button>
+                                </span>
+                              ))}
+                              {sUserIds.map((uid) => {
+                                const s = staff.find((x) => x.id === uid);
+                                return (
+                                  <span key={uid} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[11px] font-medium border border-blue-100">
+                                    <UserIcon className="w-3 h-3" /> {s ? s.name : `#${uid}`}
+                                    <button onClick={() => toggleUser(uid)} className="hover:text-red-600"><X className="w-3 h-3" /></button>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Department row */}
+                          <div>
+                            <p className="text-[10px] text-slate-400 mb-1">أقسام كاملة</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {ROLE_OPTIONS.map((o) => {
+                                const checked = sRoles.includes(o.value);
+                                const memberCount = staff.filter((s) => s.role === o.value).length;
+                                return (
+                                  <button
+                                    key={o.value}
+                                    type="button"
+                                    disabled={everyone}
+                                    onClick={() => toggleRole(o.value)}
+                                    className={`text-[11px] px-2 py-1 rounded-lg border transition ${
+                                      checked
+                                        ? "bg-slate-700 text-white border-slate-700"
+                                        : "bg-white border-slate-200 text-slate-700 hover:border-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    }`}
+                                  >
+                                    {o.label} <span className="opacity-70">({memberCount})</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Individual user picker */}
+                          <div>
+                            <p className="text-[10px] text-slate-400 mb-1">أو موظفون محددون</p>
+                            <div className="relative">
+                              <input
+                                type="text"
+                                value={actionModal.directiveStaffSearch || ""}
+                                onChange={(e) => setActionModal({ ...actionModal, directiveStaffSearch: e.target.value })}
+                                placeholder="ابحث بالاسم أو الإيميل أو القسم..."
+                                disabled={everyone}
+                                className="w-full p-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                              />
+                            </div>
+                            <div className="mt-1.5 max-h-40 overflow-y-auto border border-slate-100 rounded-lg bg-white">
+                              {staffLoading ? (
+                                <p className="text-xs text-slate-400 text-center py-3">جاري تحميل الموظفين...</p>
+                              ) : filteredStaff.length === 0 ? (
+                                <p className="text-xs text-slate-400 text-center py-3">لا توجد نتائج</p>
+                              ) : (
+                                filteredStaff.map((s) => {
+                                  const selected = sUserIds.includes(s.id);
+                                  const disabled = everyone;
+                                  return (
+                                    <button
+                                      key={s.id}
+                                      type="button"
+                                      disabled={disabled}
+                                      onClick={() => toggleUser(s.id)}
+                                      className={`w-full flex items-center gap-2 px-2 py-1.5 text-right text-xs border-b border-slate-50 last:border-b-0 transition ${
+                                        selected ? "bg-blue-50 hover:bg-blue-100" : "hover:bg-slate-50"
+                                      } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
+                                    >
+                                      <span className={`w-3.5 h-3.5 rounded border shrink-0 inline-flex items-center justify-center ${
+                                        selected ? "bg-blue-600 border-blue-600 text-white" : "border-slate-300 bg-white"
+                                      }`}>
+                                        {selected && <CheckCircle className="w-3 h-3" />}
+                                      </span>
+                                      <span className="flex-1 min-w-0">
+                                        <span className="font-semibold text-[#002845] block truncate">{s.name}</span>
+                                        <span className="text-[10px] text-slate-500 block truncate">
+                                          {ROLE_LABEL[s.role] || s.role} · {s.email}
+                                        </span>
+                                      </span>
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
+
+                          {previewCount > 0 && (
+                            <p className="text-[11px] text-slate-600 bg-slate-50 border border-slate-100 rounded px-2 py-1.5">
+                              سيتم إرسال هذا التوجيه إلى <b>{previewCount}</b> {previewCount === 1 ? "مستلم" : "مستلمين"}
+                              {dk === "assignment" && previewCount > 1 && <> (تكليف مشترك)</>}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {dk === "assignment" && (
                       <div className="grid grid-cols-2 gap-2">

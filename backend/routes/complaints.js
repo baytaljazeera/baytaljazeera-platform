@@ -40,6 +40,8 @@ async function logComplaintEvent({
   targetKind = null, targetUserId = null, targetRole = null,
   targetName = null, targetEmail = null,
   dueAt = null, assignmentPriority = null, assignmentStatus = null,
+  // Multi-recipient routing — JSONB { users:[], roles:[], everyone:bool }
+  recipients = null,
 }) {
   // Try the fullest insert first. Each fallback drops the columns added in
   // the latest migration so the route keeps working through rollouts.
@@ -49,8 +51,8 @@ async function logComplaintEvent({
         from_role, to_role, from_status, to_status, note, visibility,
         target_kind, target_user_id, target_role,
         target_name_snapshot, target_email_snapshot,
-        due_at, assignment_priority, assignment_status, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,NOW())`;
+        due_at, assignment_priority, assignment_status, recipients, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::jsonb,NOW())`;
   const fullParams = [
     complaintId, eventType,
     actor?.id || null, actor?.name || null, actor?.email || null, actor?.role || null,
@@ -59,6 +61,7 @@ async function logComplaintEvent({
     targetKind, targetUserId, targetRole,
     targetName, targetEmail,
     dueAt, assignmentPriority, assignmentStatus,
+    recipients ? JSON.stringify(recipients) : null,
   ];
   try {
     await db.query(fullSql, fullParams);
@@ -416,6 +419,7 @@ router.get("/:id/events", authMiddleware, asyncHandler(async (req, res) => {
               target_kind, target_user_id, target_role,
               target_name_snapshot, target_email_snapshot,
               due_at, assignment_priority, assignment_status, read_at,
+              recipients,
               created_at
        FROM complaint_events
        WHERE complaint_id = $1
@@ -551,24 +555,38 @@ router.get("/_/staff", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), 
 }));
 
 /**
- * Explicit-routing directive on a complaint. Replaces the vague "internal
- * note" with four discrete kinds:
+ * Multi-recipient explicit-routing directive on a complaint.
  *
- *   kind='note'        — general internal note, no specific recipient.
- *                        Stays visible to all staff who can see the complaint.
- *   kind='department'  — routed to a role queue. Notifies every active user
- *                        with that role. Body: { target_role }.
- *   kind='user'        — routed to a specific staff member. Notifies only
- *                        them. Body: { target_user_id }.
- *   kind='assignment'  — formal assignment to a specific staff member with
- *                        due date + priority + 'pending' status. Body:
- *                        { target_user_id, due_at?, priority? }.
+ *   kind='note'        — general internal note. No notification.
+ *   kind='department'  — fans out to selected role queues. Notifies every
+ *                        active user in those roles.
+ *   kind='user'        — sent to selected user(s). Notifies them only.
+ *   kind='assignment'  — formal assignment to selected user(s) with due
+ *                        date + priority. Shared assignment when more
+ *                        than one assignee.
  *
- * All directives are visibility='internal' — the customer never sees them.
+ * Body shape:
+ *   {
+ *     kind: 'note'|'department'|'user'|'assignment',
+ *     message: string,
+ *     recipients: {
+ *       user_ids: number[],          // explicit user picks
+ *       roles: string[],             // whole-department picks
+ *       everyone: boolean            // fan out to every active staff
+ *     },
+ *     due_at?: ISO string,            // assignments only
+ *     priority?: 'low'|'medium'|'high'|'urgent'   // assignments only
+ *   }
+ *
+ * Legacy single-target body (target_role / target_user_id) is still
+ * accepted as a fallback so older clients keep working through rollout.
  */
+const ALLOWED_TARGET_ROLES = ['support_admin', 'finance_admin', 'content_admin', 'admin_manager', 'admin', 'super_admin'];
+
 router.post("/:id/directive", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { kind, message, target_role, target_user_id, due_at, priority } = req.body || {};
+  const { kind, message, recipients, due_at, priority,
+          target_role: legacyTargetRole, target_user_id: legacyTargetUserId } = req.body || {};
 
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: "نص الرسالة مطلوب" });
@@ -577,29 +595,76 @@ router.post("/:id/directive", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_R
     return res.status(400).json({ error: "نوع التوجيه غير صالح" });
   }
 
-  // Validate the complaint exists.
   const lookup = await db.query(`SELECT id, subject FROM account_complaints WHERE id = $1`, [id]);
   if (lookup.rows.length === 0) return res.status(404).json({ error: "الشكوى غير موجودة" });
   const subject = lookup.rows[0].subject || '';
 
-  // Resolve recipient — varies by kind.
-  let targetUserRow = null;
-  let resolvedTargetRole = null;
-  if (kind === 'department') {
-    const allowedRoles = ['support_admin', 'finance_admin', 'content_admin', 'admin_manager', 'admin', 'super_admin'];
-    if (!allowedRoles.includes(target_role)) {
-      return res.status(400).json({ error: "القسم المستهدف غير صالح" });
-    }
-    resolvedTargetRole = target_role;
-  } else if (kind === 'user' || kind === 'assignment') {
-    if (!target_user_id) return res.status(400).json({ error: "معرف الموظف مطلوب" });
-    const u = await db.query(
-      `SELECT id, name, email, role FROM users WHERE id = $1 AND COALESCE(is_active, true) = true`,
-      [target_user_id]
-    );
-    if (u.rows.length === 0) return res.status(404).json({ error: "الموظف غير موجود" });
-    targetUserRow = u.rows[0];
+  // Normalize recipients — accept both the new shape and the legacy single-
+  // target shape from older clients.
+  const rcpUserIds   = Array.isArray(recipients?.user_ids) ? recipients.user_ids.filter(Number.isFinite) : [];
+  const rcpRoles     = Array.isArray(recipients?.roles) ? recipients.roles.filter(r => ALLOWED_TARGET_ROLES.includes(r)) : [];
+  const rcpEveryone  = !!recipients?.everyone;
+  if (legacyTargetRole && ALLOWED_TARGET_ROLES.includes(legacyTargetRole) && !rcpRoles.includes(legacyTargetRole)) {
+    rcpRoles.push(legacyTargetRole);
   }
+  if (legacyTargetUserId && !rcpUserIds.includes(Number(legacyTargetUserId))) {
+    rcpUserIds.push(Number(legacyTargetUserId));
+  }
+
+  // Sanity per kind.
+  if (kind === 'department' && rcpRoles.length === 0 && !rcpEveryone) {
+    return res.status(400).json({ error: "اختر قسماً واحداً على الأقل" });
+  }
+  if ((kind === 'user' || kind === 'assignment') && rcpUserIds.length === 0 && !rcpEveryone && rcpRoles.length === 0) {
+    return res.status(400).json({ error: "اختر مستلماً واحداً على الأقل" });
+  }
+
+  // Resolve user snapshots (name/email/role at send time) for explicit picks.
+  let userRecipients = [];
+  if (rcpUserIds.length > 0) {
+    const r = await db.query(
+      `SELECT id, name, email, role
+       FROM users
+       WHERE id = ANY($1::bigint[]) AND COALESCE(is_active, true) = true AND role <> 'user'`,
+      [rcpUserIds]
+    );
+    userRecipients = r.rows;
+  }
+
+  // Member-count snapshot for each chosen role (so the timeline can show
+  // "فريق المالية (4 أعضاء)" without an extra query at render time).
+  let roleSnapshots = [];
+  if (rcpRoles.length > 0) {
+    const r = await db.query(
+      `SELECT role, COUNT(*)::int AS member_count
+       FROM users
+       WHERE role = ANY($1::text[]) AND COALESCE(is_active, true) = true
+       GROUP BY role`,
+      [rcpRoles]
+    );
+    roleSnapshots = r.rows;
+  }
+
+  // Resolve the final notification recipient set — every user we'll insert
+  // a notification row for. Deduped across user picks + role expansion +
+  // everyone. Excludes role='user' (customers).
+  let everyoneSnapshot = null;
+  let notifyUserIds = new Set(userRecipients.map(u => u.id));
+  if (rcpEveryone) {
+    const r = await db.query(
+      `SELECT id FROM users WHERE role IS NOT NULL AND role <> 'user' AND COALESCE(is_active, true) = true`
+    );
+    for (const row of r.rows) notifyUserIds.add(row.id);
+    everyoneSnapshot = { count: r.rows.length };
+  } else if (rcpRoles.length > 0) {
+    const r = await db.query(
+      `SELECT id FROM users WHERE role = ANY($1::text[]) AND COALESCE(is_active, true) = true`,
+      [rcpRoles]
+    );
+    for (const row of r.rows) notifyUserIds.add(row.id);
+  }
+  // Sender doesn't need to notify themselves.
+  notifyUserIds.delete(req.user.id);
 
   // Validate assignment-specific fields.
   let validDueAt = null;
@@ -611,14 +676,23 @@ router.post("/:id/directive", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_R
       const d = new Date(due_at);
       if (!Number.isNaN(d.getTime())) validDueAt = d.toISOString();
     }
-    if (['low', 'medium', 'high', 'urgent'].includes(priority)) validPriority = priority;
-    else validPriority = 'medium';
+    validPriority = ['low', 'medium', 'high', 'urgent'].includes(priority) ? priority : 'medium';
   }
 
-  // Write the audit event with full routing context.
+  const recipientsJson = {
+    users: userRecipients.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role })),
+    roles: roleSnapshots,
+    everyone: rcpEveryone,
+  };
+
   const eventType =
     kind === 'note' ? 'internal_note' :
     kind === 'assignment' ? 'assignment' : 'directive';
+
+  // For single-recipient legacy compat: if exactly one user OR one role,
+  // also stuff the legacy single-target columns.
+  const oneUser = userRecipients.length === 1 && roleSnapshots.length === 0 && !rcpEveryone ? userRecipients[0] : null;
+  const oneRole = roleSnapshots.length === 1 && userRecipients.length === 0 && !rcpEveryone ? roleSnapshots[0].role : null;
 
   await logComplaintEvent({
     complaintId: id,
@@ -627,39 +701,31 @@ router.post("/:id/directive", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_R
     note: message.trim(),
     visibility: 'internal',
     targetKind: kind,
-    targetUserId: targetUserRow?.id || null,
-    targetRole: resolvedTargetRole,
-    targetName: targetUserRow?.name || null,
-    targetEmail: targetUserRow?.email || null,
+    targetUserId: oneUser?.id || null,
+    targetRole: oneRole,
+    targetName: oneUser?.name || null,
+    targetEmail: oneUser?.email || null,
     dueAt: validDueAt,
     assignmentPriority: validPriority,
     assignmentStatus,
+    recipients: recipientsJson,
   });
 
-  // Notify recipients per kind.
+  // Fan out notifications.
   try {
-    const title =
-      kind === 'assignment' ? "تكليف رسمي على شكوى" :
-      kind === 'user' || kind === 'department' ? "توجيه على شكوى" :
-      null; // 'note' fires no notification — it's a general memo
+    const title = kind === 'assignment' ? "تكليف رسمي على شكوى"
+      : (kind === 'user' || kind === 'department') ? "توجيه على شكوى"
+      : null; // 'note' is silent
 
-    if (title) {
-      const body = `${subject} — ${kind === 'assignment' && validPriority ? `أولوية: ${validPriority} · ` : ''}${(message.trim().slice(0, 80))}`;
+    if (title && notifyUserIds.size > 0) {
+      const body = `${subject} — ${kind === 'assignment' && validPriority ? `أولوية: ${validPriority} · ` : ''}${message.trim().slice(0, 80)}`;
       const link = '/add-listing/admin/customer-service?tab=complaints';
-      if (kind === 'department') {
-        await db.query(
-          `INSERT INTO notifications (user_id, title, body, type, link, created_at)
-           SELECT u.id, $1, $2, 'complaint_directive', $3, NOW()
-           FROM users u WHERE u.role = $4 AND COALESCE(u.is_active, true) = true`,
-          [title, body, link, resolvedTargetRole]
-        );
-      } else if (targetUserRow) {
-        await db.query(
-          `INSERT INTO notifications (user_id, title, body, type, link, created_at)
-           VALUES ($1, $2, $3, 'complaint_directive', $4, NOW())`,
-          [targetUserRow.id, title, body, link]
-        );
-      }
+      const idArr = Array.from(notifyUserIds);
+      await db.query(
+        `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+         SELECT UNNEST($1::bigint[]), $2, $3, 'complaint_directive', $4, NOW()`,
+        [idArr, title, body, link]
+      );
     }
   } catch (e) {
     console.warn('[complaints] directive notification failed', e.message);
@@ -668,14 +734,14 @@ router.post("/:id/directive", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_R
   res.json({
     ok: true,
     kind,
-    target: kind === 'department' ? { role: resolvedTargetRole } :
-            (kind === 'user' || kind === 'assignment') ? { id: targetUserRow.id, name: targetUserRow.name, email: targetUserRow.email, role: targetUserRow.role } :
-            null,
+    recipients: recipientsJson,
+    everyone_snapshot: everyoneSnapshot,
+    notified_count: notifyUserIds.size,
     message:
       kind === 'note' ? "تم حفظ الملاحظة الداخلية" :
-      kind === 'department' ? "تم إرسال التوجيه للقسم" :
-      kind === 'user' ? "تم إرسال التوجيه للموظف" :
-      "تم إنشاء التكليف",
+      kind === 'department' ? `تم إرسال التوجيه إلى ${notifyUserIds.size} مستلم` :
+      kind === 'user' ? `تم إرسال التوجيه إلى ${notifyUserIds.size} مستلم` :
+      `تم إنشاء التكليف لـ ${notifyUserIds.size} مستلم`,
   });
 }));
 

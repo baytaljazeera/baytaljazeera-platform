@@ -260,6 +260,8 @@ async function runDatabaseInit() {
       `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS assignment_priority VARCHAR(16)`,
       `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS assignment_status VARCHAR(16)`,
       `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ`,
+      // 20260526210000 multi-recipient routing (JSONB)
+      `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS recipients JSONB`,
     ];
     let patched = 0;
     for (const sql of schemaPatches) {
