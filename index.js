@@ -291,6 +291,22 @@ async function runDatabaseInit() {
          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
        )`,
       `CREATE INDEX IF NOT EXISTS idx_admin_nav_links_section_sort ON admin_nav_links (section_key, sort_order)`,
+      // 20260527000000 admin_inboxes (Phase 2 — generic Inbox Engine)
+      `CREATE TABLE IF NOT EXISTS admin_inboxes (
+         key VARCHAR(64) PRIMARY KEY,
+         title VARCHAR(120) NOT NULL,
+         icon_name VARCHAR(64) NOT NULL DEFAULT 'Inbox',
+         accent_color VARCHAR(32) NOT NULL DEFAULT 'text-slate-500',
+         source_kind VARCHAR(32) NOT NULL DEFAULT 'complaints',
+         source_filter JSONB NULL,
+         required_roles JSONB NULL,
+         count_source VARCHAR(64) NULL,
+         is_active BOOLEAN NOT NULL DEFAULT true,
+         sort_order INTEGER NOT NULL DEFAULT 0,
+         description TEXT NULL,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`,
     ];
     let patched = 0;
     for (const sql of schemaPatches) {
@@ -384,6 +400,59 @@ async function runDatabaseInit() {
       }
     } catch (seedErr) {
       console.warn('[admin_nav seed] skipped:', seedErr.message);
+    }
+
+    // Phase 2 seed — demonstration inboxes powered by the generic engine.
+    // Idempotent: only seeds when admin_inboxes is empty. Adds two new
+    // department inboxes (Content + HR) routed through the dynamic
+    // /admin/inbox/[key] page. Finance/Executive stay on their bespoke
+    // pages because they have richer features (audit timeline, directive
+    // modals); they can be migrated later.
+    try {
+      const { rows: ibxCount } = await db.query(`SELECT COUNT(*)::int AS n FROM admin_inboxes`);
+      if ((ibxCount[0]?.n || 0) === 0) {
+        const inboxes = [
+          {
+            key: 'content',
+            title: 'صندوق فريق المحتوى',
+            icon: 'FileText',
+            accent: 'text-blue-500',
+            sourceFilter: { auto_assigned_role: 'content_admin' },
+            roles: ['super_admin', 'admin', 'content_admin'],
+            order: 10,
+            desc: 'الشكاوى الموجّهة لفريق المحتوى — مشاكل الإعلانات والعرض والخريطة.',
+          },
+          {
+            key: 'hr',
+            title: 'صندوق الموارد البشرية',
+            icon: 'Users',
+            accent: 'text-pink-500',
+            sourceFilter: { auto_assigned_role: 'hr_admin' },
+            roles: ['super_admin', 'admin', 'hr_admin', 'admin_manager'],
+            order: 20,
+            desc: 'الحالات المُوجّهة للموارد البشرية — قضايا الموظفين والتوظيف.',
+          },
+        ];
+        for (const ib of inboxes) {
+          await db.query(
+            `INSERT INTO admin_inboxes (key,title,icon_name,accent_color,source_kind,source_filter,required_roles,sort_order,description)
+             VALUES ($1,$2,$3,$4,'complaints',$5::jsonb,$6::jsonb,$7,$8)`,
+            [ib.key, ib.title, ib.icon, ib.accent, JSON.stringify(ib.sourceFilter), JSON.stringify(ib.roles), ib.order, ib.desc]
+          );
+          // Add a sidebar link for each — under the most relevant section.
+          const sectionKey = ib.key === 'content' ? 'support' : ib.key === 'hr' ? 'hr' : 'system';
+          await db.query(
+            `INSERT INTO admin_nav_links
+               (section_key, href, label, icon_name, permission_key, required_roles, count_source, is_inbox, sort_order)
+             VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,true,$8)
+             ON CONFLICT DO NOTHING`,
+            [sectionKey, `/admin/inbox/${ib.key}`, ib.title, ib.icon, 'support', JSON.stringify(ib.roles), null, 99]
+          );
+        }
+        console.log(`🌱 admin_inboxes: seeded ${inboxes.length} demo inboxes`);
+      }
+    } catch (ibxSeedErr) {
+      console.warn('[admin_inboxes seed] skipped:', ibxSeedErr.message);
     }
     
     // Check if countries and cities tables exist before seeding
