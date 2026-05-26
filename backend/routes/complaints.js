@@ -273,50 +273,142 @@ router.post("/", complaintLimiter, asyncHandler(async (req, res) => {
   res.status(201).json({ ok: true, complaint: result.rows[0], message: "تم استلام شكواك بنجاح" });
 }));
 
+// Map the Arabic department label that ended up in admin_note's "تم التحويل
+// إلى ..." line back to the role key the rest of the system uses. Used by
+// the synthesizer to backfill transfer events that pre-date the audit log.
+function labelToRole(label) {
+  const t = String(label || "");
+  if (/المالية|مالي/.test(t)) return "finance_admin";
+  if (/المحتوى|محتوى/.test(t)) return "content_admin";
+  if (/مدير الإدارة|إدارة/.test(t) && !/العليا/.test(t)) return "admin_manager";
+  if (/الإدارة العليا|عليا/.test(t)) return "admin";
+  return null;
+}
+
+/**
+ * Synthesize a minimum viable timeline for a complaint from its row data +
+ * admin_note text — so older complaints created before the audit log was
+ * deployed still show a meaningful history instead of "لا توجد أحداث مسجلة".
+ *
+ * Always emits a "created" pseudo-event. Parses each "تم التحويل إلى ..."
+ * line out of admin_note into a "transferred" pseudo-event. Both are tagged
+ * `_synthesized=true` so the UI can render them with a softer treatment if
+ * desired, and are marked visibility=internal so customers never see them.
+ */
+function synthesizeEventsFromRow(row, realEvents) {
+  if (!row) return [];
+  const out = [];
+
+  // Always synthesize a "created" event if no real one exists.
+  const hasCreated = realEvents.some(e => e.event_type === 'created');
+  if (!hasCreated) {
+    const parts = [];
+    if (row.priority) parts.push(`أولوية: ${row.priority}`);
+    if (row.complaint_type || row.category) parts.push(`نوع: ${row.complaint_type || row.category}`);
+    if (row.invoice_id) parts.push(`فاتورة #${row.invoice_id}`);
+    out.push({
+      id: `synth-created-${row.id}`,
+      event_type: 'created',
+      actor_user_id: row.user_id || null,
+      actor_name_snapshot: row.user_name || null,
+      actor_email_snapshot: row.user_email || null,
+      actor_role_snapshot: 'user',
+      from_role: null,
+      to_role: 'content_admin',
+      from_status: null,
+      to_status: 'new',
+      note: parts.join(' · ') || null,
+      visibility: 'internal',
+      created_at: row.created_at,
+      _synthesized: true,
+    });
+  }
+
+  // Parse legacy transfer lines out of admin_note. Format the transfer
+  // endpoint writes is:
+  //   "— تم التحويل إلى ${labelAr} بواسطة ${actor} (${ISO})[ — ${note}]"
+  if (row.admin_note) {
+    const lines = row.admin_note.split('\n').filter(l => l.includes('تم التحويل'));
+    const realTransferTimes = realEvents
+      .filter(e => e.event_type === 'transferred')
+      .map(e => new Date(e.created_at).getTime());
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(/تم التحويل إلى\s+([^\s]+(?:\s+[^\s]+)?)\s+بواسطة\s+(.+?)\s+\(([^)]+)\)(?:\s*—\s*(.*))?$/);
+      if (!m) continue;
+      const [, toLabel, actorName, iso, note] = m;
+      const t = Date.parse(iso);
+      // Dedupe against real events that occurred within 60s of the parsed time.
+      if (realTransferTimes.some(rt => Math.abs(rt - t) < 60_000)) continue;
+      out.push({
+        id: `synth-transfer-${row.id}-${i}`,
+        event_type: 'transferred',
+        actor_user_id: null,
+        actor_name_snapshot: actorName.trim(),
+        actor_email_snapshot: null,
+        actor_role_snapshot: null,
+        from_role: null,
+        to_role: labelToRole(toLabel),
+        from_status: null,
+        to_status: null,
+        note: (note || '').trim() || null,
+        visibility: 'internal',
+        created_at: iso,
+        _synthesized: true,
+      });
+    }
+  }
+
+  return out;
+}
+
 /**
  * GET the audit timeline for a complaint.
- *   Staff (any COMPLAINTS_ADMIN_ROLES): see everything.
+ *   Staff (any COMPLAINTS_ADMIN_ROLES): see real events + synthesized
+ *     fallback events derived from the row data so older complaints don't
+ *     show an empty timeline.
  *   Customer (role=user): see only their own complaint AND only events
- *     marked visibility=customer_visible.
+ *     marked visibility=customer_visible. Synthesized events (all internal)
+ *     are filtered out.
  */
 router.get("/:id/events", authMiddleware, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const role = req.user?.role;
   const isStaff = COMPLAINTS_ADMIN_ROLES.includes(role);
 
-  // For non-staff, verify ownership first so we don't leak the existence of
-  // an arbitrary complaint via a 200 with empty events vs a 404.
+  // Fetch the complaint row up-front — we need it for ownership check AND
+  // for synthesizing missing events.
+  const rowR = await db.query(
+    `SELECT id, user_id, user_name, user_email, subject, category, complaint_type,
+            priority, status, admin_note, auto_assigned_role, invoice_id, created_at
+     FROM account_complaints WHERE id = $1`,
+    [id]
+  );
+  if (rowR.rows.length === 0) return res.status(404).json({ error: 'الشكوى غير موجودة' });
+  const row = rowR.rows[0];
+
   if (!isStaff) {
-    const own = await db.query(`SELECT user_id FROM account_complaints WHERE id = $1`, [id]);
-    if (own.rows.length === 0) return res.status(404).json({ error: 'الشكوى غير موجودة' });
-    if (own.rows[0].user_id !== req.user.id) return res.status(403).json({ error: 'غير مصرح' });
+    if (row.user_id !== req.user.id) return res.status(403).json({ error: 'غير مصرح' });
   }
 
-  // Try visibility-aware SELECT. Falls back if the column hasn't been
-  // added yet — in that case staff see everything (the old behavior) and
-  // customers see nothing (safe default).
+  // Pull the real audit events — fall back gracefully if the table or the
+  // visibility column doesn't exist yet.
+  let realEvents = [];
   try {
-    const sql = isStaff
-      ? `SELECT id, event_type,
-                actor_user_id, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
-                from_role, to_role, from_status, to_status, note, visibility, created_at
-         FROM complaint_events
-         WHERE complaint_id = $1
-         ORDER BY created_at ASC, id ASC`
-      : `SELECT id, event_type,
-                actor_name_snapshot, actor_role_snapshot,
-                from_status, to_status, note, visibility, created_at
-         FROM complaint_events
-         WHERE complaint_id = $1 AND visibility = 'customer_visible'
-         ORDER BY created_at ASC, id ASC`;
-    const r = await db.query(sql, [id]);
-    res.json({ events: r.rows });
+    const r = await db.query(
+      `SELECT id, event_type,
+              actor_user_id, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
+              from_role, to_role, from_status, to_status, note, visibility, created_at
+       FROM complaint_events
+       WHERE complaint_id = $1
+       ORDER BY created_at ASC, id ASC`,
+      [id]
+    );
+    realEvents = r.rows;
   } catch (err) {
-    if (err && err.code === '42P01') return res.json({ events: [] });
-    if (err && err.code === '42703') {
-      // visibility column missing — give staff a degraded view (no
-      // visibility field) and customers an empty stream rather than crash.
-      if (!isStaff) return res.json({ events: [] });
+    if (err && err.code === '42P01') {
+      realEvents = [];
+    } else if (err && err.code === '42703') {
+      // visibility column missing — re-read without it
       const r = await db.query(
         `SELECT id, event_type,
                 actor_user_id, actor_name_snapshot, actor_email_snapshot, actor_role_snapshot,
@@ -326,10 +418,40 @@ router.get("/:id/events", authMiddleware, asyncHandler(async (req, res) => {
          ORDER BY created_at ASC, id ASC`,
         [id]
       );
-      return res.json({ events: r.rows });
+      realEvents = r.rows.map(r => ({ ...r, visibility: 'internal' }));
+    } else {
+      throw err;
     }
-    throw err;
   }
+
+  // Synthesize anything that's missing from the real log (always includes
+  // the "created" event; backfills transferred events from admin_note).
+  const synthesized = synthesizeEventsFromRow(row, realEvents);
+
+  // Merge + sort ascending by time.
+  const merged = [...realEvents, ...synthesized];
+  merged.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+  // Customer-facing view: drop everything that isn't customer_visible AND
+  // strip the actor-email field on what remains.
+  if (!isStaff) {
+    const visible = merged.filter(e => e.visibility === 'customer_visible');
+    return res.json({
+      events: visible.map(e => ({
+        id: e.id,
+        event_type: e.event_type,
+        actor_name_snapshot: e.actor_name_snapshot,
+        actor_role_snapshot: e.actor_role_snapshot,
+        from_status: e.from_status,
+        to_status: e.to_status,
+        note: e.note,
+        visibility: e.visibility,
+        created_at: e.created_at,
+      })),
+    });
+  }
+
+  res.json({ events: merged });
 }));
 
 /**
