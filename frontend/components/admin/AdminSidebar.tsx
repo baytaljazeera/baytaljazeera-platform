@@ -277,21 +277,30 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
   };
 
   const getFilteredSections = () => {
-    // The executive inbox is reserved for the top of the org chart — only
-    // super_admin and admin should see it in the sidebar.
-    const isExecutive = userRole === "super_admin" || userRole === "admin";
+    // Executive inbox is reserved for the top of the org chart.
+    const isExecutive = userRole === "super_admin" || userRole === "admin" || userRole === "admin_manager";
 
     return adminSections.map(section => {
       const filteredLinks = section.links.filter(link => {
-        if (link.href === "/admin/executive-inbox" && !isExecutive) return false;
+        // HARD short-circuit for the recently-added inbox links. These
+        // weren't part of the DB-driven "sidebar visibility settings"
+        // when those settings were generated, so they'd otherwise get
+        // hidden by the visibleSections.includes() check below — which
+        // is the exact bug the owner reported (سوبر أدمن can't see
+        // صندوق الإدارة العليا despite all permission gates passing).
+        if (link.href === "/admin/executive-inbox") return isExecutive;
+        if (link.href === "/admin/finance-inbox") {
+          return isSuperAdmin
+            || userRole === "admin"
+            || userRole === "finance_admin"
+            || userPermissions.includes("finance");
+        }
 
         const hasPermission =
           isSuperAdmin ||
           userPermissions.includes(link.permissionKey) ||
           (link.permissionKey === "support_internal" &&
-            userPermissions.includes("messages")) ||
-          // executive_inbox is a hard-coded role gate, not a perm in the DB
-          (link.permissionKey === "executive_inbox" && isExecutive);
+            userPermissions.includes("messages"));
         if (!hasPermission) return false;
 
         if (loadingVisibility || visibleSections.length === 0) return true;
