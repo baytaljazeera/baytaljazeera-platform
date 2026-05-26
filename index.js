@@ -406,7 +406,7 @@ async function runDatabaseInit() {
           { sec: 'marketing', href: '/admin/ambassador',         label: 'سفراء البيت',         icon: 'Building2',       perm: 'ambassador',      count: 'ambassadorPlusWithdrawals', order: 40 },
           // hr
           { sec: 'hr', href: '/admin/hr',                        label: 'نظرة عامة',           icon: 'Users',           perm: 'membership',      order: 10 },
-          { sec: 'hr', href: '/admin/roles?tab=applications',    label: 'طلبات التوظيف',       icon: 'UserPlus2',       perm: 'membership',      count: 'membershipNew', order: 20 },
+          { sec: 'hr', href: '/admin/hr/employees',                label: 'طلبات التوظيف',       icon: 'UserPlus2',       perm: 'membership',      count: 'membershipNew', order: 20 },
           // system
           { sec: 'system', href: '/admin/ai-center',             label: 'مركز الذكاء الاصطناعي', icon: 'BrainCircuit',  perm: 'ai_center',       order: 10 },
           { sec: 'system', href: '/admin/users',                 label: 'إدارة العملاء',       icon: 'Users',           perm: 'users',           order: 20 },

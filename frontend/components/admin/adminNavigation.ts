@@ -210,7 +210,10 @@ export const adminSections: AdminSection[] = [
         permissionKey: "membership",
       },
       {
-        href: "/admin/roles?tab=applications",
+        // Phase 4 — applications live inside /admin/hr/employees now.
+        // Sidebar link points there directly instead of redirecting
+        // through the legacy /admin/roles?tab=applications route.
+        href: "/admin/hr/employees",
         label: "طلبات التوظيف",
         icon: UserPlus2,
         permissionKey: "membership",

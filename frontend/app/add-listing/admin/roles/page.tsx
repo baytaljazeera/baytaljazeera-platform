@@ -149,9 +149,21 @@ function AdminRolesPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabFromUrl = searchParams.get('tab');
+  // Default landing is "إضافة دور" (custom) per the new owner-spec order.
+  // Legacy ?tab=applications links from old places redirect to HR where
+  // that workflow actually lives now.
   const [activeTab, setActiveTab] = useState<'permissions' | 'users' | 'custom' | 'audit' | 'applications'>(
-    tabFromUrl === 'applications' ? 'applications' : 'permissions'
+    tabFromUrl === 'users'   ? 'users'  :
+    tabFromUrl === 'permissions' ? 'permissions' :
+    tabFromUrl === 'audit'   ? 'audit'  :
+                               'custom'
   );
+  // Redirect /admin/roles?tab=applications → /admin/hr/employees
+  useEffect(() => {
+    if (tabFromUrl === 'applications') {
+      router.replace('/add-listing/admin/hr/employees');
+    }
+  }, [tabFromUrl, router]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -700,6 +712,21 @@ function AdminRolesPageContent() {
       </div>
 
       <div className="flex flex-wrap gap-2 mb-6">
+        {/* Tab order per owner spec: 1) Add Role  2) Define Role
+            Permissions  3) Assign Roles  4) Audit Log.
+            "طلبات التوظيف" lives in /admin/hr/employees now — no
+            longer surfaced here to avoid duplication. */}
+        <button
+          onClick={() => setActiveTab('custom')}
+          className={`px-5 py-2.5 rounded-xl font-semibold transition-all text-sm ${
+            activeTab === 'custom'
+              ? 'bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-white shadow-lg'
+              : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <Plus className="w-4 h-4 inline-block ml-2" />
+          إضافة دور
+        </button>
         <button
           onClick={() => setActiveTab('permissions')}
           className={`px-5 py-2.5 rounded-xl font-semibold transition-all text-sm ${
@@ -709,7 +736,7 @@ function AdminRolesPageContent() {
           }`}
         >
           <Settings className="w-4 h-4 inline-block ml-2" />
-          صلاحيات الأدوار
+          تحديد صلاحيات الدور
         </button>
         <button
           onClick={() => setActiveTab('users')}
@@ -723,17 +750,6 @@ function AdminRolesPageContent() {
           تعيين الأدوار
         </button>
         <button
-          onClick={() => setActiveTab('custom')}
-          className={`px-5 py-2.5 rounded-xl font-semibold transition-all text-sm ${
-            activeTab === 'custom'
-              ? 'bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-white shadow-lg'
-              : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-          }`}
-        >
-          <Plus className="w-4 h-4 inline-block ml-2" />
-          أدوار مخصصة
-        </button>
-        <button
           onClick={() => setActiveTab('audit')}
           className={`px-5 py-2.5 rounded-xl font-semibold transition-all text-sm ${
             activeTab === 'audit'
@@ -743,22 +759,6 @@ function AdminRolesPageContent() {
         >
           <History className="w-4 h-4 inline-block ml-2" />
           سجل التدقيق
-        </button>
-        <button
-          onClick={() => setActiveTab('applications')}
-          className={`px-5 py-2.5 rounded-xl font-semibold transition-all text-sm relative ${
-            activeTab === 'applications'
-              ? 'bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-white shadow-lg'
-              : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-          }`}
-        >
-          <FileText className="w-4 h-4 inline-block ml-2" />
-          طلبات التوظيف
-          {applications.length > 0 && (
-            <span className="absolute -top-2 -left-2 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-              {applications.length}
-            </span>
-          )}
         </button>
       </div>
 
