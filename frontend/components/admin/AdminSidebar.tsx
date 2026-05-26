@@ -10,6 +10,7 @@ import {
   Shield,
   ChevronDown,
   Home,
+  Bell,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
 import {
@@ -427,9 +428,12 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
                 <p className="text-xs md:text-[10px] text-white/60">مرحباً</p>
                 <p className="text-base md:text-sm font-bold text-white truncate">{userName}</p>
               </div>
-              <div className={`flex items-center gap-1 px-2.5 py-1.5 md:px-2 md:py-1 rounded-full bg-gradient-to-r ${roleGradient} text-xs md:text-[9px] font-bold shrink-0`}>
-                <Shield className="w-3 h-3 md:w-2.5 md:h-2.5" />
-                <span className="hidden md:inline">{ROLE_NAMES[userRole]}</span>
+              <div className="flex items-center gap-2">
+                <NotificationBell />
+                <div className={`flex items-center gap-1 px-2.5 py-1.5 md:px-2 md:py-1 rounded-full bg-gradient-to-r ${roleGradient} text-xs md:text-[9px] font-bold shrink-0`}>
+                  <Shield className="w-3 h-3 md:w-2.5 md:h-2.5" />
+                  <span className="hidden md:inline">{ROLE_NAMES[userRole]}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -567,5 +571,60 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
         </button>
       </div>
     </aside>
+  );
+}
+
+/**
+ * Sidebar bell — polls /api/notifications/count every 45s for the unread
+ * badge. Clicking opens the notification center page. Polls (not WS) so
+ * we don't open a long-lived connection from every admin tab — 45s is the
+ * cache-friendly cadence the user can override by visiting the page.
+ */
+function NotificationBell() {
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    async function tick() {
+      try {
+        const res = await fetch(`${API_URL}/api/notifications/count`, {
+          credentials: 'include',
+          headers: (() => {
+            const h: Record<string, string> = {};
+            if (typeof document !== 'undefined') {
+              const m = document.cookie.match(/(?:^|;\s*)token=([^;]+)/);
+              if (m) h['Authorization'] = `Bearer ${decodeURIComponent(m[1])}`;
+            }
+            return h;
+          })(),
+        });
+        if (res.ok) {
+          const j = await res.json();
+          if (alive) setUnread(Number(j?.unread || 0));
+        }
+      } catch {}
+      if (alive) timer = setTimeout(tick, 45_000);
+    }
+    tick();
+    return () => {
+      alive = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+
+  return (
+    <Link
+      href="/add-listing/admin/notifications"
+      className="relative flex items-center justify-center w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 transition border border-white/10"
+      title="مركز الإشعارات"
+    >
+      <Bell className="w-4 h-4 text-amber-300" />
+      {unread > 0 && (
+        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+          {unread > 99 ? '99+' : unread}
+        </span>
+      )}
+    </Link>
   );
 }

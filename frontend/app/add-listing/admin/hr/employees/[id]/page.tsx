@@ -38,6 +38,9 @@ type EmployeeData = {
   contracts: Array<{ id: number; start_date: string; end_date: string | null; status: string; contract_type: string | null; notes: string | null; created_at: string }>;
   evaluations: Array<{ id: number; evaluator_name_snapshot: string | null; evaluator_role_snapshot: string | null; response_speed: number | null; interaction_quality: number | null; commitment: number | null; notes: string | null; created_at: string }>;
   averages: { response_speed: number | null; interaction_quality: number | null; commitment: number | null } | null;
+  warnings?: Array<{ id: number; warning_type: string; severity: string; note: string; issued_by_name_snapshot: string | null; acknowledged_at: string | null; created_at: string }>;
+  vacations?: Array<{ id: number; start_date: string; end_date: string; day_count: number | null; request_type: string; status: string; reason: string | null; decided_by_name_snapshot: string | null; decided_at: string | null; decision_note: string | null; created_at: string }>;
+  attachments?: Array<{ id: number; category: string; file_name: string; file_path: string | null; uploaded_by_name_snapshot: string | null; created_at: string }>;
 };
 
 const ROLE_LABEL: Record<string, string> = {
@@ -350,6 +353,92 @@ export default function EmployeeProfilePage() {
             </button>
           </div>
         </div>
+
+        {/* HR depth — warnings ledger. Hidden if backend hasn't shipped the table yet. */}
+        {data.warnings && data.warnings.length > 0 && (
+          <div className="bg-white rounded-xl border border-rose-200 p-4">
+            <h2 className="text-sm font-bold text-[#002845] inline-flex items-center gap-2 mb-3">
+              <History className="w-4 h-4 text-rose-600" /> سجل التحذيرات الإدارية ({data.warnings.length})
+            </h2>
+            <div className="space-y-2">
+              {data.warnings.map((w) => (
+                <div key={w.id} className={`border-r-2 pr-2 py-1 text-xs ${
+                  w.severity === 'high' ? 'border-red-500' : w.severity === 'medium' ? 'border-amber-500' : 'border-slate-300'
+                }`}>
+                  <p className="font-semibold text-[#002845]">
+                    {w.warning_type === 'final' ? 'تحذير نهائي' : w.warning_type === 'written' ? 'تحذير كتابي' : 'تنبيه شفهي'}
+                    {' · '}
+                    <span className={
+                      w.severity === 'high' ? 'text-red-600' : w.severity === 'medium' ? 'text-amber-600' : 'text-slate-500'
+                    }>
+                      {w.severity === 'high' ? 'خطورة عالية' : w.severity === 'medium' ? 'متوسط' : 'منخفض'}
+                    </span>
+                    {w.acknowledged_at && <span className="mr-2 text-emerald-600">· اعترف به</span>}
+                  </p>
+                  <p className="text-slate-500 mt-0.5">
+                    من: {w.issued_by_name_snapshot || "—"} · {dateTime(w.created_at)}
+                  </p>
+                  <p className="mt-1 p-1.5 bg-rose-50 rounded text-[11px] text-rose-900">{w.note}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* HR depth — vacation/leave history. Hidden when empty + backend hasn't migrated. */}
+        {data.vacations && data.vacations.length > 0 && (
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <h2 className="text-sm font-bold text-[#002845] inline-flex items-center gap-2 mb-3">
+              <History className="w-4 h-4 text-blue-600" /> طلبات الإجازة ({data.vacations.length})
+            </h2>
+            <div className="space-y-2">
+              {data.vacations.map((v) => (
+                <div key={v.id} className={`border-r-2 pr-2 py-1 text-xs ${
+                  v.status === 'approved' ? 'border-emerald-500' : v.status === 'rejected' ? 'border-red-500' : 'border-amber-500'
+                }`}>
+                  <p className="font-semibold text-[#002845]">
+                    {v.request_type === 'annual' ? 'سنوية' : v.request_type === 'sick' ? 'مرضية' : v.request_type === 'emergency' ? 'طارئة' : v.request_type === 'unpaid' ? 'بدون راتب' : 'أخرى'}
+                    {' · '}
+                    {dateOnly(v.start_date)} ← {dateOnly(v.end_date)}
+                    {v.day_count && <> ({v.day_count} يوم)</>}
+                    {' · '}
+                    <span className={
+                      v.status === 'approved' ? 'text-emerald-600' : v.status === 'rejected' ? 'text-red-600' : 'text-amber-600'
+                    }>
+                      {v.status === 'approved' ? 'موافَق عليه' : v.status === 'rejected' ? 'مرفوض' : 'معلّق'}
+                    </span>
+                  </p>
+                  {v.reason && <p className="mt-0.5 text-slate-600">السبب: {v.reason}</p>}
+                  {v.decided_at && (
+                    <p className="mt-0.5 text-slate-500">
+                      قرار: {v.decided_by_name_snapshot || "—"} · {dateTime(v.decided_at)}
+                      {v.decision_note && <> — {v.decision_note}</>}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* HR depth — attachments list. */}
+        {data.attachments && data.attachments.length > 0 && (
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <h2 className="text-sm font-bold text-[#002845] inline-flex items-center gap-2 mb-3">
+              <History className="w-4 h-4 text-slate-500" /> المرفقات ({data.attachments.length})
+            </h2>
+            <ul className="text-xs space-y-1">
+              {data.attachments.map((a) => (
+                <li key={a.id} className="flex items-center justify-between border-b border-slate-100 py-1">
+                  <span className="text-[#002845]">{a.file_name}</span>
+                  <span className="text-slate-400">
+                    {a.category} · {dateOnly(a.created_at)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Directives + assignments received */}
         <div className="bg-white rounded-xl border border-slate-200 p-4">
