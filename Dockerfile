@@ -26,8 +26,9 @@ COPY index.js ./
 EXPOSE ${PORT:-8080}
 
 # Run pending Knex migrations on boot, THEN start the app.
-# Migrations are idempotent (knex_migrations table tracks what ran), and the
-# script reads DATABASE_URL from process.env which Render injects. If a
-# migration fails the container will not start — that's intentional, so we
-# don't silently boot against a half-migrated schema.
-CMD ["sh", "-c", "node backend/scripts/migrate.js latest && node index.js"]
+# Migrations are idempotent (knex_migrations table tracks what ran). We log
+# a warning if migration fails but still start the app — the routes have
+# defensive fallbacks for the only currently-pending column ("priority"),
+# and blocking boot on migration failure caused Render to keep serving an
+# even older container, making things worse not better.
+CMD ["sh", "-c", "node backend/scripts/migrate.js latest || echo '[boot] migration step failed — continuing with app start; check Render logs'; node index.js"]
