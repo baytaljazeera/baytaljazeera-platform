@@ -21,24 +21,37 @@ async function ensureSupportInternalPermissionMigrated() {
   }
 }
 
+// Categorized so the UI can render permission groups instead of a flat
+// grid. Category labels are Arabic; new categories should land in the
+// CATEGORY_ORDER below so they sort predictably.
 const ALL_PERMISSIONS = [
-  { key: 'dashboard', label: 'لوحة التحكم' },
-  { key: 'listings', label: 'الإعلانات' },
-  { key: 'reports', label: 'البلاغات' },
-  { key: 'complaints', label: 'الشكاوى' },
-  { key: 'support', label: 'الدعم الفني' },
-  { key: 'support_internal', label: 'المراسلات الداخلية' },
-  { key: 'news', label: 'شريط الأخبار' },
-  { key: 'finance', label: 'المالية والاشتراكات' },
-  { key: 'membership', label: 'طلبات العضوية' },
-  { key: 'plans', label: 'إدارة الباقات' },
-  { key: 'marketing', label: 'التسويق والدعاية' },
-  { key: 'ambassador', label: 'سفراء البيت' },
-  { key: 'ai_center', label: 'مركز الذكاء الاصطناعي' },
-  { key: 'users', label: 'إدارة المستخدمين' },
-  { key: 'roles', label: 'إدارة الصلاحيات' },
-  { key: 'settings', label: 'الإعدادات' },
+  { key: 'dashboard',        label: 'لوحة التحكم',           category: 'overview',  description: 'الوصول إلى لوحة المؤشرات الرئيسية وعرض الإحصاءات العامة.' },
+  { key: 'listings',         label: 'الإعلانات',              category: 'properties',description: 'مراجعة وقبول ورفض الإعلانات، وإدارة قائمة العقارات.' },
+  { key: 'reports',          label: 'البلاغات',               category: 'properties',description: 'فتح البلاغات الواردة على الإعلانات واتخاذ إجراء بشأنها.' },
+  { key: 'complaints',       label: 'الشكاوى',                category: 'support',   description: 'قراءة وإدارة شكاوى العملاء.' },
+  { key: 'support',          label: 'الدعم الفني',            category: 'support',   description: 'الرد على تذاكر الدعم وإغلاقها وتحويلها.' },
+  { key: 'support_internal', label: 'المراسلات الداخلية',     category: 'support',   description: 'صندوق المراسلات بين أعضاء الفريق (Omni Inbox).' },
+  { key: 'news',             label: 'شريط الأخبار',           category: 'marketing', description: 'إنشاء وتعديل عناصر شريط الأخبار في الصفحة الرئيسية.' },
+  { key: 'finance',          label: 'المالية والاشتراكات',     category: 'finance',   description: 'إدارة الفواتير، الاسترداد، والمدفوعات الواردة.' },
+  { key: 'plans',            label: 'إدارة الباقات',           category: 'finance',   description: 'تعريف الباقات، الأسعار، والتسعير حسب الدولة.' },
+  { key: 'membership',       label: 'طلبات العضوية',          category: 'hr',        description: 'الموافقة على طلبات الانضمام/التوظيف وإدارة الموظفين.' },
+  { key: 'marketing',        label: 'التسويق والدعاية',       category: 'marketing', description: 'حملات التسويق والإشعارات الترويجية وواتساب.' },
+  { key: 'ambassador',       label: 'سفراء البيت',            category: 'marketing', description: 'إدارة برنامج السفراء والإحالات والمكافآت.' },
+  { key: 'ai_center',        label: 'مركز الذكاء الاصطناعي',   category: 'system',    description: 'الوصول إلى أدوات الذكاء الاصطناعي والتحليلات المتقدمة.' },
+  { key: 'users',            label: 'إدارة المستخدمين',        category: 'system',    description: 'عرض وتعديل بيانات المستخدمين، التفعيل والتعطيل.' },
+  { key: 'roles',            label: 'إدارة الصلاحيات',         category: 'system',    description: 'إنشاء وتعديل الأدوار وصلاحياتها (هذه الصفحة).' },
+  { key: 'settings',         label: 'الإعدادات',              category: 'system',    description: 'إعدادات النظام العامة وتصفير بيانات التجارب.' },
 ];
+
+const PERMISSION_CATEGORIES = {
+  overview:   { label: 'النظرة العامة',   sort: 10 },
+  properties: { label: 'العقارات والإعلانات', sort: 20 },
+  support:    { label: 'خدمة العملاء',     sort: 30 },
+  finance:    { label: 'المالية',          sort: 40 },
+  marketing:  { label: 'التسويق والنمو',   sort: 50 },
+  hr:         { label: 'الموارد البشرية',   sort: 60 },
+  system:     { label: 'النظام والحوكمة', sort: 70 },
+};
 
 // Includes every admin-grade role the system recognizes. super_admin and
 // admin sit at the top; the four functional roles follow. Display label /
@@ -104,20 +117,64 @@ async function getAllRoles() {
   const byKey = new Map();
   for (const r of customRows) byKey.set(r.key, r);
 
+  // Count active users per role in one query, then look up below.
+  const memberCounts = new Map();
+  try {
+    const r = await db.query(
+      `SELECT role, COUNT(*)::int AS n
+       FROM users
+       WHERE role IS NOT NULL AND COALESCE(is_active, true) = true
+       GROUP BY role`
+    );
+    for (const row of r.rows) memberCounts.set(row.role, row.n);
+  } catch {}
+
+  // Lookup which roles have an inbox + a sidebar section provisioned.
+  // 42P01-tolerant — if Phase 1/2 tables don't exist, we just leave the
+  // flags false instead of crashing the merge.
+  const inboxRoles = new Set();
+  const sidebarRoles = new Set();
+  try {
+    const r = await db.query(`SELECT required_roles FROM admin_inboxes WHERE is_active = true`);
+    for (const row of r.rows) {
+      try {
+        const arr = Array.isArray(row.required_roles) ? row.required_roles : JSON.parse(row.required_roles || '[]');
+        for (const k of arr) inboxRoles.add(k);
+      } catch {}
+    }
+  } catch {}
+  try {
+    const r = await db.query(`SELECT required_roles FROM admin_nav_links WHERE is_active = true AND required_roles IS NOT NULL`);
+    for (const row of r.rows) {
+      try {
+        const arr = Array.isArray(row.required_roles) ? row.required_roles : JSON.parse(row.required_roles || '[]');
+        for (const k of arr) sidebarRoles.add(k);
+      } catch {}
+    }
+  } catch {}
+
+  const annotate = (r) => ({
+    ...r,
+    member_count: memberCounts.get(r.key) || 0,
+    has_inbox: inboxRoles.has(r.key),
+    has_sidebar: sidebarRoles.has(r.key),
+  });
+
   const defaults = DEFAULT_ADMIN_ROLES.map(d => {
     const o = byKey.get(d.key);
-    return o
+    const base = o
       ? { ...d, label: o.label || d.label, description: o.description ?? d.description, color: o.color || d.color, icon: o.icon || d.icon,
           can_receive_transfers: o.can_receive_transfers, can_be_assigned: o.can_be_assigned,
           can_reply_to_customers: o.can_reply_to_customers, can_see_sensitive_finance: o.can_see_sensitive_finance,
           can_close_complaints: o.can_close_complaints,
           isDefault: true, hasOverride: true }
       : { ...d, isDefault: true, hasOverride: false };
+    return annotate(base);
   });
 
   const customs = customRows
     .filter(r => !DEFAULT_ADMIN_ROLES.find(d => d.key === r.key))
-    .map(r => ({ ...r, isDefault: false }));
+    .map(r => annotate({ ...r, isDefault: false }));
 
   return [...defaults, ...customs];
 }
@@ -127,6 +184,7 @@ router.get("/list", authMiddleware, requireRoles('super_admin', 'admin'), asyncH
   const roles = await getAllRoles();
   res.json({
     permissions: ALL_PERMISSIONS,
+    categories: PERMISSION_CATEGORIES,
     roles: roles
   });
 }));
@@ -150,7 +208,7 @@ router.get("/role/:role", authMiddleware, requireRoles('super_admin', 'admin'), 
     isGranted: permissionsMap[p.key] ?? false
   }));
 
-  res.json({ role, permissions });
+  res.json({ role, permissions, categories: PERMISSION_CATEGORIES });
 }));
 
 router.get("/my-permissions", authMiddleware, asyncHandler(async (req, res) => {

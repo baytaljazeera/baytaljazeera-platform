@@ -11,7 +11,8 @@ import {
   Shield, Users, Crown, Wallet, Headphones, FileText,
   Loader2, Search, Check, AlertTriangle, User, Settings,
   ToggleLeft, ToggleRight, Save, CheckCircle2, X, UserX,
-  History, Plus, Trash2, Edit2, Clock, Eye
+  History, Plus, Trash2, Edit2, Clock, Eye,
+  Mailbox, LayoutGrid,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,7 +31,11 @@ type Permission = {
   key: string;
   label: string;
   isGranted?: boolean;
+  category?: string;
+  description?: string;
 };
+
+type PermissionCategory = { label: string; sort: number };
 
 type AdminRole = {
   key: string;
@@ -38,7 +43,11 @@ type AdminRole = {
   color?: string;
   icon?: string;
   isDefault?: boolean;
+  hasOverride?: boolean;
   description?: string;
+  member_count?: number;
+  has_inbox?: boolean;
+  has_sidebar?: boolean;
 };
 
 type AuditLog = {
@@ -178,6 +187,7 @@ function AdminRolesPageContent() {
   const [currentUserId, setCurrentUserId] = useState<string>("");
 
   const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [permissionCategories, setPermissionCategories] = useState<Record<string, PermissionCategory>>({});
   const [adminRoles, setAdminRoles] = useState<AdminRole[]>([]);
   const [selectedAdminRole, setSelectedAdminRole] = useState<string>("");
   const [rolePermissions, setRolePermissions] = useState<Permission[]>([]);
@@ -304,13 +314,21 @@ function AdminRolesPageContent() {
 
   async function fetchPermissionsList() {
     try {
+      // /list is the single source of truth — same merger /all-roles uses.
+      // It returns every role (defaults + customs) with member_count,
+      // has_inbox, has_sidebar already annotated, plus the categorized
+      // permissions catalog. Tabs (تحديد صلاحيات / تعيين الأدوار) read
+      // adminRoles from this call so creating a custom role anywhere
+      // makes it appear in all three tabs without extra wiring.
       const res = await fetch(`${API_URL}/api/permissions/list`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setPermissions(data.permissions || []);
+        setPermissionCategories(data.categories || {});
         setAdminRoles(data.roles || []);
         if (data.roles?.length > 0) {
-          setSelectedAdminRole(data.roles[0].key);
+          // Preserve existing selection if still valid; otherwise pick first.
+          setSelectedAdminRole(prev => prev && data.roles.some((r: AdminRole) => r.key === prev) ? prev : data.roles[0].key);
         }
       }
     } catch (err) {
@@ -321,10 +339,11 @@ function AdminRolesPageContent() {
   async function fetchRolePermissions(role: string) {
     try {
       setLoadingPermissions(true);
-      const res = await fetch(`/api/permissions/role/${role}`, { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/permissions/role/${role}`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setRolePermissions(data.permissions || []);
+        if (data.categories) setPermissionCategories(data.categories);
       }
     } catch (err) {
       console.error("Error fetching role permissions:", err);
@@ -789,103 +808,173 @@ function AdminRolesPageContent() {
               <Settings className="w-5 h-5" />
               تحديد صلاحيات كل دور
             </h2>
-            <p className="text-white/70 text-sm mt-1">اختر الدور ثم حدد الصلاحيات المتاحة له</p>
+            <p className="text-white/70 text-sm mt-1">
+              اختر دورًا من القائمة لعرض وتعديل صلاحياته — تظهر هنا تلقائيًا كل الأدوار (افتراضية ومخصّصة).
+            </p>
           </div>
 
-          <div className="p-5">
-            <div className="flex flex-wrap gap-3 mb-6">
-              {adminRoles.map((role) => {
-                const roleInfo = ROLES.find(r => r.id === role.key);
-                const Icon = roleInfo?.icon || getIconComponent(role.icon || 'Shield');
-                const isSelected = selectedAdminRole === role.key;
-                const color = roleInfo?.color || role.color || '#6B7280';
-                
-                return (
-                  <button
-                    key={role.key}
-                    onClick={() => setSelectedAdminRole(role.key)}
-                    className={`flex items-center gap-3 px-5 py-3 rounded-xl border-2 transition-all ${
-                      isSelected
-                        ? 'border-[#D4AF37] bg-[#D4AF37]/10 shadow-md'
-                        : 'border-slate-200 bg-white hover:border-slate-300'
-                    }`}
-                  >
-                    <div
-                      className="w-10 h-10 rounded-lg flex items-center justify-center text-white"
-                      style={{ backgroundColor: color }}
+          <div className="p-5 grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Sidebar: every role rendered as a clickable card. */}
+            <aside className="lg:col-span-4 xl:col-span-3 space-y-2">
+              {adminRoles.length === 0 ? (
+                <div className="text-center text-slate-400 py-8 text-sm">جاري تحميل الأدوار...</div>
+              ) : (
+                adminRoles.map((role) => {
+                  const Icon = getIconComponent(role.icon || 'Shield');
+                  const isSelected = selectedAdminRole === role.key;
+                  const color = role.color || '#6B7280';
+                  return (
+                    <button
+                      key={role.key}
+                      onClick={() => setSelectedAdminRole(role.key)}
+                      className={`w-full text-right p-3 rounded-xl border-2 transition-all flex items-start gap-3 ${
+                        isSelected
+                          ? 'border-[#D4AF37] bg-[#D4AF37]/10 shadow-md'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
                     >
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <span className="font-semibold text-[#002845]">{role.label}</span>
-                    {!role.isDefault && (
-                      <span className="text-[10px] bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">مخصص</span>
-                    )}
-                    {isSelected && <Check className="w-5 h-5 text-[#D4AF37]" />}
-                  </button>
-                );
-              })}
-            </div>
+                      <div
+                        className="w-10 h-10 rounded-lg flex items-center justify-center text-white shrink-0"
+                        style={{ backgroundColor: color }}
+                      >
+                        <Icon className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-semibold text-[#002845] truncate">{role.label}</span>
+                          {role.isDefault ? (
+                            <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">افتراضي</span>
+                          ) : (
+                            <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">مخصص</span>
+                          )}
+                          {role.hasOverride && (
+                            <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full" title="مُعدَّل عن الافتراضي">مُعدّل</span>
+                          )}
+                        </div>
+                        <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
+                          <span className="inline-flex items-center gap-1">
+                            <Users className="w-3 h-3" />
+                            {role.member_count ?? 0} عضو
+                          </span>
+                          {role.has_inbox && (
+                            <span className="inline-flex items-center gap-1 text-blue-600" title="لهذا الدور صندوق وارد">
+                              <Mailbox className="w-3 h-3" />
+                              صندوق
+                            </span>
+                          )}
+                          {role.has_sidebar && (
+                            <span className="inline-flex items-center gap-1 text-emerald-600" title="لهذا الدور قسم في القائمة الجانبية">
+                              <LayoutGrid className="w-3 h-3" />
+                              قسم
+                            </span>
+                          )}
+                        </div>
+                        {role.description && (
+                          <p className="mt-1 text-[11px] text-slate-500 line-clamp-2">{role.description}</p>
+                        )}
+                      </div>
+                      {isSelected && <Check className="w-5 h-5 text-[#D4AF37] shrink-0" />}
+                    </button>
+                  );
+                })
+              )}
+            </aside>
 
-            {loadingPermissions ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37]" />
-              </div>
-            ) : (
-              <>
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+            {/* Permissions panel — categorized + tooltips. */}
+            <section className="lg:col-span-8 xl:col-span-9">
+              {loadingPermissions ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37]" />
+                </div>
+              ) : selectedAdminRole && (selectedAdminRole === 'super_admin' || selectedAdminRole === 'admin') ? (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
                   <div className="flex items-center gap-2 text-blue-700">
                     <Shield className="w-5 h-5" />
                     <span className="font-semibold">تحكم كامل</span>
                   </div>
                   <p className="text-sm text-blue-600 mt-1">
-                    المدير العام يتحكم بجميع الصلاحيات لكل دور إداري
+                    {selectedAdminRole === 'super_admin' ? 'المدير العام' : 'المدير'} يتحكم بجميع الصلاحيات تلقائيًا ولا يحتاج إلى تفعيل يدوي.
                   </p>
                 </div>
-
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {rolePermissions.map((perm) => (
-                    <button
-                      key={perm.key}
-                      onClick={() => togglePermission(perm.key)}
-                      className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all text-right hover:shadow-md cursor-pointer ${
-                        perm.isGranted
-                          ? 'border-green-400 bg-green-50'
-                          : 'border-slate-200 bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        {perm.isGranted ? (
-                          <ToggleRight className="w-6 h-6 text-green-500" />
-                        ) : (
-                          <ToggleLeft className="w-6 h-6 text-slate-400" />
-                        )}
-                        <div>
-                          <p className="font-semibold text-[#002845]">{perm.label}</p>
-                        </div>
+              ) : (
+                <>
+                  {(() => {
+                    // Group permissions by category, preserving the original
+                    // order. Uncategorized fall into "أخرى" at the end.
+                    const byCat: Record<string, Permission[]> = {};
+                    for (const p of rolePermissions) {
+                      const cat = p.category || 'other';
+                      (byCat[cat] = byCat[cat] || []).push(p);
+                    }
+                    const catKeys = Object.keys(byCat).sort((a, b) => {
+                      const sa = permissionCategories[a]?.sort ?? 999;
+                      const sb = permissionCategories[b]?.sort ?? 999;
+                      return sa - sb;
+                    });
+                    return (
+                      <div className="space-y-5">
+                        {catKeys.map((cat) => (
+                          <div key={cat} className="border border-slate-200 rounded-xl overflow-hidden">
+                            <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
+                              <h3 className="text-sm font-bold text-[#002845]">
+                                {permissionCategories[cat]?.label || 'أخرى'}
+                              </h3>
+                              <span className="text-[11px] text-slate-500">
+                                {byCat[cat].filter(p => p.isGranted).length} / {byCat[cat].length} مفعّل
+                              </span>
+                            </div>
+                            <div className="grid gap-2 sm:grid-cols-2 p-3">
+                              {byCat[cat].map((perm) => (
+                                <button
+                                  key={perm.key}
+                                  onClick={() => togglePermission(perm.key)}
+                                  title={perm.description || perm.label}
+                                  className={`flex items-start justify-between gap-3 p-3 rounded-lg border-2 transition text-right hover:shadow-sm cursor-pointer ${
+                                    perm.isGranted
+                                      ? 'border-green-400 bg-green-50'
+                                      : 'border-slate-200 bg-white'
+                                  }`}
+                                >
+                                  <div className="flex items-start gap-2 flex-1 min-w-0">
+                                    {perm.isGranted ? (
+                                      <ToggleRight className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
+                                    ) : (
+                                      <ToggleLeft className="w-5 h-5 text-slate-400 shrink-0 mt-0.5" />
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <p className="font-semibold text-[#002845] text-sm truncate">{perm.label}</p>
+                                      {perm.description && (
+                                        <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{perm.description}</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {perm.isGranted && <Check className="w-4 h-4 text-green-500 shrink-0 mt-1" />}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      {perm.isGranted && (
-                        <Check className="w-5 h-5 text-green-500" />
-                      )}
-                    </button>
-                  ))}
-                </div>
+                    );
+                  })()}
 
-                <div className="flex justify-end mt-6">
-                  <button
-                    onClick={saveRolePermissions}
-                    disabled={savingPermissions}
-                    className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-white rounded-xl font-bold hover:shadow-lg transition disabled:opacity-50"
-                  >
-                    {savingPermissions ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <Save className="w-5 h-5" />
-                    )}
-                    حفظ الصلاحيات
-                  </button>
-                </div>
-              </>
-            )}
+                  <div className="flex justify-end mt-6">
+                    <button
+                      onClick={saveRolePermissions}
+                      disabled={savingPermissions}
+                      className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-white rounded-xl font-bold hover:shadow-lg transition disabled:opacity-50"
+                    >
+                      {savingPermissions ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <Save className="w-5 h-5" />
+                      )}
+                      حفظ الصلاحيات
+                    </button>
+                  </div>
+                </>
+              )}
+            </section>
           </div>
         </div>
       )}
@@ -1122,16 +1211,23 @@ function AdminRolesPageContent() {
       {activeTab === 'users' && (
         <>
           <div className="grid lg:grid-cols-4 gap-6 mb-8">
-            {ROLES.filter(r => r.id !== 'user').map((role) => {
-              const Icon = role.icon;
-              const count = users.filter(u => u.role === role.id).length;
-              
+            {/*
+              Now reads from adminRoles (same merged source as the permissions
+              tab) so a freshly-created custom role appears here automatically.
+              Member count comes from the server-side annotation, with a
+              live local fallback for instant feedback after role changes.
+            */}
+            {adminRoles.map((role) => {
+              const Icon = getIconComponent(role.icon || 'Shield');
+              const liveCount = users.filter(u => u.role === role.key).length;
+              const count = liveCount || role.member_count || 0;
+              const color = role.color || '#6B7280';
               return (
                 <button
-                  key={role.id}
-                  onClick={() => setSelectedRole(selectedRole === role.id ? "" : role.id)}
+                  key={role.key}
+                  onClick={() => setSelectedRole(selectedRole === role.key ? "" : role.key)}
                   className={`p-5 rounded-2xl border-2 transition-all text-right ${
-                    selectedRole === role.id
+                    selectedRole === role.key
                       ? "border-[#D4AF37] bg-[#D4AF37]/5 shadow-lg"
                       : "border-slate-200 bg-white hover:border-slate-300"
                   }`}
@@ -1139,19 +1235,26 @@ function AdminRolesPageContent() {
                   <div className="flex items-start justify-between">
                     <div
                       className="w-12 h-12 rounded-xl flex items-center justify-center text-white"
-                      style={{ backgroundColor: role.color }}
+                      style={{ backgroundColor: color }}
                     >
                       <Icon className="w-6 h-6" />
                     </div>
-                    <span 
+                    <span
                       className="text-2xl font-black"
-                      style={{ color: role.color }}
+                      style={{ color }}
                     >
                       {count}
                     </span>
                   </div>
-                  <h3 className="font-bold text-[#002845] mt-3">{role.name}</h3>
-                  <p className="text-xs text-slate-500 mt-1">{role.description}</p>
+                  <div className="mt-3 flex items-center gap-1.5 flex-wrap">
+                    <h3 className="font-bold text-[#002845]">{role.label}</h3>
+                    {role.isDefault ? (
+                      <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">افتراضي</span>
+                    ) : (
+                      <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">مخصص</span>
+                    )}
+                  </div>
+                  {role.description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{role.description}</p>}
                 </button>
               );
             })}
@@ -1176,9 +1279,9 @@ function AdminRolesPageContent() {
                   className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-[#D4AF37] appearance-none cursor-pointer"
                 >
                   <option value="" className="bg-[#002845]">كل الأدوار</option>
-                  {ROLES.filter(r => r.id !== 'user').map((role) => (
-                    <option key={role.id} value={role.id} className="bg-[#002845]">
-                      {role.name}
+                  {adminRoles.map((role) => (
+                    <option key={role.key} value={role.key} className="bg-[#002845]">
+                      {role.label}
                     </option>
                   ))}
                 </select>
@@ -1511,29 +1614,35 @@ function AdminRolesPageContent() {
                 <p className="text-sm text-slate-600 mb-4">اختر الدور الذي سيتم تعيينه للموظف الجديد:</p>
                 
                 <div className="space-y-2 mb-6">
-                  {ROLES.filter(r => !['user', 'super_admin'].includes(r.id)).map((role) => {
-                    const Icon = role.icon;
+                  {adminRoles.filter(r => r.key !== 'super_admin').map((role) => {
+                    const Icon = getIconComponent(role.icon || 'Shield');
+                    const color = role.color || '#6B7280';
                     return (
                       <button
-                        key={role.id}
-                        onClick={() => setAssignedRole(role.id)}
+                        key={role.key}
+                        onClick={() => setAssignedRole(role.key)}
                         className={`w-full p-3 rounded-xl border-2 transition-all text-right flex items-center gap-3 ${
-                          assignedRole === role.id
+                          assignedRole === role.key
                             ? "border-[#D4AF37] bg-[#D4AF37]/10"
                             : "border-slate-200 hover:border-slate-300"
                         }`}
                       >
                         <div
                           className="w-10 h-10 rounded-lg flex items-center justify-center text-white"
-                          style={{ backgroundColor: role.color }}
+                          style={{ backgroundColor: color }}
                         >
                           <Icon className="w-5 h-5" />
                         </div>
                         <div className="flex-1">
-                          <p className="font-semibold text-[#002845]">{role.name}</p>
-                          <p className="text-xs text-slate-500">{role.description}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-semibold text-[#002845]">{role.label}</p>
+                            {!role.isDefault && (
+                              <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">مخصص</span>
+                            )}
+                          </div>
+                          {role.description && <p className="text-xs text-slate-500">{role.description}</p>}
                         </div>
-                        {assignedRole === role.id && (
+                        {assignedRole === role.key && (
                           <Check className="w-5 h-5 text-[#D4AF37]" />
                         )}
                       </button>
@@ -1671,28 +1780,29 @@ function AdminRolesPageContent() {
                 })()}
                 <p className="text-[10px] text-slate-400 mb-2 px-1">الأدوار الإدارية</p>
                 <div className="space-y-2">
-                  {ROLES.filter(r => r.id !== 'user').map((role) => {
-                    const Icon = role.icon;
-                    const isSelected = selectedUser.role === role.id;
+                  {adminRoles.map((role) => {
+                    const Icon = getIconComponent(role.icon || 'Shield');
+                    const isSelected = selectedUser.role === role.key;
                     const isSelf = !!currentUserId && String(selectedUser.id) === String(currentUserId);
-                    const wouldDemoteSelfFromSuper = isSelf && selectedUser.role === 'super_admin' && role.id !== 'super_admin';
+                    const wouldDemoteSelfFromSuper = isSelf && selectedUser.role === 'super_admin' && role.key !== 'super_admin';
+                    const color = role.color || '#6B7280';
 
                     return (
                       <button
-                        key={role.id}
+                        key={role.key}
                         onClick={() => {
                           setConfirmModal({
                             show: true,
                             title: 'تغيير الدور',
-                            message: `هل أنت متأكد من تغيير الدور إلى "${role.name}"؟`,
+                            message: `هل أنت متأكد من تغيير الدور إلى "${role.label}"؟`,
                             onConfirm: () => {
-                              updateUserRole(selectedUser.id, role.id);
+                              updateUserRole(selectedUser.id, role.key);
                               setConfirmModal(prev => ({ ...prev, show: false }));
                             }
                           });
                         }}
                         disabled={updating || isSelected || wouldDemoteSelfFromSuper}
-                        title={wouldDemoteSelfFromSuper ? "لا يمكنك تخفيض دورك بنفسك" : undefined}
+                        title={wouldDemoteSelfFromSuper ? "لا يمكنك تخفيض دورك بنفسك" : (role.description || undefined)}
                         className={`w-full p-2.5 rounded-lg border-2 transition-all text-right flex items-center gap-2.5 ${
                           isSelected
                             ? "border-[#D4AF37] bg-[#D4AF37]/10"
@@ -1701,12 +1811,17 @@ function AdminRolesPageContent() {
                       >
                         <div
                           className="w-8 h-8 rounded-lg flex items-center justify-center text-white shrink-0"
-                          style={{ backgroundColor: role.color }}
+                          style={{ backgroundColor: color }}
                         >
                           <Icon className="w-4 h-4" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-bold text-[#002845] text-sm">{role.name}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-bold text-[#002845] text-sm">{role.label}</p>
+                            {!role.isDefault && (
+                              <span className="text-[9px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded-full">مخصص</span>
+                            )}
+                          </div>
                         </div>
                         {isSelected && (
                           <Check className="w-4 h-4 text-[#D4AF37] shrink-0" />
