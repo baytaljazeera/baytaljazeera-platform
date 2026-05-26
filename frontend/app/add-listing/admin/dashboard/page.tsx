@@ -293,7 +293,7 @@ export default function AdminDashboard() {
   }));
 
   return (
-    <div className="space-y-4 md:space-y-6">
+    <div className="space-y-8 md:space-y-12">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
         <div>
           <h1 className="text-mobile-2xl md:text-2xl font-black text-[#002845] flex items-center gap-2">
@@ -317,6 +317,14 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      {/* — Section: Daily Operations — */}
+      <div className="pt-2 space-y-4 md:space-y-6">
+        <div className="flex items-center gap-2 px-1">
+          <div className="w-1 h-5 rounded-full bg-[#D4AF37]" />
+          <h2 className="text-sm md:text-base font-bold text-[#002845]">العمليات اليومية</h2>
+          <div className="flex-1 h-px bg-slate-200" />
+        </div>
 
       {/* Action Center — the "what needs me right now" widget. Shows only
           items where the count is > 0 so a quiet day doesn't shout at you. */}
@@ -388,11 +396,21 @@ export default function AdminDashboard() {
       <div className="my-2 md:my-1">
         <PlatformPulse />
       </div>
+      </div>
+      {/* — end section: Daily Operations — */}
+
+      {/* — Section: Finance & Subscriptions — */}
+      <div className="pt-2">
+        <div className="flex items-center gap-2 mb-4 md:mb-5 px-1">
+          <div className="w-1 h-5 rounded-full bg-[#D4AF37]" />
+          <h2 className="text-sm md:text-base font-bold text-[#002845]">المالية والاشتراكات</h2>
+          <div className="flex-1 h-px bg-slate-200" />
+        </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-        <div className="bg-gradient-to-br from-[#002845] to-[#01456d] rounded-2xl p-4 md:p-6 text-white shadow-xl">
+        <div className="bg-gradient-to-br from-[#FAF7F2] to-white border border-[#D4AF37]/30 rounded-2xl p-4 md:p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4 md:mb-6">
-            <h2 className="font-bold text-base md:text-lg flex items-center gap-2">
+            <h2 className="font-bold text-base md:text-lg flex items-center gap-2 text-[#002845]">
               <Crown className="w-5 h-5 md:w-5 md:h-5 text-[#D4AF37]" />
               إحصائيات النخبة
             </h2>
@@ -401,21 +419,21 @@ export default function AdminDashboard() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3 md:gap-4">
-            <div className="bg-white/10 rounded-xl p-3 md:p-4 backdrop-blur">
-              <p className="text-2xl md:text-3xl font-black text-[#D4AF37]">{advancedStats?.elite?.active_slots || 0}</p>
-              <p className="text-xs md:text-xs text-white/70 mt-1.5 md:mt-1">حجوزات نشطة</p>
+            <div className="bg-white rounded-xl p-3 md:p-4 border border-slate-100">
+              <p className="text-2xl md:text-3xl font-black text-[#9a7d28]">{advancedStats?.elite?.active_slots || 0}</p>
+              <p className="text-xs md:text-xs text-slate-500 mt-1.5 md:mt-1">حجوزات نشطة</p>
             </div>
-            <div className="bg-white/10 rounded-xl p-3 md:p-4 backdrop-blur">
-              <p className="text-2xl md:text-3xl font-black text-amber-400">{advancedStats?.elite?.pending_approval || 0}</p>
-              <p className="text-xs md:text-xs text-white/70 mt-1.5 md:mt-1">بانتظار الموافقة</p>
+            <div className="bg-white rounded-xl p-3 md:p-4 border border-slate-100">
+              <p className="text-2xl md:text-3xl font-black text-amber-600">{advancedStats?.elite?.pending_approval || 0}</p>
+              <p className="text-xs md:text-xs text-slate-500 mt-1.5 md:mt-1">بانتظار الموافقة</p>
             </div>
-            <div className="bg-white/10 rounded-xl p-3 md:p-4 backdrop-blur">
-              <p className="text-2xl md:text-3xl font-black text-emerald-400">{advancedStats?.elite?.unique_properties || 0}</p>
-              <p className="text-xs md:text-xs text-white/70 mt-1.5 md:mt-1">إعلانات مميزة</p>
+            <div className="bg-white rounded-xl p-3 md:p-4 border border-slate-100">
+              <p className="text-2xl md:text-3xl font-black text-emerald-600">{advancedStats?.elite?.unique_properties || 0}</p>
+              <p className="text-xs md:text-xs text-slate-500 mt-1.5 md:mt-1">إعلانات مميزة</p>
             </div>
-            <div className="bg-white/10 rounded-xl p-3 md:p-4 backdrop-blur">
-              <p className="text-2xl md:text-3xl font-black text-blue-400">{advancedStats?.elite?.pending_payment || 0}</p>
-              <p className="text-xs md:text-xs text-white/70 mt-1.5 md:mt-1">بانتظار الدفع</p>
+            <div className="bg-white rounded-xl p-3 md:p-4 border border-slate-100">
+              <p className="text-2xl md:text-3xl font-black text-blue-600">{advancedStats?.elite?.pending_payment || 0}</p>
+              <p className="text-xs md:text-xs text-slate-500 mt-1.5 md:mt-1">بانتظار الدفع</p>
             </div>
           </div>
         </div>
@@ -507,6 +525,16 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+      </div>
+      {/* — end section: Finance & Subscriptions — */}
+
+      {/* — Section: Growth & Content — */}
+      <div className="pt-2">
+        <div className="flex items-center gap-2 mb-4 md:mb-5 px-1">
+          <div className="w-1 h-5 rounded-full bg-[#D4AF37]" />
+          <h2 className="text-sm md:text-base font-bold text-[#002845]">النمو والمحتوى</h2>
+          <div className="flex-1 h-px bg-slate-200" />
+        </div>
 
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
         <div className="flex items-center justify-between mb-4">
@@ -759,6 +787,8 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+      </div>
+      {/* — end section: Growth & Content — */}
     </div>
   );
 }
