@@ -206,40 +206,115 @@ router.get("/custom-roles", authMiddleware, requireRoles('super_admin', 'admin')
   res.json({ roles: result.rows });
 }));
 
+/**
+ * Phase 3 — list nav sections for the "create role" modal's section
+ * dropdown (where should the auto-provisioned sidebar link live?).
+ * Falls back gracefully if the Phase 1 nav tables don't exist yet.
+ */
+router.get("/nav-sections", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
+  try {
+    const r = await db.query(
+      `SELECT key, label, icon_name, sort_order
+       FROM admin_nav_sections
+       WHERE is_active = true
+       ORDER BY sort_order ASC, key ASC`
+    );
+    res.json({ sections: r.rows });
+  } catch (e) {
+    if (e && e.code === '42P01') return res.json({ sections: [] });
+    throw e;
+  }
+}));
+
 router.post("/custom-roles", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
-  const { key, label, description, color, icon } = req.body;
-  
+  const { key, label, description, color, icon,
+          has_inbox, inbox_title, section_key } = req.body;
+
   if (!key || !label) {
     return res.status(400).json({ error: "المفتاح والاسم مطلوبان" });
   }
-  
+
   const keyRegex = /^[a-z][a-z0-9_]*$/;
   if (!keyRegex.test(key)) {
     return res.status(400).json({ error: "المفتاح يجب أن يبدأ بحرف ويحتوي على أحرف صغيرة وأرقام وشرطات سفلية فقط" });
   }
-  
+
   const existingDefault = DEFAULT_ADMIN_ROLES.find(r => r.key === key);
   if (existingDefault) {
     return res.status(400).json({ error: "هذا المفتاح محجوز للأدوار الافتراضية" });
   }
-  
+
   const existing = await db.query("SELECT id FROM custom_roles WHERE key = $1", [key]);
   if (existing.rows.length > 0) {
     return res.status(400).json({ error: "هذا المفتاح مستخدم بالفعل" });
   }
-  
+
   const result = await db.query(
     `INSERT INTO custom_roles (key, label, description, color, icon, created_by)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
     [key, label, description || null, color || '#6B7280', icon || 'Shield', req.user.id]
   );
-  
+
+  // Phase 3 — auto-provision an inbox + sidebar entry when the requester
+  // checks "create inbox for this role". Two INSERTs wrapped so the role
+  // creation never fails on a provisioning hiccup (we log + continue).
+  let provisioned = { inbox: false, link: false };
+  if (has_inbox && section_key) {
+    try {
+      await db.query(
+        `INSERT INTO admin_inboxes
+           (key, title, icon_name, accent_color, source_kind, source_filter, required_roles, sort_order, description)
+         VALUES ($1, $2, $3, 'text-slate-500', 'complaints', $4::jsonb, $5::jsonb, 99, $6)
+         ON CONFLICT (key) DO NOTHING`,
+        [
+          key,
+          (inbox_title && inbox_title.trim()) || `صندوق ${label}`,
+          icon || 'Inbox',
+          JSON.stringify({ auto_assigned_role: key }),
+          JSON.stringify(['super_admin', 'admin', key]),
+          `الشكاوى الموجّهة إلى ${label}`,
+        ]
+      );
+      provisioned.inbox = true;
+    } catch (e) {
+      console.warn('[custom-roles] inbox auto-provision failed:', e.code || e.message);
+    }
+    try {
+      // Verify the section exists before linking — bad section_key from the
+      // client shouldn't orphan a link.
+      const sec = await db.query(`SELECT key FROM admin_nav_sections WHERE key = $1 AND is_active = true`, [section_key]);
+      if (sec.rows.length > 0) {
+        await db.query(
+          `INSERT INTO admin_nav_links
+             (section_key, href, label, icon_name, permission_key, required_roles, is_inbox, sort_order)
+           VALUES ($1, $2, $3, $4, 'support', $5::jsonb, true, 99)`,
+          [
+            section_key,
+            `/admin/inbox/${key}`,
+            (inbox_title && inbox_title.trim()) || `صندوق ${label}`,
+            icon || 'Inbox',
+            JSON.stringify(['super_admin', 'admin', key]),
+          ]
+        );
+        provisioned.link = true;
+      }
+    } catch (e) {
+      console.warn('[custom-roles] sidebar link auto-provision failed:', e.code || e.message);
+    }
+  }
+
   await logAuditAction('CREATE_CUSTOM_ROLE', {
     target_role: key,
-    new_value: { key, label, description, color, icon }
+    new_value: { key, label, description, color, icon, has_inbox: !!has_inbox, section_key: section_key || null, provisioned }
   }, req);
-  
-  res.status(201).json({ role: result.rows[0], message: "تم إنشاء الدور بنجاح" });
+
+  res.status(201).json({
+    role: result.rows[0],
+    provisioned,
+    message: provisioned.inbox && provisioned.link
+      ? "تم إنشاء الدور مع صندوق وارد ورابط سايدبار"
+      : "تم إنشاء الدور بنجاح",
+  });
 }));
 
 router.put("/custom-roles/:key", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {

@@ -180,7 +180,14 @@ function AdminRolesPageContent() {
 
   const [showCreateRoleModal, setShowCreateRoleModal] = useState(false);
   const [editingRole, setEditingRole] = useState<AdminRole | null>(null);
-  const [newRole, setNewRole] = useState({ key: '', label: '', description: '', color: '#6B7280', icon: 'Shield' });
+  // Phase 3 fields: optional inbox + sidebar provisioning at create time.
+  // has_inbox toggles the auto-provision; section_key picks which sidebar
+  // section the new inbox link lives under.
+  const [newRole, setNewRole] = useState({
+    key: '', label: '', description: '', color: '#6B7280', icon: 'Shield',
+    has_inbox: false, inbox_title: '', section_key: '',
+  });
+  const [navSections, setNavSections] = useState<Array<{ key: string; label: string }>>([]);
   const [savingRole, setSavingRole] = useState(false);
   const [customRoles, setCustomRoles] = useState<AdminRole[]>([]);
 
@@ -213,6 +220,17 @@ function AdminRolesPageContent() {
     fetchUsers();
     fetchPermissionsList();
     fetchApplications();
+    // Phase 3 — pull nav sections for the role-creation modal's
+    // section dropdown. Fails silently if endpoint isn't available.
+    (async () => {
+      try {
+        const res = await fetch('/api/permissions/nav-sections', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          setNavSections(data.sections || []);
+        }
+      } catch {}
+    })();
   }, []);
 
   useEffect(() => {
@@ -390,10 +408,14 @@ function AdminRolesPageContent() {
       });
 
       if (res.ok) {
-        setSuccessModal({ show: true, message: isEditing ? "تم تحديث الدور بنجاح" : "تم إنشاء الدور بنجاح" });
+        const data = await res.json().catch(() => ({}));
+        const provisionedMsg = data?.provisioned?.inbox && data?.provisioned?.link
+          ? " وتم إنشاء صندوق وارد وربطه بالسايدبار"
+          : "";
+        setSuccessModal({ show: true, message: (isEditing ? "تم تحديث الدور بنجاح" : "تم إنشاء الدور بنجاح") + provisionedMsg });
         setShowCreateRoleModal(false);
         setEditingRole(null);
-        setNewRole({ key: '', label: '', description: '', color: '#6B7280', icon: 'Shield' });
+        setNewRole({ key: '', label: '', description: '', color: '#6B7280', icon: 'Shield', has_inbox: false, inbox_title: '', section_key: '' });
         fetchCustomRoles();
         fetchPermissionsList();
       } else {
@@ -854,7 +876,7 @@ function AdminRolesPageContent() {
             <button
               onClick={() => {
                 setEditingRole(null);
-                setNewRole({ key: '', label: '', description: '', color: '#6B7280', icon: 'Shield' });
+                setNewRole({ key: '', label: '', description: '', color: '#6B7280', icon: 'Shield', has_inbox: false, inbox_title: '', section_key: '' });
                 setShowCreateRoleModal(true);
               }}
               className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold transition"
@@ -902,7 +924,8 @@ function AdminRolesPageContent() {
                                 label: role.label,
                                 description: role.description || '',
                                 color: role.color || '#6B7280',
-                                icon: role.icon || 'Shield'
+                                icon: role.icon || 'Shield',
+                                has_inbox: false, inbox_title: '', section_key: ''
                               });
                               setShowCreateRoleModal(true);
                             }}
@@ -1766,6 +1789,57 @@ function AdminRolesPageContent() {
                     ))}
                   </div>
                 </div>
+
+                {/* Phase 3 — auto-provision a department inbox + sidebar
+                    link when creating a new role. Only shown when creating;
+                    editing existing roles doesn't re-provision. */}
+                {!editingRole && (
+                  <div className="p-4 bg-gradient-to-l from-[#FFF7E0] to-white border border-[#D4AF37]/30 rounded-xl space-y-3">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!newRole.has_inbox}
+                        onChange={(e) => setNewRole(prev => ({ ...prev, has_inbox: e.target.checked }))}
+                        className="mt-1 w-4 h-4 rounded border-slate-300 text-[#D4AF37] focus:ring-[#D4AF37]"
+                      />
+                      <div className="flex-1">
+                        <p className="text-sm font-bold text-[#002845]">إنشاء صندوق وارد لهذا الدور</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          يُولّد رابط سايدبار + صفحة /admin/inbox/{newRole.key || 'role'} تلقائياً.
+                          الشكاوى المُحوّلة لهذا الدور تظهر هنا.
+                        </p>
+                      </div>
+                    </label>
+
+                    {newRole.has_inbox && (
+                      <div className="space-y-2.5 pr-6">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">اسم الصندوق <span className="text-slate-400 font-normal">(اختياري)</span></label>
+                          <input
+                            type="text"
+                            value={newRole.inbox_title}
+                            onChange={(e) => setNewRole(prev => ({ ...prev, inbox_title: e.target.value }))}
+                            placeholder={`صندوق ${newRole.label || 'الدور'}`}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-[#D4AF37]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">القسم في السايدبار</label>
+                          <select
+                            value={newRole.section_key}
+                            onChange={(e) => setNewRole(prev => ({ ...prev, section_key: e.target.value }))}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-[#D4AF37]"
+                          >
+                            <option value="">— اختر القسم —</option>
+                            {navSections.map((s) => (
+                              <option key={s.key} value={s.key}>{s.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="p-4 bg-slate-50 rounded-xl">
                   <p className="text-sm font-semibold text-[#002845] mb-2">معاينة</p>
