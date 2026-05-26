@@ -16,7 +16,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import {
-  Users, UserPlus2, FileSignature, ClipboardCheck, CalendarClock,
+  Users, UserPlus2, FileSignature, CalendarClock,
   Loader2, ArrowLeft, AlertCircle,
 } from "lucide-react";
 
@@ -81,39 +81,30 @@ export default function HRPage() {
     },
     {
       title: "الموظفون",
-      sub: "قائمة الفريق الإداري الحالي",
-      href: "/add-listing/admin/roles?tab=staff",
+      sub: "كل الفريق الإداري — أدوار، حالة، نشاط، تفاصيل",
+      href: "/add-listing/admin/hr/employees",
       icon: Users,
       count: counters.staffActive,
       tone: "bg-blue-50 border-blue-200 text-blue-700",
       ready: true,
     },
     {
-      title: "العقود",
-      sub: "إدارة عقود التوظيف — قريباً",
-      href: "#",
+      title: "العقود والتقييمات",
+      sub: "تُدار من داخل ملف كل موظف — افتح الموظف ثم سجّل أو راجع",
+      href: "/add-listing/admin/hr/employees",
       icon: FileSignature,
       count: null,
-      tone: "bg-slate-50 border-slate-200 text-slate-500",
-      ready: false,
+      tone: "bg-blue-50 border-blue-200 text-blue-700",
+      ready: true,
     },
     {
-      title: "التقييمات",
-      sub: "تقييمات الأداء الدورية — قريباً",
-      href: "#",
-      icon: ClipboardCheck,
-      count: null,
-      tone: "bg-slate-50 border-slate-200 text-slate-500",
-      ready: false,
-    },
-    {
-      title: "الحضور والمتابعة",
-      sub: "تتبع الحضور والإجازات — قريباً",
-      href: "#",
+      title: "الحضور (Activity-based)",
+      sub: "آخر دخول + آخر إجراء — يظهر في قائمة الموظفين",
+      href: "/add-listing/admin/hr/employees",
       icon: CalendarClock,
       count: null,
-      tone: "bg-slate-50 border-slate-200 text-slate-500",
-      ready: false,
+      tone: "bg-blue-50 border-blue-200 text-blue-700",
+      ready: true,
     },
   ];
 
@@ -179,7 +170,7 @@ export default function HRPage() {
 
         <div className="bg-white border border-slate-200 rounded-xl p-4 text-xs text-slate-500">
           <p className="leading-relaxed">
-            <b className="text-[#002845]">ملاحظة معمارية:</b> صفحة HR هذه نقطة البداية لقسم "الموارد البشرية" الجديد. في الدفعات القادمة من الـ refactor سنُحوّل عرض الموظفين والعقود والتقييمات والحضور إلى صفحات مستقلة هنا — مع نظام Inbox خاص بـ HR ومسار اعتماد رسمي للأدوار. حالياً، الروابط النشطة تستخدم البنية الموجودة في صفحة الأدوار حتى لا نُحدث ازدواجاً.
+            <b className="text-[#002845]">نموذج العمل:</b> العقود + التقييمات + الحضور تُدار من داخل صفحة كل موظف. افتح الموظف من قائمة "الموظفون" → أضف عقداً جديداً أو سجّل تقييماً أو راجع التوجيهات المستلمة. الحضور يُحسب تلقائياً من آخر دخول + آخر إجراء على النظام.
           </p>
         </div>
       </div>

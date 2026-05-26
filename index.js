@@ -297,6 +297,35 @@ async function runDatabaseInit() {
       `ALTER TABLE IF EXISTS custom_roles ADD COLUMN IF NOT EXISTS can_reply_to_customers BOOLEAN NOT NULL DEFAULT false`,
       `ALTER TABLE IF EXISTS custom_roles ADD COLUMN IF NOT EXISTS can_see_sensitive_finance BOOLEAN NOT NULL DEFAULT false`,
       `ALTER TABLE IF EXISTS custom_roles ADD COLUMN IF NOT EXISTS can_close_complaints BOOLEAN NOT NULL DEFAULT false`,
+      // 20260527090000 HR depth (Phase 4 — contracts + evaluations)
+      `CREATE TABLE IF NOT EXISTS employee_contracts (
+         id BIGSERIAL PRIMARY KEY,
+         user_id UUID NOT NULL,
+         start_date DATE NOT NULL,
+         end_date DATE NULL,
+         status VARCHAR(32) NOT NULL DEFAULT 'active',
+         contract_type VARCHAR(64) NULL,
+         file_path VARCHAR(500) NULL,
+         notes TEXT NULL,
+         created_by UUID NULL,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_employee_contracts_user_status ON employee_contracts (user_id, status)`,
+      `CREATE INDEX IF NOT EXISTS idx_employee_contracts_end ON employee_contracts (end_date)`,
+      `CREATE TABLE IF NOT EXISTS employee_evaluations (
+         id BIGSERIAL PRIMARY KEY,
+         user_id UUID NOT NULL,
+         evaluator_id UUID NULL,
+         evaluator_name_snapshot VARCHAR(200) NULL,
+         evaluator_role_snapshot VARCHAR(64) NULL,
+         response_speed INTEGER NULL,
+         interaction_quality INTEGER NULL,
+         commitment INTEGER NULL,
+         notes TEXT NULL,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_employee_evaluations_user ON employee_evaluations (user_id, created_at)`,
       // 20260527000000 admin_inboxes (Phase 2 — generic Inbox Engine)
       `CREATE TABLE IF NOT EXISTS admin_inboxes (
          key VARCHAR(64) PRIMARY KEY,
@@ -918,6 +947,7 @@ app.use("/api/plans", plansRoutes);
 app.use("/api/admin/finance", financeRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/membership", membershipRoutes);
+app.use("/api/hr", require("./backend/routes/hr"));
 app.use("/api/messages", messagesRoutes);
 app.use("/api/admin-messages", adminMessagesRoutes);
 app.use("/api/finance", financeRoutes);
