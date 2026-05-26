@@ -166,6 +166,70 @@ async function updateExchangeRates() {
   }
 }
 
+/**
+ * Find complaints whose SLA window has elapsed without resolution and notify
+ * the assigned role + every super_admin/admin. The breach_notified_at column
+ * is set the first time we escalate so admins don't get spammed every tick.
+ *
+ * Idempotent — guarded by:
+ *   - sla_due_at < NOW()           (only breached rows)
+ *   - status NOT IN closed/dismissed/resolved
+ *   - breach_notified_at IS NULL    (only escalate once)
+ *
+ * Failure modes are logged but never thrown so the scheduler keeps ticking.
+ */
+async function escalateComplaintsSlaBreaches() {
+  try {
+    const breached = await db.query(`
+      SELECT id, subject, priority, auto_assigned_role, sla_hours, sla_due_at
+      FROM account_complaints
+      WHERE sla_due_at IS NOT NULL
+        AND sla_due_at < NOW()
+        AND breach_notified_at IS NULL
+        AND status NOT IN ('closed', 'resolved', 'dismissed')
+      LIMIT 200
+    `);
+
+    if (breached.rows.length === 0) return 0;
+
+    let notified = 0;
+    for (const c of breached.rows) {
+      const targetRoles = ['super_admin', 'admin'];
+      if (c.auto_assigned_role && !targetRoles.includes(c.auto_assigned_role)) {
+        targetRoles.push(c.auto_assigned_role);
+      }
+      try {
+        await db.query(
+          `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+           SELECT u.id,
+                  $1, $2, 'complaint_sla_breach', '/add-listing/admin/customer-service', NOW()
+           FROM users u
+           WHERE u.role = ANY($3::text[])
+             AND COALESCE(u.is_active, true) = true`,
+          [
+            `تجاوز SLA لشكوى — أولوية ${c.priority || 'medium'}`,
+            `${c.subject || ''} (انتهى وقت الاستجابة المسموح ${c.sla_hours || ''} ساعة)`,
+            targetRoles,
+          ]
+        );
+        await db.query(
+          `UPDATE account_complaints SET breach_notified_at = NOW() WHERE id = $1`,
+          [c.id]
+        );
+        notified++;
+      } catch (innerErr) {
+        console.error('[CRON] خطأ في تصعيد شكوى', c.id, innerErr.message);
+      }
+    }
+
+    console.log(`⚠️  [CRON] تم تصعيد ${notified} شكوى متجاوزة SLA`);
+    return notified;
+  } catch (error) {
+    console.error('❌ [CRON] خطأ في فحص SLA للشكاوى:', error.message);
+    return 0;
+  }
+}
+
 function startScheduledTasks() {
   console.log('⏰ جاري تفعيل المهام المجدولة...');
   
@@ -202,6 +266,18 @@ function startScheduledTasks() {
   }, {
     timezone: 'Asia/Riyadh'
   });
+
+  // Every 10 min, sweep account_complaints for SLA breaches and notify the
+  // assigned role + admins. Light query (filtered + LIMIT 200), idempotent.
+  cron.schedule('*/10 * * * *', async () => {
+    try {
+      await escalateComplaintsSlaBreaches();
+    } catch (error) {
+      console.error('❌ [CRON] خطأ في فحص SLA للشكاوى:', error);
+    }
+  }, {
+    timezone: 'Asia/Riyadh'
+  });
   
   setTimeout(async () => {
     console.log('⏰ [STARTUP] فحص أولي للحجوزات المنتهية قريباً...');
@@ -230,4 +306,5 @@ module.exports = {
   expireEndedPromotions,
   activateScheduledPromotions,
   updateExchangeRates,
+  escalateComplaintsSlaBreaches,
 };

@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { authMiddleware, requireRoles, JWT_SECRET, JWT_VERIFY_OPTIONS } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
-const { getAccountComplaintScope } = require('../utils/customerServiceScope');
+const { getAccountComplaintScope, getComplaintSmartRouting } = require('../utils/customerServiceScope');
 
 // Rate limiter on complaint submission was removed per owner request:
 // legitimate users were hitting the 3/hour cap. If we see abuse we can
@@ -59,24 +59,73 @@ router.post("/", complaintLimiter, asyncHandler(async (req, res) => {
   const validComplaintTypes = ['general', 'billing', 'refund', 'service', 'technical'];
   const actualComplaintType = validComplaintTypes.includes(complaint_type) ? complaint_type : 'general';
 
-  // Resilient insert: try with the new `priority` column; if the production
-  // database hasn't picked up migration 20260525000000 yet, fall back to the
-  // older shape so the customer still gets their complaint filed.
+  // Auto-route: pick the role that should own this complaint and the SLA
+  // window before breach. Billing/invoice-linked → finance_admin, else
+  // content_admin. SLA hours derived from priority.
+  const { role: autoAssignedRole, sla_hours: slaHours } = getComplaintSmartRouting({
+    category,
+    complaint_type: actualComplaintType,
+    invoice_id: validatedInvoiceId,
+    priority: actualPriority,
+  });
+
+  // Resilient insert: try with all the new columns; if any of priority /
+  // auto_assigned_role / sla_hours / sla_due_at hasn't been added yet in
+  // production, fall back to the minimal shape so the customer still gets
+  // their complaint filed.
   let result;
   try {
     result = await db.query(
-      `INSERT INTO account_complaints (user_id, user_name, user_email, user_phone, category, subject, details, invoice_id, complaint_type, priority, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new', NOW()) RETURNING *`,
-      [userId, userName, userEmail, userPhone, category, subject, details, validatedInvoiceId, actualComplaintType, actualPriority]
+      `INSERT INTO account_complaints (
+         user_id, user_name, user_email, user_phone, category, subject, details,
+         invoice_id, complaint_type, priority,
+         auto_assigned_role, sla_hours, sla_due_at,
+         status, created_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+               $11, $12, NOW() + ($12 || ' hours')::interval,
+               'new', NOW())
+       RETURNING *`,
+      [userId, userName, userEmail, userPhone, category, subject, details,
+       validatedInvoiceId, actualComplaintType, actualPriority,
+       autoAssignedRole, slaHours]
     );
   } catch (err) {
-    const missingColumn = err && (err.code === '42703' || /column "priority" of relation "account_complaints" does not exist/i.test(err.message || ''));
+    const missingColumn = err && (err.code === '42703');
     if (!missingColumn) throw err;
     result = await db.query(
       `INSERT INTO account_complaints (user_id, user_name, user_email, user_phone, category, subject, details, invoice_id, complaint_type, status, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'new', NOW()) RETURNING *`,
       [userId, userName, userEmail, userPhone, category, subject, details, validatedInvoiceId, actualComplaintType]
     );
+  }
+
+  // Notify every active staff member with the assigned role so the queue
+  // doesn't depend on someone happening to refresh the inbox. Best-effort
+  // — failures are logged but don't break the customer's submission.
+  try {
+    const link = '/add-listing/admin/customer-service';
+    const labelAr = autoAssignedRole === 'finance_admin' ? 'محاسبية' : 'دعم';
+    await db.query(
+      `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+       SELECT u.id,
+              $1,
+              $2,
+              'complaint_assigned',
+              $3,
+              NOW()
+       FROM users u
+       WHERE u.role = $4
+         AND COALESCE(u.is_active, true) = true`,
+      [
+        `شكوى جديدة (${labelAr})`,
+        `${subject} — أولوية: ${actualPriority}`,
+        link,
+        autoAssignedRole,
+      ]
+    );
+  } catch (e) {
+    console.error('[complaints] assignment notification failed', e.message);
   }
 
   res.status(201).json({ ok: true, complaint: result.rows[0], message: "تم استلام شكواك بنجاح" });

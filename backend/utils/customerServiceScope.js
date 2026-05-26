@@ -66,9 +66,39 @@ function getAccountComplaintScope(role, userId, paramStart = 1) {
   return { clause: `(${parts.join(" OR ")})`, params };
 }
 
+/**
+ * Decide which role should own a fresh account complaint, and how long it has
+ * before the SLA breaches. Mirrors the support-ticket smart router so the two
+ * surfaces feel consistent to admins.
+ *
+ * Routing:
+ *   - Any signal that it's about money (billing/refund category, billing/refund
+ *     complaint_type, or a linked invoice_id) → finance_admin.
+ *   - Otherwise → content_admin.
+ *
+ * SLA bands by priority (the customer picks one on the form):
+ *   urgent → 6h, high → 12h, medium → 24h, low → 48h
+ */
+function getComplaintSmartRouting({ category, complaint_type, invoice_id, priority }) {
+  const FINANCE_CATEGORIES = new Set(["billing", "subscription", "refund"]);
+  const FINANCE_TYPES      = new Set(["billing", "refund"]);
+  const isFinance =
+    FINANCE_CATEGORIES.has(category) ||
+    FINANCE_TYPES.has(complaint_type) ||
+    (invoice_id != null && invoice_id !== "");
+
+  const role = isFinance ? "finance_admin" : "content_admin";
+
+  const slaByPriority = { urgent: 6, high: 12, medium: 24, low: 48 };
+  const sla_hours = slaByPriority[priority] || 24;
+
+  return { role, sla_hours };
+}
+
 module.exports = {
   FULL_ACCESS_ROLES,
   hasFullCustomerServiceAccess,
   getSupportTicketScope,
   getAccountComplaintScope,
+  getComplaintSmartRouting,
 };
