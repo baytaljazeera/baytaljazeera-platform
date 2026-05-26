@@ -111,7 +111,17 @@ const complaintCategoryLabels: Record<string, string> = {
 };
 
 export default function CustomerServicePage() {
+  // Default to the support tab, but auto-switch to "complaints" after stats
+  // load if there are more new complaints than new tickets — otherwise the
+  // owner could submit a financial complaint and not see it because the
+  // page landed on the wrong tab. Once they manually click a tab we stop
+  // auto-switching for the rest of the session.
   const [activeTab, setActiveTab] = useState<TabType>("support");
+  const [userPickedTab, setUserPickedTab] = useState(false);
+  const switchTab = (t: TabType) => {
+    setUserPickedTab(true);
+    setActiveTab(t);
+  };
   
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [supportStats, setSupportStats] = useState<SupportStats | null>(null);
@@ -244,6 +254,20 @@ export default function CustomerServicePage() {
     };
     loadData();
   }, [fetchCurrentUser, fetchTickets, fetchSupportStats, fetchComplaints, fetchComplaintStats]);
+
+  // Auto-switch to the tab with more new items so a fresh complaint isn't
+  // hidden behind the default "support" tab. Skipped once the user has
+  // clicked any tab themselves so we don't fight their navigation.
+  useEffect(() => {
+    if (userPickedTab) return;
+    const newTickets = supportStats?.new || 0;
+    const newComplaints = complaintStats.new || 0;
+    if (newComplaints > newTickets) {
+      setActiveTab("complaints");
+    } else if (newTickets > newComplaints) {
+      setActiveTab("support");
+    }
+  }, [supportStats?.new, complaintStats.new, userPickedTab]);
 
   const handleRefresh = async () => {
     setLoading(true);
@@ -488,7 +512,7 @@ export default function CustomerServicePage() {
 
       <div className="flex gap-2 border-b border-slate-200">
         <button
-          onClick={() => setActiveTab("support")}
+          onClick={() => switchTab("support")}
           className={`px-6 py-3 font-medium transition-all relative ${
             activeTab === "support"
               ? "text-[#002845] border-b-2 border-[#D4AF37]"
@@ -506,7 +530,7 @@ export default function CustomerServicePage() {
           </span>
         </button>
         <button
-          onClick={() => setActiveTab("complaints")}
+          onClick={() => switchTab("complaints")}
           className={`px-6 py-3 font-medium transition-all relative ${
             activeTab === "complaints"
               ? "text-[#002845] border-b-2 border-[#D4AF37]"
