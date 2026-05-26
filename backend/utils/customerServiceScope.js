@@ -79,7 +79,7 @@ function getAccountComplaintScope(role, userId, paramStart = 1) {
  * SLA bands by priority (the customer picks one on the form):
  *   urgent → 6h, high → 12h, medium → 24h, low → 48h
  */
-function getComplaintSmartRouting({ category, complaint_type, invoice_id, priority }) {
+function getComplaintSmartRouting({ category, complaint_type, invoice_id, priority, plan_tier }) {
   const FINANCE_CATEGORIES = new Set(["billing", "subscription", "refund"]);
   const FINANCE_TYPES      = new Set(["billing", "refund"]);
   const isFinance =
@@ -89,8 +89,27 @@ function getComplaintSmartRouting({ category, complaint_type, invoice_id, priori
 
   const role = isFinance ? "finance_admin" : "content_admin";
 
+  // Base SLA by user-chosen priority.
   const slaByPriority = { urgent: 6, high: 12, medium: 24, low: 48 };
-  const sla_hours = slaByPriority[priority] || 24;
+  let sla_hours = slaByPriority[priority] || 24;
+
+  // Plan-tier boost: premium customers get faster guaranteed response.
+  // Tier names match the plan codes used elsewhere ("royal" / "ملكية",
+  // "featured" / "مميزة"). We match loosely against the lowercased tier
+  // string so either an English code or Arabic name passes.
+  const t = String(plan_tier || "").toLowerCase();
+  const isRoyal    = /royal|ملكي|elite|enterprise|عمل/.test(t);
+  const isFeatured = /featured|مميز|premium|تميز|صفوة/.test(t);
+  let multiplier = 1;
+  if (isRoyal) multiplier = 0.5;
+  else if (isFeatured) multiplier = 0.75;
+
+  if (multiplier !== 1) {
+    // Round up so we never accidentally give *less* response time than the
+    // base. Minimum of 2 hours so even royal+urgent stays operationally
+    // realistic (someone has to actually pick it up).
+    sla_hours = Math.max(2, Math.ceil(sla_hours * multiplier));
+  }
 
   return { role, sla_hours };
 }

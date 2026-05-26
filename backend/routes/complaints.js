@@ -59,20 +59,58 @@ router.post("/", complaintLimiter, asyncHandler(async (req, res) => {
   const validComplaintTypes = ['general', 'billing', 'refund', 'service', 'technical'];
   const actualComplaintType = validComplaintTypes.includes(complaint_type) ? complaint_type : 'general';
 
+  // Snapshot the customer's locale and active plan for use both by routing
+  // (plan tier shortens SLA for premium customers) and by the admin UI
+  // (shows due time in customer's local zone). All four fields are
+  // wrapped in try/catch — if the new columns aren't deployed yet we
+  // proceed with nulls and the older code path.
+  let customerCountry = null, customerTimezone = null, customerLanguage = null, planTier = null;
+  if (userId) {
+    try {
+      const meta = await db.query(
+        `SELECT u.country, u.timezone, u.preferred_language,
+                COALESCE(p.code, p.name) AS plan_tier
+         FROM users u
+         LEFT JOIN user_plans up
+           ON up.user_id = u.id
+          AND up.status = 'active'
+          AND (up.expires_at IS NULL OR up.expires_at > NOW())
+         LEFT JOIN plans p ON p.id = up.plan_id
+         WHERE u.id = $1
+         ORDER BY up.started_at DESC NULLS LAST
+         LIMIT 1`,
+        [userId]
+      );
+      const m = meta.rows[0] || {};
+      customerCountry  = m.country || null;
+      customerTimezone = m.timezone || null;
+      customerLanguage = m.preferred_language || null;
+      planTier         = m.plan_tier || null;
+    } catch (err) {
+      // 42703 = column doesn't exist on users yet; just skip the snapshot.
+      if (err && err.code !== '42703') console.error('[complaints] meta lookup failed', err.message);
+    }
+  }
+
   // Auto-route: pick the role that should own this complaint and the SLA
   // window before breach. Billing/invoice-linked → finance_admin, else
-  // content_admin. SLA hours derived from priority.
+  // content_admin. SLA hours derived from priority, with a boost for
+  // premium plan tiers (royal halves the window, featured ¾).
   const { role: autoAssignedRole, sla_hours: slaHours } = getComplaintSmartRouting({
     category,
     complaint_type: actualComplaintType,
     invoice_id: validatedInvoiceId,
     priority: actualPriority,
+    plan_tier: planTier,
   });
 
-  // Resilient insert: try with all the new columns; if any of priority /
-  // auto_assigned_role / sla_hours / sla_due_at hasn't been added yet in
-  // production, fall back to the minimal shape so the customer still gets
-  // their complaint filed.
+  // Resilient insert ladder: try the richest shape first, drop the newest
+  // columns on each retry if Postgres reports 42703 (undefined_column). This
+  // keeps customer submissions working through schema rollouts where the
+  // backend code lands before the migration finishes.
+  //   tier-1: + plan_tier + customer_country/timezone/language (snapshot)
+  //   tier-2: + priority + auto_assigned_role + sla_hours + sla_due_at
+  //   tier-3: minimal (the original POST shape from before any of this)
   let result;
   try {
     result = await db.query(
@@ -80,24 +118,45 @@ router.post("/", complaintLimiter, asyncHandler(async (req, res) => {
          user_id, user_name, user_email, user_phone, category, subject, details,
          invoice_id, complaint_type, priority,
          auto_assigned_role, sla_hours, sla_due_at,
+         plan_tier, customer_country, customer_timezone, customer_language,
          status, created_at
        )
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                $11, $12, NOW() + ($12 || ' hours')::interval,
+               $13, $14, $15, $16,
                'new', NOW())
        RETURNING *`,
       [userId, userName, userEmail, userPhone, category, subject, details,
        validatedInvoiceId, actualComplaintType, actualPriority,
-       autoAssignedRole, slaHours]
+       autoAssignedRole, slaHours,
+       planTier, customerCountry, customerTimezone, customerLanguage]
     );
-  } catch (err) {
-    const missingColumn = err && (err.code === '42703');
-    if (!missingColumn) throw err;
-    result = await db.query(
-      `INSERT INTO account_complaints (user_id, user_name, user_email, user_phone, category, subject, details, invoice_id, complaint_type, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'new', NOW()) RETURNING *`,
-      [userId, userName, userEmail, userPhone, category, subject, details, validatedInvoiceId, actualComplaintType]
-    );
+  } catch (err1) {
+    if (!(err1 && err1.code === '42703')) throw err1;
+    try {
+      result = await db.query(
+        `INSERT INTO account_complaints (
+           user_id, user_name, user_email, user_phone, category, subject, details,
+           invoice_id, complaint_type, priority,
+           auto_assigned_role, sla_hours, sla_due_at,
+           status, created_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                 $11, $12, NOW() + ($12 || ' hours')::interval,
+                 'new', NOW())
+         RETURNING *`,
+        [userId, userName, userEmail, userPhone, category, subject, details,
+         validatedInvoiceId, actualComplaintType, actualPriority,
+         autoAssignedRole, slaHours]
+      );
+    } catch (err2) {
+      if (!(err2 && err2.code === '42703')) throw err2;
+      result = await db.query(
+        `INSERT INTO account_complaints (user_id, user_name, user_email, user_phone, category, subject, details, invoice_id, complaint_type, status, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'new', NOW()) RETURNING *`,
+        [userId, userName, userEmail, userPhone, category, subject, details, validatedInvoiceId, actualComplaintType]
+      );
+    }
   }
 
   // Notify every active staff member with the assigned role so the queue
