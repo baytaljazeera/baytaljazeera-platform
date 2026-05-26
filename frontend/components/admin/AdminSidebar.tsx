@@ -13,16 +13,21 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
 import {
-  adminSections,
+  adminSections as staticAdminSections,
   normalizeAdminPath,
   resolveAdminHref,
   type AdminLink,
   type AdminSection,
 } from "./adminNavigation";
+import { resolveIcon } from "./iconRegistry";
+
+// Phase 1 — DB-driven sidebar fetched from /api/admin/sidebar-config.
+// We hold the static array as a fallback so the sidebar never goes dark
+// if the endpoint fails or the tables haven't been provisioned.
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://baytaljazeera-backend.onrender.com';
 
-const allLinks: AdminLink[] = adminSections.flatMap(section => section.links);
+const allLinks: AdminLink[] = staticAdminSections.flatMap(section => section.links);
 
 const ROLE_NAMES: Record<string, string> = {
   super_admin: 'المدير العام',
@@ -97,6 +102,10 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
   });
   const [visibleSections, setVisibleSections] = useState<string[]>([]);
   const [loadingVisibility, setLoadingVisibility] = useState(true);
+  // Dynamic sidebar config from the DB. null until the fetch completes;
+  // we fall back to the static array if the fetch fails or returns no
+  // sections (e.g., tables not provisioned yet).
+  const [dynamicSections, setDynamicSections] = useState<AdminSection[] | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('admin_sidebar_expanded');
@@ -112,6 +121,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     fetchPendingCounts();
     fetchVisibleSections();
     fetchWhatsAppUnread();
+    fetchSidebarConfig();
     const interval = setInterval(fetchPendingCounts, 30000);
     const waInterval = setInterval(fetchWhatsAppUnread, 10000);
     return () => {
@@ -121,10 +131,11 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
   }, []);
 
   useEffect(() => {
-    for (const section of adminSections) {
-      const hasActiveLink = section.links.some(link => {
+    const src = dynamicSections || staticAdminSections;
+    for (const section of src) {
+      const hasActiveLink = section.links.some((link: AdminLink) => {
         const linkPath = link.href.split("?")[0];
-        const isChildRoute = link.childRoutes?.some(route => pathname === route || pathname.startsWith(route + "/"));
+        const isChildRoute = link.childRoutes?.some((route: string) => pathname === route || pathname.startsWith(route + "/"));
         const isDirectMatch = pathname === linkPath || pathname.startsWith(linkPath + "/");
         return isChildRoute || isDirectMatch;
       });
@@ -138,6 +149,45 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
       }
     }
   }, [pathname]);
+
+  /**
+   * Pull the user's effective sidebar config from the DB. Each link's icon
+   * arrives as a STRING name (e.g., "Crown") and we resolve it locally via
+   * the icon registry. On failure, dynamicSections stays null and the
+   * static array continues to drive the sidebar.
+   */
+  async function fetchSidebarConfig() {
+    try {
+      const token = localStorage.getItem("token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${API_URL}/api/admin/sidebar-config`, {
+        credentials: 'include', headers, cache: 'no-store',
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data?.sections || data.sections.length === 0) return; // fallback signal
+      // Normalize into the same AdminSection shape the static array uses,
+      // resolving icon string names → components.
+      const normalized: AdminSection[] = data.sections.map((s: any) => ({
+        id: s.key,
+        title: s.title,
+        icon: resolveIcon(s.icon),
+        colorClass: s.colorClass || "text-slate-400",
+        links: (s.links || []).map((l: any) => ({
+          href: l.href,
+          label: l.label,
+          icon: resolveIcon(l.icon),
+          isReport: !!l.isReport,
+          permissionKey: l.permissionKey || "dashboard",
+          childRoutes: Array.isArray(l.childRoutes) ? l.childRoutes : undefined,
+        })),
+      }));
+      setDynamicSections(normalized);
+    } catch {
+      // silent — fall back to the static array
+    }
+  }
 
   async function fetchVisibleSections() {
     try {
@@ -280,7 +330,10 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     // Executive inbox is reserved for the top of the org chart.
     const isExecutive = userRole === "super_admin" || userRole === "admin" || userRole === "admin_manager";
 
-    return adminSections.map(section => {
+    // Prefer the DB-driven config when present; fall back to the frozen
+    // TS array if the fetch hasn't completed or returned nothing yet.
+    const sourceSections = dynamicSections || staticAdminSections;
+    return sourceSections.map(section => {
       const filteredLinks = section.links.filter(link => {
         // HARD short-circuit for the recently-added inbox links. These
         // weren't part of the DB-driven "sidebar visibility settings"

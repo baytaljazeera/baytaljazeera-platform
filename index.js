@@ -262,6 +262,35 @@ async function runDatabaseInit() {
       `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ`,
       // 20260526210000 multi-recipient routing (JSONB)
       `ALTER TABLE IF EXISTS complaint_events ADD COLUMN IF NOT EXISTS recipients JSONB`,
+      // 20260526230000 admin nav tables (Phase 1 — DB-driven sidebar)
+      `CREATE TABLE IF NOT EXISTS admin_nav_sections (
+         key VARCHAR(64) PRIMARY KEY,
+         label VARCHAR(120) NOT NULL,
+         icon_name VARCHAR(64) NOT NULL,
+         color_class VARCHAR(64) NOT NULL DEFAULT 'text-slate-400',
+         sort_order INTEGER NOT NULL DEFAULT 0,
+         is_active BOOLEAN NOT NULL DEFAULT true,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`,
+      `CREATE TABLE IF NOT EXISTS admin_nav_links (
+         id BIGSERIAL PRIMARY KEY,
+         section_key VARCHAR(64) NOT NULL REFERENCES admin_nav_sections(key) ON DELETE CASCADE,
+         href VARCHAR(255) NOT NULL,
+         label VARCHAR(120) NOT NULL,
+         icon_name VARCHAR(64) NOT NULL,
+         permission_key VARCHAR(64) NOT NULL DEFAULT 'dashboard',
+         required_roles JSONB NULL,
+         count_source VARCHAR(64) NULL,
+         is_inbox BOOLEAN NOT NULL DEFAULT false,
+         is_report BOOLEAN NOT NULL DEFAULT false,
+         child_routes JSONB NULL,
+         sort_order INTEGER NOT NULL DEFAULT 0,
+         is_active BOOLEAN NOT NULL DEFAULT true,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_admin_nav_links_section_sort ON admin_nav_links (section_key, sort_order)`,
     ];
     let patched = 0;
     for (const sql of schemaPatches) {
@@ -270,6 +299,92 @@ async function runDatabaseInit() {
       }
     }
     console.log(`🩹 schema-ensure: ${patched}/${schemaPatches.length} statements OK`);
+
+    // Phase 1 seed — populate admin_nav_sections + admin_nav_links from
+    // the historical hardcoded shape, but ONLY if the tables are empty.
+    // Idempotent: re-running this on every boot is a no-op once seeded.
+    try {
+      const { rows: secCount } = await db.query(`SELECT COUNT(*)::int AS n FROM admin_nav_sections`);
+      if ((secCount[0]?.n || 0) === 0) {
+        const sections = [
+          { key: 'executive', label: 'نظرة تنفيذية',      icon: 'LayoutDashboard',   color: 'text-[#D4AF37]',  order: 10 },
+          { key: 'properties', label: 'إدارة العقارات',    icon: 'Home',              color: 'text-blue-400',   order: 20 },
+          { key: 'support',    label: 'خدمة العملاء',       icon: 'HeartHandshake',    color: 'text-emerald-400',order: 30 },
+          { key: 'feedback',   label: 'تجربة المستخدم',     icon: 'MessageCirclePlus', color: 'text-amber-400',  order: 40 },
+          { key: 'finance',    label: 'المالية والاشتراكات', icon: 'Wallet',            color: 'text-green-400',  order: 50 },
+          { key: 'marketing',  label: 'النمو والتسويق',      icon: 'Megaphone',         color: 'text-purple-400', order: 60 },
+          { key: 'hr',         label: 'الموارد البشرية',      icon: 'Users',             color: 'text-pink-400',   order: 70 },
+          { key: 'system',     label: 'النظام والحوكمة',      icon: 'Lock',              color: 'text-slate-400',  order: 80 },
+        ];
+        for (const s of sections) {
+          await db.query(
+            `INSERT INTO admin_nav_sections (key,label,icon_name,color_class,sort_order) VALUES ($1,$2,$3,$4,$5)`,
+            [s.key, s.label, s.icon, s.color, s.order]
+          );
+        }
+
+        // Links — mirrors the current TS array exactly.
+        // count_source values match keys returned by /api/admin/pending-counts.
+        // required_roles is set ONLY for hard role-gated rows (otherwise null
+        // and permission_key controls visibility).
+        const links = [
+          // executive
+          { sec: 'executive', href: '/admin/dashboard',          label: 'لوحة التحكم',         icon: 'LayoutDashboard', perm: 'dashboard',       order: 10 },
+          { sec: 'executive', href: '/admin/executive-inbox',    label: 'صندوق الإدارة العليا', icon: 'Crown',           perm: 'dashboard',       roles: ['super_admin','admin','admin_manager'], count: 'executiveInboxNew', isInbox: true, order: 20 },
+          // properties
+          { sec: 'properties', href: '/admin/listings',          label: 'الإعلانات',           icon: 'FileText',        perm: 'listings',        count: 'listingsNew',  children: ['/admin/elite-slots','/admin/finance/listings'], order: 10 },
+          { sec: 'properties', href: '/admin/reports',           label: 'بلاغات الإعلانات',    icon: 'Flag',            perm: 'reports',         count: 'reportsNew',  isReport: true, order: 20 },
+          { sec: 'properties', href: '/admin/featured-cities',   label: 'المدن الأكثر طلبًا',   icon: 'MapPin',          perm: 'settings',        order: 30 },
+          // support
+          { sec: 'support', href: '/admin/customer-service',     label: 'الشكاوى والدعم',      icon: 'Headset',         perm: 'support',         count: 'complaintsPlusSupport', children: ['/admin/complaints','/admin/support'], order: 10 },
+          { sec: 'support', href: '/admin/omni-inbox',           label: 'البريد الموحد',        icon: 'Inbox',           perm: 'support_internal',count: 'messagesNew', children: ['/admin/messages'], order: 20 },
+          { sec: 'support', href: '/admin/customer-conversations',label:'مراقبة المحادثات',     icon: 'Eye',             perm: 'support',         order: 30 },
+          // feedback
+          { sec: 'feedback', href: '/admin/feedback/overview',    label: 'نظرة عامة',           icon: 'LayoutDashboard', perm: 'support',         order: 10 },
+          { sec: 'feedback', href: '/admin/feedback/responses',   label: 'الردود',              icon: 'MessageSquare',   perm: 'support',         count: 'feedbackNew', order: 20 },
+          { sec: 'feedback', href: '/admin/feedback/settings',    label: 'إعدادات التغذية الراجعة', icon: 'Settings',    perm: 'support',         order: 30 },
+          { sec: 'feedback', href: '/admin/feedback/questions',   label: 'إدارة الأسئلة',       icon: 'FileText',        perm: 'support',         order: 40 },
+          // finance
+          { sec: 'finance', href: '/admin/finance-inbox',        label: 'صندوق الوصول المالي', icon: 'Inbox',           perm: 'finance',         roles: ['super_admin','admin','finance_admin'], count: 'financeInboxNew', isInbox: true, order: 10 },
+          { sec: 'finance', href: '/admin/finance',              label: 'المالية والمدفوعات',  icon: 'Wallet',          perm: 'finance',         count: 'refundsPlusWithdrawals', order: 20 },
+          { sec: 'finance', href: '/admin/plans',                label: 'إدارة الباقات',       icon: 'CreditCard',      perm: 'plans',           children: ['/admin/plans/country-pricing'], order: 30 },
+          // marketing
+          { sec: 'marketing', href: '/admin/marketing',          label: 'التسويق والدعاية',    icon: 'Megaphone',       perm: 'marketing',       order: 10 },
+          { sec: 'marketing', href: '/admin/whatsapp',           label: 'واتساب',             icon: 'MessageCircle',   perm: 'marketing',       count: 'whatsappUnread', order: 20 },
+          { sec: 'marketing', href: '/admin/news',               label: 'شريط الأخبار',        icon: 'Newspaper',       perm: 'news',            order: 30 },
+          { sec: 'marketing', href: '/admin/ambassador',         label: 'سفراء البيت',         icon: 'Building2',       perm: 'ambassador',      count: 'ambassadorPlusWithdrawals', order: 40 },
+          // hr
+          { sec: 'hr', href: '/admin/hr',                        label: 'نظرة عامة',           icon: 'Users',           perm: 'membership',      order: 10 },
+          { sec: 'hr', href: '/admin/roles?tab=applications',    label: 'طلبات التوظيف',       icon: 'UserPlus2',       perm: 'membership',      count: 'membershipNew', order: 20 },
+          // system
+          { sec: 'system', href: '/admin/ai-center',             label: 'مركز الذكاء الاصطناعي', icon: 'BrainCircuit',  perm: 'ai_center',       order: 10 },
+          { sec: 'system', href: '/admin/users',                 label: 'إدارة العملاء',       icon: 'Users',           perm: 'users',           order: 20 },
+          { sec: 'system', href: '/admin/roles',                 label: 'إدارة الصلاحيات',     icon: 'Shield',          perm: 'roles',           order: 30 },
+          { sec: 'system', href: '/admin/settings',              label: 'الإعدادات',           icon: 'Settings',        perm: 'settings',        order: 40 },
+          { sec: 'system', href: '/admin/reset-data',            label: 'تصفير التجارب',       icon: 'RotateCcw',       perm: 'settings',        order: 50 },
+        ];
+        for (const l of links) {
+          await db.query(
+            `INSERT INTO admin_nav_links
+               (section_key, href, label, icon_name, permission_key, required_roles, count_source,
+                is_inbox, is_report, child_routes, sort_order)
+             VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10::jsonb,$11)`,
+            [
+              l.sec, l.href, l.label, l.icon, l.perm,
+              l.roles ? JSON.stringify(l.roles) : null,
+              l.count || null,
+              !!l.isInbox,
+              !!l.isReport,
+              l.children ? JSON.stringify(l.children) : null,
+              l.order,
+            ]
+          );
+        }
+        console.log(`🌱 admin_nav: seeded ${sections.length} sections, ${links.length} links`);
+      }
+    } catch (seedErr) {
+      console.warn('[admin_nav seed] skipped:', seedErr.message);
+    }
     
     // Check if countries and cities tables exist before seeding
     let tablesExist = false;

@@ -1823,4 +1823,106 @@ router.get("/reset-test-data/stats", authMiddleware, requireRoles('super_admin')
   res.json({ ok: true, stats });
 }));
 
+/**
+ * Phase 1 of Admin OS — DB-driven sidebar config.
+ * Returns the sidebar sections + links the current user is allowed to see.
+ *
+ * Filtering rules (applied server-side so the frontend just renders):
+ *   1. Section must be is_active.
+ *   2. Link must be is_active.
+ *   3. If link.required_roles is set, user's role MUST be in that list.
+ *   4. Otherwise, user must have link.permission_key in their permissions,
+ *      OR be super_admin/admin (wildcard), OR special-case 'support_internal'
+ *      which is granted to anyone with 'messages'.
+ *   5. Sections with zero visible links are dropped.
+ *
+ * Falls back gracefully — if the tables don't exist yet (rolling deploy),
+ * returns { fallback: true, sections: [] } so the frontend can use its
+ * static array.
+ */
+router.get("/sidebar-config", authMiddleware, asyncHandler(async (req, res) => {
+  const role = req.user?.role;
+  const userId = req.user?.id;
+  const isSuperish = role === 'super_admin' || role === 'admin';
+
+  // Resolve effective permissions for this user — same source as the
+  // frontend currently uses for filtering.
+  let userPermissions = [];
+  try {
+    const rolePerms = await db.query(
+      `SELECT permission_key FROM role_permissions WHERE role = $1 AND COALESCE(is_granted, true) = true`,
+      [role]
+    );
+    userPermissions = rolePerms.rows.map(r => r.permission_key);
+  } catch {
+    userPermissions = [];
+  }
+  const allowAll = isSuperish || userPermissions.includes('*');
+
+  try {
+    const sec = await db.query(
+      `SELECT key, label, icon_name, color_class, sort_order
+       FROM admin_nav_sections
+       WHERE is_active = true
+       ORDER BY sort_order ASC, key ASC`
+    );
+    const lnk = await db.query(
+      `SELECT id, section_key, href, label, icon_name, permission_key,
+              required_roles, count_source, is_inbox, is_report,
+              child_routes, sort_order
+       FROM admin_nav_links
+       WHERE is_active = true
+       ORDER BY section_key ASC, sort_order ASC, id ASC`
+    );
+
+    const linksBySection = {};
+    for (const l of lnk.rows) {
+      // Role gate takes precedence — if required_roles is set, user role
+      // must be in the list (no super_admin override since the gate may
+      // exist for privacy reasons).
+      if (Array.isArray(l.required_roles) && l.required_roles.length > 0) {
+        if (!l.required_roles.includes(role)) continue;
+      } else {
+        // Permission gate
+        if (!allowAll) {
+          const ok =
+            userPermissions.includes(l.permission_key) ||
+            (l.permission_key === 'support_internal' && userPermissions.includes('messages'));
+          if (!ok) continue;
+        }
+      }
+      (linksBySection[l.section_key] ||= []).push(l);
+    }
+
+    const sections = sec.rows
+      .map(s => ({
+        key: s.key,
+        title: s.label,
+        icon: s.icon_name,
+        colorClass: s.color_class,
+        links: (linksBySection[s.key] || []).map(l => ({
+          href: l.href,
+          label: l.label,
+          icon: l.icon_name,
+          permissionKey: l.permission_key,
+          requiredRoles: l.required_roles,
+          countSource: l.count_source,
+          isInbox: !!l.is_inbox,
+          isReport: !!l.is_report,
+          childRoutes: l.child_routes,
+        })),
+      }))
+      .filter(s => s.links.length > 0);
+
+    res.json({ ok: true, sections, source: 'db' });
+  } catch (err) {
+    if (err && (err.code === '42P01' || err.code === '42703')) {
+      // Tables not provisioned yet — let the frontend fall back to its
+      // static array gracefully.
+      return res.json({ ok: true, sections: [], source: 'fallback' });
+    }
+    throw err;
+  }
+}));
+
 module.exports = router;
