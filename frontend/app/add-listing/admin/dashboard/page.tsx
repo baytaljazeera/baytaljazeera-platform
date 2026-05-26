@@ -3,10 +3,11 @@
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
-import { 
-  LayoutDashboard, 
-  FileText, 
-  Users, 
+import Link from "next/link";
+import {
+  LayoutDashboard,
+  FileText,
+  Users,
   AlertCircle,
   TrendingUp,
   CheckCircle,
@@ -23,7 +24,10 @@ import {
   Star,
   Home,
   Activity,
-  Calendar
+  Calendar,
+  Inbox,
+  ArrowLeft,
+  Coins,
 } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://baytaljazeera-backend.onrender.com';
@@ -242,11 +246,14 @@ export default function AdminDashboard() {
     fetchDashboardData();
   }, []);
 
+  // Re-ordered so the two actionable cards (شكاوى جديدة / إعلانات معلقة)
+  // come first. Each card is now a Link to the relevant queue — used to be
+  // a static counter that left the user wondering "ok, now what?".
   const statsConfig = [
-    { label: "إجمالي الإعلانات", value: stats.totalListings, icon: FileText, color: "from-blue-500 to-blue-600", bgColor: "bg-blue-50" },
-    { label: "المستخدمون", value: stats.activeUsers, icon: Users, color: "from-emerald-500 to-emerald-600", bgColor: "bg-emerald-50" },
-    { label: "شكاوى جديدة", value: stats.newReports, icon: AlertCircle, color: "from-amber-500 to-amber-600", bgColor: "bg-amber-50" },
-    { label: "إعلانات معلقة", value: stats.pendingListings, icon: Clock, color: "from-purple-500 to-purple-600", bgColor: "bg-purple-50" },
+    { label: "شكاوى جديدة", value: stats.newReports, icon: AlertCircle, color: "from-rose-500 to-rose-600", bgColor: "bg-rose-50", href: "/add-listing/admin/customer-service?tab=complaints" },
+    { label: "إعلانات معلقة", value: stats.pendingListings, icon: Clock, color: "from-amber-500 to-amber-600", bgColor: "bg-amber-50", href: "/add-listing/admin/listings?status=pending" },
+    { label: "إجمالي الإعلانات", value: stats.totalListings, icon: FileText, color: "from-blue-500 to-blue-600", bgColor: "bg-blue-50", href: "/add-listing/admin/listings" },
+    { label: "المستخدمون", value: stats.activeUsers, icon: Users, color: "from-emerald-500 to-emerald-600", bgColor: "bg-emerald-50", href: "/add-listing/admin/users" },
   ];
 
   const getActivityIcon = (type: string) => {
@@ -311,11 +318,50 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* Action Center — the "what needs me right now" widget. Shows only
+          items where the count is > 0 so a quiet day doesn't shout at you. */}
+      {(() => {
+        const actions = [
+          { count: stats.newReports || 0, label: "شكوى جديدة بانتظار المراجعة", href: "/add-listing/admin/customer-service?tab=complaints", icon: AlertCircle, accent: "text-rose-600 bg-rose-50 border-rose-200" },
+          { count: stats.pendingListings || 0, label: "إعلان بانتظار الموافقة", href: "/add-listing/admin/listings?status=pending", icon: Clock, accent: "text-amber-600 bg-amber-50 border-amber-200" },
+        ].filter((a) => a.count > 0);
+        if (actions.length === 0) return null;
+        return (
+          <div className="bg-gradient-to-l from-[#FFF7E0] to-white border border-[#D4AF37]/30 rounded-2xl p-4 md:p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Inbox className="w-5 h-5 text-[#D4AF37]" />
+              <h2 className="font-bold text-[#002845]">يحتاج اهتمامك الآن</h2>
+            </div>
+            <div className="space-y-2">
+              {actions.map((a, i) => {
+                const Icon = a.icon;
+                return (
+                  <Link
+                    key={i}
+                    href={a.href}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white border border-slate-100 hover:border-[#D4AF37]/50 hover:shadow-sm transition group"
+                  >
+                    <div className={`w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 ${a.accent}`}>
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <p className="flex-1 text-sm font-semibold text-[#002845]">
+                      <span className="text-lg font-black">{a.count.toLocaleString("en-US")}</span>{" "}
+                      <span className="text-slate-600 font-normal">{a.label}</span>
+                    </p>
+                    <ArrowLeft className="w-4 h-4 text-slate-400 group-hover:text-[#D4AF37] transition" />
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {statsConfig.map((stat, i) => {
           const Icon = stat.icon;
-          return (
-            <div key={i} className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-slate-100 hover:shadow-lg hover:border-[#D4AF37]/30 transition-all duration-300">
+          const card = (
+            <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-slate-100 hover:shadow-lg hover:border-[#D4AF37]/30 transition-all duration-300 h-full">
               <div className="flex items-start justify-between mb-3 md:mb-3">
                 <div className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-gradient-to-br ${stat.color} flex items-center justify-center shadow-lg shrink-0`}>
                   <Icon className="w-6 h-6 md:w-7 md:h-7 text-white" />
@@ -330,6 +376,11 @@ export default function AdminDashboard() {
               </p>
               <p className="text-mobile-sm md:text-sm text-slate-500 mt-1.5 md:mt-1">{stat.label}</p>
             </div>
+          );
+          return stat.href ? (
+            <Link key={i} href={stat.href} className="block">{card}</Link>
+          ) : (
+            <div key={i}>{card}</div>
           );
         })}
       </div>
