@@ -200,6 +200,44 @@ async function runDatabaseInit() {
     const { initializeDatabase } = require("./backend/init");
     await initializeDatabase();
     console.log("✅ Database tables initialized");
+
+    // Belt-and-braces schema ensure — Postgres ADD COLUMN IF NOT EXISTS is
+    // idempotent and bypasses the knex_migrations tracking table, so any
+    // migration that's recorded-but-not-applied (a state we've hit before
+    // on Render) gets re-attempted here. Each statement is wrapped so a
+    // single failure doesn't abort the rest.
+    const schemaPatches = [
+      // 20260525000000 priority field
+      `ALTER TABLE IF EXISTS account_complaints ADD COLUMN IF NOT EXISTS priority varchar(16) NOT NULL DEFAULT 'medium'`,
+      // 20260525120000 routing + SLA on complaints
+      `ALTER TABLE IF EXISTS account_complaints ADD COLUMN IF NOT EXISTS auto_assigned_role varchar(32)`,
+      `ALTER TABLE IF EXISTS account_complaints ADD COLUMN IF NOT EXISTS sla_hours integer`,
+      `ALTER TABLE IF EXISTS account_complaints ADD COLUMN IF NOT EXISTS sla_due_at timestamptz`,
+      `ALTER TABLE IF EXISTS account_complaints ADD COLUMN IF NOT EXISTS breach_notified_at timestamptz`,
+      // 20260525140000 customer locale snapshot on complaints
+      `ALTER TABLE IF EXISTS account_complaints ADD COLUMN IF NOT EXISTS plan_tier varchar(32)`,
+      `ALTER TABLE IF EXISTS account_complaints ADD COLUMN IF NOT EXISTS customer_country varchar(2)`,
+      `ALTER TABLE IF EXISTS account_complaints ADD COLUMN IF NOT EXISTS customer_timezone varchar(64)`,
+      `ALTER TABLE IF EXISTS account_complaints ADD COLUMN IF NOT EXISTS customer_language varchar(16)`,
+      // 20260525130000 users locale
+      `ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS country varchar(2)`,
+      `ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS timezone varchar(64)`,
+      `ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS preferred_language varchar(16)`,
+      // 20260525150000 support_tickets parity
+      `ALTER TABLE IF EXISTS support_tickets ADD COLUMN IF NOT EXISTS sla_due_at timestamptz`,
+      `ALTER TABLE IF EXISTS support_tickets ADD COLUMN IF NOT EXISTS breach_notified_at timestamptz`,
+      `ALTER TABLE IF EXISTS support_tickets ADD COLUMN IF NOT EXISTS plan_tier varchar(32)`,
+      `ALTER TABLE IF EXISTS support_tickets ADD COLUMN IF NOT EXISTS customer_country varchar(2)`,
+      `ALTER TABLE IF EXISTS support_tickets ADD COLUMN IF NOT EXISTS customer_timezone varchar(64)`,
+      `ALTER TABLE IF EXISTS support_tickets ADD COLUMN IF NOT EXISTS customer_language varchar(16)`,
+    ];
+    let patched = 0;
+    for (const sql of schemaPatches) {
+      try { await db.query(sql); patched++; } catch (e) {
+        console.warn('[schema-ensure] skipped:', sql.slice(0, 80), '-', e.message);
+      }
+    }
+    console.log(`🩹 schema-ensure: ${patched}/${schemaPatches.length} statements OK`);
     
     // Check if countries and cities tables exist before seeding
     let tablesExist = false;

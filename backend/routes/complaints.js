@@ -379,11 +379,27 @@ router.patch("/:id/transfer-to-finance", authMiddleware, requireRoles(...COMPLAI
   const { id } = req.params;
   const { note } = req.body || {};
 
-  const before = await db.query(
-    `SELECT id, subject, priority, status, admin_note, user_id FROM account_complaints WHERE id = $1`,
-    [id]
-  );
-  const row = before.rows[0];
+  // Read fields one-by-one resilient style: priority may not exist yet on
+  // some envs (migration 20260525000000 hasn't run). If the column is
+  // missing, fall back to a minimal select.
+  let row;
+  try {
+    const before = await db.query(
+      `SELECT id, subject, priority, status, admin_note, user_id FROM account_complaints WHERE id = $1`,
+      [id]
+    );
+    row = before.rows[0];
+  } catch (err) {
+    if (err && err.code === '42703') {
+      const before = await db.query(
+        `SELECT id, subject, status, admin_note, user_id FROM account_complaints WHERE id = $1`,
+        [id]
+      );
+      row = before.rows[0];
+    } else {
+      throw err;
+    }
+  }
   if (!row) return res.status(404).json({ error: "الشكوى غير موجودة" });
   if (['closed', 'resolved', 'dismissed'].includes(row.status)) {
     return res.status(400).json({ error: "لا يمكن تحويل شكوى مغلقة" });
