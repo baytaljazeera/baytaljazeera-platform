@@ -179,6 +179,9 @@ function AdminRolesPageContent() {
   const [selectedRole, setSelectedRole] = useState<string>("");
   const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
   const [showRoleModal, setShowRoleModal] = useState(false);
+  // Search inside the role-reassignment modal — needed when many custom
+  // roles exist; the picker becomes unscrollable otherwise.
+  const [roleModalSearch, setRoleModalSearch] = useState("");
   const [updating, setUpdating] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<string>("");
   // Track the signed-in user's id too so the role-edit modal can disable
@@ -685,8 +688,26 @@ function AdminRolesPageContent() {
     return matchSearch && matchRole;
   });
 
-  const getRoleInfo = (roleId: string) => ROLES.find(r => r.id === roleId) || ROLES[0];
+  // Resolve role display info from the unified merged list (adminRoles),
+  // not the hardcoded ROLES constant — that way table cells, badges and
+  // chips for custom roles render with the right label / color / icon
+  // even though the constant only knows about the default six.
   const getIconComponent = (iconKey: string) => ICON_OPTIONS.find(i => i.key === iconKey)?.icon || Shield;
+  const getRoleInfo = (roleKey: string) => {
+    const adm = adminRoles.find(r => r.key === roleKey);
+    if (adm) {
+      const Icon = getIconComponent(adm.icon || 'Shield');
+      return {
+        id: adm.key,
+        name: adm.label,
+        color: adm.color || '#6B7280',
+        icon: Icon,
+        description: adm.description || '',
+        level: adm.isDefault ? 60 : 50,
+      };
+    }
+    return ROLES.find(r => r.id === roleKey) || ROLES[0];
+  };
 
   const adminUsers = users.filter(u => u.role !== 'user');
   const regularUsers = users.filter(u => u.role === 'user');
@@ -896,6 +917,16 @@ function AdminRolesPageContent() {
                     {selectedAdminRole === 'super_admin' ? 'المدير العام' : 'المدير'} يتحكم بجميع الصلاحيات تلقائيًا ولا يحتاج إلى تفعيل يدوي.
                   </p>
                 </div>
+              ) : !selectedAdminRole ? (
+                <div className="py-16 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
+                  <Shield className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+                  اختر دورًا من القائمة على اليمين لعرض وتعديل صلاحياته.
+                </div>
+              ) : rolePermissions.length === 0 ? (
+                <div className="py-16 text-center text-slate-500 border-2 border-dashed border-slate-200 rounded-xl">
+                  <AlertTriangle className="w-10 h-10 mx-auto mb-3 text-amber-400" />
+                  لم تُحمَّل صلاحيات هذا الدور. حاول إعادة تحديد الدور.
+                </div>
               ) : (
                 <>
                   {(() => {
@@ -985,9 +1016,12 @@ function AdminRolesPageContent() {
             <div>
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <Plus className="w-5 h-5" />
-                الأدوار المخصصة
+                إضافة وإدارة الأدوار
               </h2>
-              <p className="text-white/70 text-sm mt-1">إنشاء وإدارة أدوار مخصصة للنظام</p>
+              <p className="text-white/70 text-sm mt-1">
+                هذه الشاشة لإدارة <span className="text-white font-semibold">بيانات الدور</span> فقط: الاسم، الوصف، اللون، الأيقونة، صندوق الوارد، قسم القائمة الجانبية.
+                لتعديل صلاحيات الدور افتح تبويب &quot;تحديد صلاحيات&quot;، ولربط مستخدم بدور افتح تبويب &quot;تعيين&quot;.
+              </p>
             </div>
             <button
               onClick={() => {
@@ -1210,6 +1244,17 @@ function AdminRolesPageContent() {
 
       {activeTab === 'users' && (
         <>
+          <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-[#002845] to-[#003d5c] text-white">
+            <h2 className="text-lg font-bold flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              تعيين الأدوار للموظفين
+            </h2>
+            <p className="text-white/70 text-sm mt-1">
+              هذه الشاشة لربط الموظفين بالأدوار فقط. اضغط بطاقة دور للتصفية، أو
+              &quot;تغيير الدور&quot; بجانب اسم موظف لإعادة تعيينه لأي دور موجود — افتراضي أو مخصص.
+              لتعديل بيانات الدور افتح تبويب &quot;إضافة دور&quot;، ولتعديل صلاحياته افتح &quot;تحديد صلاحيات&quot;.
+            </p>
+          </div>
           <div className="grid lg:grid-cols-4 gap-6 mb-8">
             {/*
               Now reads from adminRoles (same merged source as the permissions
@@ -1746,21 +1791,51 @@ function AdminRolesPageContent() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-            onClick={() => setShowRoleModal(false)}
+            onClick={() => { setShowRoleModal(false); setRoleModalSearch(""); }}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e: React.MouseEvent) => e.stopPropagation()}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-xs overflow-hidden"
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
             >
               <div className="p-4 border-b border-slate-100 bg-gradient-to-r from-[#002845] to-[#003d5c]">
-                <h3 className="text-base font-bold text-white">تعديل الدور</h3>
-                <p className="text-white/70 text-xs mt-1 truncate">{selectedUser.name}</p>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-base font-bold text-white">تغيير الدور</h3>
+                    <p className="text-white/70 text-xs mt-1 truncate">
+                      {selectedUser.name} · <span className="text-white/50">{selectedUser.email}</span>
+                    </p>
+                    <p className="text-white/60 text-[11px] mt-1">
+                      الدور الحالي: <span className="text-white font-semibold">{(adminRoles.find(r => r.key === selectedUser.role)?.label) || selectedUser.role}</span>
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => { setShowRoleModal(false); setRoleModalSearch(""); }}
+                    className="text-white/60 hover:text-white p-1"
+                    aria-label="إغلاق"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
-              <div className="p-3 max-h-[50vh] overflow-y-auto">
+              <div className="p-3 border-b border-slate-100">
+                <div className="relative">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={roleModalSearch}
+                    onChange={(e) => setRoleModalSearch(e.target.value)}
+                    placeholder="ابحث في الأدوار (افتراضية ومخصصة)..."
+                    autoFocus
+                    className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-[#002845] placeholder:text-slate-400 focus:outline-none focus:border-[#D4AF37]"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 flex-1 overflow-y-auto">
                 {/* Self-edit guard: if the signed-in user is looking at their
                     own row AND is currently super_admin, block any action
                     that would demote them. Backend rejects this too — UI
@@ -1778,60 +1853,91 @@ function AdminRolesPageContent() {
                   }
                   return null;
                 })()}
-                <p className="text-[10px] text-slate-400 mb-2 px-1">الأدوار الإدارية</p>
+                <p className="text-[10px] text-slate-400 mb-2 px-1">
+                  أعِد تعيين الدور لأي دور موجود — افتراضي أو مخصّص. التغيير يُسجَّل في سجل التدقيق.
+                </p>
                 <div className="space-y-2">
-                  {adminRoles.map((role) => {
-                    const Icon = getIconComponent(role.icon || 'Shield');
-                    const isSelected = selectedUser.role === role.key;
-                    const isSelf = !!currentUserId && String(selectedUser.id) === String(currentUserId);
-                    const wouldDemoteSelfFromSuper = isSelf && selectedUser.role === 'super_admin' && role.key !== 'super_admin';
-                    const color = role.color || '#6B7280';
-
-                    return (
-                      <button
-                        key={role.key}
-                        onClick={() => {
-                          setConfirmModal({
-                            show: true,
-                            title: 'تغيير الدور',
-                            message: `هل أنت متأكد من تغيير الدور إلى "${role.label}"؟`,
-                            onConfirm: () => {
-                              updateUserRole(selectedUser.id, role.key);
-                              setConfirmModal(prev => ({ ...prev, show: false }));
-                            }
-                          });
-                        }}
-                        disabled={updating || isSelected || wouldDemoteSelfFromSuper}
-                        title={wouldDemoteSelfFromSuper ? "لا يمكنك تخفيض دورك بنفسك" : (role.description || undefined)}
-                        className={`w-full p-2.5 rounded-lg border-2 transition-all text-right flex items-center gap-2.5 ${
-                          isSelected
-                            ? "border-[#D4AF37] bg-[#D4AF37]/10"
-                            : "border-slate-200 hover:border-slate-300"
-                        } disabled:opacity-50 disabled:cursor-not-allowed`}
-                      >
-                        <div
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-white shrink-0"
-                          style={{ backgroundColor: color }}
-                        >
-                          <Icon className="w-4 h-4" />
+                  {(() => {
+                    const q = roleModalSearch.trim().toLowerCase();
+                    const filtered = adminRoles.filter(r => {
+                      if (!q) return true;
+                      return (
+                        r.label?.toLowerCase().includes(q) ||
+                        r.key?.toLowerCase().includes(q) ||
+                        r.description?.toLowerCase().includes(q)
+                      );
+                    });
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="py-8 text-center text-sm text-slate-400">
+                          لا توجد أدوار تطابق البحث.
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <p className="font-bold text-[#002845] text-sm">{role.label}</p>
-                            {!role.isDefault && (
-                              <span className="text-[9px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded-full">مخصص</span>
+                      );
+                    }
+                    return filtered.map((role) => {
+                      const Icon = getIconComponent(role.icon || 'Shield');
+                      const isSelected = selectedUser.role === role.key;
+                      const isSelf = !!currentUserId && String(selectedUser.id) === String(currentUserId);
+                      const wouldDemoteSelfFromSuper = isSelf && selectedUser.role === 'super_admin' && role.key !== 'super_admin';
+                      const color = role.color || '#6B7280';
+
+                      return (
+                        <button
+                          key={role.key}
+                          onClick={() => {
+                            setConfirmModal({
+                              show: true,
+                              title: 'تأكيد تغيير الدور',
+                              message: `سيتم تغيير دور "${selectedUser.name}" من "${(adminRoles.find(r => r.key === selectedUser.role)?.label) || selectedUser.role}" إلى "${role.label}". هل تريد المتابعة؟`,
+                              onConfirm: () => {
+                                updateUserRole(selectedUser.id, role.key);
+                                setConfirmModal(prev => ({ ...prev, show: false }));
+                              }
+                            });
+                          }}
+                          disabled={updating || isSelected || wouldDemoteSelfFromSuper}
+                          title={wouldDemoteSelfFromSuper ? "لا يمكنك تخفيض دورك بنفسك" : (role.description || undefined)}
+                          className={`w-full p-3 rounded-lg border-2 transition-all text-right flex items-start gap-3 ${
+                            isSelected
+                              ? "border-[#D4AF37] bg-[#D4AF37]/10"
+                              : "border-slate-200 hover:border-[#D4AF37]/60 hover:bg-slate-50"
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                        >
+                          <div
+                            className="w-10 h-10 rounded-lg flex items-center justify-center text-white shrink-0"
+                            style={{ backgroundColor: color }}
+                          >
+                            <Icon className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="font-bold text-[#002845] text-sm">{role.label}</p>
+                              {role.isDefault ? (
+                                <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">افتراضي</span>
+                              ) : (
+                                <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">مخصص</span>
+                              )}
+                              {isSelected && (
+                                <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">الحالي</span>
+                              )}
+                              {role.has_inbox && (
+                                <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5">
+                                  <Mailbox className="w-2.5 h-2.5" /> صندوق
+                                </span>
+                              )}
+                            </div>
+                            {role.description && (
+                              <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{role.description}</p>
                             )}
                           </div>
-                        </div>
-                        {isSelected && (
-                          <Check className="w-4 h-4 text-[#D4AF37] shrink-0" />
-                        )}
-                        {updating && !isSelected && (
-                          <Loader2 className="w-4 h-4 animate-spin text-slate-400 shrink-0" />
-                        )}
-                      </button>
-                    );
-                  })}
+                          {isSelected && <Check className="w-4 h-4 text-[#D4AF37] shrink-0 mt-1" />}
+                          {updating && !isSelected && (
+                            <Loader2 className="w-4 h-4 animate-spin text-slate-400 shrink-0 mt-1" />
+                          )}
+                        </button>
+                      );
+                    });
+                  })()}
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-red-200">
