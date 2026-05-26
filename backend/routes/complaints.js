@@ -365,4 +365,62 @@ router.patch("/:id", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), as
   res.json({ ok: true, complaint: result.rows[0], message: "تم تحديث الشكوى بنجاح" });
 }));
 
+/**
+ * Transfer a complaint from support → finance after triage. The owner uses
+ * this when a support agent decides a complaint is actually a financial
+ * issue. Updates the assignment, fires a notification to every active
+ * finance_admin, and appends a system line to admin_note so there's an
+ * audit trail of who handed it off.
+ *
+ * Allowed for any admin role that can edit complaints; the receiving role
+ * (finance_admin) doesn't gate this — handoff direction is fixed.
+ */
+router.patch("/:id/transfer-to-finance", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { note } = req.body || {};
+
+  const before = await db.query(
+    `SELECT id, subject, priority, status, admin_note, user_id FROM account_complaints WHERE id = $1`,
+    [id]
+  );
+  const row = before.rows[0];
+  if (!row) return res.status(404).json({ error: "الشكوى غير موجودة" });
+  if (['closed', 'resolved', 'dismissed'].includes(row.status)) {
+    return res.status(400).json({ error: "لا يمكن تحويل شكوى مغلقة" });
+  }
+
+  const transferLine = `\n— تم التحويل إلى المالية بواسطة ${req.user?.name || req.user?.email || 'admin'} (${new Date().toISOString()})${note ? ` — ${note}` : ''}`;
+  const newAdminNote = (row.admin_note || '') + transferLine;
+
+  await db.query(
+    `UPDATE account_complaints
+     SET auto_assigned_role = 'finance_admin',
+         admin_note = $1,
+         updated_at = NOW()
+     WHERE id = $2`,
+    [newAdminNote, id]
+  );
+
+  // Notify every active finance_admin so the transferred ticket appears in
+  // their inbox / bell instead of waiting to be discovered.
+  try {
+    await db.query(
+      `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+       SELECT u.id, $1, $2, 'complaint_transferred', $3, NOW()
+       FROM users u
+       WHERE u.role = 'finance_admin'
+         AND COALESCE(u.is_active, true) = true`,
+      [
+        'شكوى مُحوّلة إليك (المالية)',
+        `${row.subject || ''} — أولوية: ${row.priority || 'medium'}`,
+        '/add-listing/admin/finance-inbox',
+      ]
+    );
+  } catch (e) {
+    console.error('[complaints] transfer notification failed', e.message);
+  }
+
+  res.json({ ok: true, message: "تم تحويل الشكوى إلى المالية" });
+}));
+
 module.exports = router;

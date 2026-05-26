@@ -80,14 +80,14 @@ function getAccountComplaintScope(role, userId, paramStart = 1) {
  *   urgent → 6h, high → 12h, medium → 24h, low → 48h
  */
 function getComplaintSmartRouting({ category, complaint_type, invoice_id, priority, plan_tier }) {
-  const FINANCE_CATEGORIES = new Set(["billing", "subscription", "refund"]);
-  const FINANCE_TYPES      = new Set(["billing", "refund"]);
-  const isFinance =
-    FINANCE_CATEGORIES.has(category) ||
-    FINANCE_TYPES.has(complaint_type) ||
-    (invoice_id != null && invoice_id !== "");
-
-  const role = isFinance ? "finance_admin" : "content_admin";
+  // Triage-first: every new complaint starts in support (content_admin) so a
+  // human triages whether it's actually financial before it lands on the
+  // accountant's desk. The owner's observation: customers sometimes mark a
+  // complaint as "مالية" when it isn't — auto-routing to finance ends up
+  // wasting the accountant's time and missing the real issue. A transfer
+  // endpoint (PATCH /api/account-complaints/:id/transfer-to-finance) hands
+  // the row off after triage.
+  const role = "content_admin";
 
   // Base SLA by user-chosen priority.
   const slaByPriority = { urgent: 6, high: 12, medium: 24, low: 48 };

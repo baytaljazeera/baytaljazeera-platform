@@ -52,6 +52,7 @@ interface AccountComplaint {
   created_at: string;
   submitter_name?: string;
   submitter_email?: string;
+  auto_assigned_role?: string | null;
 }
 
 interface SupportStats {
@@ -407,6 +408,29 @@ export default function CustomerServicePage() {
       console.error("Error updating status:", error);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Hand the complaint off to the finance team after triage. We don't
+  // change status — the row stays open, the assignment just moves.
+  const transferToFinance = async (complaint: AccountComplaint) => {
+    if (!confirm(`هل أنت متأكد من تحويل الشكوى "${complaint.subject || ''}" إلى المالية؟`)) return;
+    try {
+      const res = await fetch(`${API_URL}/api/account-complaints/${complaint.id}/transfer-to-finance`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      if (res.ok) {
+        toast.success("تم تحويل الشكوى للمالية");
+        await Promise.all([fetchComplaints(), fetchComplaintStats()]);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "خطأ في التحويل");
+      }
+    } catch (e) {
+      toast.error("خطأ في الاتصال بالخادم");
     }
   };
 
@@ -881,6 +905,16 @@ export default function CustomerServicePage() {
                               <XCircle className="w-4 h-4" />
                               غير مقبول
                             </button>
+                            {complaint.auto_assigned_role !== "finance_admin" && (
+                              <button
+                                onClick={() => transferToFinance(complaint)}
+                                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-[#D4AF37]/15 text-[#9a7d28] border border-[#D4AF37]/40 rounded-xl hover:bg-[#D4AF37]/25 transition text-sm font-medium"
+                                title="نقل المسؤولية إلى فريق المالية"
+                              >
+                                <Building2 className="w-4 h-4" />
+                                تحويل للمالية
+                              </button>
+                            )}
                           </>
                         )}
                         {complaint.status === "in_review" && (
@@ -899,6 +933,16 @@ export default function CustomerServicePage() {
                               <XCircle className="w-4 h-4" />
                               غير مقبول
                             </button>
+                            {complaint.auto_assigned_role !== "finance_admin" && (
+                              <button
+                                onClick={() => transferToFinance(complaint)}
+                                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-[#D4AF37]/15 text-[#9a7d28] border border-[#D4AF37]/40 rounded-xl hover:bg-[#D4AF37]/25 transition text-sm font-medium"
+                                title="نقل المسؤولية إلى فريق المالية"
+                              >
+                                <Building2 className="w-4 h-4" />
+                                تحويل للمالية
+                              </button>
+                            )}
                           </>
                         )}
                         {(complaint.status === "closed" || complaint.status === "dismissed") && (
