@@ -32,6 +32,8 @@ import {
   Inbox,
   Crown,
   History,
+  Bell,
+  Activity,
 } from "lucide-react";
 
 const REGISTRY: Record<string, typeof LayoutDashboard> = {
@@ -39,7 +41,7 @@ const REGISTRY: Record<string, typeof LayoutDashboard> = {
   BrainCircuit, Settings, CreditCard, Flag, MessageSquare, Shield,
   Wallet, Megaphone, Eye, MapPin, Building2, Home, HeartHandshake,
   Lock, MessageCirclePlus, RotateCcw, MessageCircle, Inbox, Crown,
-  History,
+  History, Bell, Activity,
 };
 
 export function resolveIcon(name: string | null | undefined): typeof LayoutDashboard {

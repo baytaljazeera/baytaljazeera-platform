@@ -457,24 +457,37 @@ function AdminRolesPageContent() {
   }
 
   async function deleteRole(key: string) {
+    // Action Safety Layer — the backend now requires an explicit reason
+    // (>= 4 chars) on every destructive action, and the delete is a soft
+    // deactivation (is_active=false + deleted_at) instead of a hard wipe.
+    // We prompt for the reason here and pass it through the request body.
+    const reason = typeof window !== 'undefined'
+      ? window.prompt('سبب التعطيل (مطلوب — لن يمكن إنجاز الإجراء بدونه):')
+      : '';
+    if (!reason || reason.trim().length < 4) {
+      toast.error('السبب مطلوب (4 أحرف على الأقل)');
+      return;
+    }
     setConfirmModal({
       show: true,
-      title: 'حذف الدور',
-      message: 'هل أنت متأكد من حذف هذا الدور؟ سيتم حذف جميع الصلاحيات المرتبطة به.',
+      title: 'تعطيل الدور',
+      message: 'سيتم تعطيل هذا الدور (يمكن استرجاعه من سجل التدقيق). تابع؟',
       onConfirm: async () => {
         try {
-          const res = await fetch(`/api/permissions/custom-roles/${key}`, {
+          const res = await fetch(`${API_URL}/api/permissions/custom-roles/${key}`, {
             method: "DELETE",
             credentials: "include",
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: reason.trim() }),
           });
 
           if (res.ok) {
-            setSuccessModal({ show: true, message: "تم حذف الدور بنجاح" });
+            setSuccessModal({ show: true, message: "تم تعطيل الدور بنجاح" });
             fetchCustomRoles();
             fetchPermissionsList();
           } else {
             const data = await res.json();
-            toast.error(data.error || "حدث خطأ في حذف الدور");
+            toast.error(data.error || "حدث خطأ في الإجراء");
           }
         } catch (err) {
           console.error("Error deleting role:", err);

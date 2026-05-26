@@ -530,6 +530,28 @@ async function runDatabaseInit() {
       console.warn('[admin_nav seed] skipped:', seedErr.message);
     }
 
+    // Phase 6 — ensure new links exist on already-seeded tenants. Idempotent:
+    // skipped per row if href already present. We don't touch existing
+    // labels/icons so admin overrides are preserved.
+    try {
+      const ensureLinks = [
+        { sec: 'executive', href: '/admin/executive-overview', label: 'اللوحة التنفيذية', icon: 'Activity', perm: 'executive_inbox', roles: ['super_admin','admin','admin_manager'], order: 30 },
+        { sec: 'executive', href: '/admin/notifications',      label: 'مركز الإشعارات',   icon: 'Bell',     perm: 'dashboard',         order: 40 },
+      ];
+      for (const l of ensureLinks) {
+        const exists = await db.query(`SELECT 1 FROM admin_nav_links WHERE href = $1 LIMIT 1`, [l.href]);
+        if (exists.rows.length > 0) continue;
+        await db.query(
+          `INSERT INTO admin_nav_links
+             (section_key, href, label, icon_name, permission_key, required_roles, sort_order)
+           VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7)`,
+          [l.sec, l.href, l.label, l.icon, l.perm, l.roles ? JSON.stringify(l.roles) : null, l.order]
+        );
+      }
+    } catch (ensureErr) {
+      console.warn('[admin_nav ensure] skipped:', ensureErr.message);
+    }
+
     // Phase 2 seed — demonstration inboxes powered by the generic engine.
     // Idempotent: only seeds when admin_inboxes is empty. Adds two new
     // department inboxes (Content + HR) routed through the dynamic

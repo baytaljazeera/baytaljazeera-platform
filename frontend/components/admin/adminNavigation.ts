@@ -24,6 +24,8 @@ import {
   MessageCircle,
   Inbox,
   Crown,
+  Bell,
+  Activity,
 } from "lucide-react";
 
 export type AdminLink = {
@@ -64,6 +66,21 @@ export const adminSections: AdminSection[] = [
         label: "صندوق الإدارة العليا",
         icon: Crown,
         permissionKey: "executive_inbox",
+      },
+      {
+        // Executive operational board — KPIs, bottlenecks, SLA health,
+        // complaints heatmap. Role-gated same way as executive-inbox.
+        href: "/admin/executive-overview",
+        label: "اللوحة التنفيذية",
+        icon: Activity,
+        permissionKey: "executive_inbox",
+      },
+      {
+        // Personal — every admin's own notification center.
+        href: "/admin/notifications",
+        label: "مركز الإشعارات",
+        icon: Bell,
+        permissionKey: "dashboard",
       },
     ],
   },
