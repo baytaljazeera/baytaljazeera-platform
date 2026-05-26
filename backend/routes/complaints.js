@@ -3,12 +3,14 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { authMiddleware, requireRoles, JWT_SECRET, JWT_VERIFY_OPTIONS } = require('../middleware/auth');
-const { complaintsLimiter } = require('../config/security');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { getAccountComplaintScope } = require('../utils/customerServiceScope');
 
-const isTest = process.env.NODE_ENV === 'test';
-const complaintLimiter = isTest ? (req, res, next) => next() : complaintsLimiter;
+// Rate limiter on complaint submission was removed per owner request:
+// legitimate users were hitting the 3/hour cap. If we see abuse we can
+// re-import `complaintsLimiter` from '../config/security' and re-add it
+// here as middleware on the POST route.
+const complaintLimiter = (req, res, next) => next();
 
 const COMPLAINTS_ADMIN_ROLES = [
   'super_admin',
