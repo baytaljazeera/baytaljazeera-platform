@@ -64,6 +64,8 @@ type PendingCounts = {
   supportInProgress: number;
   feedbackNew: number;
   whatsappUnread: number;
+  financeInboxNew: number;
+  executiveInboxNew: number;
 };
 
 export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSidebarProps) {
@@ -90,6 +92,8 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     ambassadorWithdrawals: 0,
     feedbackNew: 0,
     whatsappUnread: 0,
+    financeInboxNew: 0,
+    executiveInboxNew: 0,
   });
   const [visibleSections, setVisibleSections] = useState<string[]>([]);
   const [loadingVisibility, setLoadingVisibility] = useState(true);
@@ -300,6 +304,8 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     if (href === '/admin/messages' || href === '/admin/omni-inbox') return { newCount: pendingCounts.messagesNew, inProgressCount: 0 };
     if (href === '/admin/customer-service') return { newCount: pendingCounts.complaintsNew + pendingCounts.supportNew, inProgressCount: pendingCounts.complaintsInProgress + pendingCounts.supportInProgress };
     if (href === '/admin/finance') return { newCount: pendingCounts.refundsNew + pendingCounts.ambassadorWithdrawals, inProgressCount: pendingCounts.refundsInProgress };
+    if (href === '/admin/finance-inbox') return { newCount: pendingCounts.financeInboxNew, inProgressCount: 0 };
+    if (href === '/admin/executive-inbox') return { newCount: pendingCounts.executiveInboxNew, inProgressCount: 0 };
     if (href === '/admin/ambassador') return { newCount: pendingCounts.ambassadorPending + pendingCounts.ambassadorWithdrawals, inProgressCount: 0 };
     if (href === '/admin/feedback/responses') return { newCount: pendingCounts.feedbackNew, inProgressCount: 0 };
     if (href === '/admin/whatsapp') return { newCount: pendingCounts.whatsappUnread, inProgressCount: 0 };

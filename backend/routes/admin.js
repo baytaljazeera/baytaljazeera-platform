@@ -79,6 +79,14 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
       UNION ALL SELECT 'support_in_progress', COUNT(*)::int FROM support_tickets WHERE status = 'in_progress'
       UNION ALL SELECT 'ambassador_pending', COUNT(*)::int FROM ambassador_requests WHERE status IN ('pending', 'under_review')
       UNION ALL SELECT 'ambassador_withdrawals', COUNT(*)::int FROM ambassador_withdrawal_requests WHERE status IN ('pending', 'finance_review', 'in_progress')
+      -- Finance Inbox: complaints transferred to finance + open finance-dept tickets + pending refunds.
+      UNION ALL SELECT 'finance_inbox_new',
+        (SELECT COUNT(*)::int FROM account_complaints WHERE auto_assigned_role = 'finance_admin' AND status IN ('new','in_review','pending','in_progress'))
+        + (SELECT COUNT(*)::int FROM support_tickets WHERE department = 'financial' AND status IN ('new','open','in_progress'))
+        + (SELECT COUNT(*)::int FROM refunds WHERE status = 'pending')
+      -- Executive Inbox: complaints escalated to admin / super_admin via the transfer modal.
+      UNION ALL SELECT 'executive_inbox_new',
+        (SELECT COUNT(*)::int FROM account_complaints WHERE auto_assigned_role IN ('admin','super_admin') AND status IN ('new','in_review','pending','in_progress'))
     )
     SELECT 
       MAX(CASE WHEN key = 'listings_new' THEN cnt END) as listings_new,
@@ -95,7 +103,9 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
       MAX(CASE WHEN key = 'support_new' THEN cnt END) as support_new,
       MAX(CASE WHEN key = 'support_in_progress' THEN cnt END) as support_in_progress,
       MAX(CASE WHEN key = 'ambassador_pending' THEN cnt END) as ambassador_pending,
-      MAX(CASE WHEN key = 'ambassador_withdrawals' THEN cnt END) as ambassador_withdrawals
+      MAX(CASE WHEN key = 'ambassador_withdrawals' THEN cnt END) as ambassador_withdrawals,
+      MAX(CASE WHEN key = 'finance_inbox_new' THEN cnt END) as finance_inbox_new,
+      MAX(CASE WHEN key = 'executive_inbox_new' THEN cnt END) as executive_inbox_new
     FROM counts
   `, [], 30000);
   
@@ -149,7 +159,9 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
     supportNew: row.support_new || 0,
     supportInProgress: row.support_in_progress || 0,
     ambassadorPending: row.ambassador_pending || 0,
-    ambassadorWithdrawals: row.ambassador_withdrawals || 0
+    ambassadorWithdrawals: row.ambassador_withdrawals || 0,
+    financeInboxNew: row.finance_inbox_new || 0,
+    executiveInboxNew: row.executive_inbox_new || 0,
   });
 }));
 

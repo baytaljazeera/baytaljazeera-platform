@@ -55,6 +55,12 @@ export const adminSections: AdminSection[] = [
         icon: LayoutDashboard,
         permissionKey: "dashboard",
       },
+      {
+        href: "/admin/executive-inbox",
+        label: "صندوق الإدارة العليا",
+        icon: Inbox,
+        permissionKey: "dashboard",
+      },
     ],
   },
   {
