@@ -195,17 +195,34 @@ export const adminSections: AdminSection[] = [
     ],
   },
   {
+    // Standalone HR section — moved out of "System & Governance" so the
+    // hiring workflow (applications, employees, contracts later) lives
+    // next to its own domain instead of being buried under settings.
+    id: "hr",
+    title: "الموارد البشرية",
+    icon: Users,
+    colorClass: "text-pink-400",
+    links: [
+      {
+        href: "/admin/hr",
+        label: "نظرة عامة",
+        icon: Users,
+        permissionKey: "membership",
+      },
+      {
+        href: "/admin/roles?tab=applications",
+        label: "طلبات التوظيف",
+        icon: UserPlus2,
+        permissionKey: "membership",
+      },
+    ],
+  },
+  {
     id: "system",
     title: "النظام والحوكمة",
     icon: Lock,
     colorClass: "text-slate-400",
     links: [
-      {
-        href: "/admin/roles?tab=applications",
-        label: "طلبات الإدارة",
-        icon: UserPlus2,
-        permissionKey: "membership",
-      },
       {
         href: "/admin/ai-center",
         label: "مركز الذكاء الاصطناعي",

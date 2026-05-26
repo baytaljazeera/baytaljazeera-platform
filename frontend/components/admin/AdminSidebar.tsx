@@ -295,6 +295,12 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
             || userRole === "finance_admin"
             || userPermissions.includes("finance");
         }
+        // HR landing — visible to anyone with `membership` permission
+        // (the same gate used by the underlying applications page) and
+        // bypasses the DB visibility config since this section is new.
+        if (link.href === "/admin/hr") {
+          return isSuperAdmin || userPermissions.includes("membership");
+        }
 
         const hasPermission =
           isSuperAdmin ||
