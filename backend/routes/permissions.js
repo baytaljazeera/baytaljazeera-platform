@@ -169,33 +169,106 @@ router.put("/role/:role", authMiddleware, requireRoles('super_admin'), asyncHand
   res.json({ message: "تم تحديث الصلاحيات بنجاح" });
 }));
 
+/**
+ * Phase 5 (in this PR's scope) — unified audit feed.
+ *
+ * Returns a merged, chronologically-sorted stream from BOTH audit tables:
+ *   • permission_audit_log  (role / permission CRUD)
+ *   • admin_audit_logs      (HR approvals, suspensions, password resets)
+ *
+ * Each row is normalized into a common shape:
+ *   { source, action_type, target_role, target_user_id, target_user_name,
+ *     changed_by_name, old_value, new_value, ip_address, user_agent,
+ *     created_at }
+ *
+ * Backward-compat: the existing UI already reads logs[] with these field
+ * names, so no frontend change is required for the basic display. New
+ * `source` field distinguishes "permissions" vs "admin_action" so future
+ * filters can layer on.
+ */
 router.get("/audit-log", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, action_type } = req.query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
-  
-  let whereClause = '';
-  const params = [parseInt(limit), offset];
-  
-  if (action_type) {
-    whereClause = 'WHERE action_type = $3';
-    params.push(action_type);
+  const pageNum = parseInt(page);
+  const limitNum = parseInt(limit);
+  const offset = (pageNum - 1) * limitNum;
+
+  // We pull a generous slice from each source, merge, sort, then paginate
+  // in-memory. Fine up to a few thousand rows total; if we ever cross
+  // that we'll move to a UNION ALL view with a server-side cursor.
+  const SLICE = 500;
+  let permRows = [];
+  let adminRows = [];
+
+  try {
+    const permRes = await db.query(
+      action_type
+        ? `SELECT 'permissions'::text AS source, action_type, target_role, target_user_id, target_user_name,
+                  changed_by_id, changed_by_name, old_value, new_value, ip_address, user_agent, created_at
+           FROM permission_audit_log WHERE action_type = $1
+           ORDER BY created_at DESC LIMIT ${SLICE}`
+        : `SELECT 'permissions'::text AS source, action_type, target_role, target_user_id, target_user_name,
+                  changed_by_id, changed_by_name, old_value, new_value, ip_address, user_agent, created_at
+           FROM permission_audit_log
+           ORDER BY created_at DESC LIMIT ${SLICE}`,
+      action_type ? [action_type] : []
+    );
+    permRows = permRes.rows;
+  } catch (e) {
+    if (!(e && e.code === '42P01')) throw e;
   }
-  
-  const result = await db.query(
-    `SELECT * FROM permission_audit_log ${whereClause} ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-    params
-  );
-  
-  const countResult = await db.query(
-    `SELECT COUNT(*) FROM permission_audit_log ${action_type ? 'WHERE action_type = $1' : ''}`,
-    action_type ? [action_type] : []
-  );
-  
+
+  try {
+    // admin_audit_logs columns: admin_id, action, resource_type, resource_id, details JSONB, created_at.
+    // Map into the same shape — details JSONB becomes new_value so the UI's
+    // diff view renders meaningfully without a code change.
+    const adminRes = await db.query(
+      action_type
+        ? `SELECT 'admin_action'::text AS source,
+                  action AS action_type,
+                  resource_type AS target_role,
+                  resource_id::text AS target_user_id,
+                  NULL::text AS target_user_name,
+                  admin_id AS changed_by_id,
+                  NULL::text AS changed_by_name,
+                  NULL::jsonb AS old_value,
+                  details AS new_value,
+                  NULL::text AS ip_address,
+                  NULL::text AS user_agent,
+                  created_at
+           FROM admin_audit_logs WHERE action = $1
+           ORDER BY created_at DESC LIMIT ${SLICE}`
+        : `SELECT 'admin_action'::text AS source,
+                  action AS action_type,
+                  resource_type AS target_role,
+                  resource_id::text AS target_user_id,
+                  NULL::text AS target_user_name,
+                  admin_id AS changed_by_id,
+                  NULL::text AS changed_by_name,
+                  NULL::jsonb AS old_value,
+                  details AS new_value,
+                  NULL::text AS ip_address,
+                  NULL::text AS user_agent,
+                  created_at
+           FROM admin_audit_logs
+           ORDER BY created_at DESC LIMIT ${SLICE}`,
+      action_type ? [action_type] : []
+    );
+    adminRows = adminRes.rows;
+  } catch (e) {
+    if (!(e && e.code === '42P01')) throw e;
+  }
+
+  const merged = [...permRows, ...adminRows]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  const total = merged.length;
+  const slice = merged.slice(offset, offset + limitNum);
+
   res.json({
-    logs: result.rows,
-    total: parseInt(countResult.rows[0].count),
-    page: parseInt(page),
-    totalPages: Math.ceil(parseInt(countResult.rows[0].count) / parseInt(limit))
+    logs: slice,
+    total,
+    page: pageNum,
+    totalPages: Math.max(1, Math.ceil(total / limitNum)),
+    sources: { permissions: permRows.length, admin_action: adminRows.length },
   });
 }));
 
