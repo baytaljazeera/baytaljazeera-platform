@@ -57,11 +57,25 @@ router.post("/", complaintLimiter, asyncHandler(async (req, res) => {
   const validComplaintTypes = ['general', 'billing', 'refund', 'service', 'technical'];
   const actualComplaintType = validComplaintTypes.includes(complaint_type) ? complaint_type : 'general';
 
-  const result = await db.query(
-    `INSERT INTO account_complaints (user_id, user_name, user_email, user_phone, category, subject, details, invoice_id, complaint_type, priority, status, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new', NOW()) RETURNING *`,
-    [userId, userName, userEmail, userPhone, category, subject, details, validatedInvoiceId, actualComplaintType, actualPriority]
-  );
+  // Resilient insert: try with the new `priority` column; if the production
+  // database hasn't picked up migration 20260525000000 yet, fall back to the
+  // older shape so the customer still gets their complaint filed.
+  let result;
+  try {
+    result = await db.query(
+      `INSERT INTO account_complaints (user_id, user_name, user_email, user_phone, category, subject, details, invoice_id, complaint_type, priority, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new', NOW()) RETURNING *`,
+      [userId, userName, userEmail, userPhone, category, subject, details, validatedInvoiceId, actualComplaintType, actualPriority]
+    );
+  } catch (err) {
+    const missingColumn = err && (err.code === '42703' || /column "priority" of relation "account_complaints" does not exist/i.test(err.message || ''));
+    if (!missingColumn) throw err;
+    result = await db.query(
+      `INSERT INTO account_complaints (user_id, user_name, user_email, user_phone, category, subject, details, invoice_id, complaint_type, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'new', NOW()) RETURNING *`,
+      [userId, userName, userEmail, userPhone, category, subject, details, validatedInvoiceId, actualComplaintType]
+    );
+  }
 
   res.status(201).json({ ok: true, complaint: result.rows[0], message: "تم استلام شكواك بنجاح" });
 }));

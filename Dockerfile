@@ -25,5 +25,9 @@ COPY index.js ./
 # Expose port (Render uses PORT env var)
 EXPOSE ${PORT:-8080}
 
-# Start the application
-CMD ["node", "index.js"]
+# Run pending Knex migrations on boot, THEN start the app.
+# Migrations are idempotent (knex_migrations table tracks what ran), and the
+# script reads DATABASE_URL from process.env which Render injects. If a
+# migration fails the container will not start — that's intentional, so we
+# don't silently boot against a half-migrated schema.
+CMD ["sh", "-c", "node backend/scripts/migrate.js latest && node index.js"]
