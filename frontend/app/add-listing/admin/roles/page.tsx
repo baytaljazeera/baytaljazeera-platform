@@ -222,6 +222,10 @@ function AdminRolesPageContent() {
     can_reply_to_customers: false,
     can_see_sensitive_finance: false,
     can_close_complaints: false,
+    // Phase 6.F — starter permission set the new role lands with. Owner
+    // picks a preset OR ticks individual boxes; backend INSERTs role_permissions
+    // rows on create. Empty array = role starts with no permissions.
+    initial_permissions: [] as string[],
   });
   const [navSections, setNavSections] = useState<Array<{ key: string; label: string }>>([]);
   const [savingRole, setSavingRole] = useState(false);
@@ -503,26 +507,31 @@ function AdminRolesPageContent() {
     try {
       setSavingRole(true);
       const isEditing = !!editingRole;
-      const url = isEditing 
-        ? `/api/permissions/custom-roles/${editingRole.key}`
-        : '/api/permissions/custom-roles';
-      
+      const url = isEditing
+        ? `${API_URL}/api/permissions/custom-roles/${editingRole.key}`
+        : `${API_URL}/api/permissions/custom-roles`;
+
       const res = await fetch(url, {
         method: isEditing ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify(newRole),
       });
 
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
-        const provisionedMsg = data?.provisioned?.inbox && data?.provisioned?.link
-          ? " وتم إنشاء صندوق وارد وربطه بالسايدبار"
-          : "";
-        setSuccessModal({ show: true, message: (isEditing ? "تم تحديث الدور بنجاح" : "تم إنشاء الدور بنجاح") + provisionedMsg });
+        // Compose a precise success message — backend tells us what was
+        // provisioned (inbox + link) and how many permissions were granted.
+        const provisioned = data?.provisioned;
+        const grantedCount = data?.initial_permissions_granted || 0;
+        const parts: string[] = [];
+        if (provisioned?.inbox && provisioned?.link) parts.push("صندوق وارد ورابط سايدبار");
+        if (grantedCount > 0) parts.push(`${grantedCount} صلاحية ابتدائية`);
+        const tail = parts.length > 0 ? ` (${parts.join(" + ")})` : "";
+        setSuccessModal({ show: true, message: (isEditing ? "تم تحديث الدور بنجاح" : "تم إنشاء الدور بنجاح") + tail });
         setShowCreateRoleModal(false);
         setEditingRole(null);
-        setNewRole({ key: '', label: '', description: '', color: '#6B7280', icon: 'Shield', has_inbox: false, inbox_title: '', section_key: '', can_receive_transfers: true, can_be_assigned: true, can_reply_to_customers: false, can_see_sensitive_finance: false, can_close_complaints: false });
+        setNewRole({ key: '', label: '', description: '', color: '#6B7280', icon: 'Shield', has_inbox: false, inbox_title: '', section_key: '', can_receive_transfers: true, can_be_assigned: true, can_reply_to_customers: false, can_see_sensitive_finance: false, can_close_complaints: false, initial_permissions: [] });
         fetchCustomRoles();
         fetchPermissionsList();
       } else {
@@ -1108,7 +1117,7 @@ function AdminRolesPageContent() {
             <button
               onClick={() => {
                 setEditingRole(null);
-                setNewRole({ key: '', label: '', description: '', color: '#6B7280', icon: 'Shield', has_inbox: false, inbox_title: '', section_key: '', can_receive_transfers: true, can_be_assigned: true, can_reply_to_customers: false, can_see_sensitive_finance: false, can_close_complaints: false });
+                setNewRole({ key: '', label: '', description: '', color: '#6B7280', icon: 'Shield', has_inbox: false, inbox_title: '', section_key: '', can_receive_transfers: true, can_be_assigned: true, can_reply_to_customers: false, can_see_sensitive_finance: false, can_close_complaints: false, initial_permissions: [] });
                 setShowCreateRoleModal(true);
               }}
               className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold transition"
@@ -1167,7 +1176,8 @@ function AdminRolesPageContent() {
                               can_be_assigned: (role as any).can_be_assigned ?? true,
                               can_reply_to_customers: (role as any).can_reply_to_customers ?? false,
                               can_see_sensitive_finance: (role as any).can_see_sensitive_finance ?? false,
-                              can_close_complaints: (role as any).can_close_complaints ?? false
+                              can_close_complaints: (role as any).can_close_complaints ?? false,
+                              initial_permissions: [],
                             });
                             setShowCreateRoleModal(true);
                           }}
@@ -2107,6 +2117,86 @@ function AdminRolesPageContent() {
               </div>
 
               <div className="p-5 space-y-4 flex-1 overflow-y-auto">
+                {/* Phase 6.F — role presets. Quick way to spin up a new role
+                    with sensible capability flags + a starter permission
+                    set. Owner can still tweak everything after the preset
+                    is applied. Only shown when creating, not editing. */}
+                {!editingRole && (() => {
+                  type Preset = {
+                    key: string; label: string; color: string; icon: string; hint: string;
+                    caps: { can_receive_transfers: boolean; can_be_assigned: boolean; can_reply_to_customers: boolean; can_see_sensitive_finance: boolean; can_close_complaints: boolean };
+                    perms: string[];
+                  };
+                  const PRESETS: Preset[] = [
+                    {
+                      key: 'support', label: 'دعم عملاء', color: '#3B82F6', icon: 'Headset',
+                      hint: 'يستقبل الشكاوى ويراسل العملاء ويُغلق الحالات.',
+                      caps: { can_receive_transfers: true, can_be_assigned: true, can_reply_to_customers: true, can_see_sensitive_finance: false, can_close_complaints: true },
+                      perms: ['dashboard', 'complaints', 'support', 'support_internal'],
+                    },
+                    {
+                      key: 'finance', label: 'مالية', color: '#10B981', icon: 'Wallet',
+                      hint: 'يرى البيانات المالية الحساسة ويعالج الاسترداد.',
+                      caps: { can_receive_transfers: true, can_be_assigned: true, can_reply_to_customers: true, can_see_sensitive_finance: true, can_close_complaints: true },
+                      perms: ['dashboard', 'finance', 'plans', 'complaints', 'support_internal'],
+                    },
+                    {
+                      key: 'content', label: 'محتوى', color: '#8B5CF6', icon: 'FileText',
+                      hint: 'يدير الإعلانات والعرض، لا يراسل العملاء مباشرة.',
+                      caps: { can_receive_transfers: true, can_be_assigned: true, can_reply_to_customers: false, can_see_sensitive_finance: false, can_close_complaints: true },
+                      perms: ['dashboard', 'listings', 'reports', 'news', 'marketing'],
+                    },
+                    {
+                      key: 'quality', label: 'مراقبة جودة', color: '#F59E0B', icon: 'Eye',
+                      hint: 'يراجع ويراقب، لا يراسل العملاء ولا يُغلق الحالات.',
+                      caps: { can_receive_transfers: true, can_be_assigned: true, can_reply_to_customers: false, can_see_sensitive_finance: false, can_close_complaints: false },
+                      perms: ['dashboard', 'complaints', 'support', 'roles'],
+                    },
+                    {
+                      key: 'hr', label: 'موارد بشرية', color: '#EC4899', icon: 'Users',
+                      hint: 'إدارة الموظفين، التوظيف، طلبات العضوية.',
+                      caps: { can_receive_transfers: true, can_be_assigned: true, can_reply_to_customers: false, can_see_sensitive_finance: false, can_close_complaints: false },
+                      perms: ['dashboard', 'membership', 'users'],
+                    },
+                  ];
+                  const applyPreset = (p: Preset) => {
+                    setNewRole(prev => ({
+                      ...prev,
+                      color: p.color,
+                      icon: p.icon,
+                      ...p.caps,
+                      initial_permissions: p.perms,
+                    } as any));
+                  };
+                  return (
+                    <div className="p-3 bg-gradient-to-l from-[#FFF7E0] to-white border border-[#D4AF37]/30 rounded-xl">
+                      <p className="text-xs font-bold text-[#002845] mb-2">نمط الدور (اختصار سريع)</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {PRESETS.map((p) => {
+                          const Icon = getIconComponent(p.icon);
+                          return (
+                            <button
+                              key={p.key}
+                              type="button"
+                              onClick={() => applyPreset(p)}
+                              title={p.hint}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:border-[#D4AF37] hover:shadow-sm transition text-xs"
+                            >
+                              <div className="w-5 h-5 rounded flex items-center justify-center text-white" style={{ backgroundColor: p.color }}>
+                                <Icon className="w-3 h-3" />
+                              </div>
+                              <span className="font-semibold text-[#002845]">{p.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-2">
+                        النمط يُعبّئ اللون والأيقونة والقدرات والصلاحيات المقترحة — يمكنك تعديل أي شيء بعدها.
+                      </p>
+                    </div>
+                  );
+                })()}
+
                 <div>
                   <label className="block text-sm font-semibold text-[#002845] mb-2">المفتاح (بالإنجليزية)</label>
                   <input
@@ -2252,6 +2342,92 @@ function AdminRolesPageContent() {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Phase 6.F — initial permission set. Backend INSERTs a
+                    role_permissions row per checked key on create. Without
+                    this, freshly-created roles start with nothing granted
+                    and the owner has to walk to تحديد صلاحيات tab. Hidden
+                    while editing (permissions live on /role/:role then). */}
+                {!editingRole && permissions.length > 0 && (
+                  <div className="p-4 border border-slate-200 rounded-xl">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-bold text-[#002845]">الصلاحيات الابتدائية</p>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setNewRole(prev => ({ ...prev, initial_permissions: permissions.map(p => p.key) }))}
+                          className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition"
+                        >
+                          تحديد الكل
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewRole(prev => ({ ...prev, initial_permissions: [] }))}
+                          className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition"
+                        >
+                          إفراغ
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mb-3">
+                      الصلاحيات التي يبدأ بها الدور — يمكنك تعديلها لاحقًا من تبويب &quot;تحديد صلاحيات&quot;.
+                    </p>
+                    {(() => {
+                      const byCat: Record<string, Permission[]> = {};
+                      for (const p of permissions) {
+                        const cat = p.category || 'other';
+                        (byCat[cat] = byCat[cat] || []).push(p);
+                      }
+                      const catKeys = Object.keys(byCat).sort((a, b) => {
+                        const sa = permissionCategories[a]?.sort ?? 999;
+                        const sb = permissionCategories[b]?.sort ?? 999;
+                        return sa - sb;
+                      });
+                      return (
+                        <div className="space-y-3">
+                          {catKeys.map((cat) => (
+                            <div key={cat}>
+                              <p className="text-[11px] font-semibold text-slate-600 mb-1.5">
+                                {permissionCategories[cat]?.label || 'أخرى'}
+                              </p>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                {byCat[cat].map((perm) => {
+                                  const checked = newRole.initial_permissions.includes(perm.key);
+                                  return (
+                                    <label
+                                      key={perm.key}
+                                      title={perm.description || perm.label}
+                                      className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-xs ${
+                                        checked
+                                          ? 'border-emerald-300 bg-emerald-50'
+                                          : 'border-slate-200 bg-white hover:border-slate-300'
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={(e) => {
+                                          setNewRole(prev => ({
+                                            ...prev,
+                                            initial_permissions: e.target.checked
+                                              ? [...prev.initial_permissions, perm.key]
+                                              : prev.initial_permissions.filter(k => k !== perm.key),
+                                          }));
+                                        }}
+                                        className="w-3.5 h-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                      />
+                                      <span className="text-[#002845] font-medium">{perm.label}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 

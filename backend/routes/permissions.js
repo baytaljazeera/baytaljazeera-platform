@@ -58,13 +58,29 @@ const PERMISSION_CATEGORIES = {
 // color / icon can be overridden by a custom_roles row with the same key
 // (used to be impossible — POST blocked default keys — now editable via
 // the upserting PUT endpoint below).
+// Capability defaults per role — chosen to match each role's real job.
+// These are the values you see in the create/edit modal BEFORE any
+// override row in custom_roles is applied. Owner can still override
+// per-tenant via the modal.
+//   - super_admin : everything on (owner)
+//   - admin       : everything on (general manager)
+//   - admin_manager: cross-dept coordinator — transfers, assign, reply, close
+//   - finance_admin: financial — transfers, assign, reply, close, +sensitive
+//   - support_admin: customer-facing — transfers, assign, reply, close
+//   - content_admin: content team — transfers, assign, close (no direct reply)
 const DEFAULT_ADMIN_ROLES = [
-  { key: 'super_admin',   label: 'المدير العام',   color: '#D4AF37', icon: 'Crown',       isDefault: true, description: 'مالك المنصة — كل الصلاحيات' },
-  { key: 'admin',         label: 'مدير',           color: '#1F2937', icon: 'Shield',      isDefault: true, description: 'صلاحيات إدارية كاملة' },
-  { key: 'admin_manager', label: 'مدير إداري',     color: '#0EA5E9', icon: 'Settings',    isDefault: true, description: 'تنسيق بين الأقسام' },
-  { key: 'finance_admin', label: 'إدارة المالية',  color: '#10B981', icon: 'Wallet',      isDefault: true, description: 'الفواتير، الاسترداد، الاشتراكات' },
-  { key: 'support_admin', label: 'الدعم الفني',    color: '#3B82F6', icon: 'Headset',     isDefault: true, description: 'الشكاوى والدعم العام' },
-  { key: 'content_admin', label: 'إدارة المحتوى',  color: '#8B5CF6', icon: 'FileText',    isDefault: true, description: 'الإعلانات والعرض والخريطة' },
+  { key: 'super_admin',   label: 'المدير العام',   color: '#D4AF37', icon: 'Crown',    isDefault: true, description: 'مالك المنصة — كل الصلاحيات',
+    can_receive_transfers: true,  can_be_assigned: true,  can_reply_to_customers: true,  can_see_sensitive_finance: true,  can_close_complaints: true },
+  { key: 'admin',         label: 'مدير',           color: '#1F2937', icon: 'Shield',   isDefault: true, description: 'صلاحيات إدارية كاملة',
+    can_receive_transfers: true,  can_be_assigned: true,  can_reply_to_customers: true,  can_see_sensitive_finance: true,  can_close_complaints: true },
+  { key: 'admin_manager', label: 'مدير إداري',     color: '#0EA5E9', icon: 'Settings', isDefault: true, description: 'تنسيق بين الأقسام',
+    can_receive_transfers: true,  can_be_assigned: true,  can_reply_to_customers: true,  can_see_sensitive_finance: false, can_close_complaints: true },
+  { key: 'finance_admin', label: 'إدارة المالية',  color: '#10B981', icon: 'Wallet',   isDefault: true, description: 'الفواتير، الاسترداد، الاشتراكات',
+    can_receive_transfers: true,  can_be_assigned: true,  can_reply_to_customers: true,  can_see_sensitive_finance: true,  can_close_complaints: true },
+  { key: 'support_admin', label: 'الدعم الفني',    color: '#3B82F6', icon: 'Headset',  isDefault: true, description: 'الشكاوى والدعم العام',
+    can_receive_transfers: true,  can_be_assigned: true,  can_reply_to_customers: true,  can_see_sensitive_finance: false, can_close_complaints: true },
+  { key: 'content_admin', label: 'إدارة المحتوى',  color: '#8B5CF6', icon: 'FileText', isDefault: true, description: 'الإعلانات والعرض والخريطة',
+    can_receive_transfers: true,  can_be_assigned: true,  can_reply_to_customers: false, can_see_sensitive_finance: false, can_close_complaints: true },
 ];
 
 async function logAuditAction(action_type, data, req) {
@@ -179,11 +195,17 @@ async function getAllRoles() {
 
   const defaults = DEFAULT_ADMIN_ROLES.map(d => {
     const o = byKey.get(d.key);
+    // ?? d.can_* fallback: legacy override rows might have NULL capability
+    // columns (existed before Phase 3.5). Without the coalesce we'd
+    // surface NULL/undefined and the modal checkbox would show unchecked
+    // even though the role's purpose says it should be on.
     const base = o
       ? { ...d, label: o.label || d.label, description: o.description ?? d.description, color: o.color || d.color, icon: o.icon || d.icon,
-          can_receive_transfers: o.can_receive_transfers, can_be_assigned: o.can_be_assigned,
-          can_reply_to_customers: o.can_reply_to_customers, can_see_sensitive_finance: o.can_see_sensitive_finance,
-          can_close_complaints: o.can_close_complaints,
+          can_receive_transfers:     o.can_receive_transfers     ?? d.can_receive_transfers,
+          can_be_assigned:           o.can_be_assigned           ?? d.can_be_assigned,
+          can_reply_to_customers:    o.can_reply_to_customers    ?? d.can_reply_to_customers,
+          can_see_sensitive_finance: o.can_see_sensitive_finance ?? d.can_see_sensitive_finance,
+          can_close_complaints:      o.can_close_complaints      ?? d.can_close_complaints,
           isDefault: true, hasOverride: true }
       : { ...d, isDefault: true, hasOverride: false };
     return annotate(base);
@@ -547,7 +569,8 @@ router.post("/custom-roles", authMiddleware, requireRoles('super_admin'), asyncH
   const { key, label, description, color, icon,
           has_inbox, inbox_title, section_key,
           can_receive_transfers, can_be_assigned, can_reply_to_customers,
-          can_see_sensitive_finance, can_close_complaints } = req.body;
+          can_see_sensitive_finance, can_close_complaints,
+          initial_permissions } = req.body;
 
   if (!key || !label) {
     return res.status(400).json({ error: "المفتاح والاسم مطلوبان" });
@@ -651,16 +674,45 @@ router.post("/custom-roles", authMiddleware, requireRoles('super_admin'), asyncH
     }
   }
 
+  // Initial permissions — when the owner picks a starting permission set
+  // in the create modal, INSERT one granted row per key into
+  // role_permissions. This way a freshly-created role lands with the
+  // expected access pattern instead of zero (everything blocked).
+  let grantedCount = 0;
+  if (Array.isArray(initial_permissions) && initial_permissions.length > 0) {
+    const validKeys = new Set(ALL_PERMISSIONS.map(p => p.key));
+    for (const pk of initial_permissions) {
+      if (!validKeys.has(pk)) continue;
+      try {
+        await db.query(
+          `INSERT INTO role_permissions (role, permission_key, is_granted, updated_at)
+           VALUES ($1, $2, true, CURRENT_TIMESTAMP)
+           ON CONFLICT (role, permission_key) DO UPDATE SET
+             is_granted = true,
+             updated_at = CURRENT_TIMESTAMP`,
+          [key, pk]
+        );
+        grantedCount++;
+      } catch (e) {
+        console.warn(`[custom-roles] initial permission ${pk} failed:`, e.message);
+      }
+    }
+  }
+
   await logAuditAction('CREATE_CUSTOM_ROLE', {
     target_role: key,
-    new_value: { key, label, description, color, icon, has_inbox: !!has_inbox, section_key: section_key || null, provisioned, flags }
+    new_value: { key, label, description, color, icon, has_inbox: !!has_inbox, section_key: section_key || null, provisioned, flags, initial_permissions_granted: grantedCount }
   }, req);
 
+  const parts = [];
+  if (provisioned.inbox && provisioned.link) parts.push("صندوق وارد + رابط سايدبار");
+  if (grantedCount > 0) parts.push(`${grantedCount} صلاحية مفعّلة`);
   res.status(201).json({
     role: result.rows[0],
     provisioned,
-    message: provisioned.inbox && provisioned.link
-      ? "تم إنشاء الدور مع صندوق وارد ورابط سايدبار"
+    initial_permissions_granted: grantedCount,
+    message: parts.length > 0
+      ? `تم إنشاء الدور (${parts.join(" + ")})`
       : "تم إنشاء الدور بنجاح",
   });
 }));
