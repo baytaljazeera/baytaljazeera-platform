@@ -1654,10 +1654,17 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
     return res.status(400).json({ ok: false, error: `فئات غير صالحة: ${invalid.join(', ')}` });
   }
 
-  // Per-statement savepoint so a missing table (42P01) or missing column
-  // (42703) doesn't abort the whole transaction. Returns rowCount on
-  // success, 0 on graceful skip; re-raises any other error.
-  async function safeDelete(client, sql, params = []) {
+  // Per-statement savepoint so transient skippable errors don't abort the
+  // whole transaction. Codes we treat as "skip and continue":
+  //   42P01 undefined_table  — table doesn't exist in this deployment
+  //   42703 undefined_column — column renamed/missing in this deployment
+  //   23503 foreign_key_violation — a referenced-by table outside the reset
+  //                                  scope still holds rows; surfaced so the
+  //                                  operator can extend coverage instead of
+  //                                  silently seeing "success" with no delete.
+  // Anything else is a real error: rolls back the whole transaction.
+  const skipped = [];
+  async function safeRun(client, sql, params = [], label = null) {
     await client.query('SAVEPOINT sp');
     try {
       const r = await client.query(sql, params);
@@ -1665,13 +1672,22 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
       return r.rowCount || 0;
     } catch (e) {
       await client.query('ROLLBACK TO SAVEPOINT sp');
-      if (e && (e.code === '42P01' || e.code === '42703')) {
-        console.warn('[reset] skip', sql.slice(0, 70), '-', e.code);
+      const code = e && e.code;
+      if (code === '42P01' || code === '42703' || code === '23503') {
+        const entry = {
+          label: label || sql.slice(0, 80),
+          code,
+          detail: (e && (e.detail || e.message)) || String(e),
+        };
+        skipped.push(entry);
+        console.warn('[reset] skip', entry);
         return 0;
       }
       throw e;
     }
   }
+  // Back-compat name for the rest of the handler.
+  const safeDelete = safeRun;
 
   const results = {};
   const client = await db.connect();
@@ -1739,7 +1755,67 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
     if (categories.includes('customers')) {
       // Clean every table linked to role='user' rows. Order matters: child
       // rows first, then user_plans/properties, then users themselves.
-      const childDeletes = await Promise.all([]);
+
+      // Step 0: break FK refs from columns that point at users(id) WITHOUT
+      // an explicit ON DELETE (default = NO ACTION = blocks the delete).
+      // Setting them NULL keeps the history row, just severs the link to
+      // the user we're about to delete. Without this the final
+      // DELETE FROM users fails with 23503 and the whole reset aborts —
+      // which is exactly the "looks like nothing happened" symptom.
+      const USER_REF_NULL_UPDATES = [
+        // self-ref on users
+        ["UPDATE users SET referred_by = NULL WHERE referred_by IN (SELECT id FROM users WHERE role = $1)", "users.referred_by"],
+        // listing review trail
+        ["UPDATE properties SET reviewed_by = NULL WHERE reviewed_by IN (SELECT id FROM users WHERE role = $1)", "properties.reviewed_by"],
+        ["UPDATE listing_workflows SET reviewed_by = NULL WHERE reviewed_by IN (SELECT id FROM users WHERE role = $1)", "listing_workflows.reviewed_by"],
+        ["UPDATE listing_audit_events SET actor_id = NULL WHERE actor_id IN (SELECT id FROM users WHERE role = $1)", "listing_audit_events.actor_id"],
+        // plans
+        ["UPDATE user_plans SET suspended_by = NULL WHERE suspended_by IN (SELECT id FROM users WHERE role = $1)", "user_plans.suspended_by"],
+        // ambassador / wallet review trail
+        ["UPDATE wallet_transactions SET ambassador_reviewed_by = NULL WHERE ambassador_reviewed_by IN (SELECT id FROM users WHERE role = $1)", "wallet_transactions.ambassador_reviewed_by"],
+        ["UPDATE wallet_transactions SET finance_reviewed_by = NULL WHERE finance_reviewed_by IN (SELECT id FROM users WHERE role = $1)", "wallet_transactions.finance_reviewed_by"],
+        ["UPDATE ambassador_requests SET reviewed_by = NULL WHERE reviewed_by IN (SELECT id FROM users WHERE role = $1)", "ambassador_requests.reviewed_by"],
+        ["UPDATE ambassador_withdrawal_requests SET created_by = NULL WHERE created_by IN (SELECT id FROM users WHERE role = $1)", "ambassador_withdrawal_requests.created_by"],
+        ["UPDATE ambassador_wallet SET created_by = NULL WHERE created_by IN (SELECT id FROM users WHERE role = $1)", "ambassador_wallet.created_by"],
+        ["UPDATE ambassador_settings SET updated_by = NULL WHERE updated_by IN (SELECT id FROM users WHERE role = $1)", "ambassador_settings.updated_by"],
+        // elite / ratings review trail
+        ["UPDATE elite_extension_requests SET processed_by = NULL WHERE processed_by IN (SELECT id FROM users WHERE role = $1)", "elite_extension_requests.processed_by"],
+        ["UPDATE advertiser_ratings SET reviewed_by = NULL WHERE reviewed_by IN (SELECT id FROM users WHERE role = $1)", "advertiser_ratings.reviewed_by"],
+      ];
+      for (const [sql, label] of USER_REF_NULL_UPDATES) {
+        await safeRun(client, sql, ['user'], label);
+      }
+
+      // Step 1: explicit cleanup for customer-data tables NOT covered by
+      // the existing chain below. Wrong column names / missing tables are
+      // surfaced via the `skipped` list rather than aborting.
+      const EXTRA_USER_DELETES = [
+        ['DELETE FROM client_ratings WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'client_ratings'],
+        ['DELETE FROM user_activity_logs WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'user_activity_logs'],
+        ['DELETE FROM email_logs WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'email_logs'],
+        ['DELETE FROM user_segments WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'user_segments'],
+        ['DELETE FROM chargebacks WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'chargebacks'],
+        ['DELETE FROM promotion_usage WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'promotion_usage'],
+        ['DELETE FROM membership_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'membership_requests'],
+        ['DELETE FROM user_badge_state WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'user_badge_state'],
+        ['DELETE FROM violations_archive WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'violations_archive'],
+        ['DELETE FROM launch_trials WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'launch_trials'],
+        ['DELETE FROM property_status_reminders WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'property_status_reminders'],
+        ['DELETE FROM google_review_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'google_review_requests'],
+        ['DELETE FROM payment_idempotency WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'payment_idempotency'],
+        ['DELETE FROM ai_fraud_scans WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'ai_fraud_scans'],
+        ['DELETE FROM rating_rewards WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'rating_rewards'],
+        ['DELETE FROM referral_rewards WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'referral_rewards'],
+        ['DELETE FROM ambassador_consumptions WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'ambassador_consumptions'],
+        ['DELETE FROM ambassador_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'ambassador_requests'],
+        ['DELETE FROM listing_audit_events WHERE listing_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', 'listing_audit_events'],
+        ['DELETE FROM listing_workflows WHERE listing_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', 'listing_workflows'],
+        ['DELETE FROM listing_reports WHERE listing_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', 'listing_reports'],
+      ];
+      for (const [sql, label] of EXTRA_USER_DELETES) {
+        await safeRun(client, sql, ['user'], label);
+      }
+
       const accountComplaints = await safeDelete(client, 'DELETE FROM account_complaints');
       await safeDelete(client, 'DELETE FROM messages');
       await safeDelete(client, 'DELETE FROM conversations');
@@ -1777,9 +1853,9 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
 
     await client.query('COMMIT');
 
-    await logAdminAction(req, 'RESET_TEST_DATA', 'test_data', null, { categories, results });
+    await logAdminAction(req, 'RESET_TEST_DATA', 'test_data', null, { categories, results, skipped });
 
-    res.json({ ok: true, results });
+    res.json({ ok: true, results, skipped });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Reset test data error:', err);

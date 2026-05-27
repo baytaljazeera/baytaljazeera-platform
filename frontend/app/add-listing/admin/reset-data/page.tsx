@@ -107,6 +107,10 @@ export default function ResetDataPage() {
   const [confirmModal, setConfirmModal] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [results, setResults] = useState<Record<string, Record<string, number>> | null>(null);
+  // Backend reports every DELETE/UPDATE that was bypassed (missing table,
+  // missing column, FK violation). Shown so the operator can see what
+  // didn't actually get touched — silent skips were the original bug.
+  const [skipped, setSkipped] = useState<Array<{ label: string; code: string; detail?: string }> | null>(null);
   // Production gate: owner must type this phrase literally before the
   // backend will execute the reset. Belt-and-braces beside super_admin.
   const RESET_PHRASE = 'أؤكد تصفير بيانات التجارب';
@@ -174,13 +178,22 @@ export default function ResetDataPage() {
       });
       const data = await res.json();
       if (data.ok) {
-        setMessage({ type: "success", text: "تم تصفير البيانات بنجاح" });
+        const skippedList = Array.isArray(data.skipped) ? data.skipped : [];
+        setSkipped(skippedList);
+        setMessage({
+          type: skippedList.length > 0 ? "error" : "success",
+          text:
+            skippedList.length > 0
+              ? `تم التصفير لكن تم تخطّي ${skippedList.length} عملية — راجع التفاصيل أدناه`
+              : "تم تصفير البيانات بنجاح",
+        });
         setResults(data.results);
         setSelected(new Set());
         setConfirmText("");
         fetchStats();
       } else {
         setMessage({ type: "error", text: data.error || "حدث خطأ" });
+        setSkipped(null);
       }
     } catch {
       setMessage({ type: "error", text: "حدث خطأ في الاتصال" });
@@ -226,6 +239,38 @@ export default function ResetDataPage() {
         } flex items-center gap-2`}>
           {message.type === "success" ? <Check className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
           <span className="font-medium">{message.text}</span>
+        </div>
+      )}
+
+      {skipped && skipped.length > 0 && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4">
+          <h3 className="font-semibold text-amber-900 mb-3 flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5" />
+            عمليات تم تخطّيها ({skipped.length})
+          </h3>
+          <p className="text-xs text-amber-800 mb-3">
+            هذه العمليات لم تُنفَّذ — إمّا الجدول/العمود غير موجود (42P01/42703)
+            أو ربط مفتاح خارجي يمنع الحذف (23503). أبلِغ المطوّر لتمديد
+            تغطية التصفير لهذه الجداول.
+          </p>
+          <div className="space-y-1 max-h-60 overflow-y-auto">
+            {skipped.map((s, idx) => (
+              <div
+                key={idx}
+                className="bg-white rounded-lg p-2.5 border border-amber-200 text-xs flex items-start gap-2"
+              >
+                <span className="font-mono bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded shrink-0">
+                  {s.code}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-slate-700 truncate">{s.label}</p>
+                  {s.detail && (
+                    <p className="text-[10px] text-slate-500 truncate">{s.detail}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
