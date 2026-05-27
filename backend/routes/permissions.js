@@ -591,7 +591,35 @@ router.post("/custom-roles", authMiddleware, requireRoles('super_admin'), asyncH
     return res.status(400).json({ error: "هذا المفتاح محجوز للأدوار الافتراضية" });
   }
 
-  const existing = await db.query("SELECT id FROM custom_roles WHERE key = $1", [key]);
+  // Self-heal: if the custom_roles table is missing on this env (a migration
+  // skipped on deploy, etc.) the SELECT would 500 with 42P01 and the admin
+  // would see "relation custom_roles does not exist". Create it on the fly
+  // — same shape as migrations/20260527020000_create_custom_roles_and_audit_log
+  // — and re-run the check.
+  let existing;
+  try {
+    existing = await db.query("SELECT id FROM custom_roles WHERE key = $1", [key]);
+  } catch (e) {
+    if (e && e.code === '42P01') {
+      console.warn('[custom-roles] table missing — auto-creating before insert');
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS custom_roles (
+          id SERIAL PRIMARY KEY,
+          key VARCHAR(100) UNIQUE NOT NULL,
+          label VARCHAR(255) NOT NULL,
+          description TEXT,
+          color VARCHAR(20) DEFAULT '#6B7280',
+          icon VARCHAR(50) DEFAULT 'Shield',
+          is_active BOOLEAN DEFAULT true,
+          created_by VARCHAR(255),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await db.query(`CREATE INDEX IF NOT EXISTS idx_custom_roles_active ON custom_roles(is_active) WHERE is_active = true`);
+      existing = await db.query("SELECT id FROM custom_roles WHERE key = $1", [key]);
+    } else { throw e; }
+  }
   if (existing.rows.length > 0) {
     return res.status(400).json({ error: "هذا المفتاح مستخدم بالفعل" });
   }
