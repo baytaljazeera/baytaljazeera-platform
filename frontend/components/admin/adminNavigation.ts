@@ -125,6 +125,26 @@ export const adminSections: AdminSection[] = [
         permissionKey: "support",
         childRoutes: ["/admin/complaints", "/admin/support"],
       },
+    ],
+  },
+  {
+    // Phase 6.G — Quality Monitoring. Owns the unified ops surfaces:
+    // - Omni Inbox (AI escalations + ticket replies merged)
+    // - Customer Conversations (peer-to-peer chat fraud surveillance)
+    // - QA team's own complaint-review inbox (/admin/inbox/quality_monitor)
+    // All three were scattered before; grouping them clarifies their
+    // shared purpose: oversight rather than first-line support.
+    id: "quality",
+    title: "متابعة الجودة",
+    icon: Eye,
+    colorClass: "text-amber-400",
+    links: [
+      {
+        href: "/admin/inbox/quality_monitor",
+        label: "صندوق متابعة الجودة",
+        icon: Inbox,
+        permissionKey: "support",
+      },
       {
         href: "/admin/omni-inbox",
         label: "البريد الموحد",

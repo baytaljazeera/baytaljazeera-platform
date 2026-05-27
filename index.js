@@ -453,6 +453,7 @@ async function runDatabaseInit() {
           { key: 'executive', label: 'نظرة تنفيذية',      icon: 'LayoutDashboard',   color: 'text-[#D4AF37]',  order: 10 },
           { key: 'properties', label: 'إدارة العقارات',    icon: 'Home',              color: 'text-blue-400',   order: 20 },
           { key: 'support',    label: 'خدمة العملاء',       icon: 'HeartHandshake',    color: 'text-emerald-400',order: 30 },
+          { key: 'quality',    label: 'متابعة الجودة',        icon: 'Eye',               color: 'text-amber-400',  order: 35 },
           { key: 'feedback',   label: 'تجربة المستخدم',     icon: 'MessageCirclePlus', color: 'text-amber-400',  order: 40 },
           { key: 'finance',    label: 'المالية والاشتراكات', icon: 'Wallet',            color: 'text-green-400',  order: 50 },
           { key: 'marketing',  label: 'النمو والتسويق',      icon: 'Megaphone',         color: 'text-purple-400', order: 60 },
@@ -480,8 +481,10 @@ async function runDatabaseInit() {
           { sec: 'properties', href: '/admin/featured-cities',   label: 'المدن الأكثر طلبًا',   icon: 'MapPin',          perm: 'settings',        order: 30 },
           // support
           { sec: 'support', href: '/admin/customer-service',     label: 'الشكاوى والدعم',      icon: 'Headset',         perm: 'support',         count: 'complaintsPlusSupport', children: ['/admin/complaints','/admin/support'], order: 10 },
-          { sec: 'support', href: '/admin/omni-inbox',           label: 'البريد الموحد',        icon: 'Inbox',           perm: 'support_internal',count: 'messagesNew', children: ['/admin/messages'], order: 20 },
-          { sec: 'support', href: '/admin/customer-conversations',label:'مراقبة المحادثات',     icon: 'Eye',             perm: 'support',         order: 30 },
+          // Omni Inbox + Customer Conversations live under Quality, not Support.
+          { sec: 'quality', href: '/admin/inbox/quality_monitor', label: 'صندوق متابعة الجودة', icon: 'Inbox',           perm: 'support',         roles: ['super_admin','admin','admin_manager','quality_monitor'], count: 'qualityInboxNew', isInbox: true, order: 10 },
+          { sec: 'quality', href: '/admin/omni-inbox',            label: 'البريد الموحد',        icon: 'Inbox',           perm: 'support_internal',count: 'messagesNew', children: ['/admin/messages'], order: 20 },
+          { sec: 'quality', href: '/admin/customer-conversations',label:'مراقبة المحادثات',      icon: 'Eye',             perm: 'support',         order: 30 },
           // feedback
           { sec: 'feedback', href: '/admin/feedback/overview',    label: 'نظرة عامة',           icon: 'LayoutDashboard', perm: 'support',         order: 10 },
           { sec: 'feedback', href: '/admin/feedback/responses',   label: 'الردود',              icon: 'MessageSquare',   perm: 'support',         count: 'feedbackNew', order: 20 },
@@ -550,6 +553,62 @@ async function runDatabaseInit() {
       }
     } catch (ensureErr) {
       console.warn('[admin_nav ensure] skipped:', ensureErr.message);
+    }
+
+    // Phase 6.G — Quality Monitoring section.
+    // 1. Ensure the section exists (between feedback and finance ideally).
+    // 2. Move Omni Inbox + Customer Conversations into this section. They
+    //    were previously under 'support' but conceptually they're QA
+    //    surfaces (escalation review + fraud surveillance).
+    // 3. Provision the QA team inbox (/admin/inbox/quality_monitor) +
+    //    sidebar link + admin_inboxes config row.
+    // Every step is idempotent — exists-check first, no destructive ops.
+    try {
+      // 1. Section
+      await db.query(
+        `INSERT INTO admin_nav_sections (key, label, icon_name, color_class, sort_order)
+         VALUES ('quality', 'متابعة الجودة', 'Eye', 'text-amber-400', 35)
+         ON CONFLICT (key) DO NOTHING`
+      );
+      // 2. Move existing links — only if they're still in their original
+      //    section (don't override a manual move the owner already made).
+      await db.query(
+        `UPDATE admin_nav_links
+            SET section_key = 'quality', updated_at = NOW()
+          WHERE href IN ('/admin/omni-inbox', '/admin/customer-conversations')
+            AND section_key = 'support'`
+      );
+      // 3a. QA team inbox config row
+      await db.query(
+        `INSERT INTO admin_inboxes
+           (key, title, icon_name, accent_color, source_kind, source_filter, required_roles, sort_order, description)
+         VALUES ('quality_monitor', 'صندوق متابعة الجودة', 'Eye', 'text-amber-500',
+                 'complaints',
+                 $1::jsonb,
+                 $2::jsonb,
+                 5,
+                 'الشكاوى المحوّلة لفريق متابعة الجودة للمراجعة والإشراف.')
+         ON CONFLICT (key) DO NOTHING`,
+        [
+          JSON.stringify({ auto_assigned_role: 'quality_monitor' }),
+          JSON.stringify(['super_admin', 'admin', 'admin_manager', 'quality_monitor']),
+        ]
+      );
+      // 3b. Sidebar link for the QA inbox
+      const qaLinkExists = await db.query(
+        `SELECT 1 FROM admin_nav_links WHERE href = '/admin/inbox/quality_monitor' LIMIT 1`
+      );
+      if (qaLinkExists.rows.length === 0) {
+        await db.query(
+          `INSERT INTO admin_nav_links
+             (section_key, href, label, icon_name, permission_key, required_roles, is_inbox, sort_order)
+           VALUES ('quality', '/admin/inbox/quality_monitor', 'صندوق متابعة الجودة', 'Inbox', 'support', $1::jsonb, true, 10)`,
+          [JSON.stringify(['super_admin', 'admin', 'admin_manager', 'quality_monitor'])]
+        );
+      }
+      console.log('🌱 quality monitoring section ensured');
+    } catch (qaErr) {
+      console.warn('[quality section ensure] skipped:', qaErr.message);
     }
 
     // Phase 6.E seed — ensure 'admin' has explicit grant rows for every

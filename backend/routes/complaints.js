@@ -579,7 +579,7 @@ router.get("/_/staff", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), 
  * Legacy single-target body (target_role / target_user_id) is still
  * accepted as a fallback so older clients keep working through rollout.
  */
-const ALLOWED_TARGET_ROLES = ['support_admin', 'finance_admin', 'content_admin', 'admin_manager', 'admin', 'super_admin'];
+const ALLOWED_TARGET_ROLES = ['support_admin', 'finance_admin', 'content_admin', 'admin_manager', 'admin', 'super_admin', 'quality_monitor'];
 
 router.post("/:id/directive", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -953,11 +953,12 @@ router.patch("/:id", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), as
  * Body: { target_role: 'finance_admin' | 'admin' | 'super_admin' | 'content_admin' | 'admin_manager', note?: string }
  */
 const TRANSFER_TARGETS = {
-  finance_admin:   { labelAr: "المالية",       link: "/add-listing/admin/finance-inbox" },
-  admin:           { labelAr: "الإدارة العليا", link: "/add-listing/admin/customer-service?tab=complaints" },
-  super_admin:     { labelAr: "الإدارة العليا", link: "/add-listing/admin/customer-service?tab=complaints" },
-  content_admin:   { labelAr: "فريق المحتوى",   link: "/add-listing/admin/customer-service?tab=complaints" },
-  admin_manager:   { labelAr: "مدير الإدارة",   link: "/add-listing/admin/customer-service?tab=complaints" },
+  finance_admin:    { labelAr: "المالية",        link: "/add-listing/admin/finance-inbox" },
+  admin:            { labelAr: "الإدارة العليا", link: "/add-listing/admin/customer-service?tab=complaints" },
+  super_admin:      { labelAr: "الإدارة العليا", link: "/add-listing/admin/customer-service?tab=complaints" },
+  content_admin:    { labelAr: "فريق المحتوى",    link: "/add-listing/admin/customer-service?tab=complaints" },
+  admin_manager:    { labelAr: "مدير الإدارة",    link: "/add-listing/admin/customer-service?tab=complaints" },
+  quality_monitor:  { labelAr: "متابعة الجودة",   link: "/add-listing/admin/inbox/quality_monitor" },
 };
 
 async function transferComplaintHandler(req, res, fixedTargetRole) {

@@ -81,6 +81,11 @@ const DEFAULT_ADMIN_ROLES = [
     can_receive_transfers: true,  can_be_assigned: true,  can_reply_to_customers: true,  can_see_sensitive_finance: false, can_close_complaints: true },
   { key: 'content_admin', label: 'إدارة المحتوى',  color: '#8B5CF6', icon: 'FileText', isDefault: true, description: 'الإعلانات والعرض والخريطة',
     can_receive_transfers: true,  can_be_assigned: true,  can_reply_to_customers: false, can_see_sensitive_finance: false, can_close_complaints: true },
+  // QA — receives complaints transferred for monitoring/review. Does NOT
+  // reply to customers directly (oversight, not customer-facing) and does
+  // NOT close complaints (only reviews and routes back).
+  { key: 'quality_monitor', label: 'متابعة الجودة', color: '#F59E0B', icon: 'Eye',     isDefault: true, description: 'مراقبة الجودة ومراجعة الشكاوى',
+    can_receive_transfers: true,  can_be_assigned: true,  can_reply_to_customers: false, can_see_sensitive_finance: false, can_close_complaints: false },
 ];
 
 async function logAuditAction(action_type, data, req) {
