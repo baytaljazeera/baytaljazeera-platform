@@ -1,6 +1,7 @@
 "use client";
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { normalizeConfirmationPhrase } from "@/lib/utils";
 import { resolveAdminHref } from "@/components/admin/adminNavigation";
 import Link from "next/link";
 
@@ -878,7 +879,7 @@ export default function FinancePage() {
   };
 
   async function handleResetTestInvoices() {
-    if (resetPhrase.trim() !== RESET_INVOICES_PHRASE) {
+    if (normalizeConfirmationPhrase(resetPhrase) !== RESET_INVOICES_PHRASE) {
       setSuccessModal({
         isOpen: true,
         message: "يجب كتابة العبارة المطلوبة حرفياً للتأكيد",
@@ -2745,7 +2746,7 @@ export default function FinancePage() {
                   onClick={() => void handleResetTestInvoices()}
                   disabled={
                     resetLoading ||
-                    resetPhrase.trim() !== RESET_INVOICES_PHRASE
+                    normalizeConfirmationPhrase(resetPhrase) !== RESET_INVOICES_PHRASE
                   }
                   className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
                 >

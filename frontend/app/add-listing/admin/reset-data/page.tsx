@@ -9,6 +9,7 @@ import {
   ShieldAlert, RotateCcw, UserX
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { normalizeConfirmationPhrase } from "@/lib/utils";
 
 interface CategoryStats {
   [table: string]: number;
@@ -173,7 +174,7 @@ export default function ResetDataPage() {
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
           categories: Array.from(selected),
-          confirmation: confirmText.trim(),
+          confirmation: normalizeConfirmationPhrase(confirmText),
         }),
       });
       const data = await res.json();
@@ -456,7 +457,7 @@ export default function ResetDataPage() {
                 placeholder="اكتب العبارة هنا..."
                 dir="rtl"
                 className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none transition ${
-                  confirmText.trim() === RESET_PHRASE
+                  normalizeConfirmationPhrase(confirmText) === RESET_PHRASE
                     ? 'border-emerald-400 bg-emerald-50 text-emerald-900'
                     : 'border-slate-200 focus:border-red-400'
                 }`}
@@ -472,7 +473,7 @@ export default function ResetDataPage() {
               </button>
               <button
                 onClick={handleReset}
-                disabled={resetting || confirmText.trim() !== RESET_PHRASE}
+                disabled={resetting || normalizeConfirmationPhrase(confirmText) !== RESET_PHRASE}
                 className="flex-1 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg transition flex items-center justify-center gap-2 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {resetting ? (

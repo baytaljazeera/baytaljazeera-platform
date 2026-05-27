@@ -6,6 +6,29 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Normalize a typed Arabic confirmation phrase for strict equality checks.
+ * Strips invisible bidi / zero-width characters that RTL keyboards and
+ * autocomplete tend to inject (RLM, LRM, ZWSP, ZWJ, BOM, etc.) — without
+ * them, the typed value looks identical to the reference phrase but
+ * compares unequal, leaving the confirm button forever disabled.
+ *
+ * Applies NFC normalization too so visually-identical sequences encoded
+ * differently still match.
+ */
+export function normalizeConfirmationPhrase(value: string): string {
+  // Invisible chars stripped:
+  //   U+00A0 NBSP, U+200B-U+200F (ZWSP/ZWNJ/ZWJ/LRM/RLM),
+  //   U+202A-U+202E (LRE/RLE/PDF/LRO/RLO),
+  //   U+2060-U+2069 (WJ + invisible-times etc. + LRI/RLI/FSI/PDI),
+  //   U+FEFF BOM. Then collapse whitespace runs and trim.
+  return value
+    .normalize("NFC")
+    .replace(/[\u00A0\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
  * 🎯 Centralized date formatting utility
  * Formats dates in Arabic with consistent format across the app
  */
