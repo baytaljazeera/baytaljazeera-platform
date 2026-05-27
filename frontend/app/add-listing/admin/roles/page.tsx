@@ -89,6 +89,7 @@ const ICON_OPTIONS = [
   { key: 'Settings', icon: Settings },
   { key: 'Users', icon: Users },
   { key: 'Crown', icon: Crown },
+  { key: 'Eye', icon: Eye },
 ];
 
 const COLOR_OPTIONS = [
@@ -766,7 +767,12 @@ function AdminRolesPageContent() {
   // not the hardcoded ROLES constant — that way table cells, badges and
   // chips for custom roles render with the right label / color / icon
   // even though the constant only knows about the default six.
-  const getIconComponent = (iconKey: string) => ICON_OPTIONS.find(i => i.key === iconKey)?.icon || Shield;
+  // Legacy presets/rows saved icon='Headset' before we standardized on
+  // Headphones — alias it so those rows don't fall back to Shield.
+  const getIconComponent = (iconKey: string) => {
+    const key = iconKey === 'Headset' ? 'Headphones' : iconKey;
+    return ICON_OPTIONS.find(i => i.key === key)?.icon || Shield;
+  };
   const getRoleInfo = (roleKey: string) => {
     const adm = adminRoles.find(r => r.key === roleKey);
     if (adm) {
@@ -2228,7 +2234,7 @@ function AdminRolesPageContent() {
                   };
                   const PRESETS: Preset[] = [
                     {
-                      key: 'support', label: 'دعم عملاء', color: '#3B82F6', icon: 'Headset',
+                      key: 'support', label: 'دعم عملاء', color: '#3B82F6', icon: 'Headphones',
                       hint: 'يستقبل الشكاوى ويراسل العملاء ويُغلق الحالات.',
                       caps: { can_receive_transfers: true, can_be_assigned: true, can_reply_to_customers: true, can_see_sensitive_finance: false, can_close_complaints: true },
                       perms: ['dashboard', 'complaints', 'support', 'support_internal'],
