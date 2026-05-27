@@ -2083,23 +2083,30 @@ function AdminRolesPageContent() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-black/50 z-50 overflow-y-auto flex items-start sm:items-center justify-center p-4"
             onClick={() => setShowCreateRoleModal(false)}
           >
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
+              exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e: React.MouseEvent) => e.stopPropagation()}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] my-4 flex flex-col overflow-hidden"
             >
-              <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-[#002845] to-[#003d5c]">
+              <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-[#002845] to-[#003d5c] shrink-0 flex items-center justify-between gap-3">
                 <h3 className="text-lg font-bold text-white">
                   {editingRole ? 'تعديل الدور' : 'إنشاء دور جديد'}
                 </h3>
+                <button
+                  onClick={() => setShowCreateRoleModal(false)}
+                  className="text-white/70 hover:text-white p-1"
+                  aria-label="إغلاق"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              <div className="p-5 space-y-4">
+              <div className="p-5 space-y-4 flex-1 overflow-y-auto">
                 <div>
                   <label className="block text-sm font-semibold text-[#002845] mb-2">المفتاح (بالإنجليزية)</label>
                   <input
@@ -2268,7 +2275,7 @@ function AdminRolesPageContent() {
                 </div>
               </div>
 
-              <div className="p-4 border-t border-slate-100 flex gap-3">
+              <div className="p-4 border-t border-slate-100 flex gap-3 shrink-0 bg-white">
                 <button
                   onClick={() => setShowCreateRoleModal(false)}
                   className="flex-1 px-4 py-3 border border-slate-200 text-slate-600 rounded-xl font-semibold hover:bg-slate-50 transition"
