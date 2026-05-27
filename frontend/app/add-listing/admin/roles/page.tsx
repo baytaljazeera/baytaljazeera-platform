@@ -192,6 +192,10 @@ function AdminRolesPageContent() {
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [permissionCategories, setPermissionCategories] = useState<Record<string, PermissionCategory>>({});
   const [adminRoles, setAdminRoles] = useState<AdminRole[]>([]);
+  // Start in loading=true so the very first render shows the spinner
+  // instead of momentarily flashing the "no roles" empty state.
+  const [rolesLoading, setRolesLoading] = useState(true);
+  const [rolesError, setRolesError] = useState<string | null>(null);
   const [selectedAdminRole, setSelectedAdminRole] = useState<string>("");
   const [rolePermissions, setRolePermissions] = useState<Permission[]>([]);
   const [loadingPermissions, setLoadingPermissions] = useState(false);
@@ -281,6 +285,15 @@ function AdminRolesPageContent() {
     if (activeTab === 'applications') {
       fetchApplications();
     }
+    // When the user switches to the permissions or assignments tab, refresh
+    // the role list — covers the case where the initial mount fetch failed
+    // silently (Render cold start) and the user navigates back via the tab
+    // bar. Also keeps member_count fresh after role reassignments.
+    if (activeTab === 'permissions' || activeTab === 'users') {
+      if (adminRoles.length === 0 || rolesError) {
+        fetchPermissionsList();
+      }
+    }
   }, [activeTab, auditPage]);
 
   async function fetchCurrentUser() {
@@ -316,27 +329,73 @@ function AdminRolesPageContent() {
   }
 
   async function fetchPermissionsList() {
+    // Single source of truth — all three role tabs read from this. We try
+    // /list first (returns roles + permissions + categories in one shot),
+    // then fall back to /all-roles (returns roles only) and synthesize the
+    // permissions catalog locally if /list is unavailable on a stale env.
+    //
+    // Silent failure was the previous bug: a 5xx from /list during Render
+    // cold-start left adminRoles=[] forever, so the permissions tab sat on
+    // its "جاري تحميل الأدوار..." state while the users tab — which now
+    // reads from the same state — also stayed empty (the report blamed only
+    // the permissions tab because the users-tab role chips degraded
+    // gracefully into the existing /api/admin/users cards).
+    setRolesLoading(true);
+    setRolesError(null);
+    let lastError: string | null = null;
+
+    // Attempt 1 — /list
     try {
-      // /list is the single source of truth — same merger /all-roles uses.
-      // It returns every role (defaults + customs) with member_count,
-      // has_inbox, has_sidebar already annotated, plus the categorized
-      // permissions catalog. Tabs (تحديد صلاحيات / تعيين الأدوار) read
-      // adminRoles from this call so creating a custom role anywhere
-      // makes it appear in all three tabs without extra wiring.
       const res = await fetch(`${API_URL}/api/permissions/list`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
-        setPermissions(data.permissions || []);
-        setPermissionCategories(data.categories || {});
-        setAdminRoles(data.roles || []);
-        if (data.roles?.length > 0) {
-          // Preserve existing selection if still valid; otherwise pick first.
-          setSelectedAdminRole(prev => prev && data.roles.some((r: AdminRole) => r.key === prev) ? prev : data.roles[0].key);
+        const roles: AdminRole[] = Array.isArray(data?.roles) ? data.roles : [];
+        if (roles.length > 0) {
+          setPermissions(data.permissions || []);
+          setPermissionCategories(data.categories || {});
+          setAdminRoles(roles);
+          setSelectedAdminRole(prev => prev && roles.some(r => r.key === prev) ? prev : roles[0].key);
+          setRolesLoading(false);
+          return;
         }
+        lastError = "/list returned 0 roles";
+      } else {
+        lastError = `/list ${res.status} ${res.statusText}`;
       }
-    } catch (err) {
-      console.error("Error fetching permissions list:", err);
+    } catch (err: unknown) {
+      lastError = `/list threw: ${(err as Error)?.message || 'unknown'}`;
     }
+
+    // Attempt 2 — /all-roles (lacks permissions + categories, but at least
+    // gives us the role cards so the UI isn't dead).
+    try {
+      const res = await fetch(`${API_URL}/api/permissions/all-roles`, { credentials: "include", headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        const roles: AdminRole[] = Array.isArray(data?.roles) ? data.roles : [];
+        if (roles.length > 0) {
+          setAdminRoles(roles);
+          setSelectedAdminRole(prev => prev && roles.some(r => r.key === prev) ? prev : roles[0].key);
+          // Permissions catalog not in /all-roles — populate via /role/:role
+          // when the user clicks a role card.
+          setRolesLoading(false);
+          // Surface a soft warning so we know the primary endpoint failed
+          // but the page is still usable.
+          if (lastError) console.warn('[roles] using /all-roles fallback because', lastError);
+          return;
+        }
+        lastError = (lastError ? lastError + " · " : "") + "/all-roles returned 0 roles";
+      } else {
+        lastError = (lastError ? lastError + " · " : "") + `/all-roles ${res.status} ${res.statusText}`;
+      }
+    } catch (err: unknown) {
+      lastError = (lastError ? lastError + " · " : "") + `/all-roles threw: ${(err as Error)?.message || 'unknown'}`;
+    }
+
+    // Both attempts failed — surface the error so the UI can recover.
+    console.error('[roles] both /list and /all-roles failed:', lastError);
+    setRolesError(lastError || "تعذّر تحميل الأدوار");
+    setRolesLoading(false);
   }
 
   async function fetchRolePermissions(role: string) {
@@ -837,8 +896,30 @@ function AdminRolesPageContent() {
           <div className="p-5 grid grid-cols-1 lg:grid-cols-12 gap-5">
             {/* Sidebar: every role rendered as a clickable card. */}
             <aside className="lg:col-span-4 xl:col-span-3 space-y-2">
-              {adminRoles.length === 0 ? (
-                <div className="text-center text-slate-400 py-8 text-sm">جاري تحميل الأدوار...</div>
+              {rolesLoading && adminRoles.length === 0 ? (
+                <div className="text-center text-slate-400 py-8 text-sm flex flex-col items-center gap-2">
+                  <Loader2 className="w-6 h-6 animate-spin text-[#D4AF37]" />
+                  <span>جاري تحميل الأدوار...</span>
+                </div>
+              ) : rolesError && adminRoles.length === 0 ? (
+                <div className="p-4 rounded-xl border-2 border-red-200 bg-red-50">
+                  <p className="text-sm font-semibold text-red-700 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4" />
+                    تعذّر تحميل الأدوار
+                  </p>
+                  <p className="text-[11px] text-red-600 mt-1 break-all">{rolesError}</p>
+                  <button
+                    onClick={fetchPermissionsList}
+                    className="mt-3 w-full px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg transition"
+                  >
+                    إعادة المحاولة
+                  </button>
+                </div>
+              ) : adminRoles.length === 0 ? (
+                <div className="p-4 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 text-center">
+                  <p className="text-sm text-slate-500">لا توجد أدوار حتى الآن.</p>
+                  <p className="text-[11px] text-slate-400 mt-1">أنشئ دورًا من تبويب &quot;إضافة دور&quot;.</p>
+                </div>
               ) : (
                 adminRoles.map((role) => {
                   const Icon = getIconComponent(role.icon || 'Shield');
