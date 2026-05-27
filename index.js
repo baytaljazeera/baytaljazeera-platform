@@ -505,7 +505,7 @@ async function runDatabaseInit() {
           // system
           { sec: 'system', href: '/admin/ai-center',             label: 'مركز الذكاء الاصطناعي', icon: 'BrainCircuit',  perm: 'ai_center',       order: 10 },
           { sec: 'system', href: '/admin/users',                 label: 'إدارة العملاء',       icon: 'Users',           perm: 'users',           order: 20 },
-          { sec: 'system', href: '/admin/roles',                 label: 'إدارة الصلاحيات',     icon: 'Shield',          perm: 'roles',           order: 30 },
+          { sec: 'system', href: '/admin/roles',                 label: 'إدارة الصلاحيات',     icon: 'Shield',          perm: 'roles',           count: 'membershipNew', order: 30 },
           { sec: 'system', href: '/admin/audit',                 label: 'سجل التدقيق الإداري',  icon: 'History',         perm: 'roles',           roles: ['super_admin','admin'], order: 35 },
           { sec: 'system', href: '/admin/settings',              label: 'الإعدادات',           icon: 'Settings',        perm: 'settings',        order: 40 },
           { sec: 'system', href: '/admin/reset-data',            label: 'تصفير التجارب',       icon: 'RotateCcw',       perm: 'settings',        order: 50 },
@@ -609,6 +609,20 @@ async function runDatabaseInit() {
       console.log('🌱 quality monitoring section ensured');
     } catch (qaErr) {
       console.warn('[quality section ensure] skipped:', qaErr.message);
+    }
+
+    // Phase 6.H — surface pending join-requests as a sidebar counter on
+    // /admin/roles so the owner sees membership pressure from any screen.
+    // Idempotent — only sets count_source if it's currently NULL (don't
+    // override a manual config).
+    try {
+      await db.query(
+        `UPDATE admin_nav_links
+            SET count_source = 'membershipNew', updated_at = NOW()
+          WHERE href = '/admin/roles' AND count_source IS NULL`
+      );
+    } catch (rolesCountErr) {
+      console.warn('[roles count_source ensure] skipped:', rolesCountErr.message);
     }
 
     // Phase 6.E seed — ensure 'admin' has explicit grant rows for every

@@ -12,7 +12,7 @@ import {
   Loader2, Search, Check, AlertTriangle, User, Settings,
   ToggleLeft, ToggleRight, Save, CheckCircle2, X, UserX,
   History, Plus, Trash2, Edit2, Clock, Eye,
-  Mailbox, LayoutGrid,
+  Mailbox, LayoutGrid, UserPlus2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -297,6 +297,12 @@ function AdminRolesPageContent() {
       if (adminRoles.length === 0 || rolesError) {
         fetchPermissionsList();
       }
+    }
+    // Users tab now hosts the pending join-requests panel — refresh
+    // them whenever the user lands on this tab so an approval/rejection
+    // is reflected immediately.
+    if (activeTab === 'users') {
+      fetchApplications();
     }
   }, [activeTab, auditPage]);
 
@@ -868,7 +874,7 @@ function AdminRolesPageContent() {
         </button>
         <button
           onClick={() => setActiveTab('users')}
-          className={`px-5 py-2.5 rounded-xl font-semibold transition-all text-sm ${
+          className={`px-5 py-2.5 rounded-xl font-semibold transition-all text-sm relative ${
             activeTab === 'users'
               ? 'bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-white shadow-lg'
               : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -876,6 +882,11 @@ function AdminRolesPageContent() {
         >
           <Users className="w-4 h-4 inline-block ml-2" />
           تعيين الأدوار
+          {applications.length > 0 && (
+            <span className="absolute -top-2 -left-2 min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center shadow-md">
+              {applications.length > 99 ? '99+' : applications.length}
+            </span>
+          )}
         </button>
         <button
           onClick={() => setActiveTab('audit')}
@@ -1347,6 +1358,94 @@ function AdminRolesPageContent() {
               لتعديل بيانات الدور افتح تبويب &quot;إضافة دور&quot;، ولتعديل صلاحياته افتح &quot;تحديد صلاحيات&quot;.
             </p>
           </div>
+
+          {/* Pending join-requests — anyone who submits the public
+              /request-access form lands here. Owner reviews, then either
+              rejects (with reason) or accepts → role picker opens →
+              applicant becomes a real staff user with the assigned role.
+              The same `applications` state powers the sidebar counter
+              (membershipNew) via /api/admin/pending-counts. */}
+          {applications.length > 0 && (
+            <div className="mb-6 bg-white rounded-2xl shadow-lg border-2 border-amber-300 overflow-hidden">
+              <div className="p-4 bg-gradient-to-r from-amber-500 to-amber-600 text-white">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-lg font-bold flex items-center gap-2">
+                    <UserPlus2 className="w-5 h-5" />
+                    طلبات انضمام بانتظار البتّ
+                    <span className="px-2.5 py-0.5 bg-white text-amber-700 text-sm rounded-full font-bold">
+                      {applications.length}
+                    </span>
+                  </h2>
+                  <p className="text-xs text-white/90">
+                    اعتمد الطلب لاختيار الدور، أو ارفضه مع كتابة السبب.
+                  </p>
+                </div>
+              </div>
+              <div className="p-4 space-y-3">
+                {applications.slice(0, 5).map((app) => (
+                  <div key={app.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex flex-col lg:flex-row lg:items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-bold text-[#002845]">{app.full_name}</h3>
+                        {app.job_title && (
+                          <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
+                            يطلب: {app.job_title}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        {app.email}{app.phone ? ` · ${app.phone}` : ''}
+                        {app.country ? ` · ${app.country}` : ''}
+                        {app.age ? ` · ${app.age} سنة` : ''}
+                      </p>
+                      {app.cover_letter && (
+                        <p className="text-xs text-slate-700 mt-1.5 italic line-clamp-2">
+                          &quot;{app.cover_letter}&quot;
+                        </p>
+                      )}
+                      <p className="text-[10px] text-slate-400 mt-1.5">
+                        {formatDate(app.created_at)}
+                        {app.cv_path && (
+                          <>
+                            {' · '}
+                            <a
+                              href={`${API_URL}/api/membership/admin/cv/${app.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[#D4AF37] hover:underline"
+                            >
+                              عرض السيرة الذاتية
+                            </a>
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex gap-2 shrink-0 self-stretch lg:self-center">
+                      <button
+                        onClick={() => { setSelectedApplication(app); setShowApproveModal(true); }}
+                        className="flex-1 lg:flex-none px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 transition"
+                      >
+                        <Check className="w-4 h-4" />
+                        قبول وتعيين دور
+                      </button>
+                      <button
+                        onClick={() => openRejectModal(app.id)}
+                        className="flex-1 lg:flex-none px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 transition"
+                      >
+                        <X className="w-4 h-4" />
+                        رفض
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {applications.length > 5 && (
+                  <p className="text-center text-xs text-slate-500 pt-2 border-t border-slate-200">
+                    عرض {Math.min(5, applications.length)} من {applications.length} طلب — البقية ستظهر بعد البتّ في الحالية.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
           <div className="grid lg:grid-cols-4 gap-6 mb-8">
             {/*
               Now reads from adminRoles (same merged source as the permissions
