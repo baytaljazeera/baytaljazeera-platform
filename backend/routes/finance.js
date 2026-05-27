@@ -211,12 +211,29 @@ async function truncateInvoicesOrDeleteAndResetSeq(client) {
   }
 }
 
-async function execOptionalSql(client, sql, label) {
+/**
+ * Run an optional step inside its own savepoint. Without the savepoint a
+ * skippable error (missing table / column / function) aborts the surrounding
+ * transaction — subsequent queries then fail with 25P02
+ * "current transaction is aborted", which was the deeper bug that made the
+ * pre-launch reset silently fail mid-chain. With the savepoint, skips are
+ * recorded and the wipe continues.
+ */
+async function execOptionalSql(client, sql, label, skippedSink) {
+  await client.query("SAVEPOINT step");
   try {
     await client.query(sql);
+    await client.query("RELEASE SAVEPOINT step");
   } catch (err) {
-    if (err.code === "42P01" || err.code === "42703" || err.code === "42883") {
+    await client.query("ROLLBACK TO SAVEPOINT step");
+    const code = err && err.code;
+    // Soft-skip codes: missing table / column / function and FK violation
+    // from a table outside this wipe's coverage.
+    if (code === "42P01" || code === "42703" || code === "42883" || code === "23503" || code === "23502") {
       console.warn(`[finance reset-invoices] skip optional step (${label}):`, err.message);
+      if (skippedSink) {
+        skippedSink.push({ label, code, detail: err.detail || err.message });
+      }
       return;
     }
     throw err;
@@ -248,40 +265,50 @@ async function resetSerialIfExists(client, tableName, columnName = "id") {
  * Legacy knex migration may add `user_subscriptions` — cleared optionally.
  * `wallet_transactions` is ambassador ledger (not Stripe/payment TXN) — not truncated here.
  */
-async function wipeFinanceEcosystem(client) {
-  try {
-    await client.query(`
-      DELETE FROM omni_conversations oc
-      WHERE oc.source_type = 'ticket'
-        AND oc.source_id IN (
-          SELECT id FROM support_tickets
-          WHERE department = 'financial' OR COALESCE(category, '') = 'billing_hint'
-        )
-    `);
-  } catch (err) {
-    if (err.code === "42703") {
-      await client.query(`
-        DELETE FROM omni_conversations oc
-        WHERE oc.source_type = 'ticket'
-          AND oc.source_id IN (SELECT id FROM support_tickets WHERE department = 'financial')
-      `);
-    } else {
-      throw err;
-    }
-  }
+async function wipeFinanceEcosystem(client, skipped) {
+  // Each query gets its own SAVEPOINT via execOptionalSql, so a missing
+  // optional column (42703) no longer pollutes the rest of the transaction.
+  // The variant with `category` is tried first; if the column is missing
+  // the simpler variant is tried via its own savepoint.
+  await execOptionalSql(
+    client,
+    `
+    DELETE FROM omni_conversations oc
+    WHERE oc.source_type = 'ticket'
+      AND oc.source_id IN (
+        SELECT id FROM support_tickets
+        WHERE department = 'financial' OR COALESCE(category, '') = 'billing_hint'
+      )
+  `,
+    "omni_conversations linked to finance tickets (with category)",
+    skipped
+  );
+  await execOptionalSql(
+    client,
+    `
+    DELETE FROM omni_conversations oc
+    WHERE oc.source_type = 'ticket'
+      AND oc.source_id IN (SELECT id FROM support_tickets WHERE department = 'financial')
+  `,
+    "omni_conversations linked to finance tickets (fallback)",
+    skipped
+  );
 
-  try {
-    await client.query(`
-      DELETE FROM support_tickets
-      WHERE department = 'financial' OR COALESCE(category, '') = 'billing_hint'
-    `);
-  } catch (err) {
-    if (err.code === "42703") {
-      await client.query(`DELETE FROM support_tickets WHERE department = 'financial'`);
-    } else {
-      throw err;
-    }
-  }
+  await execOptionalSql(
+    client,
+    `
+    DELETE FROM support_tickets
+    WHERE department = 'financial' OR COALESCE(category, '') = 'billing_hint'
+  `,
+    "support_tickets finance (with category)",
+    skipped
+  );
+  await execOptionalSql(
+    client,
+    `DELETE FROM support_tickets WHERE department = 'financial'`,
+    "support_tickets finance (fallback)",
+    skipped
+  );
 
   await execOptionalSql(
     client,
@@ -289,54 +316,84 @@ async function wipeFinanceEcosystem(client) {
     DELETE FROM account_complaints
     WHERE invoice_id IS NOT NULL OR refund_id IS NOT NULL
   `,
-    "account_complaints linked to invoice/refund"
+    "account_complaints linked to invoice/refund",
+    skipped
   );
 
   /* Must remove chargebacks first: payment_id NOT NULL REFERENCES payments(id). */
-  await execOptionalSql(client, `DELETE FROM chargebacks`, "chargebacks");
+  await execOptionalSql(client, `DELETE FROM chargebacks`, "chargebacks", skipped);
   await resetSerialIfExists(client, "chargebacks");
 
-  await execOptionalSql(client, `DELETE FROM refunds`, "refunds");
+  await execOptionalSql(client, `DELETE FROM refunds`, "refunds", skipped);
   await resetSerialIfExists(client, "refunds");
 
   /* References payments(id) without ON DELETE — delete rows before clearing payments. */
-  await execOptionalSql(client, `DELETE FROM elite_extension_requests`, "elite_extension_requests");
+  await execOptionalSql(client, `DELETE FROM elite_extension_requests`, "elite_extension_requests", skipped);
 
   /* elite_slot_reservations.payment_id REFERENCES payments(id) default NO ACTION */
   await execOptionalSql(
     client,
     `UPDATE elite_slot_reservations SET payment_id = NULL WHERE payment_id IS NOT NULL`,
-    "elite_slot_reservations payment_id"
+    "elite_slot_reservations payment_id",
+    skipped
   );
 
-  await execOptionalSql(client, `DELETE FROM payment_idempotency`, "payment_idempotency");
+  await execOptionalSql(client, `DELETE FROM payment_idempotency`, "payment_idempotency", skipped);
 
   await execOptionalSql(
     client,
     `TRUNCATE TABLE stripe_payments RESTART IDENTITY`,
-    "stripe_payments"
+    "stripe_payments",
+    skipped
   );
 
-  /* Discover any other FKs → payments (incl. prod-only ALTERs), DROP NOT NULL + SET NULL */
-  await nullAllForeignKeysToReferencedTable(client, "public", "payments");
+  /* Discover any other FKs → payments (incl. prod-only ALTERs), DROP NOT NULL + SET NULL.
+   * Wrap in a savepoint too — a single failing UPDATE (e.g., trigger-protected col)
+   * should not abort the wipe. */
+  await client.query("SAVEPOINT step_null_payments_fks");
+  try {
+    await nullAllForeignKeysToReferencedTable(client, "public", "payments");
+    await client.query("RELEASE SAVEPOINT step_null_payments_fks");
+  } catch (err) {
+    await client.query("ROLLBACK TO SAVEPOINT step_null_payments_fks");
+    skipped.push({
+      label: "nullAllForeignKeysToReferencedTable(payments)",
+      code: err.code || "unknown",
+      detail: err.detail || err.message,
+    });
+    console.warn("[finance reset-invoices] skip null-fks step (payments):", err.message);
+  }
 
-  await execOptionalSql(client, `DELETE FROM payments`, "payments");
+  await execOptionalSql(client, `DELETE FROM payments`, "payments", skipped);
   await resetSerialIfExists(client, "payments");
 
   await execOptionalSql(
     client,
     `TRUNCATE TABLE billing_audit_log RESTART IDENTITY`,
-    "billing_audit_log"
+    "billing_audit_log",
+    skipped
   );
 
   /* Legacy name from early knex migrations; main app uses user_plans. */
-  await execOptionalSql(client, `DELETE FROM user_subscriptions`, "user_subscriptions");
+  await execOptionalSql(client, `DELETE FROM user_subscriptions`, "user_subscriptions", skipped);
   await resetSerialIfExists(client, "user_subscriptions");
 
   /* All referencing columns (e.g. ambassador_consumptions.user_plan_id) — then DELETE user_plans */
-  await nullAllForeignKeysToReferencedTable(client, "public", "user_plans");
+  await client.query("SAVEPOINT step_null_user_plans_fks");
+  try {
+    await nullAllForeignKeysToReferencedTable(client, "public", "user_plans");
+    await client.query("RELEASE SAVEPOINT step_null_user_plans_fks");
+  } catch (err) {
+    await client.query("ROLLBACK TO SAVEPOINT step_null_user_plans_fks");
+    skipped.push({
+      label: "nullAllForeignKeysToReferencedTable(user_plans)",
+      code: err.code || "unknown",
+      detail: err.detail || err.message,
+    });
+    console.warn("[finance reset-invoices] skip null-fks step (user_plans):", err.message);
+  }
 
-  await execOptionalSql(client, `DELETE FROM user_plans`, "user_plans");
+  await execOptionalSql(client, `DELETE FROM user_plans`, "user_plans", skipped);
   await resetSerialIfExists(client, "user_plans");
 }
 
@@ -1735,16 +1792,50 @@ const resetInvoicesHandler = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "يجب إرسال { confirm: true } أو ?confirm=true للتأكيد" });
   }
   const client = await db.pool.connect();
+  const skipped = [];
   try {
     await client.query("BEGIN");
-    await wipeFinanceEcosystem(client);
-    await nullAllForeignKeysToInvoices(client);
-    await truncateInvoicesOrDeleteAndResetSeq(client);
+    await wipeFinanceEcosystem(client, skipped);
+
+    // Final invoices wipe — also savepoint-wrapped so a leftover blocker
+    // surfaces as a skip + 200 (with skipped[] populated) rather than a
+    // 500 that hides everything that *did* succeed above.
+    await client.query("SAVEPOINT step_null_invoices_fks");
+    try {
+      await nullAllForeignKeysToInvoices(client);
+      await client.query("RELEASE SAVEPOINT step_null_invoices_fks");
+    } catch (err) {
+      await client.query("ROLLBACK TO SAVEPOINT step_null_invoices_fks");
+      skipped.push({
+        label: "nullAllForeignKeysToInvoices",
+        code: err.code || "unknown",
+        detail: err.detail || err.message,
+      });
+    }
+
+    await client.query("SAVEPOINT step_truncate_invoices");
+    let invoicesTruncated = true;
+    try {
+      await truncateInvoicesOrDeleteAndResetSeq(client);
+      await client.query("RELEASE SAVEPOINT step_truncate_invoices");
+    } catch (err) {
+      await client.query("ROLLBACK TO SAVEPOINT step_truncate_invoices");
+      invoicesTruncated = false;
+      skipped.push({
+        label: "truncateInvoicesOrDeleteAndResetSeq",
+        code: err.code || "unknown",
+        detail: err.detail || err.message,
+      });
+    }
+
     await client.query("COMMIT");
     res.json({
       ok: true,
-      message:
-        "تم تصفير بيئة المالية: المدفوعات، اشتراكات المستخدمين (user_plans)، الفواتير، الاستردادات، الاعتراضات البنكية، الشكاوى المرتبطة، تذاكر المالية، طلبات تمديد النخبة، مفاتيح عدم تكرار الدفع، وسجل التدقيق.",
+      invoices_truncated: invoicesTruncated,
+      skipped,
+      message: invoicesTruncated
+        ? "تم تصفير بيئة المالية: المدفوعات، اشتراكات المستخدمين (user_plans)، الفواتير، الاستردادات، الاعتراضات البنكية، الشكاوى المرتبطة، تذاكر المالية، طلبات تمديد النخبة، مفاتيح عدم تكرار الدفع، وسجل التدقيق."
+        : `تم تصفير معظم بيئة المالية لكن لم يكتمل حذف الفواتير — راجع قائمة "تم تخطّيها" (${skipped.length}) أدناه.`,
     });
   } catch (err) {
     try {
@@ -1753,7 +1844,9 @@ const resetInvoicesHandler = asyncHandler(async (req, res) => {
       console.error("[finance reset-invoices] rollback failed", rollbackErr);
     }
     console.error("[finance reset-invoices]", err);
-    res.status(500).json(buildResetInvoicesErrorResponse(err));
+    const body = buildResetInvoicesErrorResponse(err);
+    body.skipped = skipped;
+    res.status(500).json(body);
   } finally {
     client.release();
   }

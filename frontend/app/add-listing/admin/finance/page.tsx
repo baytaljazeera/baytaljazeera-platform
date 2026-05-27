@@ -914,11 +914,25 @@ export default function FinancePage() {
       }
       setResetInvoiceOpen(false);
       setResetPhrase("");
+      const ok = data as {
+        message?: string;
+        invoices_truncated?: boolean;
+        skipped?: Array<{ label: string; code: string; detail?: string }>;
+      };
+      const skippedList = Array.isArray(ok.skipped) ? ok.skipped : [];
+      const baseMsg = ok.message || "تم حذف جميع الفواتير التجريبية وإعادة ضبط الترقيم";
+      const skipSummary =
+        skippedList.length > 0
+          ? "\n\nتم تخطّي:\n" +
+            skippedList
+              .map((s) => `• ${s.label} [${s.code}]${s.detail ? ` — ${s.detail}` : ""}`)
+              .join("\n")
+          : "";
       setSuccessModal({
         isOpen: true,
-        message:
-          (data as { message?: string }).message || "تم حذف جميع الفواتير التجريبية وإعادة ضبط الترقيم",
-        type: "success",
+        message: baseMsg + skipSummary,
+        type:
+          ok.invoices_truncated === false || skippedList.length > 0 ? "error" : "success",
       });
       await Promise.all([
         fetchInvoices(),
