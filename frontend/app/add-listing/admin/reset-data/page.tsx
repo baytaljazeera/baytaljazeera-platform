@@ -107,6 +107,10 @@ export default function ResetDataPage() {
   const [confirmModal, setConfirmModal] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [results, setResults] = useState<Record<string, Record<string, number>> | null>(null);
+  // Production gate: owner must type this phrase literally before the
+  // backend will execute the reset. Belt-and-braces beside super_admin.
+  const RESET_PHRASE = 'أؤكد تصفير بيانات التجارب';
+  const [confirmText, setConfirmText] = useState("");
 
   useEffect(() => {
     fetchStats();
@@ -163,13 +167,17 @@ export default function ResetDataPage() {
         method: "POST",
         credentials: "include",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ categories: Array.from(selected) }),
+        body: JSON.stringify({
+          categories: Array.from(selected),
+          confirmation: confirmText.trim(),
+        }),
       });
       const data = await res.json();
       if (data.ok) {
         setMessage({ type: "success", text: "تم تصفير البيانات بنجاح" });
         setResults(data.results);
         setSelected(new Set());
+        setConfirmText("");
         fetchStats();
       } else {
         setMessage({ type: "error", text: data.error || "حدث خطأ" });
@@ -389,9 +397,29 @@ export default function ResetDataPage() {
             <p className="text-xs text-red-500 text-center mb-4">
               هذا الإجراء لا يمكن التراجع عنه!
             </p>
+            <div className="mb-4">
+              <label className="block text-xs font-semibold text-[#002845] mb-1.5">
+                اكتب هذه العبارة بالضبط لتأكيد التصفير:
+              </label>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2 text-center">
+                <span className="font-bold text-amber-800 text-sm tracking-wide">{RESET_PHRASE}</span>
+              </div>
+              <input
+                type="text"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="اكتب العبارة هنا..."
+                dir="rtl"
+                className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none transition ${
+                  confirmText.trim() === RESET_PHRASE
+                    ? 'border-emerald-400 bg-emerald-50 text-emerald-900'
+                    : 'border-slate-200 focus:border-red-400'
+                }`}
+              />
+            </div>
             <div className="flex gap-2">
               <button
-                onClick={() => setConfirmModal(false)}
+                onClick={() => { setConfirmModal(false); setConfirmText(""); }}
                 disabled={resetting}
                 className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition font-medium"
               >
@@ -399,8 +427,8 @@ export default function ResetDataPage() {
               </button>
               <button
                 onClick={handleReset}
-                disabled={resetting}
-                className="flex-1 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg transition flex items-center justify-center gap-2 font-medium"
+                disabled={resetting || confirmText.trim() !== RESET_PHRASE}
+                className="flex-1 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg transition flex items-center justify-center gap-2 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {resetting ? (
                   <>

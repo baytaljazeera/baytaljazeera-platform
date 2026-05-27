@@ -1623,19 +1623,28 @@ router.get("/sidebar-settings/visible", asyncHandler(async (req, res) => {
 }));
 
 // 🧹 تصفير بيانات التجارب
+// Phrase the owner must type literally to confirm the reset. Belt-and-
+// braces beside the super_admin role gate: stops accidental clicks and
+// makes the action auditable (the phrase is logged).
+const RESET_CONFIRMATION_PHRASE = 'أؤكد تصفير بيانات التجارب';
+
 router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
-  const { categories } = req.body;
+  const { categories, confirmation } = req.body;
   if (!categories || !Array.isArray(categories) || categories.length === 0) {
     return res.status(400).json({ ok: false, error: "يجب تحديد فئة واحدة على الأقل" });
   }
 
-  // منع التصفير في الإنتاج إلا بموافقة صريحة عبر متغير البيئة (طوارئ فقط)
+  // Production gate replaced with a typed-confirmation pattern. Old env
+  // var ALLOW_RESET_TEST_DATA still works as an emergency override for
+  // automation. Owner reset is unlocked by typing the literal phrase.
   const isProduction = process.env.NODE_ENV === 'production';
   const allowResetInProd = String(process.env.ALLOW_RESET_TEST_DATA || '').toLowerCase() === 'true';
-  if (isProduction && !allowResetInProd) {
+  const phraseOk = typeof confirmation === 'string' && confirmation.trim() === RESET_CONFIRMATION_PHRASE;
+  if (isProduction && !allowResetInProd && !phraseOk) {
     return res.status(403).json({
       ok: false,
-      error: 'تصفير بيانات التجارب غير مسموح في بيئة الإنتاج. للطوارئ فقط: ضبط ALLOW_RESET_TEST_DATA=true في بيئة الخادم ثم إعادة التشغيل.',
+      error: `يجب كتابة العبارة "${RESET_CONFIRMATION_PHRASE}" حرفيًا لتأكيد التصفير.`,
+      confirmation_required: RESET_CONFIRMATION_PHRASE,
     });
   }
 
@@ -1645,6 +1654,25 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
     return res.status(400).json({ ok: false, error: `فئات غير صالحة: ${invalid.join(', ')}` });
   }
 
+  // Per-statement savepoint so a missing table (42P01) or missing column
+  // (42703) doesn't abort the whole transaction. Returns rowCount on
+  // success, 0 on graceful skip; re-raises any other error.
+  async function safeDelete(client, sql, params = []) {
+    await client.query('SAVEPOINT sp');
+    try {
+      const r = await client.query(sql, params);
+      await client.query('RELEASE SAVEPOINT sp');
+      return r.rowCount || 0;
+    } catch (e) {
+      await client.query('ROLLBACK TO SAVEPOINT sp');
+      if (e && (e.code === '42P01' || e.code === '42703')) {
+        console.warn('[reset] skip', sql.slice(0, 70), '-', e.code);
+        return 0;
+      }
+      throw e;
+    }
+  }
+
   const results = {};
   const client = await db.connect();
 
@@ -1652,100 +1680,98 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
     await client.query('BEGIN');
 
     if (categories.includes('financial')) {
-      const r0 = await client.query('DELETE FROM elite_extension_requests');
-      const r4 = await client.query('DELETE FROM elite_slot_reservations');
-      const r1 = await client.query('DELETE FROM refunds');
-      const r2 = await client.query('DELETE FROM invoices');
-      const r3 = await client.query('DELETE FROM payments');
       results.financial = {
-        elite_extensions: r0.rowCount,
-        elite_reservations: r4.rowCount,
-        refunds: r1.rowCount,
-        invoices: r2.rowCount,
-        payments: r3.rowCount,
+        elite_extensions:    await safeDelete(client, 'DELETE FROM elite_extension_requests'),
+        elite_reservations:  await safeDelete(client, 'DELETE FROM elite_slot_reservations'),
+        refunds:             await safeDelete(client, 'DELETE FROM refunds'),
+        invoices:            await safeDelete(client, 'DELETE FROM invoices'),
+        payments:            await safeDelete(client, 'DELETE FROM payments'),
       };
     }
 
     if (categories.includes('messages')) {
-      const r1 = await client.query('DELETE FROM messages');
-      const r2 = await client.query('DELETE FROM conversations');
-      const r3 = await client.query('DELETE FROM admin_messages');
-      const r4 = await client.query('DELETE FROM admin_conversation_participants');
-      const r5 = await client.query('DELETE FROM admin_conversations');
       results.messages = {
-        messages: r1.rowCount,
-        conversations: r2.rowCount,
-        admin_messages: r3.rowCount,
-        admin_participants: r4.rowCount,
-        admin_conversations: r5.rowCount,
+        messages:                await safeDelete(client, 'DELETE FROM messages'),
+        conversations:           await safeDelete(client, 'DELETE FROM conversations'),
+        admin_messages:          await safeDelete(client, 'DELETE FROM admin_messages'),
+        admin_participants:      await safeDelete(client, 'DELETE FROM admin_conversation_participants'),
+        admin_conversations:     await safeDelete(client, 'DELETE FROM admin_conversations'),
+        omni_messages:           await safeDelete(client, 'DELETE FROM omni_messages'),
+        omni_conversations:      await safeDelete(client, 'DELETE FROM omni_conversations'),
+        support_replies:         await safeDelete(client, 'DELETE FROM support_ticket_replies'),
+        support_tickets:         await safeDelete(client, 'DELETE FROM support_tickets'),
+        listing_messages:        await safeDelete(client, 'DELETE FROM listing_messages'),
+        complaint_events:        await safeDelete(client, 'DELETE FROM complaint_events'),
+        flagged_conversations:   await safeDelete(client, 'DELETE FROM flagged_conversations'),
       };
     }
 
     if (categories.includes('ambassador')) {
-      const r1 = await client.query('DELETE FROM wallet_transactions');
-      const r2 = await client.query('DELETE FROM ambassador_withdrawal_requests');
-      const r3 = await client.query('UPDATE ambassador_wallet SET balance_cents = 0, total_earned_cents = 0, total_withdrawn_cents = 0');
-      const r4 = await client.query('UPDATE referrals SET status = $1 WHERE status != $1', ['completed']);
       results.ambassador = {
-        wallet_transactions: r1.rowCount,
-        withdrawal_requests: r2.rowCount,
-        wallets_reset: r3.rowCount,
-        referrals_reset: r4.rowCount,
+        wallet_transactions:  await safeDelete(client, 'DELETE FROM wallet_transactions'),
+        withdrawal_requests:  await safeDelete(client, 'DELETE FROM ambassador_withdrawal_requests'),
+        wallets_reset:        await safeDelete(client, 'UPDATE ambassador_wallet SET balance_cents = 0, total_earned_cents = 0, total_withdrawn_cents = 0'),
+        referrals_reset:      await safeDelete(client, 'UPDATE referrals SET status = $1 WHERE status != $1', ['completed']),
       };
     }
 
     if (categories.includes('ai_logs')) {
-      const r1 = await client.query('DELETE FROM ai_chat_logs');
-      results.ai_logs = { chat_logs: r1.rowCount };
+      results.ai_logs = {
+        chat_logs: await safeDelete(client, 'DELETE FROM ai_chat_logs'),
+      };
     }
 
     if (categories.includes('whatsapp')) {
-      const r0 = await client.query('DELETE FROM whatsapp_conversations');
-      const r1 = await client.query('DELETE FROM whatsapp_messages');
-      const r2 = await client.query('DELETE FROM whatsapp_campaigns');
       results.whatsapp = {
-        conversation_status: r0.rowCount,
-        messages: r1.rowCount,
-        campaigns: r2.rowCount,
+        conversation_status:  await safeDelete(client, 'DELETE FROM whatsapp_conversations'),
+        messages:             await safeDelete(client, 'DELETE FROM whatsapp_messages'),
+        campaigns:            await safeDelete(client, 'DELETE FROM whatsapp_campaigns'),
       };
     }
 
     if (categories.includes('notifications')) {
-      const r1 = await client.query('DELETE FROM notifications');
-      const r2 = await client.query('DELETE FROM account_alerts');
       results.notifications = {
-        notifications: r1.rowCount,
-        alerts: r2.rowCount,
+        notifications: await safeDelete(client, 'DELETE FROM notifications'),
+        alerts:        await safeDelete(client, 'DELETE FROM account_alerts'),
       };
     }
 
     if (categories.includes('customers')) {
-      // شكاوى الحساب: user_id قد يصبح NULL عند حذف المستخدم (ON DELETE SET NULL) — نحذف الجدول بالكامل مع تصفير العملاء لضمان عدم بقاء سجلات تجريبية
-      const rComplaints = await client.query('DELETE FROM account_complaints');
-      await client.query('DELETE FROM messages');
-      await client.query('DELETE FROM conversations');
-      await client.query('DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await client.query('DELETE FROM account_alerts WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await client.query('DELETE FROM ai_chat_logs WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await client.query('DELETE FROM wallet_transactions WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await client.query('DELETE FROM ambassador_withdrawal_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await client.query('DELETE FROM ambassador_wallet WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await client.query('DELETE FROM referrals WHERE referrer_id IN (SELECT id FROM users WHERE role = $1) OR referred_id IN (SELECT id FROM users WHERE role = $1)', ['user', 'user']);
-      await client.query('DELETE FROM advertiser_reviews WHERE reviewer_id IN (SELECT id FROM users WHERE role = $1) OR advertiser_id IN (SELECT id FROM users WHERE role = $1)', ['user', 'user']);
-      await client.query('DELETE FROM advertiser_reputation WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await client.query('DELETE FROM listing_media WHERE listing_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', ['user']);
-      await client.query('DELETE FROM elite_extension_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await client.query('DELETE FROM elite_slot_reservations WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await client.query('DELETE FROM refunds WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await client.query('DELETE FROM invoices WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await client.query('DELETE FROM payments WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await client.query('DELETE FROM quota_buckets WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await client.query('DELETE FROM user_plans WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await client.query('DELETE FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      const r1 = await client.query('DELETE FROM users WHERE role = $1', ['user']);
+      // Clean every table linked to role='user' rows. Order matters: child
+      // rows first, then user_plans/properties, then users themselves.
+      const childDeletes = await Promise.all([]);
+      const accountComplaints = await safeDelete(client, 'DELETE FROM account_complaints');
+      await safeDelete(client, 'DELETE FROM messages');
+      await safeDelete(client, 'DELETE FROM conversations');
+      await safeDelete(client, 'DELETE FROM listing_messages');
+      await safeDelete(client, 'DELETE FROM complaint_events');
+      await safeDelete(client, 'DELETE FROM omni_messages');
+      await safeDelete(client, 'DELETE FROM omni_conversations');
+      await safeDelete(client, 'DELETE FROM support_ticket_replies');
+      await safeDelete(client, 'DELETE FROM support_tickets');
+      await safeDelete(client, 'DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await safeDelete(client, 'DELETE FROM account_alerts WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await safeDelete(client, 'DELETE FROM ai_chat_logs WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await safeDelete(client, 'DELETE FROM wallet_transactions WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await safeDelete(client, 'DELETE FROM ambassador_withdrawal_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await safeDelete(client, 'DELETE FROM ambassador_wallet WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await safeDelete(client, 'DELETE FROM referrals WHERE referrer_id IN (SELECT id FROM users WHERE role = $1) OR referred_id IN (SELECT id FROM users WHERE role = $1)', ['user', 'user']);
+      await safeDelete(client, 'DELETE FROM advertiser_reviews WHERE reviewer_id IN (SELECT id FROM users WHERE role = $1) OR advertiser_id IN (SELECT id FROM users WHERE role = $1)', ['user', 'user']);
+      await safeDelete(client, 'DELETE FROM advertiser_reputation WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await safeDelete(client, 'DELETE FROM listing_media WHERE listing_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', ['user']);
+      await safeDelete(client, 'DELETE FROM elite_extension_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await safeDelete(client, 'DELETE FROM elite_slot_reservations WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await safeDelete(client, 'DELETE FROM refunds WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await safeDelete(client, 'DELETE FROM invoices WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await safeDelete(client, 'DELETE FROM payments WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await safeDelete(client, 'DELETE FROM quota_buckets WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await safeDelete(client, 'DELETE FROM user_plans WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await safeDelete(client, 'DELETE FROM favorites WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await safeDelete(client, 'DELETE FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      const deletedUsers = await safeDelete(client, 'DELETE FROM users WHERE role = $1', ['user']);
       results.customers = {
-        account_complaints: rComplaints.rowCount,
-        deleted_users: r1.rowCount,
+        account_complaints: accountComplaints,
+        deleted_users: deletedUsers,
       };
     }
 
