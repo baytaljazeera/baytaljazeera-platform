@@ -96,6 +96,12 @@ async function getAllRoles() {
   //   (a) genuinely-custom role created via the UI
   //   (b) override row for a default role — same key as a DEFAULT entry,
   //       used to customize label/color/icon without code changes
+  //
+  // Fail-soft: any failure (table missing 42P01, columns missing 42703,
+  // permission denied, etc.) just means "no custom rows" and we fall back
+  // to the hardcoded DEFAULT_ADMIN_ROLES. The previous version re-threw
+  // every error except 42703, which 500'd /list and /all-roles whenever
+  // the migration hadn't run yet on a stale tenant.
   let customRows = [];
   try {
     const r = await db.query(
@@ -106,13 +112,24 @@ async function getAllRoles() {
     );
     customRows = r.rows;
   } catch (e) {
-    // Fall back to the legacy shape if the capability columns aren't deployed yet.
     if (e && e.code === '42703') {
-      const r = await db.query(
-        `SELECT key, label, color, icon, description FROM custom_roles WHERE is_active = true ORDER BY created_at`
-      );
-      customRows = r.rows;
-    } else { throw e; }
+      // Capability columns not migrated yet — try the legacy column set.
+      try {
+        const r = await db.query(
+          `SELECT key, label, color, icon, description FROM custom_roles WHERE is_active = true ORDER BY created_at`
+        );
+        customRows = r.rows;
+      } catch (e2) {
+        console.warn('[getAllRoles] legacy custom_roles read also failed:', e2.message);
+      }
+    } else if (e && e.code === '42P01') {
+      // custom_roles table missing entirely — pretend there are no custom rows.
+      console.warn('[getAllRoles] custom_roles table missing — defaults only');
+    } else {
+      // Any other error: log and continue with no custom rows. Returning
+      // defaults is better than 500'ing the entire endpoint.
+      console.error('[getAllRoles] unexpected error reading custom_roles:', e?.message || e);
+    }
   }
   const byKey = new Map();
   for (const r of customRows) byKey.set(r.key, r);
@@ -192,12 +209,24 @@ router.get("/list", authMiddleware, requireRoles('super_admin', 'admin'), asyncH
 router.get("/role/:role", authMiddleware, requireRoles('super_admin', 'admin'), asyncHandler(async (req, res) => {
   await ensureSupportInternalPermissionMigrated();
   const { role } = req.params;
-  
-  const result = await db.query(
-    "SELECT permission_key, is_granted FROM role_permissions WHERE role = $1",
-    [role]
-  );
-  
+
+  // Fail-soft: if role_permissions doesn't exist yet (42P01) treat as
+  // empty — every permission renders as not-granted and the user can
+  // grant + save which auto-creates the row.
+  let result = { rows: [] };
+  try {
+    result = await db.query(
+      "SELECT permission_key, is_granted FROM role_permissions WHERE role = $1",
+      [role]
+    );
+  } catch (e) {
+    if (e && (e.code === '42P01' || e.code === '42703')) {
+      console.warn('[/role/:role] role_permissions read failed (degraded):', e.code);
+    } else {
+      throw e;
+    }
+  }
+
   const permissionsMap = {};
   result.rows.forEach(row => {
     permissionsMap[row.permission_key] = row.is_granted;
