@@ -988,14 +988,15 @@ function AdminRolesPageContent() {
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37]" />
                 </div>
-              ) : selectedAdminRole && (selectedAdminRole === 'super_admin' || selectedAdminRole === 'admin') ? (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
-                  <div className="flex items-center gap-2 text-blue-700">
-                    <Shield className="w-5 h-5" />
-                    <span className="font-semibold">تحكم كامل</span>
+              ) : selectedAdminRole === 'super_admin' ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
+                  <div className="flex items-center gap-2 text-amber-700">
+                    <Crown className="w-5 h-5" />
+                    <span className="font-semibold">المالك — تحكم غير مشروط</span>
                   </div>
-                  <p className="text-sm text-blue-600 mt-1">
-                    {selectedAdminRole === 'super_admin' ? 'المدير العام' : 'المدير'} يتحكم بجميع الصلاحيات تلقائيًا ولا يحتاج إلى تفعيل يدوي.
+                  <p className="text-sm text-amber-600 mt-1">
+                    المدير العام (المالك) يملك جميع الصلاحيات تلقائيًا ولا يمكن تعديلها — هذا هو الدور الوحيد المحمي.
+                    أي دور آخر، بما فيه &quot;مدير&quot;، تُضبط صلاحياته من هذه الشاشة بفتح وغلق كل عنصر.
                   </p>
                 </div>
               ) : !selectedAdminRole ? (

@@ -243,19 +243,33 @@ router.get("/role/:role", authMiddleware, requireRoles('super_admin', 'admin'), 
 router.get("/my-permissions", authMiddleware, asyncHandler(async (req, res) => {
   await ensureSupportInternalPermissionMigrated();
   const userRole = req.user.role;
-  
-  if (userRole === 'super_admin' || userRole === 'admin') {
+
+  // super_admin (the platform owner) is the only role that is
+  // unconditionally granted everything — its permissions cannot be
+  // toggled. Every other role, including 'admin', reads from
+  // role_permissions so the owner can tighten or loosen access via the
+  // permission matrix. (Boot-time seed in index.js ensures 'admin'
+  // starts with every key granted, so the migration is invisible.)
+  if (userRole === 'super_admin') {
     const permissions = ALL_PERMISSIONS.map(p => p.key);
     return res.json({ permissions });
   }
-  
-  const result = await db.query(
-    "SELECT permission_key FROM role_permissions WHERE role = $1 AND is_granted = true",
-    [userRole]
-  );
-  
-  const permissions = result.rows.map(row => row.permission_key);
-  
+
+  let permissions = [];
+  try {
+    const result = await db.query(
+      "SELECT permission_key FROM role_permissions WHERE role = $1 AND is_granted = true",
+      [userRole]
+    );
+    permissions = result.rows.map(row => row.permission_key);
+  } catch (e) {
+    if (e && (e.code === '42P01' || e.code === '42703')) {
+      console.warn('[/my-permissions] role_permissions read failed:', e.code);
+    } else {
+      throw e;
+    }
+  }
+
   res.json({ permissions });
 }));
 

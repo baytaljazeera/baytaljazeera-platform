@@ -552,6 +552,38 @@ async function runDatabaseInit() {
       console.warn('[admin_nav ensure] skipped:', ensureErr.message);
     }
 
+    // Phase 6.E seed — ensure 'admin' has explicit grant rows for every
+    // permission. Previously, both super_admin and admin were treated as
+    // implicit "all-granted" in /my-permissions; the owner asked that
+    // admin become toggleable like every other role. To migrate without
+    // suddenly stripping admin's access on existing tenants, we seed
+    // every permission key as granted IF admin has zero rows in
+    // role_permissions. Once any row exists (post-seed), explicit DB
+    // state wins and the seed is a no-op.
+    try {
+      const { rows } = await db.query(
+        `SELECT COUNT(*)::int AS n FROM role_permissions WHERE role = 'admin'`
+      );
+      if ((rows[0]?.n || 0) === 0) {
+        const ADMIN_PERMS = [
+          'dashboard', 'listings', 'reports', 'complaints', 'support',
+          'support_internal', 'news', 'finance', 'plans', 'membership',
+          'marketing', 'ambassador', 'ai_center', 'users', 'roles', 'settings',
+        ];
+        for (const key of ADMIN_PERMS) {
+          await db.query(
+            `INSERT INTO role_permissions (role, permission_key, is_granted, updated_at)
+             VALUES ('admin', $1, true, CURRENT_TIMESTAMP)
+             ON CONFLICT (role, permission_key) DO NOTHING`,
+            [key]
+          );
+        }
+        console.log(`🌱 role_permissions: seeded 'admin' with ${ADMIN_PERMS.length} granted permissions`);
+      }
+    } catch (adminPermsErr) {
+      console.warn('[admin role_permissions seed] skipped:', adminPermsErr.message);
+    }
+
     // Phase 2 seed — demonstration inboxes powered by the generic engine.
     // Idempotent: only seeds when admin_inboxes is empty. Adds two new
     // department inboxes (Content + HR) routed through the dynamic
