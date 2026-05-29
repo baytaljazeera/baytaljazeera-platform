@@ -11,6 +11,13 @@ async function processWebhook(payload, signature) {
   }
 
   const sync = await getStripeSync();
+  if (!sync) {
+    // Stripe sync helper is disabled in this deployment. Acknowledge the
+    // webhook without local DB sync — direct stripe handlers (if any)
+    // remain available via getUncachableStripeClient.
+    console.warn('[stripe webhook] sync disabled (no sync helper); acknowledging only.');
+    return;
+  }
   await sync.processWebhook(payload, signature);
 }
 

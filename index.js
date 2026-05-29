@@ -30,7 +30,8 @@ const {
 const { generateListingSlideshow } = require("./backend/services/videoService");
 const { cache, isRedisConnected } = require("./backend/config/redis");
 const { initializeWorkers, closeAllQueues } = require("./backend/queues");
-const { setupAuth, registerAuthRoutes } = require("./backend/replit_auth");
+// OAuth providers (Google/Apple) are handled by ./backend/routes/auth.js
+// and ./backend/routes/oauth.js mounted later under /api/auth.
 
 // 📧 Initialize Email Service (Gmail API) - Load early to show initialization messages
 require("./backend/services/emailService");
@@ -86,7 +87,8 @@ const { createSlideshowVideo, generateDynamicPromoText, generatePromotionalText 
 
 const app = express();
 
-// 🔒 Trust proxy for Replit (required for rate limiting)
+// Trust the first proxy hop (Render / Vercel edge) so rate-limiting,
+// secure cookies, and req.ip see the real client address.
 app.set('trust proxy', 1);
 
 // 🔧 Hostname Fix Middleware - Fix "base" hostname from Next.js proxy
@@ -97,7 +99,7 @@ app.use((req, res, next) => {
   // Fix invalid hostnames to prevent session middleware errors
   if (originalHostname === 'base' || !originalHostname || originalHostname.length < 3) {
     // Override hostname getter to return a valid hostname
-    const validHostname = process.env.REPLIT_DEV_DOMAIN || '127.0.0.1';
+    const validHostname = process.env.APP_HOSTNAME || '127.0.0.1';
     Object.defineProperty(req, 'hostname', {
       get: () => validHostname,
       configurable: true
@@ -860,35 +862,15 @@ process.on("unhandledRejection", (err) =>
 // 📦 Plan functions imported from backend/services/planService.js
 // 📦 Video generation imported from backend/services/videoService.js
 
-// 🔐 Setup Replit OAuth (Google, Apple, GitHub, etc.)
-(async () => {
-  try {
-    await setupAuth(app);
-    registerAuthRoutes(app);
-    console.log('✅ Replit Auth configured (Google, Apple, GitHub, X, Email)');
-  } catch (err) {
-    console.log('⚠️ Replit Auth not available:', err.message);
-  }
-})();
-
-// 🔐 OAuth Fallback Routes (when Replit Auth is not available)
-// These routes handle OAuth requests when running outside Replit environment
+// OAuth login fallback. Direct OAuth (Google/Apple) is handled by the
+// dedicated /api/auth/* routes from authRoutes / oauthRoutes — this stub
+// just answers /api/login with a clear "use email + password or the
+// provider buttons" message for any old client that still calls it.
 app.get('/api/login', (req, res) => {
-  // Check if Replit Auth is available
-  if (process.env.REPL_ID) {
-    // If Replit Auth is available, it should handle this route
-    // This should not be reached if Replit Auth is properly configured
-    return res.status(404).json({ 
-      error: 'OAuth login not configured',
-      errorEn: 'OAuth login endpoint not found'
-    });
-  }
-  
-  // Return a user-friendly error message
-  res.status(503).json({ 
-    error: 'تسجيل الدخول عبر Google و Apple غير متاح حالياً. يرجى استخدام البريد الإلكتروني وكلمة المرور.',
-    errorEn: 'OAuth login (Google, Apple) is currently unavailable. Please use email and password to register/login.',
-    available: false
+  res.status(503).json({
+    error: 'تسجيل الدخول عبر هذا المسار غير متاح. يرجى استخدام البريد الإلكتروني وكلمة المرور أو أزرار جوجل/آبل.',
+    errorEn: 'OAuth login via this endpoint is not available. Use email/password or the Google/Apple buttons.',
+    available: false,
   });
 });
 
@@ -1288,7 +1270,7 @@ app.use((err, req, res, next) => {
 
 // 📦 fixActiveListings imported from backend/scheduler/tasks.js
 
-// 🟢 تشغيل السيرفر - Railway يستخدم PORT env، Replit يستخدم 8080
+// 🟢 تشغيل السيرفر — يستخدم PORT env أو 8080 احتياطياً
 const PORT = process.env.PORT || 8080;
 
 // بدء السيرفر فوراً (لنجاح الـ health check)

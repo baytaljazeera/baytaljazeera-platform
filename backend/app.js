@@ -56,7 +56,7 @@ const oauthRoutes = require("./routes/oauth");
 function createApp() {
   const app = express();
 
-  // Trust proxy for Replit
+  // Trust first proxy (Render / Vercel edge).
   app.set('trust proxy', 1);
 
   // CORS - MUST BE FIRST (before any other middleware)
@@ -91,14 +91,14 @@ function createApp() {
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
         // 🔒 Security: Restricted image sources to trusted domains
-        imgSrc: ["'self'", "data:", "blob:", "https://*.tile.openstreetmap.org", "https://unpkg.com", "https://*.replit.dev", "https://*.replit.app"],
+        imgSrc: ["'self'", "data:", "blob:", "https://*.tile.openstreetmap.org", "https://unpkg.com"],
         // 🔒 Security: Restricted connect sources
-        connectSrc: ["'self'", "https://*.replit.dev", "https://*.replit.app", "https://api.openai.com", "https://generativelanguage.googleapis.com", "wss:"],
+        connectSrc: ["'self'", "https://api.openai.com", "https://generativelanguage.googleapis.com", "wss:"],
         mediaSrc: ["'self'", "blob:"],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
         formAction: ["'self'"],
-        frameAncestors: ["'self'", "https://*.replit.dev", "https://*.replit.app"],
+        frameAncestors: ["'self'"],
         upgradeInsecureRequests: [],
       }
     } : false,

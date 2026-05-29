@@ -126,7 +126,6 @@ const isProduction = process.env.NODE_ENV === 'production';
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   process.env.CUSTOM_DOMAIN ? `https://${process.env.CUSTOM_DOMAIN}` : null,
-  process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null,
   'http://localhost:5000',
   'http://localhost:3000',
 ].filter(Boolean);
@@ -135,12 +134,7 @@ const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
-    // Allow Replit domains
-    if (origin.includes('.replit.dev') || origin.includes('.replit.app')) {
-      return callback(null, true);
-    }
-    
+
     // Allow Vercel domains (production frontend)
     if (origin.includes('.vercel.app') || origin.includes('vercel.app')) {
       return callback(null, true);

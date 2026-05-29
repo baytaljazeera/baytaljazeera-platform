@@ -62,7 +62,6 @@
     "recharts": "^3.6.0",
     "sonner": "^2.0.7",
     "stripe": "^20.1.2",
-    "stripe-replit-sync": "^1.0.0",
     "supertest": "^7.1.4",
     "zustand": "^5.0.9"
   }

@@ -15,8 +15,6 @@ console.log(`   - GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN ? '✅ Set' : '❌ 
 
 let gmail = null;
 let oauth2Client = null;
-let useReplitIntegration = false;
-let replitConnectionSettings = null;
 
 if (GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN) {
   try {
@@ -37,68 +35,7 @@ if (GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN) {
     console.error('❌ [EmailService] Failed to initialize Gmail API:', error.message);
   }
 } else {
-  console.log('📧 [EmailService] Checking for Replit Gmail Integration...');
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  if (hostname) {
-    useReplitIntegration = true;
-    console.log('✅ [EmailService] Will use Replit Gmail Integration');
-  } else {
-    console.warn('⚠️ [EmailService] No Gmail credentials and no Replit integration. Email sending disabled.');
-  }
-}
-
-async function getReplitGmailClient() {
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY 
-    ? 'repl ' + process.env.REPL_IDENTITY 
-    : process.env.WEB_REPL_RENEWAL 
-    ? 'depl ' + process.env.WEB_REPL_RENEWAL 
-    : null;
-
-  if (!hostname || !xReplitToken) {
-    return null;
-  }
-
-  try {
-    if (replitConnectionSettings && replitConnectionSettings.settings?.expires_at && 
-        new Date(replitConnectionSettings.settings.expires_at).getTime() > Date.now()) {
-      const accessToken = replitConnectionSettings.settings.access_token;
-      const oauth = new google.auth.OAuth2();
-      oauth.setCredentials({ access_token: accessToken });
-      return google.gmail({ version: 'v1', auth: oauth });
-    }
-
-    const response = await fetch(
-      'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=google-mail',
-      {
-        headers: {
-          'Accept': 'application/json',
-          'X_REPLIT_TOKEN': xReplitToken
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      console.error('❌ [EmailService] Replit Gmail connection failed:', response.status);
-      return null;
-    }
-    
-    const data = await response.json();
-    replitConnectionSettings = data.items?.[0];
-    const accessToken = replitConnectionSettings?.settings?.access_token || 
-                       replitConnectionSettings?.settings?.oauth?.credentials?.access_token;
-
-    if (!accessToken) {
-      return null;
-    }
-    
-    const oauth = new google.auth.OAuth2();
-    oauth.setCredentials({ access_token: accessToken });
-    return google.gmail({ version: 'v1', auth: oauth });
-  } catch (error) {
-    console.error('❌ [EmailService] Replit Gmail error:', error.message);
-    return null;
-  }
+  console.warn('⚠️ [EmailService] GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN not all set. Email sending disabled.');
 }
 
 function getGmailClient() {
@@ -108,17 +45,8 @@ function getGmailClient() {
 async function sendEmail(to, subject, htmlBody, textBody = null) {
   console.log(`📧 [EmailService] sendEmail called - To: ${to}, Subject: ${subject}`);
   
-  let gmailClient = gmail;
-  let authClient = oauth2Client;
-  
-  if (!gmailClient && useReplitIntegration) {
-    console.log('📧 [EmailService] Using Replit Gmail Integration...');
-    gmailClient = await getReplitGmailClient();
-    if (gmailClient) {
-      console.log('✅ [EmailService] Got Replit Gmail client');
-    }
-  }
-  
+  const gmailClient = gmail;
+
   if (!gmailClient) {
     console.error('❌ [EmailService] No Gmail client available. Cannot send email.');
     return { success: false, error: 'Gmail API not configured' };

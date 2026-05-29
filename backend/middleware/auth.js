@@ -289,79 +289,26 @@ const adminMiddleware = adminOnly;
 // قائمة أدوار الإدارة الافتراضية
 const ADMIN_ROLES = ['super_admin', 'admin', 'admin_manager', 'finance_admin', 'support_admin', 'content_admin'];
 
-// Combined auth middleware: supports both JWT and Replit OAuth session
+// JWT auth middleware.
 async function combinedAuthMiddleware(req, res, next) {
-  // First, try JWT authentication
   const token = req.cookies?.token || req.headers.authorization?.replace("Bearer ", "");
-  
+
   if (token) {
     try {
       const payload = jwt.verify(token, JWT_SECRET, JWT_VERIFY_OPTIONS);
-      
       if (payload.userId && payload.role) {
-        req.user = { 
-          id: payload.userId, 
+        req.user = {
+          id: payload.userId,
           role: payload.role,
-          role_level: ROLES[payload.role]?.level || 0
+          role_level: ROLES[payload.role]?.level || 0,
         };
         return next();
       }
     } catch (err) {
-      // JWT failed, try session auth below
+      // fall through to 401
     }
   }
-  
-  // Second, try Replit OAuth session
-  if (req.isAuthenticated && req.isAuthenticated() && req.user?.claims) {
-    try {
-      const db = require('../db');
-      const replitUserId = req.user.claims.sub;
-      
-      // Find the local user linked to this Replit user
-      const replitUserResult = await db.query(
-        'SELECT local_user_id FROM replit_users WHERE id = $1',
-        [replitUserId]
-      );
-      
-      if (replitUserResult.rows.length > 0 && replitUserResult.rows[0].local_user_id) {
-        const localUserId = replitUserResult.rows[0].local_user_id;
-        const userResult = await db.query(
-          'SELECT id, role FROM users WHERE id = $1',
-          [localUserId]
-        );
-        
-        if (userResult.rows.length > 0) {
-          req.user = {
-            id: userResult.rows[0].id,
-            role: userResult.rows[0].role || 'user',
-            role_level: ROLES[userResult.rows[0].role]?.level || 0
-          };
-          return next();
-        }
-      }
-      
-      // If no linked local user, try to find by email
-      const email = req.user.claims.email;
-      if (email) {
-        const userByEmail = await db.query(
-          'SELECT id, role FROM users WHERE email = $1',
-          [email.toLowerCase()]
-        );
-        
-        if (userByEmail.rows.length > 0) {
-          req.user = {
-            id: userByEmail.rows[0].id,
-            role: userByEmail.rows[0].role || 'user',
-            role_level: ROLES[userByEmail.rows[0].role]?.level || 0
-          };
-          return next();
-        }
-      }
-    } catch (err) {
-      console.error('[Auth] Session lookup error:', err.message);
-    }
-  }
-  
+
   return res.status(401).json({ error: "غير مصرح", errorEn: "Unauthorized" });
 }
 

@@ -108,7 +108,7 @@ router.post('/create-checkout', authMiddleware, asyncHandler(async (req, res) =>
     customerId = customer.id;
   }
 
-  const baseUrl = `https://${process.env.REPLIT_DOMAINS?.split(',')[0]}`;
+  const baseUrl = process.env.APP_BASE_URL || process.env.FRONTEND_URL || 'https://www.baytaljazeera.com';
   const session = await stripeService.createCheckoutSession(
     customerId,
     priceId,
@@ -132,7 +132,7 @@ router.post('/create-portal', authMiddleware, asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'لا يوجد حساب Stripe للمستخدم' });
   }
 
-  const baseUrl = `https://${process.env.REPLIT_DOMAINS?.split(',')[0]}`;
+  const baseUrl = process.env.APP_BASE_URL || process.env.FRONTEND_URL || 'https://www.baytaljazeera.com';
   const session = await stripeService.createCustomerPortalSession(
     userResult.rows[0].stripe_customer_id,
     returnUrl || `${baseUrl}/account`

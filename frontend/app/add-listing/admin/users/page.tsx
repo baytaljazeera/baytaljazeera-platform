@@ -42,7 +42,6 @@ const AUTH_PROVIDER_LABELS: Record<string, { label: string; icon: string; color:
   apple: { label: "Apple", icon: "🍎", color: "bg-gray-100 text-gray-700" },
   github: { label: "GitHub", icon: "⚫", color: "bg-purple-100 text-purple-700" },
   x: { label: "X (Twitter)", icon: "✖", color: "bg-black/10 text-black" },
-  replit: { label: "Replit", icon: "🔸", color: "bg-orange-100 text-orange-700" },
 };
 
 interface UserStats {
