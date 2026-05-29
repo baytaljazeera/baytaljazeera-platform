@@ -6,7 +6,11 @@ exports.up = async function(knex) {
     table.string('first_name');
     table.string('last_name');
     table.string('profile_image_url');
-    table.integer('local_user_id').references('id').inTable('users').onDelete('SET NULL');
+    // users.id is UUID (init.js + initial migration). An INTEGER column
+    // here makes the FK incompatible, which is why this migration kept
+    // failing on every Render deploy with "foreign key constraint
+    // ... cannot be implemented".
+    table.uuid('local_user_id').references('id').inTable('users').onDelete('SET NULL');
     table.timestamp('created_at').defaultTo(knex.fn.now());
     table.timestamp('updated_at').defaultTo(knex.fn.now());
   });
