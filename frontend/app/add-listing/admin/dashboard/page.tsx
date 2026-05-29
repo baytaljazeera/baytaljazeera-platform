@@ -2,15 +2,12 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
-  LayoutDashboard,
   FileText,
   Users,
   AlertCircle,
-  TrendingUp,
-  CheckCircle,
   Clock,
   RefreshCw,
   Loader2,
@@ -18,19 +15,13 @@ import {
   MapPin,
   CreditCard,
   Building2,
-  BarChart3,
-  PieChart as PieChartIcon,
   Wallet,
-  Star,
-  Home,
-  Activity,
   Calendar,
-  Inbox,
   ArrowLeft,
-  Coins,
+  Moon,
+  CheckCircle2,
+  Sparkles,
 } from "lucide-react";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://baytaljazeera-backend.onrender.com';
 import {
   BarChart,
   Bar,
@@ -45,9 +36,29 @@ import {
   Area,
   LineChart,
   Line,
-  Legend
+  Legend,
 } from "recharts";
 import { PlatformPulse } from "@/components/admin/PlatformPulse";
+
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "https://baytaljazeera-backend.onrender.com";
+
+// ─── Brand palette ────────────────────────────────────────────────────────────
+// Single accent (gold), navy for text/structure. Status hues are reserved for
+// state — they are NOT used to tint category cards.
+const GOLD = "#D4AF37";
+const GOLD_DEEP = "#9A7D28";
+const GOLD_SOFT = "#E6C966";
+const NAVY = "#002845";
+const NAVY_MID = "#01456D";
+const NAVY_SOFT = "#5C7A93";
+const PAPER = "#FAF8F4"; // warm off-white
+const HAIR = "#EDE6D6"; // subtle border on warm bg
+
+// Chart palettes — tonal, no rainbow. Donut/bar legends inherit from these.
+const SUBSCRIPTION_PALETTE = [GOLD, NAVY, NAVY_SOFT];
+const CITY_PALETTE = [NAVY, NAVY_MID, GOLD_DEEP, GOLD, NAVY_SOFT, GOLD_SOFT];
+const PROPERTY_PALETTE = [GOLD, NAVY, GOLD_DEEP, NAVY_MID, NAVY_SOFT];
 
 interface DashboardStats {
   totalListings: number;
@@ -95,11 +106,6 @@ interface ActivityItem {
   time: string;
 }
 
-const SUBSCRIPTION_COLORS = ["#D4AF37", "#8B5CF6", "#64748B"];
-const CITY_COLORS = ["#002845", "#01456d", "#D4AF37", "#10B981", "#8B5CF6", "#F59E0B"];
-const PROPERTY_TYPE_COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EF4444"];
-const AMBASSADOR_COLORS = ["#D4AF37", "#10B981"];
-
 interface AmbassadorStats {
   active_ambassadors: number;
   pending_requests: number;
@@ -114,17 +120,47 @@ interface AmbassadorChartData {
   consumptions: number;
 }
 
+// ─── Time-of-day greeting (يفتح النفس) ───────────────────────────────────────
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 5) return "تصبحون على خير";
+  if (h < 12) return "صباح الخير";
+  if (h < 17) return "نهارك سعيد";
+  if (h < 21) return "مساء الخير";
+  return "مساء النور";
+}
+
+function formatTodayAr() {
+  try {
+    return new Date().toLocaleDateString("ar-SA-u-ca-gregory", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    });
+  } catch {
+    return new Date().toLocaleDateString("ar", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    });
+  }
+}
+
 export default function AdminDashboard() {
   const [stats, setStats] = useState<DashboardStats>({
     totalListings: 0,
     activeUsers: 0,
     newReports: 0,
-    pendingListings: 0
+    pendingListings: 0,
   });
   const [advancedStats, setAdvancedStats] = useState<AdvancedStats | null>(null);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
-  const [ambassadorStats, setAmbassadorStats] = useState<AmbassadorStats | null>(null);
-  const [ambassadorChartData, setAmbassadorChartData] = useState<AmbassadorChartData[]>([]);
+  const [ambassadorStats, setAmbassadorStats] = useState<AmbassadorStats | null>(
+    null
+  );
+  const [ambassadorChartData, setAmbassadorChartData] = useState<
+    AmbassadorChartData[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<string>("جاري التحميل...");
   const [mounted, setMounted] = useState(false);
@@ -140,17 +176,26 @@ export default function AdminDashboard() {
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      const [listingsRes, usersRes, complaintsRes, notificationsRes, advancedRes, ambassadorRes, ambassadorChartRes] = await Promise.all([
+      const [
+        listingsRes,
+        usersRes,
+        complaintsRes,
+        notificationsRes,
+        advancedRes,
+        ambassadorRes,
+        ambassadorChartRes,
+      ] = await Promise.all([
         fetch(`${API_URL}/api/admin/listings/stats`, { credentials: "include", headers }),
         fetch(`${API_URL}/api/admin/users/stats`, { credentials: "include", headers }),
         fetch(`${API_URL}/api/admin/complaints/stats`, { credentials: "include", headers }),
         fetch(`${API_URL}/api/notifications/recent`, { credentials: "include", headers }),
         fetch(`${API_URL}/api/admin/dashboard/advanced-stats`, { credentials: "include", headers }),
         fetch(`${API_URL}/api/ambassador/admin/stats`, { credentials: "include", headers }),
-        fetch(`${API_URL}/api/ambassador/admin/chart-data?days=14`, { credentials: "include", headers })
+        fetch(`${API_URL}/api/ambassador/admin/chart-data?days=14`, { credentials: "include", headers }),
       ]);
 
-      let totalListings = 0, pendingListings = 0;
+      let totalListings = 0,
+        pendingListings = 0;
       if (listingsRes.ok) {
         const data = await listingsRes.json();
         totalListings = data.total || 0;
@@ -172,12 +217,14 @@ export default function AdminDashboard() {
       let recentActivities: ActivityItem[] = [];
       if (notificationsRes.ok) {
         const data = await notificationsRes.json();
-        recentActivities = (data.notifications || []).slice(0, 4).map((n: any, i: number) => ({
-          id: n.id || i,
-          type: n.type || "general",
-          text: n.title || n.body || "نشاط جديد",
-          time: formatTimeAgo(n.created_at)
-        }));
+        recentActivities = (data.notifications || [])
+          .slice(0, 5)
+          .map((n: { id?: string | number; type?: string; title?: string; body?: string; created_at?: string }, i: number) => ({
+            id: String(n.id ?? i),
+            type: n.type || "general",
+            text: n.title || n.body || "نشاط جديد",
+            time: formatTimeAgo(n.created_at || ""),
+          }));
       }
 
       if (advancedRes.ok) {
@@ -195,12 +242,7 @@ export default function AdminDashboard() {
         setAmbassadorChartData(data);
       }
 
-      setStats({
-        totalListings,
-        activeUsers,
-        newReports,
-        pendingListings
-      });
+      setStats({ totalListings, activeUsers, newReports, pendingListings });
       setActivities(recentActivities);
       setLastUpdate(new Date().toLocaleTimeString("ar-SA"));
     } catch (error) {
@@ -218,20 +260,15 @@ export default function AdminDashboard() {
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
-
     if (diffMins < 1) return "الآن";
-    if (diffMins < 60) return `منذ ${diffMins} دقيقة`;
-    if (diffHours < 24) return `منذ ${diffHours} ساعة`;
+    if (diffMins < 60) return `منذ ${diffMins} د`;
+    if (diffHours < 24) return `منذ ${diffHours} س`;
     return `منذ ${diffDays} يوم`;
   };
 
   const formatCurrency = (amount: number) => {
-    if (amount >= 1000000) {
-      return `${(amount / 1000000).toFixed(1)} مليون`;
-    }
-    if (amount >= 1000) {
-      return `${(amount / 1000).toFixed(1)} ألف`;
-    }
+    if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)} مليون`;
+    if (amount >= 1000) return `${(amount / 1000).toFixed(1)} ألف`;
     return amount.toLocaleString("en-US");
   };
 
@@ -246,549 +283,750 @@ export default function AdminDashboard() {
     fetchDashboardData();
   }, []);
 
-  // Re-ordered so the two actionable cards (شكاوى جديدة / إعلانات معلقة)
-  // come first. Each card is now a Link to the relevant queue — used to be
-  // a static counter that left the user wondering "ok, now what?".
-  const statsConfig = [
-    { label: "شكاوى جديدة", value: stats.newReports, icon: AlertCircle, color: "from-rose-500 to-rose-600", bgColor: "bg-rose-50", href: "/add-listing/admin/customer-service?tab=complaints" },
-    { label: "إعلانات معلقة", value: stats.pendingListings, icon: Clock, color: "from-amber-500 to-amber-600", bgColor: "bg-amber-50", href: "/add-listing/admin/listings?status=pending" },
-    { label: "إجمالي الإعلانات", value: stats.totalListings, icon: FileText, color: "from-blue-500 to-blue-600", bgColor: "bg-blue-50", href: "/add-listing/admin/listings" },
-    { label: "المستخدمون", value: stats.activeUsers, icon: Users, color: "from-emerald-500 to-emerald-600", bgColor: "bg-emerald-50", href: "/add-listing/admin/users" },
-  ];
+  // ─── Derived data ────────────────────────────────────────────────────────────
+  const subscriptionChartData = useMemo(
+    () =>
+      [
+        { name: "بزنس", value: advancedStats?.subscriptions?.business || 0 },
+        { name: "بريميوم", value: advancedStats?.subscriptions?.premium || 0 },
+        { name: "أساسي", value: advancedStats?.subscriptions?.basic || 0 },
+      ].filter((d) => d.value > 0),
+    [advancedStats]
+  );
 
-  const getActivityIcon = (type: string) => {
-    switch (type) {
-      case "listing_approved":
-      case "listing_created":
-        return FileText;
-      case "user_registered":
-        return Users;
-      case "complaint":
-      case "report":
-        return AlertCircle;
-      default:
-        return CheckCircle;
-    }
-  };
+  const weeklyChartData = useMemo(
+    () =>
+      (advancedStats?.weeklyListings || []).map((item) => ({
+        name: formatDay(item.day),
+        count: item.count,
+      })),
+    [advancedStats]
+  );
 
-  const subscriptionChartData = [
-    { name: "بزنس", value: advancedStats?.subscriptions?.business || 0 },
-    { name: "بريميوم", value: advancedStats?.subscriptions?.premium || 0 },
-    { name: "أساسي", value: advancedStats?.subscriptions?.basic || 0 },
-  ].filter(d => d.value > 0);
+  const cityChartData = useMemo(
+    () =>
+      (advancedStats?.cities || []).map((city) => ({
+        name: city.city,
+        count: city.count,
+      })),
+    [advancedStats]
+  );
 
-  const weeklyChartData = (advancedStats?.weeklyListings || []).map(item => ({
-    name: formatDay(item.day),
-    count: item.count
-  }));
+  const propertyTypeChartData = useMemo(
+    () =>
+      (advancedStats?.propertyTypes || []).map((type) => ({
+        name: type.property_type,
+        value: type.count,
+      })),
+    [advancedStats]
+  );
 
-  const cityChartData = (advancedStats?.cities || []).map(city => ({
-    name: city.city,
-    count: city.count
-  }));
+  // What needs attention right now. Empty array → reassurance state.
+  const attentionItems = useMemo(() => {
+    const items: { count: number; label: string; href: string; tone: "urgent" | "warn" }[] = [];
+    if (stats.newReports > 0)
+      items.push({
+        count: stats.newReports,
+        label: stats.newReports === 1 ? "شكوى تنتظر المراجعة" : "شكاوى تنتظر المراجعة",
+        href: "/add-listing/admin/customer-service?tab=complaints",
+        tone: "urgent",
+      });
+    if (stats.pendingListings > 0)
+      items.push({
+        count: stats.pendingListings,
+        label: stats.pendingListings === 1 ? "إعلان بانتظار الموافقة" : "إعلانات بانتظار الموافقة",
+        href: "/add-listing/admin/listings?status=pending",
+        tone: "warn",
+      });
+    if ((advancedStats?.elite?.pending_approval || 0) > 0)
+      items.push({
+        count: advancedStats!.elite.pending_approval,
+        label: "حجز نخبة بانتظار الموافقة",
+        href: "/add-listing/admin/elite-slots",
+        tone: "warn",
+      });
+    if ((ambassadorStats?.pending_requests || 0) > 0)
+      items.push({
+        count: ambassadorStats!.pending_requests,
+        label: "طلب سفير بانتظار المراجعة",
+        href: "/add-listing/admin/ambassador",
+        tone: "warn",
+      });
+    return items;
+  }, [stats, advancedStats, ambassadorStats]);
 
-  const propertyTypeChartData = (advancedStats?.propertyTypes || []).map(type => ({
-    name: type.property_type,
-    value: type.count
-  }));
+  // The four "نبض المنصة" KPIs — one source of truth per metric.
+  // No "live" badge, no category coloring. Single gold rule on the side.
+  const pulseKpis = useMemo(
+    () => [
+      {
+        label: "إعلانات نشطة",
+        value: advancedStats?.listings?.approved ?? stats.totalListings,
+        sub: `${advancedStats?.listings?.new_this_month || 0} جديد هذا الشهر`,
+        href: "/add-listing/admin/listings",
+        icon: FileText,
+      },
+      {
+        label: "المستخدمون",
+        value: stats.activeUsers,
+        sub: "إجمالي حسابات العملاء",
+        href: "/add-listing/admin/users",
+        icon: Users,
+      },
+      {
+        label: "إيرادات الشهر",
+        value: formatCurrency(Number(advancedStats?.revenue?.this_month) || 0),
+        sub: "ر.س",
+        href: "/add-listing/admin/finance",
+        icon: Wallet,
+      },
+      {
+        label: "إعلانات النخبة",
+        value: advancedStats?.elite?.active_slots || 0,
+        sub: `${advancedStats?.elite?.unique_properties || 0} عقار مميّز`,
+        href: "/add-listing/admin/elite-slots",
+        icon: Crown,
+      },
+    ],
+    [stats, advancedStats]
+  );
 
   return (
-    <div className="space-y-8 md:space-y-12">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
+    <div className="space-y-10 md:space-y-14" dir="rtl">
+      {/* ─── Header — calm, no chrome ─────────────────────────────────────── */}
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-mobile-2xl md:text-2xl font-black text-[#002845] flex items-center gap-2">
-            <LayoutDashboard className="w-6 h-6 md:w-7 md:h-7 text-[#D4AF37]" />
-            لوحة التحكم
+          <p className="text-sm text-slate-500 mb-1.5 flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
+            {formatTodayAr()}
+          </p>
+          <h1 className="text-3xl md:text-4xl font-black text-[#002845] leading-tight">
+            {getGreeting()}
+            <span className="text-[#D4AF37]"> ·</span>{" "}
+            <span className="text-slate-500 font-normal text-2xl md:text-3xl">
+              نظرة على المنصة
+            </span>
           </h1>
-          <p className="text-mobile-sm md:text-sm text-slate-500 mt-1">نظرة عامة شاملة على أداء المنصة</p>
         </div>
-        <div className="flex items-center gap-2 md:gap-3 flex-wrap">
-          <button 
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-slate-400 text-xs">آخر تحديث: {lastUpdate}</span>
+          <button
             onClick={fetchDashboardData}
             disabled={loading}
-            className="flex items-center gap-2 min-h-[48px] px-4 md:px-4 py-3 md:py-2.5 bg-gradient-to-r from-[#002845] to-[#01456d] text-white rounded-xl hover:shadow-lg active:scale-95 transition disabled:opacity-50 text-mobile-sm md:text-sm font-medium touch-manipulation"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#D4AF37]/40 text-[#9A7D28] bg-white hover:bg-[#FFFCEE] active:scale-95 transition disabled:opacity-50"
           >
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
-            تحديث البيانات
+            {loading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+            تحديث
           </button>
-          <div className="text-right bg-white px-3 md:px-4 py-2.5 md:py-2 rounded-xl border border-slate-200">
-            <p className="text-xs md:text-xs text-slate-500">آخر تحديث</p>
-            <p className="text-sm md:text-sm font-bold text-[#002845]">{lastUpdate}</p>
-          </div>
         </div>
-      </div>
+      </header>
 
-      {/* — Section: Daily Operations — */}
-      <div className="pt-2 space-y-4 md:space-y-6">
-        <div className="flex items-center gap-2 px-1">
-          <div className="w-1 h-5 rounded-full bg-[#D4AF37]" />
-          <h2 className="text-sm md:text-base font-bold text-[#002845]">العمليات اليومية</h2>
-          <div className="flex-1 h-px bg-slate-200" />
-        </div>
-
-      {/* Action Center — the "what needs me right now" widget. Shows only
-          items where the count is > 0 so a quiet day doesn't shout at you. */}
-      {(() => {
-        const actions = [
-          { count: stats.newReports || 0, label: "شكوى جديدة بانتظار المراجعة", href: "/add-listing/admin/customer-service?tab=complaints", icon: AlertCircle, accent: "text-rose-600 bg-rose-50 border-rose-200" },
-          { count: stats.pendingListings || 0, label: "إعلان بانتظار الموافقة", href: "/add-listing/admin/listings?status=pending", icon: Clock, accent: "text-amber-600 bg-amber-50 border-amber-200" },
-        ].filter((a) => a.count > 0);
-        if (actions.length === 0) return null;
-        return (
-          <div className="bg-gradient-to-l from-[#FFF7E0] to-white border border-[#D4AF37]/30 rounded-2xl p-4 md:p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Inbox className="w-5 h-5 text-[#D4AF37]" />
-              <h2 className="font-bold text-[#002845]">يحتاج اهتمامك الآن</h2>
+      {/* ─── 1. يحتاج اهتمامك — or reassurance ─────────────────────────── */}
+      {attentionItems.length === 0 ? (
+        <section
+          className="relative overflow-hidden rounded-3xl border border-[#EDE6D6] bg-gradient-to-l from-[#FAF8F4] via-white to-[#FAF8F4] p-6 md:p-8"
+          aria-label="حالة هادئة"
+        >
+          <div className="absolute -left-8 -top-8 w-32 h-32 rounded-full bg-[#D4AF37]/10 blur-2xl" />
+          <div className="relative flex items-center gap-4">
+            <div className="shrink-0 w-12 h-12 rounded-full bg-white border border-[#EDE6D6] flex items-center justify-center shadow-sm">
+              <Moon className="w-5 h-5 text-[#D4AF37]" />
             </div>
-            <div className="space-y-2">
-              {actions.map((a, i) => {
-                const Icon = a.icon;
-                return (
-                  <Link
-                    key={i}
-                    href={a.href}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white border border-slate-100 hover:border-[#D4AF37]/50 hover:shadow-sm transition group"
-                  >
-                    <div className={`w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 ${a.accent}`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <p className="flex-1 text-sm font-semibold text-[#002845]">
-                      <span className="text-lg font-black">{a.count.toLocaleString("en-US")}</span>{" "}
-                      <span className="text-slate-600 font-normal">{a.label}</span>
-                    </p>
-                    <ArrowLeft className="w-4 h-4 text-slate-400 group-hover:text-[#D4AF37] transition" />
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        {statsConfig.map((stat, i) => {
-          const Icon = stat.icon;
-          const card = (
-            <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-slate-100 hover:shadow-lg hover:border-[#D4AF37]/30 transition-all duration-300 h-full">
-              <div className="flex items-start justify-between mb-3 md:mb-3">
-                <div className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-gradient-to-br ${stat.color} flex items-center justify-center shadow-lg shrink-0`}>
-                  <Icon className="w-6 h-6 md:w-7 md:h-7 text-white" />
-                </div>
-                <div className={`px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg text-xs md:text-xs font-medium ${stat.bgColor} text-slate-600 shrink-0`}>
-                  <TrendingUp className="w-3.5 h-3.5 md:w-3 md:h-3 inline ml-1" />
-                  مباشر
-                </div>
-              </div>
-              <p className="text-mobile-2xl md:text-3xl font-black text-[#002845]">
-                {loading ? <Loader2 className="w-5 h-5 md:w-6 md:h-6 animate-spin" /> : stat.value.toLocaleString("en-US")}
-              </p>
-              <p className="text-mobile-sm md:text-sm text-slate-500 mt-1.5 md:mt-1">{stat.label}</p>
-            </div>
-          );
-          return stat.href ? (
-            <Link key={i} href={stat.href} className="block">{card}</Link>
-          ) : (
-            <div key={i}>{card}</div>
-          );
-        })}
-      </div>
-
-      <div className="my-2 md:my-1">
-        <PlatformPulse />
-      </div>
-      </div>
-      {/* — end section: Daily Operations — */}
-
-      {/* — Section: Finance & Subscriptions — */}
-      <div className="pt-2">
-        <div className="flex items-center gap-2 mb-4 md:mb-5 px-1">
-          <div className="w-1 h-5 rounded-full bg-[#D4AF37]" />
-          <h2 className="text-sm md:text-base font-bold text-[#002845]">المالية والاشتراكات</h2>
-          <div className="flex-1 h-px bg-slate-200" />
-        </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-        <div className="bg-gradient-to-br from-[#FAF7F2] to-white border border-[#D4AF37]/30 rounded-2xl p-4 md:p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4 md:mb-6">
-            <h2 className="font-bold text-base md:text-lg flex items-center gap-2 text-[#002845]">
-              <Crown className="w-5 h-5 md:w-5 md:h-5 text-[#D4AF37]" />
-              إحصائيات النخبة
-            </h2>
-            <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-[#D4AF37]/20 flex items-center justify-center shrink-0">
-              <Star className="w-4 h-4 md:w-5 md:h-5 text-[#D4AF37]" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3 md:gap-4">
-            <div className="bg-white rounded-xl p-3 md:p-4 border border-slate-100">
-              <p className="text-2xl md:text-3xl font-black text-[#9a7d28]">{advancedStats?.elite?.active_slots || 0}</p>
-              <p className="text-xs md:text-xs text-slate-500 mt-1.5 md:mt-1">حجوزات نشطة</p>
-            </div>
-            <div className="bg-white rounded-xl p-3 md:p-4 border border-slate-100">
-              <p className="text-2xl md:text-3xl font-black text-amber-600">{advancedStats?.elite?.pending_approval || 0}</p>
-              <p className="text-xs md:text-xs text-slate-500 mt-1.5 md:mt-1">بانتظار الموافقة</p>
-            </div>
-            <div className="bg-white rounded-xl p-3 md:p-4 border border-slate-100">
-              <p className="text-2xl md:text-3xl font-black text-emerald-600">{advancedStats?.elite?.unique_properties || 0}</p>
-              <p className="text-xs md:text-xs text-slate-500 mt-1.5 md:mt-1">إعلانات مميزة</p>
-            </div>
-            <div className="bg-white rounded-xl p-3 md:p-4 border border-slate-100">
-              <p className="text-2xl md:text-3xl font-black text-blue-600">{advancedStats?.elite?.pending_payment || 0}</p>
-              <p className="text-xs md:text-xs text-slate-500 mt-1.5 md:mt-1">بانتظار الدفع</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-base md:text-lg text-[#002845] flex items-center gap-2">
-              <Wallet className="w-5 h-5 md:w-5 md:h-5 text-[#D4AF37]" />
-              الإيرادات
-            </h2>
-            <span className="text-xs md:text-xs text-slate-500 bg-slate-100 px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg shrink-0">ريال سعودي</span>
-          </div>
-          <div className="space-y-3 md:space-y-4">
-            <div className="text-center p-4 md:p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl">
-              <p className="text-sm md:text-xs text-emerald-600 mb-1.5 md:mb-1">إجمالي الإيرادات</p>
-              <p className="text-xl md:text-2xl font-black text-emerald-700">
-                {formatCurrency(Number(advancedStats?.revenue?.total_revenue) || 0)} <span className="text-sm md:text-sm font-normal">ر.س</span>
+            <div>
+              <h2 className="text-lg md:text-xl font-bold text-[#002845]">
+                كل شيء يسير بسلاسة اليوم
+              </h2>
+              <p className="text-sm text-slate-500 mt-0.5">
+                لا شيء يحتاج تدخّلك الآن — وقت مناسب لمراجعة النمو في الأسفل
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-2.5 md:gap-3">
-              <div className="p-3 md:p-3 bg-blue-50 rounded-xl text-center">
-                <p className="text-base md:text-lg font-bold text-blue-700">{formatCurrency(Number(advancedStats?.revenue?.this_month) || 0)}</p>
-                <p className="text-xs md:text-[10px] text-blue-600 mt-1">هذا الشهر</p>
-              </div>
-              <div className="p-3 md:p-3 bg-purple-50 rounded-xl text-center">
-                <p className="text-base md:text-lg font-bold text-purple-700">{formatCurrency(Number(advancedStats?.revenue?.this_week) || 0)}</p>
-                <p className="text-xs md:text-[10px] text-purple-600 mt-1">هذا الأسبوع</p>
-              </div>
-            </div>
-            <div className="flex items-center justify-between p-3 md:p-3 bg-slate-50 rounded-xl">
-              <span className="text-sm md:text-sm text-slate-600">عدد المعاملات</span>
-              <span className="text-base md:text-lg font-bold text-[#002845]">{advancedStats?.revenue?.total_transactions || 0}</span>
-            </div>
           </div>
-        </div>
-
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-[#002845] flex items-center gap-2">
-              <CreditCard className="w-5 h-5 text-[#D4AF37]" />
-              الاشتراكات
+        </section>
+      ) : (
+        <section
+          className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6"
+          aria-label="يحتاج اهتمامك الآن"
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-1.5 h-5 rounded-full bg-[#D4AF37]" />
+            <h2 className="text-base md:text-lg font-bold text-[#002845]">
+              يحتاج اهتمامك
             </h2>
-            <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">
-              {advancedStats?.subscriptions?.active || 0} نشط
+            <span className="text-xs text-slate-400 mr-1">
+              · {attentionItems.length} بند
             </span>
           </div>
-          {mounted && subscriptionChartData.length > 0 ? (
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={subscriptionChartData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={40}
-                    outerRadius={70}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {subscriptionChartData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={SUBSCRIPTION_COLORS[index % SUBSCRIPTION_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => [`${value} اشتراك`, ""]} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="h-48 flex items-center justify-center text-slate-400">
-              <div className="text-center">
-                <CreditCard className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                <p>لا توجد اشتراكات</p>
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {attentionItems.map((a, i) => (
+              <li key={i}>
+                <Link
+                  href={a.href}
+                  className="group flex items-center justify-between gap-3 px-4 py-3 rounded-2xl border border-slate-100 hover:border-[#D4AF37]/50 hover:bg-[#FFFCEE] transition"
+                >
+                  <span className="flex items-center gap-3">
+                    <span
+                      className={`w-2.5 h-2.5 rounded-full ${
+                        a.tone === "urgent" ? "bg-rose-500" : "bg-amber-400"
+                      }`}
+                      aria-hidden
+                    />
+                    <span className="text-sm text-slate-600">
+                      <span className="text-[#002845] font-black text-lg">
+                        {a.count.toLocaleString("en-US")}
+                      </span>{" "}
+                      {a.label}
+                    </span>
+                  </span>
+                  <ArrowLeft className="w-4 h-4 text-slate-300 group-hover:text-[#D4AF37] transition" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* ─── 2. نبض المنصة (4 KPI) ─────────────────────────────────────── */}
+      <section aria-label="نبض المنصة">
+        <SectionHeader title="نبض المنصة" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+          {pulseKpis.map((k, i) => {
+            const Icon = k.icon;
+            const inner = (
+              <div className="group h-full rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6 transition hover:border-[#D4AF37]/50 hover:shadow-[0_1px_24px_-12px_rgba(212,175,55,0.4)]">
+                <div className="flex items-start justify-between mb-4">
+                  <Icon className="w-5 h-5 text-[#D4AF37]" />
+                  <ArrowLeft className="w-4 h-4 text-slate-300 group-hover:text-[#D4AF37] transition" />
+                </div>
+                <p className="text-3xl md:text-4xl font-black text-[#002845] leading-none tabular-nums">
+                  {loading ? (
+                    <Loader2 className="w-6 h-6 animate-spin text-slate-300" />
+                  ) : typeof k.value === "number" ? (
+                    k.value.toLocaleString("en-US")
+                  ) : (
+                    k.value
+                  )}
+                </p>
+                <p className="text-sm font-semibold text-[#002845] mt-3">
+                  {k.label}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">{k.sub}</p>
               </div>
-            </div>
-          )}
-          <div className="flex justify-center gap-4 mt-2">
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded-full bg-[#D4AF37]"></div>
-              <span className="text-xs text-slate-600">بزنس</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded-full bg-[#8B5CF6]"></div>
-              <span className="text-xs text-slate-600">بريميوم</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded-full bg-[#64748B]"></div>
-              <span className="text-xs text-slate-600">أساسي</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      </div>
-      {/* — end section: Finance & Subscriptions — */}
-
-      {/* — Section: Growth & Content — */}
-      <div className="pt-2">
-        <div className="flex items-center gap-2 mb-4 md:mb-5 px-1">
-          <div className="w-1 h-5 rounded-full bg-[#D4AF37]" />
-          <h2 className="text-sm md:text-base font-bold text-[#002845]">النمو والمحتوى</h2>
-          <div className="flex-1 h-px bg-slate-200" />
-        </div>
-
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-bold text-[#002845] flex items-center gap-2">
-            <Building2 className="w-5 h-5 text-[#D4AF37]" />
-            سفراء البيت
-          </h2>
-          <a 
-            href="/admin/ambassador" 
-            className="text-xs text-[#D4AF37] hover:underline"
-          >
-            عرض الكل
-          </a>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-          <div className="p-3 bg-blue-50 rounded-xl text-center">
-            <p className="text-2xl font-bold text-blue-700">{ambassadorStats?.active_ambassadors || 0}</p>
-            <p className="text-xs text-blue-600">سفير نشط</p>
-          </div>
-          <div className="p-3 bg-amber-50 rounded-xl text-center">
-            <p className="text-2xl font-bold text-amber-700">{ambassadorStats?.pending_requests || 0}</p>
-            <p className="text-xs text-amber-600">طلب معلق</p>
-          </div>
-          <div className="p-3 bg-green-50 rounded-xl text-center">
-            <p className="text-2xl font-bold text-green-700">{ambassadorStats?.consumptions_today || 0}</p>
-            <p className="text-xs text-green-600">استهلاك اليوم</p>
-          </div>
-          <div className="p-3 bg-purple-50 rounded-xl text-center">
-            <p className="text-2xl font-bold text-purple-700">{ambassadorStats?.total_referrals || 0}</p>
-            <p className="text-xs text-purple-600">إجمالي الإحالات</p>
-          </div>
-          <div className="p-3 bg-rose-50 rounded-xl text-center">
-            <p className="text-2xl font-bold text-rose-700">{ambassadorStats?.total_floors_consumed || 0}</p>
-            <p className="text-xs text-rose-600">طابق مستهلك</p>
-          </div>
-        </div>
-        {mounted && ambassadorChartData.length > 0 ? (
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={ambassadorChartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                <XAxis 
-                  dataKey="date" 
-                  tick={{ fontSize: 10 }}
-                  tickFormatter={(value: string) => new Date(value).toLocaleDateString("ar-SA", { day: "numeric", month: "short" })}
-                />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip 
-                  labelFormatter={(value: string | number) => new Date(String(value)).toLocaleDateString("ar-SA")}
-                />
-                <Legend formatter={(value: string) => value === "referrals" ? "الإحالات" : "الاستهلاكات"} />
-                <Line 
-                  type="monotone" 
-                  dataKey="referrals" 
-                  stroke="#D4AF37" 
-                  strokeWidth={2}
-                  dot={{ fill: "#D4AF37", r: 4 }}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="consumptions" 
-                  stroke="#10B981" 
-                  strokeWidth={2}
-                  dot={{ fill: "#10B981", r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div className="h-40 flex items-center justify-center text-slate-400">
-            <div className="text-center">
-              <Building2 className="w-12 h-12 mx-auto mb-2 opacity-30" />
-              <p>لا توجد بيانات كافية للرسم البياني</p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-[#002845] flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-[#D4AF37]" />
-              الإعلانات خلال الأسبوع
-            </h2>
-            <Activity className="w-5 h-5 text-slate-400" />
-          </div>
-          {mounted && weeklyChartData.length > 0 ? (
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={weeklyChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorListings" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#D4AF37" stopOpacity={0.8}/>
-                      <stop offset="95%" stopColor="#D4AF37" stopOpacity={0.1}/>
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(value) => [`${value} إعلان`, "الإعلانات"]} />
-                  <Area 
-                    type="monotone" 
-                    dataKey="count" 
-                    stroke="#D4AF37" 
-                    strokeWidth={2}
-                    fill="url(#colorListings)" 
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="h-64 flex items-center justify-center text-slate-400">
-              <div className="text-center">
-                <Calendar className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                <p>لا توجد إعلانات هذا الأسبوع</p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-[#002845] flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-[#D4AF37]" />
-              توزيع الإعلانات حسب المدينة
-            </h2>
-            <BarChart3 className="w-5 h-5 text-slate-400" />
-          </div>
-          {mounted && cityChartData.length > 0 ? (
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={cityChartData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
-                  <XAxis type="number" tick={{ fontSize: 12 }} />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 12 }} width={80} />
-                  <Tooltip formatter={(value) => [`${value} إعلان`, "العدد"]} />
-                  <Bar dataKey="count" radius={[0, 4, 4, 0]}>
-                    {cityChartData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={CITY_COLORS[index % CITY_COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="h-64 flex items-center justify-center text-slate-400">
-              <div className="text-center">
-                <MapPin className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                <p>لا توجد بيانات</p>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-[#002845] flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-[#D4AF37]" />
-              أنواع العقارات
-            </h2>
-            <PieChartIcon className="w-5 h-5 text-slate-400" />
-          </div>
-          {mounted && propertyTypeChartData.length > 0 ? (
-            <div className="h-52">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={propertyTypeChartData}
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={70}
-                    dataKey="value"
-                  >
-                    {propertyTypeChartData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={PROPERTY_TYPE_COLORS[index % PROPERTY_TYPE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => [`${value} عقار`, ""]} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="h-52 flex items-center justify-center text-slate-400">
-              <div className="text-center">
-                <Building2 className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                <p>لا توجد بيانات</p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-[#002845] flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-[#D4AF37]" />
-              إحصائيات الإعلانات
-            </h2>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl text-center">
-              <p className="text-2xl font-black text-blue-600">{advancedStats?.listings?.new_this_week || 0}</p>
-              <p className="text-xs text-blue-600 mt-1">جديد هذا الأسبوع</p>
-            </div>
-            <div className="p-4 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl text-center">
-              <p className="text-2xl font-black text-emerald-600">{advancedStats?.listings?.new_this_month || 0}</p>
-              <p className="text-xs text-emerald-600 mt-1">جديد هذا الشهر</p>
-            </div>
-            <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl text-center">
-              <p className="text-2xl font-black text-purple-600">{advancedStats?.listings?.approved || 0}</p>
-              <p className="text-xs text-purple-600 mt-1">إعلانات معتمدة</p>
-            </div>
-            <div className="p-4 bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl text-center">
-              <p className="text-2xl font-black text-amber-600">{advancedStats?.listings?.pending || 0}</p>
-              <p className="text-xs text-amber-600 mt-1">بانتظار المراجعة</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-[#002845] flex items-center gap-2">
-              <Clock className="w-5 h-5 text-[#D4AF37]" />
-              النشاط الأخير
-            </h2>
-          </div>
-          <p className="text-xs text-slate-500 mb-3">آخر الإشعارات والأحداث على المنصة</p>
-          <div className="space-y-2">
-            {activities.length === 0 ? (
-              <div className="text-center py-6 text-slate-400">
-                <Clock className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                <p className="text-sm">لا يوجد نشاط حديث</p>
-                <p className="text-xs mt-1">ستظهر هنا الإشعارات الجديدة</p>
-              </div>
+            );
+            return k.href ? (
+              <Link key={i} href={k.href} className="block">
+                {inner}
+              </Link>
             ) : (
-              activities.map((activity) => {
-                const Icon = getActivityIcon(activity.type);
-                return (
-                  <div key={activity.id} className="flex items-center gap-3 p-2 rounded-xl bg-slate-50 hover:bg-slate-100 transition">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#002845] to-[#01456d] flex items-center justify-center flex-shrink-0">
-                      <Icon className="w-4 h-4 text-[#D4AF37]" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-[#002845] truncate">{activity.text}</p>
-                      <p className="text-[10px] text-slate-500">{activity.time}</p>
-                    </div>
-                  </div>
-                );
-              })
+              <div key={i}>{inner}</div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ─── Platform Pulse component (heartbeat) ────────────────────────── */}
+      <div>
+        <PlatformPulse />
+      </div>
+
+      {/* ─── 3. المالية ──────────────────────────────────────────────────── */}
+      <section aria-label="المالية">
+        <SectionHeader title="المالية" />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-5">
+          {/* Revenue summary */}
+          <div className="lg:col-span-2 rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
+            <div className="flex items-baseline justify-between mb-5">
+              <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
+                <Wallet className="w-4 h-4 text-[#D4AF37]" />
+                الإيرادات
+              </h3>
+              <span className="text-xs text-slate-400">ر.س</span>
+            </div>
+            <div className="grid grid-cols-3 gap-3 md:gap-4">
+              <RevenueCell
+                label="إجمالي"
+                value={formatCurrency(
+                  Number(advancedStats?.revenue?.total_revenue) || 0
+                )}
+                emphasis
+              />
+              <RevenueCell
+                label="هذا الشهر"
+                value={formatCurrency(
+                  Number(advancedStats?.revenue?.this_month) || 0
+                )}
+              />
+              <RevenueCell
+                label="هذا الأسبوع"
+                value={formatCurrency(
+                  Number(advancedStats?.revenue?.this_week) || 0
+                )}
+              />
+            </div>
+            <div className="mt-5 pt-5 border-t border-[#EDE6D6] flex items-center justify-between text-sm">
+              <span className="text-slate-500">عدد المعاملات</span>
+              <span className="font-bold text-[#002845] tabular-nums">
+                {(advancedStats?.revenue?.total_transactions || 0).toLocaleString(
+                  "en-US"
+                )}
+              </span>
+            </div>
+          </div>
+
+          {/* Subscriptions donut */}
+          <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-[#D4AF37]" />
+                الاشتراكات
+              </h3>
+              <span className="text-xs text-slate-400 tabular-nums">
+                {advancedStats?.subscriptions?.active || 0} نشط
+              </span>
+            </div>
+            {mounted && subscriptionChartData.length > 0 ? (
+              <>
+                <div className="h-44 -mx-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={subscriptionChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={48}
+                        outerRadius={72}
+                        paddingAngle={3}
+                        dataKey="value"
+                        stroke="none"
+                      >
+                        {subscriptionChartData.map((_, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={
+                              SUBSCRIPTION_PALETTE[
+                                index % SUBSCRIPTION_PALETTE.length
+                              ]
+                            }
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value) => [`${value} اشتراك`, ""]}
+                        contentStyle={tooltipStyle}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <Legend2 items={subscriptionChartData.map((s, i) => ({ label: s.name, color: SUBSCRIPTION_PALETTE[i % SUBSCRIPTION_PALETTE.length] }))} />
+              </>
+            ) : (
+              <EmptyChart icon={CreditCard} text="لا توجد اشتراكات" />
             )}
           </div>
         </div>
-      </div>
-      </div>
-      {/* — end section: Growth & Content — */}
+      </section>
+
+      {/* ─── 4. النمو ────────────────────────────────────────────────────── */}
+      <section aria-label="النمو">
+        <SectionHeader title="النمو" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5">
+          {/* Weekly listings */}
+          <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#D4AF37]" />
+                الإعلانات خلال الأسبوع
+              </h3>
+              <span className="text-xs text-slate-400 tabular-nums">
+                {(advancedStats?.listings?.new_this_week || 0).toLocaleString(
+                  "en-US"
+                )}{" "}
+                إعلان
+              </span>
+            </div>
+            {mounted && weeklyChartData.length > 0 ? (
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart
+                    data={weeklyChartData}
+                    margin={{ top: 5, right: 8, left: 0, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient
+                        id="goldFill"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop offset="5%" stopColor={GOLD} stopOpacity={0.4} />
+                        <stop offset="95%" stopColor={GOLD} stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis
+                      dataKey="name"
+                      tick={{ fontSize: 11, fill: "#94A3B8" }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: "#94A3B8" }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip
+                      formatter={(value) => [`${value} إعلان`, "الإعلانات"]}
+                      contentStyle={tooltipStyle}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="count"
+                      stroke={GOLD}
+                      strokeWidth={2}
+                      fill="url(#goldFill)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <EmptyChart icon={Calendar} text="لا توجد إعلانات هذا الأسبوع" />
+            )}
+          </div>
+
+          {/* Cities */}
+          <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-[#D4AF37]" />
+                التوزيع حسب المدينة
+              </h3>
+              <span className="text-xs text-slate-400 tabular-nums">
+                {cityChartData.length} مدينة
+              </span>
+            </div>
+            {mounted && cityChartData.length > 0 ? (
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={cityChartData}
+                    layout="vertical"
+                    margin={{ top: 5, right: 16, left: 4, bottom: 5 }}
+                  >
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 11, fill: "#94A3B8" }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      dataKey="name"
+                      type="category"
+                      tick={{ fontSize: 11, fill: "#475569" }}
+                      width={70}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip
+                      formatter={(value) => [`${value} إعلان`, "العدد"]}
+                      contentStyle={tooltipStyle}
+                    />
+                    <Bar dataKey="count" radius={[0, 8, 8, 0]}>
+                      {cityChartData.map((_, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={CITY_PALETTE[index % CITY_PALETTE.length]}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <EmptyChart icon={MapPin} text="لا توجد بيانات" />
+            )}
+          </div>
+
+          {/* Ambassadors */}
+          <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-[#D4AF37]" />
+                سفراء البيت
+              </h3>
+              <Link
+                href="/add-listing/admin/ambassador"
+                className="text-xs text-[#9A7D28] hover:underline"
+              >
+                عرض الكل
+              </Link>
+            </div>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <MiniKpi
+                label="نشط"
+                value={ambassadorStats?.active_ambassadors || 0}
+              />
+              <MiniKpi
+                label="إحالات"
+                value={ambassadorStats?.total_referrals || 0}
+              />
+              <MiniKpi
+                label="استهلاك اليوم"
+                value={ambassadorStats?.consumptions_today || 0}
+              />
+            </div>
+            {mounted && ambassadorChartData.length > 0 ? (
+              <div className="h-44">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={ambassadorChartData}
+                    margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                  >
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 10, fill: "#94A3B8" }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(value: string) =>
+                        new Date(value).toLocaleDateString("ar-SA", {
+                          day: "numeric",
+                          month: "short",
+                        })
+                      }
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: "#94A3B8" }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip
+                      contentStyle={tooltipStyle}
+                      labelFormatter={(value: string | number) =>
+                        new Date(String(value)).toLocaleDateString("ar-SA")
+                      }
+                    />
+                    <Legend
+                      formatter={(value: string) =>
+                        value === "referrals" ? "الإحالات" : "الاستهلاكات"
+                      }
+                      wrapperStyle={{ fontSize: 11 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="referrals"
+                      stroke={GOLD}
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="consumptions"
+                      stroke={NAVY}
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <EmptyChart icon={Building2} text="لا توجد بيانات للرسم" small />
+            )}
+          </div>
+
+          {/* Property types */}
+          <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-[#D4AF37]" />
+                أنواع العقارات
+              </h3>
+              <span className="text-xs text-slate-400 tabular-nums">
+                {propertyTypeChartData.reduce((s, p) => s + p.value, 0)} عقار
+              </span>
+            </div>
+            {mounted && propertyTypeChartData.length > 0 ? (
+              <>
+                <div className="h-48 -mx-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={propertyTypeChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={42}
+                        outerRadius={74}
+                        paddingAngle={3}
+                        dataKey="value"
+                        stroke="none"
+                      >
+                        {propertyTypeChartData.map((_, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={
+                              PROPERTY_PALETTE[
+                                index % PROPERTY_PALETTE.length
+                              ]
+                            }
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value) => [`${value} عقار`, ""]}
+                        contentStyle={tooltipStyle}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <Legend2 items={propertyTypeChartData.map((p, i) => ({ label: p.name, color: PROPERTY_PALETTE[i % PROPERTY_PALETTE.length] }))} />
+              </>
+            ) : (
+              <EmptyChart icon={Building2} text="لا توجد بيانات" />
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── 5. النشاط الأخير ────────────────────────────────────────────── */}
+      <section aria-label="النشاط الأخير">
+        <SectionHeader title="النشاط الأخير" />
+        <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
+          {activities.length === 0 ? (
+            <div className="text-center py-10 text-slate-400">
+              <Clock className="w-9 h-9 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">لا يوجد نشاط حديث</p>
+              <p className="text-xs mt-1 text-slate-300">
+                ستظهر الإشعارات الجديدة هنا
+              </p>
+            </div>
+          ) : (
+            <ol className="relative space-y-4 pr-6">
+              <span
+                className="absolute right-2 top-2 bottom-2 w-px bg-[#EDE6D6]"
+                aria-hidden
+              />
+              {activities.map((activity) => (
+                <li key={activity.id} className="relative">
+                  <span
+                    className="absolute right-[-1.05rem] top-1.5 w-2.5 h-2.5 rounded-full bg-[#D4AF37] ring-4 ring-white"
+                    aria-hidden
+                  />
+                  <p className="text-sm font-medium text-[#002845] leading-snug">
+                    {activity.text}
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {activity.time}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
+
+// ─── Helpers (visual primitives) ─────────────────────────────────────────────
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <div className="flex items-center gap-3 mb-5 md:mb-6">
+      <div className="w-1.5 h-6 rounded-full bg-[#D4AF37]" />
+      <h2 className="text-base md:text-lg font-bold text-[#002845]">{title}</h2>
+      <div className="flex-1 h-px bg-[#EDE6D6]" />
+    </div>
+  );
+}
+
+function RevenueCell({
+  label,
+  value,
+  emphasis,
+}: {
+  label: string;
+  value: string;
+  emphasis?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-2xl p-4 ${
+        emphasis ? "bg-[#FAF8F4] border border-[#EDE6D6]" : "bg-white"
+      }`}
+    >
+      <p
+        className={`tabular-nums leading-none ${
+          emphasis
+            ? "text-2xl md:text-3xl font-black text-[#9A7D28]"
+            : "text-xl md:text-2xl font-bold text-[#002845]"
+        }`}
+      >
+        {value}
+      </p>
+      <p className="text-xs text-slate-500 mt-2">{label}</p>
+    </div>
+  );
+}
+
+function MiniKpi({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl bg-[#FAF8F4] border border-[#EDE6D6] p-3 text-center">
+      <p className="text-xl font-black text-[#002845] tabular-nums leading-none">
+        {value.toLocaleString("en-US")}
+      </p>
+      <p className="text-[11px] text-slate-500 mt-1.5">{label}</p>
+    </div>
+  );
+}
+
+function Legend2({
+  items,
+}: {
+  items: { label: string; color: string }[];
+}) {
+  return (
+    <div className="flex flex-wrap justify-center gap-x-4 gap-y-1.5 mt-2">
+      {items.map((it, i) => (
+        <span key={i} className="flex items-center gap-1.5 text-xs text-slate-500">
+          <span
+            className="w-2.5 h-2.5 rounded-full"
+            style={{ background: it.color }}
+          />
+          {it.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function EmptyChart({
+  icon: Icon,
+  text,
+  small,
+}: {
+  icon: typeof Calendar;
+  text: string;
+  small?: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-center justify-center text-slate-300 ${
+        small ? "h-44" : "h-56"
+      }`}
+    >
+      <div className="text-center">
+        <Icon className="w-10 h-10 mx-auto mb-2 opacity-50" />
+        <p className="text-sm text-slate-400">{text}</p>
+      </div>
+    </div>
+  );
+}
+
+const tooltipStyle = {
+  background: "white",
+  border: "1px solid #EDE6D6",
+  borderRadius: 12,
+  fontSize: 12,
+  padding: "8px 12px",
+  boxShadow: "0 1px 24px -8px rgba(0, 40, 69, 0.15)",
+} as const;
