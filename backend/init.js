@@ -1680,7 +1680,30 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ai_chat_logs' AND column_name='cost_usd') THEN
           ALTER TABLE ai_chat_logs ADD COLUMN cost_usd NUMERIC(10,6) DEFAULT 0;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ai_chat_logs' AND column_name='sentiment') THEN
+          ALTER TABLE ai_chat_logs ADD COLUMN sentiment VARCHAR(20);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ai_chat_logs' AND column_name='sentiment_score') THEN
+          ALTER TABLE ai_chat_logs ADD COLUMN sentiment_score NUMERIC(4,3);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ai_chat_logs' AND column_name='variant_id') THEN
+          ALTER TABLE ai_chat_logs ADD COLUMN variant_id INTEGER;
+        END IF;
       END $$;
+    `);
+
+    // A/B prompt variants — lets the operator try multiple system prompts
+    // and measure which one produces fewer escalations / better sentiment.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS ai_prompt_variants (
+        id SERIAL PRIMARY KEY,
+        label VARCHAR(100) NOT NULL,
+        prompt_text TEXT NOT NULL,
+        weight INTEGER NOT NULL DEFAULT 1,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
     `);
 
     await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_chat_logs_session ON ai_chat_logs(session_id);`);

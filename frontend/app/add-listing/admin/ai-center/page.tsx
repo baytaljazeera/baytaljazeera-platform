@@ -72,10 +72,37 @@ interface AiSettings {
   ai_working_hours_start: string;
   ai_working_hours_end: string;
   ai_per_user_daily_limit: string;
+  ai_sentiment_enabled: string;
+  ai_ab_testing_enabled: string;
+  ai_auto_escalate_negative: string;
   _meta?: {
     allowed_models: string[];
     pricing_per_1k_tokens: Record<string, { input: number; output: number }>;
   };
+}
+
+interface PromptVariant {
+  id: number;
+  label: string;
+  prompt_text: string;
+  weight: number;
+  is_active: boolean;
+  created_at: string;
+  chats?: number;
+  escalations?: number;
+  negative?: number;
+  positive?: number;
+}
+
+interface SentimentSummary {
+  window: string;
+  very_negative: number;
+  negative: number;
+  neutral: number;
+  positive: number;
+  very_positive: number;
+  scored: number;
+  total: number;
 }
 
 interface ChatLog {
@@ -90,6 +117,9 @@ interface ChatLog {
   prompt_tokens: number;
   completion_tokens: number;
   cost_usd: string;
+  sentiment: string | null;
+  sentiment_score: string | null;
+  variant_id: number | null;
   created_at: string;
 }
 
@@ -106,8 +136,17 @@ const TABS = [
   { key: "chat", label: "المساعد الذكي", icon: MessageSquare },
   { key: "generate", label: "توليد محتوى", icon: Wand2 },
   { key: "logs", label: "سجل المحادثات", icon: FileText },
+  { key: "ab", label: "تجارب A/B", icon: TrendingUp },
   { key: "settings", label: "الإعدادات المتقدّمة", icon: SettingsIcon },
 ] as const;
+
+const SENTIMENT_META: Record<string, { label: string; color: string; bg: string }> = {
+  very_negative: { label: "سلبي جداً", color: "text-rose-700", bg: "bg-rose-500" },
+  negative:      { label: "سلبي",       color: "text-rose-600", bg: "bg-rose-400" },
+  neutral:       { label: "محايد",      color: "text-slate-600", bg: "bg-slate-400" },
+  positive:      { label: "إيجابي",     color: "text-emerald-600", bg: "bg-emerald-400" },
+  very_positive: { label: "إيجابي جداً", color: "text-emerald-700", bg: "bg-emerald-500" },
+};
 
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -180,6 +219,10 @@ export default function AICenterPage() {
   const [logEscalated, setLogEscalated] = useState(false);
   const [logQuery, setLogQuery] = useState("");
 
+  // Sentiment + A/B
+  const [sentiment, setSentiment] = useState<SentimentSummary | null>(null);
+  const [variants, setVariants] = useState<PromptVariant[]>([]);
+
   // Settings draft
   const [settingsDraft, setSettingsDraft] = useState<AiSettings | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -205,7 +248,69 @@ export default function AICenterPage() {
   }, [activeTab, logSource, logEscalated]);
 
   async function refreshAll() {
-    await Promise.all([fetchStats(), fetchSettings()]);
+    await Promise.all([fetchStats(), fetchSettings(), fetchSentiment(), fetchVariants()]);
+  }
+
+  async function fetchSentiment() {
+    try {
+      const res = await fetch(`${API_URL}/api/ai/center/sentiment`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) setSentiment(await res.json());
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function fetchVariants() {
+    try {
+      const res = await fetch(`${API_URL}/api/ai/center/prompt-variants`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setVariants(data.variants || []);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function saveVariant(payload: Partial<PromptVariant> & { id?: number }) {
+    const isNew = !payload.id;
+    const url = isNew
+      ? `${API_URL}/api/ai/center/prompt-variants`
+      : `${API_URL}/api/ai/center/prompt-variants/${payload.id}`;
+    const method = isNew ? "POST" : "PATCH";
+    const res = await fetch(url, {
+      method,
+      credentials: "include",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      toast.success(isNew ? "تم إضافة النسخة" : "تم التحديث");
+      void fetchVariants();
+    } else {
+      toast.error("تعذّر الحفظ");
+    }
+  }
+
+  async function deleteVariant(id: number) {
+    if (!confirm("حذف هذه النسخة؟")) return;
+    const res = await fetch(`${API_URL}/api/ai/center/prompt-variants/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      toast.success("تم الحذف");
+      void fetchVariants();
+    } else {
+      toast.error("تعذّر الحذف");
+    }
   }
 
   async function fetchStats() {
@@ -516,6 +621,7 @@ export default function AICenterPage() {
       {activeTab === "overview" && (
         <OverviewTab
           stats={stats}
+          sentiment={sentiment}
           totalToday={totalToday}
           loadingStats={loadingStats}
           onJump={(k) => setActiveTab(k)}
@@ -580,6 +686,15 @@ export default function AICenterPage() {
         />
       )}
 
+      {activeTab === "ab" && (
+        <ABTab
+          variants={variants}
+          onSave={saveVariant}
+          onDelete={deleteVariant}
+          abEnabled={settings?.ai_ab_testing_enabled === "true"}
+        />
+      )}
+
       {activeTab === "settings" && settingsDraft && (
         <SettingsTab
           draft={settingsDraft}
@@ -641,11 +756,13 @@ function StatCard({
 
 function OverviewTab({
   stats,
+  sentiment,
   totalToday,
   loadingStats,
   onJump,
 }: {
   stats: CenterStats | null;
+  sentiment: SentimentSummary | null;
   totalToday: number;
   loadingStats: boolean;
   onJump: (k: TabKey) => void;
@@ -697,6 +814,13 @@ function OverviewTab({
           />
         </div>
       </section>
+
+      {sentiment && sentiment.scored > 0 && (
+        <section>
+          <SectionTitle title="مشاعر العملاء (آخر ٧ أيام)" />
+          <SentimentWidget data={sentiment} />
+        </section>
+      )}
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5">
         <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
@@ -1194,6 +1318,15 @@ function LogsTab({
                         {log.model && (
                           <span className="text-slate-400 tabular-nums">{log.model}</span>
                         )}
+                        {log.sentiment && SENTIMENT_META[log.sentiment] && (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-slate-200 ${SENTIMENT_META[log.sentiment].color}`}
+                            title={log.sentiment_score ? `score: ${log.sentiment_score}` : ''}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${SENTIMENT_META[log.sentiment].bg}`} />
+                            {SENTIMENT_META[log.sentiment].label}
+                          </span>
+                        )}
                         <span className="text-slate-400 mr-auto">{timeAgo(log.created_at)}</span>
                       </div>
                       <p className="text-sm font-semibold text-[#002845] truncate">
@@ -1267,7 +1400,10 @@ function SettingsTab({
       original.ai_banned_topics !== draft.ai_banned_topics ||
       original.ai_working_hours_start !== draft.ai_working_hours_start ||
       original.ai_working_hours_end !== draft.ai_working_hours_end ||
-      original.ai_per_user_daily_limit !== draft.ai_per_user_daily_limit
+      original.ai_per_user_daily_limit !== draft.ai_per_user_daily_limit ||
+      original.ai_sentiment_enabled !== draft.ai_sentiment_enabled ||
+      original.ai_ab_testing_enabled !== draft.ai_ab_testing_enabled ||
+      original.ai_auto_escalate_negative !== draft.ai_auto_escalate_negative
     );
   }, [draft, original]);
 
@@ -1378,6 +1514,34 @@ function SettingsTab({
         </div>
       </div>
 
+      {/* Phase 3 toggles */}
+      <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6 space-y-4">
+        <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-[#D4AF37]" />
+          الذكاء المتقدّم
+        </h3>
+        <ToggleRow
+          label="تحليل مشاعر العملاء"
+          hint="يُصنّف كل رسالة عميل (سلبي/محايد/إيجابي) لرصد المزاج العام. تكلفة إضافية بسيطة."
+          value={draft.ai_sentiment_enabled === "true"}
+          onChange={(v) => setDraft({ ...draft, ai_sentiment_enabled: v ? "true" : "false" })}
+        />
+        <ToggleRow
+          label="تصعيد تلقائي للسلبي جداً"
+          hint="عند مزاج سلبي جداً → تصعيد فوري للدعم البشري بدون انتظار طلب العميل."
+          value={draft.ai_auto_escalate_negative === "true"}
+          onChange={(v) => setDraft({ ...draft, ai_auto_escalate_negative: v ? "true" : "false" })}
+          disabled={draft.ai_sentiment_enabled !== "true"}
+          disabledHint="فعّل تحليل المشاعر أولاً"
+        />
+        <ToggleRow
+          label="تفعيل A/B testing لنسخ system prompt"
+          hint="عند تفعيله، يختار البوت عشوائياً (حسب الأوزان) من النسخ النشطة في تبويب A/B."
+          value={draft.ai_ab_testing_enabled === "true"}
+          onChange={(v) => setDraft({ ...draft, ai_ab_testing_enabled: v ? "true" : "false" })}
+        />
+      </div>
+
       <div className="sticky bottom-4 z-10 rounded-2xl border border-[#EDE6D6] bg-white shadow-lg p-4 flex items-center justify-between">
         <p className="text-sm text-slate-500">
           {dirty ? "هناك تغييرات غير محفوظة" : "لا تغييرات"}
@@ -1396,6 +1560,49 @@ function SettingsTab({
 }
 
 // ─── Small form primitives ────────────────────────────────────────────────
+function ToggleRow({
+  label,
+  hint,
+  value,
+  onChange,
+  disabled,
+  disabledHint,
+}: {
+  label: string;
+  hint?: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  disabledHint?: string;
+}) {
+  return (
+    <div className={`flex items-start justify-between gap-3 ${disabled ? "opacity-50" : ""}`}>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-bold text-[#002845]">{label}</p>
+        {hint && <p className="text-[11px] text-slate-500 mt-1">{hint}</p>}
+        {disabled && disabledHint && (
+          <p className="text-[11px] text-amber-700 mt-1">⚠ {disabledHint}</p>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => !disabled && onChange(!value)}
+        disabled={disabled}
+        className={`shrink-0 relative inline-flex h-6 w-11 items-center rounded-full transition ${
+          value ? "bg-[#D4AF37]" : "bg-slate-300"
+        } ${disabled ? "cursor-not-allowed" : ""}`}
+        aria-pressed={value}
+      >
+        <span
+          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
+            value ? "translate-x-1" : "translate-x-5"
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
 function FormInput({
   label,
   value,
@@ -1452,6 +1659,214 @@ function FormTextarea({
         className="w-full resize-y rounded-lg border border-[#EDE6D6] bg-[#FAF8F4] px-3 py-2 text-sm text-[#002845] placeholder:text-slate-400 focus:outline-none focus:border-[#D4AF37]/50"
       />
       {hint && <p className="text-[11px] text-slate-500 mt-1">{hint}</p>}
+    </div>
+  );
+}
+
+// ─── Sentiment widget ─────────────────────────────────────────────────────
+function SentimentWidget({ data }: { data: SentimentSummary }) {
+  const keys: (keyof SentimentSummary)[] = [
+    "very_negative",
+    "negative",
+    "neutral",
+    "positive",
+    "very_positive",
+  ];
+  const total = keys.reduce((s, k) => s + (Number(data[k]) || 0), 0) || 1;
+  return (
+    <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-slate-500">
+          تحليلاً لـ {data.scored} رسالة من أصل {data.total}
+        </p>
+      </div>
+      <div className="flex h-3 rounded-full overflow-hidden mb-5">
+        {keys.map((k) => {
+          const n = Number(data[k]) || 0;
+          const pct = (n / total) * 100;
+          if (n === 0) return null;
+          return (
+            <div
+              key={k}
+              className={`${SENTIMENT_META[k].bg}`}
+              style={{ width: `${pct}%` }}
+              title={`${SENTIMENT_META[k].label}: ${n}`}
+            />
+          );
+        })}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {keys.map((k) => {
+          const n = Number(data[k]) || 0;
+          const pct = ((n / total) * 100).toFixed(0);
+          const meta = SENTIMENT_META[k];
+          return (
+            <div key={k} className="rounded-2xl border border-[#EDE6D6] bg-[#FAF8F4] p-3">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className={`w-2.5 h-2.5 rounded-full ${meta.bg}`} />
+                <p className={`text-xs font-semibold ${meta.color}`}>{meta.label}</p>
+              </div>
+              <p className="text-xl font-black text-[#002845] tabular-nums">{n}</p>
+              <p className="text-[10px] text-slate-400">{pct}%</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── A/B testing tab ──────────────────────────────────────────────────────
+function ABTab({
+  variants,
+  onSave,
+  onDelete,
+  abEnabled,
+}: {
+  variants: PromptVariant[];
+  onSave: (p: Partial<PromptVariant> & { id?: number }) => void;
+  onDelete: (id: number) => void;
+  abEnabled: boolean;
+}) {
+  const [draft, setDraft] = useState<{ label: string; prompt_text: string; weight: string }>({
+    label: "",
+    prompt_text: "",
+    weight: "1",
+  });
+
+  return (
+    <section className="space-y-5">
+      {!abEnabled && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          ⚠ تجارب A/B معطّلة حالياً. لتفعيل اختيار النسخ تلقائياً مع العملاء، فعّل
+          <strong className="mx-1">"تفعيل A/B testing"</strong>
+          من تبويب الإعدادات المتقدّمة.
+        </div>
+      )}
+
+      <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
+        <h3 className="text-base font-bold text-[#002845] mb-4 flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-[#D4AF37]" />
+          إضافة نسخة جديدة من system prompt
+        </h3>
+        <div className="space-y-3">
+          <FormInput
+            label="اسم تعريفي"
+            value={draft.label}
+            onChange={(v) => setDraft({ ...draft, label: v })}
+            placeholder="مثال: نسخة ودودة / نسخة رسمية"
+          />
+          <FormTextarea
+            label="نص النظام"
+            value={draft.prompt_text}
+            onChange={(v) => setDraft({ ...draft, prompt_text: v })}
+            rows={6}
+            placeholder="أنت مساعد ذكي لبيت الجزيرة..."
+          />
+          <FormInput
+            label="الوزن"
+            value={draft.weight}
+            onChange={(v) => setDraft({ ...draft, weight: v })}
+            type="number"
+            hint="كلما زاد الوزن، تكرّر استخدام هذه النسخة. مثلاً 1 و 3 يعني 25% / 75%."
+          />
+          <button
+            disabled={!draft.label || !draft.prompt_text}
+            onClick={() => {
+              onSave({
+                label: draft.label,
+                prompt_text: draft.prompt_text,
+                weight: parseInt(draft.weight, 10) || 1,
+                is_active: true,
+              });
+              setDraft({ label: "", prompt_text: "", weight: "1" });
+            }}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#D4AF37] text-white font-bold hover:bg-[#B8932E] active:scale-95 transition disabled:opacity-40"
+          >
+            <Save className="w-4 h-4" />
+            إضافة نسخة
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
+        <h3 className="text-base font-bold text-[#002845] mb-4">
+          النسخ النشطة ({variants.length})
+        </h3>
+        {variants.length === 0 ? (
+          <p className="text-sm text-slate-400 py-6 text-center">
+            لا نسخ محفوظة. أضف النسخة الأولى أعلاه لبدء التجربة.
+          </p>
+        ) : (
+          <ul className="space-y-3">
+            {variants.map((v) => {
+              const chats = v.chats || 0;
+              const escalRate = chats > 0 ? ((v.escalations || 0) / chats) * 100 : 0;
+              const posRate = chats > 0 ? ((v.positive || 0) / chats) * 100 : 0;
+              const negRate = chats > 0 ? ((v.negative || 0) / chats) * 100 : 0;
+              return (
+                <li
+                  key={v.id}
+                  className={`rounded-2xl border p-4 ${v.is_active ? "border-[#EDE6D6] bg-white" : "border-slate-200 bg-slate-50/60 opacity-70"}`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-[#002845]">{v.label}</p>
+                      <p className="text-xs text-slate-500 mt-1 line-clamp-3 whitespace-pre-wrap">
+                        {v.prompt_text}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={v.weight}
+                        onChange={(e) =>
+                          onSave({ id: v.id, weight: parseInt(e.target.value, 10) || 0 })
+                        }
+                        className="w-16 rounded-lg border border-[#EDE6D6] bg-white px-2 py-1 text-sm text-[#002845] focus:outline-none focus:border-[#D4AF37]/50"
+                        title="الوزن"
+                      />
+                      <button
+                        onClick={() => onSave({ id: v.id, is_active: !v.is_active })}
+                        className={`text-xs px-3 py-1 rounded-full border transition ${
+                          v.is_active
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                            : "border-slate-300 bg-slate-100 text-slate-500"
+                        }`}
+                      >
+                        {v.is_active ? "نشطة" : "معطّلة"}
+                      </button>
+                      <button
+                        onClick={() => onDelete(v.id)}
+                        className="text-xs px-3 py-1 rounded-full border border-rose-200 text-rose-600 hover:bg-rose-50 transition"
+                      >
+                        حذف
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2 text-xs mt-3 pt-3 border-t border-[#F1ECE0]">
+                    <Metric label="محادثات" value={chats} />
+                    <Metric label="تصعيد" value={`${escalRate.toFixed(0)}%`} tone={escalRate > 20 ? "bad" : "neutral"} />
+                    <Metric label="إيجابي" value={`${posRate.toFixed(0)}%`} tone={posRate > 50 ? "good" : "neutral"} />
+                    <Metric label="سلبي" value={`${negRate.toFixed(0)}%`} tone={negRate > 30 ? "bad" : "neutral"} />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function Metric({ label, value, tone = "neutral" }: { label: string; value: string | number; tone?: "neutral" | "good" | "bad" }) {
+  const color =
+    tone === "good" ? "text-emerald-700" : tone === "bad" ? "text-rose-700" : "text-[#002845]";
+  return (
+    <div>
+      <p className="text-[10px] text-slate-500">{label}</p>
+      <p className={`font-bold tabular-nums ${color}`}>{value}</p>
     </div>
   );
 }

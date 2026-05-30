@@ -153,15 +153,18 @@ const ALLOWED_MODELS = Object.keys(MODEL_PRICING);
 // Defaults are returned when a key is missing so first-time access doesn't
 // look broken.
 const SETTINGS_DEFAULTS = {
-  ai_support_enabled:     'true',
-  ai_system_prompt:       DEFAULT_SYSTEM_PROMPT,
-  ai_model:               'gpt-4o-mini',
-  ai_temperature:         '0.7',
-  ai_max_tokens:          '1000',
-  ai_banned_topics:       '',          // comma/newline-separated keywords
-  ai_working_hours_start: '',          // 24h "HH:MM" — empty = always on
-  ai_working_hours_end:   '',
-  ai_per_user_daily_limit:'30',
+  ai_support_enabled:        'true',
+  ai_system_prompt:          DEFAULT_SYSTEM_PROMPT,
+  ai_model:                  'gpt-4o-mini',
+  ai_temperature:            '0.7',
+  ai_max_tokens:             '1000',
+  ai_banned_topics:          '',          // comma/newline-separated keywords
+  ai_working_hours_start:    '',          // 24h "HH:MM" — empty = always on
+  ai_working_hours_end:      '',
+  ai_per_user_daily_limit:   '30',
+  ai_sentiment_enabled:      'true',
+  ai_ab_testing_enabled:     'false',
+  ai_auto_escalate_negative: 'false',     // escalate when sentiment is 'very_negative'
 };
 
 async function loadAiSettings() {
@@ -201,6 +204,60 @@ async function logAdminChat(client, { userMessage, aiResponse, model, usage, ses
 }
 
 const SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT;
+
+// ─── Phase 3 helpers: sentiment + A/B variants + auto-escalate ──────────
+/**
+ * Score an Arabic customer message on a 5-way sentiment scale using a
+ * cheap gpt-4o-mini call. Returns { label, score } or null on failure.
+ * Score is 0..1 where 0 = very_negative, 1 = very_positive.
+ */
+async function analyzeSentiment(text) {
+  if (!text || text.trim().length < 3) return null;
+  try {
+    const r = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: 'صنّف مزاج الرسالة التالية. أجب بـ JSON فقط: {"label": "very_negative|negative|neutral|positive|very_positive", "score": رقم بين 0 و 1}. لا شيء غير JSON.' },
+        { role: 'user', content: text.slice(0, 800) },
+      ],
+      max_tokens: 50,
+      temperature: 0,
+      response_format: { type: 'json_object' },
+    });
+    const raw = r.choices[0]?.message?.content || '{}';
+    const parsed = JSON.parse(raw);
+    const allowed = ['very_negative', 'negative', 'neutral', 'positive', 'very_positive'];
+    if (!allowed.includes(parsed.label)) return null;
+    const score = Math.max(0, Math.min(1, Number(parsed.score) || 0.5));
+    return { label: parsed.label, score };
+  } catch (e) {
+    console.warn('[sentiment] failed:', e.message);
+    return null;
+  }
+}
+
+/**
+ * Pick a random active prompt variant weighted by `weight`. Returns
+ * { id, prompt_text } or null when no variant configured / A/B disabled.
+ */
+async function pickPromptVariant() {
+  try {
+    const r = await db.query(
+      "SELECT id, prompt_text, weight FROM ai_prompt_variants WHERE is_active = true AND weight > 0"
+    );
+    if (r.rows.length === 0) return null;
+    const total = r.rows.reduce((s, x) => s + (x.weight || 0), 0);
+    if (total <= 0) return null;
+    let n = Math.random() * total;
+    for (const row of r.rows) {
+      n -= row.weight;
+      if (n <= 0) return { id: row.id, prompt_text: row.prompt_text };
+    }
+    return { id: r.rows[0].id, prompt_text: r.rows[0].prompt_text };
+  } catch {
+    return null;
+  }
+}
 
 // Helper function for OpenAI error handling
 function handleOpenAIError(error, res) {
@@ -2435,14 +2492,28 @@ router.post("/customer-chat", asyncHandler(async (req, res) => {
       plansInfo = "لا توجد باقات متوفرة حالياً";
     }
 
-    const systemPrompt = getCustomerSupportPrompt(plansInfo, aiLevel, userName);
+    // Load central settings + maybe pick an A/B variant. When A/B is on
+    // and there is at least one active variant, its prompt replaces the
+    // baseline customer prompt; otherwise we use the standard one.
+    const centralCfg = await loadAiSettings();
+    let systemPrompt = getCustomerSupportPrompt(plansInfo, aiLevel, userName);
+    let variantId = null;
+    if (centralCfg.ai_ab_testing_enabled === 'true') {
+      const variant = await pickPromptVariant();
+      if (variant) {
+        systemPrompt = variant.prompt_text;
+        variantId = variant.id;
+      }
+    }
+    const chatModel = ALLOWED_MODELS.includes(centralCfg.ai_model) ? centralCfg.ai_model : 'gpt-4o-mini';
 
     // Adjust model and tokens based on AI level
     const maxTokens = aiLevel >= 2 ? 800 : (aiLevel === 1 ? 500 : 300);
+    const userMessage = messages[messages.length - 1]?.content || '';
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: chatModel,
       messages: [
         { role: "system", content: systemPrompt },
         ...messages.map(m => ({
@@ -2455,10 +2526,11 @@ router.post("/customer-chat", asyncHandler(async (req, res) => {
     });
 
     let assistantMessage = response.choices[0]?.message?.content || "عذراً، لم أتمكن من الرد.";
-    
+    const usage = response.usage || {};
+
     let escalated = false;
     let escalateReason = "";
-    
+
     if (assistantMessage.includes("[ESCALATE]")) {
       escalated = true;
       const parts = assistantMessage.split("[ESCALATE]");
@@ -2466,15 +2538,52 @@ router.post("/customer-chat", asyncHandler(async (req, res) => {
       assistantMessage = "شكراً لتواصلك! سأقوم بتحويل استفسارك لفريق الدعم المختص للمساعدة بشكل أفضل. سيتواصل معك أحد ممثلي الدعم قريباً.";
     }
 
+    // Sentiment analysis runs in parallel with the response handling.
+    // If it returns very_negative AND auto-escalate is on, force an
+    // escalation flag so a human picks it up regardless of the bot reply.
+    let sentiment = null;
+    if (centralCfg.ai_sentiment_enabled === 'true' && userMessage) {
+      sentiment = await analyzeSentiment(userMessage);
+      if (
+        sentiment?.label === 'very_negative' &&
+        centralCfg.ai_auto_escalate_negative === 'true' &&
+        !escalated
+      ) {
+        escalated = true;
+        escalateReason = `تصعيد تلقائي — مزاج العميل سلبي جداً (score=${sentiment.score})`;
+      }
+    }
+
     if (sessionId) {
       await db.query(
-        `INSERT INTO ai_chat_logs (session_id, user_message, ai_response, escalated, escalate_reason)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [sessionId, messages[messages.length - 1]?.content, assistantMessage, escalated, escalateReason]
+        `INSERT INTO ai_chat_logs
+           (session_id, user_message, ai_response, escalated, escalate_reason,
+            source, model, prompt_tokens, completion_tokens, cost_usd,
+            sentiment, sentiment_score, variant_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, 'customer', $6, $7, $8, $9, $10, $11, $12, NOW())`,
+        [
+          sessionId,
+          userMessage,
+          assistantMessage,
+          escalated,
+          escalateReason,
+          chatModel,
+          usage.prompt_tokens || 0,
+          usage.completion_tokens || 0,
+          computeCostUsd(chatModel, usage.prompt_tokens || 0, usage.completion_tokens || 0),
+          sentiment?.label || null,
+          sentiment?.score ?? null,
+          variantId,
+        ]
       );
     }
 
-    res.json({ message: assistantMessage, escalated, reason: escalateReason });
+    res.json({
+      message: assistantMessage,
+      escalated,
+      reason: escalateReason,
+      sentiment: sentiment?.label || null,
+    });
   } catch (error) {
     return handleOpenAIError(error, res);
   }
@@ -2614,6 +2723,15 @@ router.post("/support-settings", authMiddleware, adminMiddleware, asyncHandler(a
     const n = parseInt(body.ai_per_user_daily_limit, 10);
     if (Number.isFinite(n) && n >= 0 && n <= 1000) updates.ai_per_user_daily_limit = String(n);
   }
+  if (body.ai_sentiment_enabled !== undefined) {
+    updates.ai_sentiment_enabled = body.ai_sentiment_enabled ? 'true' : 'false';
+  }
+  if (body.ai_ab_testing_enabled !== undefined) {
+    updates.ai_ab_testing_enabled = body.ai_ab_testing_enabled ? 'true' : 'false';
+  }
+  if (body.ai_auto_escalate_negative !== undefined) {
+    updates.ai_auto_escalate_negative = body.ai_auto_escalate_negative ? 'true' : 'false';
+  }
 
   for (const [key, value] of Object.entries(updates)) {
     await db.query(
@@ -2676,6 +2794,79 @@ router.get("/center/stats", authMiddleware, adminMiddleware, asyncHandler(async 
     recent_escalations: escalated,
     top_sessions_7d: topUsers,
   });
+}));
+
+// ─── AI Command Center — A/B prompt variants CRUD ─────────────────────────
+router.get("/center/prompt-variants", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const r = await db.query(
+    `SELECT v.id, v.label, v.prompt_text, v.weight, v.is_active, v.created_at, v.updated_at,
+            COUNT(l.id)::int AS chats,
+            COUNT(l.id) FILTER (WHERE l.escalated)::int AS escalations,
+            COUNT(l.id) FILTER (WHERE l.sentiment IN ('negative','very_negative'))::int AS negative,
+            COUNT(l.id) FILTER (WHERE l.sentiment IN ('positive','very_positive'))::int AS positive
+       FROM ai_prompt_variants v
+       LEFT JOIN ai_chat_logs l ON l.variant_id = v.id AND l.created_at >= NOW() - INTERVAL '30 days'
+       GROUP BY v.id
+       ORDER BY v.created_at DESC`
+  );
+  res.json({ variants: r.rows });
+}));
+
+router.post("/center/prompt-variants", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { label, prompt_text, weight, is_active } = req.body || {};
+  if (!label || !prompt_text) return res.status(400).json({ error: "label و prompt_text مطلوبان" });
+  const w = Math.max(0, Math.min(100, parseInt(weight, 10) || 1));
+  const a = is_active !== false;
+  const r = await db.query(
+    `INSERT INTO ai_prompt_variants (label, prompt_text, weight, is_active)
+     VALUES ($1, $2, $3, $4)
+     RETURNING *`,
+    [label.slice(0, 100), prompt_text.slice(0, 8000), w, a]
+  );
+  res.json({ ok: true, variant: r.rows[0] });
+}));
+
+router.patch("/center/prompt-variants/:id", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const fields = [];
+  const values = [];
+  const b = req.body || {};
+  if (typeof b.label === 'string')       { fields.push(`label = $${fields.length + 1}`);       values.push(b.label.slice(0, 100)); }
+  if (typeof b.prompt_text === 'string') { fields.push(`prompt_text = $${fields.length + 1}`); values.push(b.prompt_text.slice(0, 8000)); }
+  if (b.weight !== undefined)            { fields.push(`weight = $${fields.length + 1}`);      values.push(Math.max(0, Math.min(100, parseInt(b.weight, 10) || 1))); }
+  if (b.is_active !== undefined)         { fields.push(`is_active = $${fields.length + 1}`);   values.push(!!b.is_active); }
+  if (fields.length === 0) return res.status(400).json({ error: "لا حقول للتحديث" });
+  fields.push(`updated_at = NOW()`);
+  values.push(id);
+  const r = await db.query(
+    `UPDATE ai_prompt_variants SET ${fields.join(', ')} WHERE id = $${values.length} RETURNING *`,
+    values
+  );
+  if (r.rows.length === 0) return res.status(404).json({ error: "غير موجود" });
+  res.json({ ok: true, variant: r.rows[0] });
+}));
+
+router.delete("/center/prompt-variants/:id", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await db.query(`DELETE FROM ai_prompt_variants WHERE id = $1`, [id]);
+  res.json({ ok: true });
+}));
+
+// Sentiment summary for the overview card / pie chart.
+router.get("/center/sentiment", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const r = await db.query(
+    `SELECT
+       COUNT(*) FILTER (WHERE sentiment = 'very_negative')::int AS very_negative,
+       COUNT(*) FILTER (WHERE sentiment = 'negative')::int       AS negative,
+       COUNT(*) FILTER (WHERE sentiment = 'neutral')::int        AS neutral,
+       COUNT(*) FILTER (WHERE sentiment = 'positive')::int       AS positive,
+       COUNT(*) FILTER (WHERE sentiment = 'very_positive')::int  AS very_positive,
+       COUNT(*) FILTER (WHERE sentiment IS NOT NULL)::int        AS scored,
+       COUNT(*)::int                                              AS total
+     FROM ai_chat_logs
+     WHERE source = 'customer' AND created_at >= NOW() - INTERVAL '7 days'`
+  );
+  res.json({ window: '7d', ...r.rows[0] });
 }));
 
 // ─── AI Command Center — logs feed ────────────────────────────────────────
