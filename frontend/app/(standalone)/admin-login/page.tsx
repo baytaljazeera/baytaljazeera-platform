@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { LogIn, Mail, Lock, Crown, Eye, EyeOff, ArrowRight, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { useAuthStore } from "@/lib/stores/authStore";
+import { API_URL } from "@/lib/api";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -144,6 +145,31 @@ export default function AdminLoginPage() {
               )}
             </button>
           </form>
+
+          {/* Divider */}
+          <div className="my-5 flex items-center gap-3">
+            <span className="flex-1 h-px bg-white/15" />
+            <span className="text-[10px] text-white/40 font-bold tracking-[0.2em] uppercase">أو</span>
+            <span className="flex-1 h-px bg-white/15" />
+          </div>
+
+          {/* Google sign-in — pure server-side redirect.
+              /api/auth/google starts the passport flow and ends up at
+              /oauth-callback?token=... which finishes the session for
+              both customer and admin accounts. Useful when the owner
+              prefers not to remember an extra password. */}
+          <a
+            href={`${API_URL}/api/auth/google`}
+            className="w-full inline-flex items-center justify-center gap-3 bg-white hover:bg-slate-50 text-[#002845] font-bold py-3 rounded-xl border border-white/20 hover:shadow-lg transition-all"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden>
+              <path fill="#EA4335" d="M12 10.2v3.96h5.51c-.24 1.45-1.74 4.26-5.51 4.26-3.32 0-6.02-2.74-6.02-6.12s2.7-6.12 6.02-6.12c1.89 0 3.16.81 3.88 1.51l2.65-2.55C16.9 3.66 14.66 2.7 12 2.7 6.84 2.7 2.67 6.87 2.67 12s4.17 9.3 9.33 9.3c5.39 0 8.96-3.78 8.96-9.11 0-.61-.07-1.08-.15-1.55H12z"/>
+              <path fill="#4285F4" d="M21.6 12.23c0-.7-.06-1.36-.18-2H12v3.78h5.4c-.24 1.25-.94 2.31-2 3.02v2.5h3.23c1.9-1.74 2.97-4.32 2.97-7.3z"/>
+              <path fill="#FBBC05" d="M5.92 14.28A6.07 6.07 0 0 1 5.62 12c0-.79.13-1.55.36-2.28V7.16H2.65A9.27 9.27 0 0 0 1.6 12c0 1.5.35 2.92.99 4.18l3.33-1.9z"/>
+              <path fill="#34A853" d="M12 21.3c2.7 0 4.97-.89 6.62-2.42l-3.23-2.5c-.86.58-2.02.99-3.39.99-2.61 0-4.83-1.77-5.62-4.15l-3.33 2.57C4.71 19.06 8.05 21.3 12 21.3z"/>
+            </svg>
+            <span>الدخول بـ Google</span>
+          </a>
 
           <div className="mt-6 text-center space-y-3">
             <Link 
