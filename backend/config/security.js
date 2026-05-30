@@ -1,4 +1,4 @@
-const rateLimit = require("express-rate-limit");
+const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
@@ -58,7 +58,12 @@ const _ULTRA_BYPASS_CODE = process.env.ULTRA_BYPASS_CODE || "MMM2099";
 const videoGenerationLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 6, // رفع من 3 إلى 6 — يتيح للمالك إعادة التجربة بسرعة دون الإضرار بالحماية
-  keyGenerator: (req) => (req.user && req.user.id ? `user:${req.user.id}` : req.ip),
+  // For anonymous requests fall back to ipKeyGenerator so IPv6 clients
+  // get bucketed by /64 prefix instead of by full address — otherwise an
+  // IPv6 attacker can trivially bypass the limit by rotating the lower 64
+  // bits (ERR_ERL_KEY_GEN_IPV6).
+  keyGenerator: (req, res) =>
+    req.user && req.user.id ? `user:${req.user.id}` : ipKeyGenerator(req, res),
   skip: (req) => {
     // المالك يمرر كوداً → ليس مستخدماً عادياً، يتجاوز الحد لتسهيل التجربة.
     const code = (req.body && req.body.bypassCode) || req.get("x-bypass-code") || "";
