@@ -1648,7 +1648,7 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
     });
   }
 
-  const validCategories = ['financial', 'messages', 'ambassador', 'ai_logs', 'whatsapp', 'notifications', 'customers'];
+  const validCategories = ['financial', 'messages', 'ambassador', 'ai_logs', 'whatsapp', 'notifications', 'listings', 'customers'];
   const invalid = categories.filter(c => !validCategories.includes(c));
   if (invalid.length > 0) {
     return res.status(400).json({ ok: false, error: `فئات غير صالحة: ${invalid.join(', ')}` });
@@ -1749,6 +1749,49 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
       results.notifications = {
         notifications: await safeDelete(client, 'DELETE FROM notifications'),
         alerts:        await safeDelete(client, 'DELETE FROM account_alerts'),
+      };
+    }
+
+    if (categories.includes('listings')) {
+      // Wipe every property + everything that FKs to it. Most child FKs are
+      // CASCADE in init.js so DELETE FROM properties handles them, but a
+      // few rows have to be cleared first because the FK is RESTRICT / has
+      // no ON DELETE clause (e.g. elite_extension_requests.payment_id,
+      // listing_workflows.reviewed_by). Same defensive pattern as the
+      // customers cleanup — null out admin-actor refs, then delete.
+      const LISTING_REF_NULLS = [
+        ["UPDATE properties SET reviewed_by = NULL WHERE reviewed_by IS NOT NULL", "properties.reviewed_by"],
+        ["UPDATE listing_workflows SET reviewed_by = NULL WHERE reviewed_by IS NOT NULL", "listing_workflows.reviewed_by"],
+        ["UPDATE listing_audit_events SET actor_id = NULL WHERE actor_id IS NOT NULL", "listing_audit_events.actor_id"],
+      ];
+      for (const [sql, label] of LISTING_REF_NULLS) {
+        await safeRun(client, sql, [], label);
+      }
+
+      const LISTING_CHILD_DELETES = [
+        ['DELETE FROM listing_audit_events', 'listing_audit_events'],
+        ['DELETE FROM listing_workflows', 'listing_workflows'],
+        ['DELETE FROM listing_reports', 'listing_reports'],
+        ['DELETE FROM listing_messages', 'listing_messages'],
+        ['DELETE FROM listing_media', 'listing_media'],
+        ['DELETE FROM favorites', 'favorites'],
+        ['DELETE FROM elite_extension_requests', 'elite_extension_requests'],
+        ['DELETE FROM elite_slot_reservations', 'elite_slot_reservations'],
+        ['DELETE FROM property_status_reminders', 'property_status_reminders'],
+      ];
+      const subCounts = {};
+      for (const [sql, label] of LISTING_CHILD_DELETES) {
+        subCounts[label] = await safeRun(client, sql, [], label);
+      }
+      const deletedProps = await safeRun(client, 'DELETE FROM properties', [], 'properties');
+      results.listings = {
+        properties: deletedProps,
+        listing_media: subCounts.listing_media || 0,
+        listing_messages: subCounts.listing_messages || 0,
+        elite_reservations: subCounts.elite_slot_reservations || 0,
+        elite_extensions: subCounts.elite_extension_requests || 0,
+        favorites: subCounts.favorites || 0,
+        reports: subCounts.listing_reports || 0,
       };
     }
 
@@ -1897,6 +1940,12 @@ router.get("/reset-test-data/stats", authMiddleware, requireRoles('super_admin')
     { key: 'notifications', queries: [
       { name: 'notifications', q: 'SELECT COUNT(*) FROM notifications' },
       { name: 'alerts', q: 'SELECT COUNT(*) FROM account_alerts' },
+    ]},
+    { key: 'listings', queries: [
+      { name: 'properties', q: 'SELECT COUNT(*) FROM properties' },
+      { name: 'media', q: 'SELECT COUNT(*) FROM listing_media' },
+      { name: 'favorites', q: 'SELECT COUNT(*) FROM favorites' },
+      { name: 'reports', q: 'SELECT COUNT(*) FROM listing_reports' },
     ]},
     { key: 'customers', queries: [
       { name: 'users', q: "SELECT COUNT(*) FROM users WHERE role = 'user'" },

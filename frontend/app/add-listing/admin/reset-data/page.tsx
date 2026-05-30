@@ -3,10 +3,10 @@
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
-import { 
+import {
   Trash2, AlertTriangle, Loader2, Check, RefreshCw,
   DollarSign, MessageSquare, Users, Bot, Phone, Bell,
-  ShieldAlert, RotateCcw, UserX
+  ShieldAlert, RotateCcw, UserX, Home,
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { normalizeConfirmationPhrase } from "@/lib/utils";
@@ -86,6 +86,17 @@ const CATEGORIES = [
     borderColor: "border-red-200",
     tables: ["notifications", "alerts"],
     tableLabels: { notifications: "إشعارات", alerts: "تنبيهات" },
+  },
+  {
+    key: "listings",
+    label: "الإعلانات والعقارات",
+    description: "حذف كل الإعلانات وملحقاتها (الصور، المفضّلة، البلاغات، حجوزات النخبة)",
+    icon: Home,
+    color: "text-cyan-600",
+    bgColor: "bg-cyan-50",
+    borderColor: "border-cyan-200",
+    tables: ["properties", "media", "favorites", "reports"],
+    tableLabels: { properties: "إعلانات", media: "صور/فيديو", favorites: "مفضّلة", reports: "بلاغات" },
   },
   {
     key: "customers",
