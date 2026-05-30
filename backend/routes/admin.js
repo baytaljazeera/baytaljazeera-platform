@@ -1808,45 +1808,70 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
       // rows first, then user_plans/properties, then users themselves.
 
       // Step 0: dynamically discover every FK column on any table that
-      // points at users.id where the ON DELETE action is NO ACTION or
-      // RESTRICT — those are the columns that block DELETE FROM users
-      // with 23503. The old hardcoded list missed real blockers (e.g.
-      // wallet_transactions.created_by) and held dead entries for
-      // columns that never existed (e.g. ambassador_wallet.created_by).
-      // pg_catalog is the source of truth, so we ask it.
-      const blockingFks = await client.query(`
-        SELECT
-          n.nspname AS schemaname,
-          c.relname AS tablename,
-          a.attname AS colname,
-          a.attnotnull AS notnull
-        FROM pg_constraint con
-        JOIN pg_class c ON c.oid = con.conrelid
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        JOIN pg_attribute a ON a.attrelid = con.conrelid
-                           AND a.attnum = ANY (con.conkey)
-                           AND NOT a.attisdropped
-        WHERE con.contype = 'f'
-          AND con.confrelid = (
-            SELECT oid FROM pg_class
-            WHERE relname = 'users' AND relnamespace = (
-              SELECT oid FROM pg_namespace WHERE nspname = 'public'
+      // points at users.id / user_plans.id / properties.id where the
+      // ON DELETE action is NO ACTION or RESTRICT — those are the
+      // columns that block DELETE with 23503. The old hardcoded list
+      // missed real blockers (wallet_transactions.created_by,
+      // ambassador_consumptions.user_plan_id, ...) and carried dead
+      // entries for columns that never existed. pg_catalog is the
+      // source of truth, so we ask it.
+      const ident = (s) => `"${String(s).replace(/"/g, '""')}"`;
+      async function severBlockersTo(refTable, selectIds) {
+        const blockers = await client.query(
+          `
+          SELECT
+            n.nspname AS schemaname,
+            c.relname AS tablename,
+            a.attname AS colname,
+            a.attnotnull AS notnull
+          FROM pg_constraint con
+          JOIN pg_class c ON c.oid = con.conrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          JOIN pg_attribute a ON a.attrelid = con.conrelid
+                             AND a.attnum = ANY (con.conkey)
+                             AND NOT a.attisdropped
+          WHERE con.contype = 'f'
+            AND con.confrelid = (
+              SELECT oid FROM pg_class
+              WHERE relname = $1 AND relnamespace = (
+                SELECT oid FROM pg_namespace WHERE nspname = 'public'
+              )
             )
-          )
-          AND n.nspname = 'public'
-          AND con.confdeltype IN ('a', 'r')
-      `);
-      for (const fk of blockingFks.rows) {
-        // Skip NOT NULL columns — UPDATE to NULL would fail with 23502.
-        // For those, the row itself must be deleted (handled by the
-        // explicit delete chain below) or the FK redesigned.
-        if (fk.notnull) continue;
-        const ident = (s) => `"${String(s).replace(/"/g, '""')}"`;
-        const tbl = `${ident(fk.schemaname)}.${ident(fk.tablename)}`;
-        const col = ident(fk.colname);
-        const sql = `UPDATE ${tbl} SET ${col} = NULL WHERE ${col} IN (SELECT id FROM users WHERE role = $1)`;
-        await safeRun(client, sql, ['user'], `dyn-null ${fk.tablename}.${fk.colname}`);
+            AND n.nspname = 'public'
+            AND con.confdeltype IN ('a', 'r')
+        `,
+          [refTable]
+        );
+        for (const fk of blockers.rows) {
+          // Skip NOT NULL — UPDATE to NULL would fail with 23502.
+          if (fk.notnull) continue;
+          const tbl = `${ident(fk.schemaname)}.${ident(fk.tablename)}`;
+          const col = ident(fk.colname);
+          const sql = `UPDATE ${tbl} SET ${col} = NULL WHERE ${col} IN (${selectIds})`;
+          await safeRun(
+            client,
+            sql,
+            ['user'],
+            `dyn-null ${fk.tablename}.${fk.colname} → ${refTable}`
+          );
+        }
       }
+
+      // Order matters: clear refs to the deeper tables FIRST so we can
+      // delete the shallower ones without 23503. user_plans and
+      // properties are about to be removed, then users.
+      await severBlockersTo(
+        'user_plans',
+        "SELECT id FROM user_plans WHERE user_id IN (SELECT id FROM users WHERE role = $1)"
+      );
+      await severBlockersTo(
+        'properties',
+        "SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1)"
+      );
+      await severBlockersTo(
+        'users',
+        "SELECT id FROM users WHERE role = $1"
+      );
 
       // Step 1: explicit cleanup for customer-data tables NOT covered by
       // the existing chain below. Wrong column names / missing tables are
