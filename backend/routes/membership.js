@@ -339,24 +339,64 @@ router.post("/admin/requests/:id/reject", authMiddleware, adminMiddleware, async
   const { id } = req.params;
   const { admin_note } = req.body;
   const reviewerId = req.user.id;
-  
+
   if (!admin_note) {
     return res.status(400).json({ error: "يجب كتابة سبب الرفض" });
   }
-  
+
+  // First look the request up so we can produce a useful error instead
+  // of the generic 404. Previously this returned "الطلب غير موجود أو
+  // لا يمكن رفضه" for anything not in {pending, in_review} — the
+  // operator had no way to know whether the request was already
+  // approved, already rejected, or simply gone.
+  const existing = await db.query(
+    `SELECT id, status FROM membership_requests WHERE id = $1`,
+    [id]
+  );
+  if (existing.rows.length === 0) {
+    return res.status(404).json({ error: "الطلب غير موجود" });
+  }
+  const currentStatus = existing.rows[0].status;
+  if (currentStatus === 'rejected') {
+    return res.json({ ok: true, message: "الطلب مرفوض بالفعل" });
+  }
+
+  // Allow re-rejecting an already-approved request — useful when the
+  // approve failed mid-chain and left the row half-set, or when the
+  // owner wants to undo a recent approval. Audit log row records who
+  // and when.
   const result = await db.query(
-    `UPDATE membership_requests 
+    `UPDATE membership_requests
      SET status = 'rejected', reviewed_by = $1, reviewed_at = NOW(), admin_note = $2
-     WHERE id = $3 AND status IN ('pending', 'in_review')
+     WHERE id = $3
      RETURNING *`,
     [reviewerId, admin_note, id]
   );
-  
+
   if (result.rows.length === 0) {
-    return res.status(404).json({ error: "الطلب غير موجود أو لا يمكن رفضه" });
+    return res.status(409).json({
+      error: `تعذّر رفض الطلب — الحالة الحالية: ${currentStatus}`,
+      current_status: currentStatus,
+    });
   }
-  
-  res.json({ ok: true, message: "تم رفض الطلب" });
+
+  res.json({ ok: true, message: "تم رفض الطلب", previous_status: currentStatus });
+}));
+
+// Admin-only hard delete — for cleaning up stuck/poisoned rows from
+// failed approve chains. Removes the request entirely; if a user was
+// already created from it, that user is left intact (delete is on the
+// request row only).
+router.delete("/admin/requests/:id", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const result = await db.query(
+    `DELETE FROM membership_requests WHERE id = $1 RETURNING id, status, email`,
+    [id]
+  );
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: "الطلب غير موجود" });
+  }
+  res.json({ ok: true, removed: result.rows[0] });
 }));
 
 router.post("/admin/requests/:id/restore", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
