@@ -1856,7 +1856,11 @@ function AdminRolesPageContent() {
                 <p className="text-sm text-slate-600 mb-4">اختر الدور الذي سيتم تعيينه للموظف الجديد:</p>
                 
                 <div className="space-y-2 mb-6">
-                  {adminRoles.filter(r => r.key !== 'super_admin').map((role) => {
+                  {/* المدير العام (super_admin) لا يظهر إلا للمدير العام نفسه — */}
+                  {/* الترقية إلى super_admin لا رجعة عنها وتعطي تحكماً كاملاً. */}
+                  {adminRoles
+                    .filter(r => r.key !== 'super_admin' || currentUserRole === 'super_admin')
+                    .map((role) => {
                     const Icon = getIconComponent(role.icon || 'Shield');
                     const color = role.color || '#6B7280';
                     return (
