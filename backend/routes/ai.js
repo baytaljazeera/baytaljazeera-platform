@@ -2925,24 +2925,25 @@ router.post("/customer-chat", asyncHandler(async (req, res) => {
       }
     }
 
-    // Get user's AI support level from their active plan
-    let aiLevel = 0;
-    let userName = "";
-    
-    if (userId) {
-      const userResult = await db.query(
-        `SELECT u.name, COALESCE(MAX(p.ai_support_level), 0) as ai_level
-         FROM users u
-         LEFT JOIN user_plans up ON u.id = up.user_id AND up.status = 'active'
-         LEFT JOIN plans p ON up.plan_id = p.id
-         WHERE u.id = $1
-         GROUP BY u.id, u.name`,
-        [userId]
-      );
-      if (userResult.rows[0]) {
-        aiLevel = parseInt(userResult.rows[0].ai_level) || 0;
-        userName = userResult.rows[0].name || "";
-      }
+    // Use the authoritative resolver — bypasses plan tier for admin
+    // roles (super_admin et al), reads role_level too so any future
+    // 100-level role is also exempt.
+    const aiLevelInfo = await resolveAiLevelForUser(userId);
+    const aiLevel = aiLevelInfo.level;
+    const userName = aiLevelInfo.userName;
+
+    // Diagnostic logging (gated by env to avoid log spam in prod —
+    // flip AI_VERBOSE=1 on Render to see).
+    if (process.env.AI_VERBOSE === '1' || process.env.AI_VERBOSE === 'true') {
+      console.log('[customer-chat resolve]', JSON.stringify({
+        userId: userId || null,
+        sessionId: sessionId || null,
+        role: aiLevelInfo.role,
+        role_level: aiLevelInfo.role_level,
+        bypass: aiLevelInfo.bypass,
+        plan: aiLevelInfo.planName,
+        ai_level: aiLevel,
+      }));
     }
 
     // If user has no AI support (level 0), limit responses
@@ -3623,6 +3624,110 @@ router.get("/center/audit", authMiddleware, adminMiddleware, asyncHandler(async 
     params
   );
   res.json({ entries: r.rows });
+}));
+
+// ─── Authoritative AI level resolver ────────────────────────────────────
+// Single source of truth used by both /api/user/ai-level (chatbot badge)
+// and /customer-chat (actual model/token sizing). Admin roles short-
+// circuit straight to the top tier — they own the platform and should
+// never see "قم بالترقية" or get throttled by plan tiers.
+const ADMIN_BYPASS_ROLES = new Set([
+  'super_admin',
+  'admin',
+  'admin_manager',
+  'finance_admin',
+  'support_admin',
+  'content_admin',
+  'hr_admin',
+  'quality_monitor',
+]);
+
+async function resolveAiLevelForUser(userId) {
+  // Default fallback for anonymous/unknown
+  const fallback = { level: 0, levelName: 'غير مشترك', planName: '', userName: '', role: null, role_level: 0, bypass: false };
+  if (!userId) return fallback;
+
+  // Step 1: pull role + level. role_level >= 100 also bypasses
+  // (covers any future role configured at owner tier).
+  let role = null;
+  let role_level = 0;
+  let userName = '';
+  try {
+    const ur = await db.query(
+      `SELECT name, role, COALESCE(role_level, 0) AS role_level FROM users WHERE id = $1`,
+      [userId]
+    );
+    if (ur.rows.length === 0) return fallback;
+    role = ur.rows[0].role;
+    role_level = parseInt(ur.rows[0].role_level, 10) || 0;
+    userName = ur.rows[0].name || '';
+  } catch (e) {
+    console.warn('[ai-level] users lookup failed:', e.message);
+    return fallback;
+  }
+
+  // Step 2: admin bypass — owners/staff always get the top tier
+  if (ADMIN_BYPASS_ROLES.has(role) || role_level >= 100) {
+    return {
+      level: 3,
+      levelName: 'مساعد شخصي VIP+',
+      planName: 'صلاحيات إدارية',
+      userName,
+      role,
+      role_level,
+      bypass: true,
+    };
+  }
+
+  // Step 3: regular customer — pick the highest ai_support_level
+  // across their active plan rows.
+  try {
+    const pr = await db.query(
+      `SELECT COALESCE(MAX(p.ai_support_level), 0)::int AS ai_level,
+              MAX(p.name_ar) FILTER (WHERE p.ai_support_level = (
+                SELECT MAX(p2.ai_support_level)
+                  FROM user_plans up2 JOIN plans p2 ON up2.plan_id = p2.id
+                 WHERE up2.user_id = $1 AND up2.status = 'active'
+                   AND (up2.expires_at IS NULL OR up2.expires_at > NOW())
+              )) AS plan_name
+         FROM user_plans up
+         JOIN plans p ON up.plan_id = p.id
+        WHERE up.user_id = $1 AND up.status = 'active'
+          AND (up.expires_at IS NULL OR up.expires_at > NOW())`,
+      [userId]
+    );
+    const level = parseInt(pr.rows[0]?.ai_level, 10) || 0;
+    const planName = pr.rows[0]?.plan_name || '';
+    const levelNames = {
+      0: 'غير مشترك',
+      1: 'دعم ذكي أساسي',
+      2: 'دعم VIP متقدم',
+      3: 'مساعد شخصي VIP+',
+    };
+    return {
+      level,
+      levelName: levelNames[level] || 'غير مشترك',
+      planName,
+      userName,
+      role,
+      role_level,
+      bypass: false,
+    };
+  } catch (e) {
+    console.warn('[ai-level] plan lookup failed:', e.message);
+    return { ...fallback, userName, role, role_level };
+  }
+}
+
+// ─── /api/ai/user/ai-level — chatbot badge resolver ─────────────────────
+// Mounted at /api/ai/user/ai-level. The original chatbot fetched
+// /api/user/ai-level which never existed; we keep a compatibility alias
+// at /api/user/ai-level in index.js (next.config rewrites) by also
+// exposing it here under the same router-relative path that previously
+// existed — see /user/ai-level below.
+router.get("/user/ai-level", authMiddleware, asyncHandler(async (req, res) => {
+  const info = await resolveAiLevelForUser(req.user?.id);
+  res.json(info);
 }));
 
 // ─── Lead Intelligence — funnel + intent ────────────────────────────────

@@ -172,10 +172,16 @@ export default function AIChatbot() {
         setAiLevelInfo({ level: 0, levelName: "غير مشترك", planName: "" });
         return;
       }
-      
+
       try {
-        const response = await fetch(`${API_URL}/api/user/ai-level`, {
+        // Was hitting /api/user/ai-level which never existed → every
+        // user (including super_admin) fell into the 404 branch and
+        // got tagged "محدود". Correct endpoint is /api/ai/user/ai-level,
+        // and we need the Bearer header for incognito Safari where
+        // cross-origin cookies are blocked.
+        const response = await fetch(`${API_URL}/api/ai/user/ai-level`, {
           credentials: "include",
+          headers: getAuthHeaders(),
         });
         if (response.ok) {
           const data = await response.json();
@@ -187,7 +193,7 @@ export default function AIChatbot() {
         setAiLevelInfo({ level: 0, levelName: "غير مشترك", planName: "" });
       }
     }
-    
+
     if (isOpen) {
       fetchAILevel();
     }
@@ -206,7 +212,9 @@ export default function AIChatbot() {
     try {
       const response = await fetch(`${API_URL}/api/ai/customer-chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // Authorization Bearer header so the backend can read the
+        // JWT and resolve the real user (admin bypass relies on this).
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
         body: JSON.stringify({ messages: newMessages, sessionId, userId: user?.id }),
       });
