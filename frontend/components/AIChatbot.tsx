@@ -3,13 +3,21 @@
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
 import { useState, useRef, useEffect } from "react";
-import { MessageCircle, X, Send, Loader2, Bot, User, AlertTriangle, Headphones, Crown, Lock, Sparkles } from "lucide-react";
+import { MessageCircle, X, Send, Loader2, Bot, User, AlertTriangle, Headphones, Crown, Lock, Sparkles, CheckCircle2, Clock, ExternalLink, Home } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
+
+interface TicketCard {
+  ticketId: number | string;
+  ticketNumber: string;
+  status: string;          // 'new' | 'open' | …
+  createdAt: string;       // ISO
+}
 
 interface Message {
   role: "user" | "assistant";
   content: string;
   escalated?: boolean;
+  ticket?: TicketCard;     // when present, render as a card instead of plain text
 }
 
 // ─── Follow-up chip system ──────────────────────────────────────────────
@@ -73,6 +81,210 @@ function getFollowUpChips(intent: ChatIntent): FollowUpChip[] {
         HOME_CHIP,
       ];
   }
+}
+
+// ─── Ticket success card ────────────────────────────────────────────────
+// Rendered in place of a normal chat bubble after handleEscalate succeeds.
+// Gold-on-paper aesthetic matching the rest of the platform: ticket id,
+// status pill, creation time, and two CTAs (follow-up / back-to-home).
+function TicketSuccessCard({ ticket, onHome }: { ticket: TicketCard; onHome: () => void }) {
+  const created = new Date(ticket.createdAt);
+  const validTime = !Number.isNaN(created.getTime());
+  const timeStr = validTime
+    ? created.toLocaleString("ar-SA", {
+        hour: "2-digit",
+        minute: "2-digit",
+        day: "2-digit",
+        month: "long",
+      })
+    : "الآن";
+  const statusLabel = ticket.status === "in_progress"
+    ? "قيد المعالجة"
+    : ticket.status === "resolved"
+      ? "تم الحل"
+      : ticket.status === "closed"
+        ? "مغلقة"
+        : "مفتوحة";
+  const statusTone = ticket.status === "in_progress"
+    ? "bg-blue-50 text-blue-700 border-blue-200"
+    : ticket.status === "resolved" || ticket.status === "closed"
+      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      : "bg-[#FFFCEE] text-[#9A7D28] border-[#D4AF37]";
+
+  return (
+    <div className="max-w-[85%] rounded-2xl rounded-tl-none border-2 border-[#D4AF37] bg-gradient-to-br from-[#FFFDF5] to-white shadow-md overflow-hidden">
+      <div className="px-3 py-2.5 bg-gradient-to-l from-[#D4AF37]/15 to-[#FFFCEE] border-b border-[#D4AF37]/40 flex items-center gap-2">
+        <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+        <div className="font-bold text-[13px] text-[#002845]">تم تحويل طلبك إلى الدعم البشري</div>
+      </div>
+      <div className="px-3 py-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-slate-500 font-medium">رقم التذكرة</span>
+          <span className="font-mono text-[12px] font-bold text-[#002845] bg-[#FFFCEE] px-2 py-0.5 rounded border border-[#D4AF37]/40">
+            {ticket.ticketNumber}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-slate-500 font-medium">الحالة</span>
+          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${statusTone}`}>
+            {statusLabel}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+            <Clock className="w-3 h-3" /> وقت الإنشاء
+          </span>
+          <span className="text-[11px] text-slate-700">{timeStr}</span>
+        </div>
+      </div>
+      <div className="px-3 pb-3 grid grid-cols-2 gap-2">
+        <a
+          href={`/account/my-tickets?open=${ticket.ticketId}`}
+          className="flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] text-[11px] font-bold hover:opacity-90 transition active:scale-95"
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+          متابعة الطلب
+        </a>
+        <button
+          type="button"
+          onClick={onHome}
+          className="flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg bg-white border border-[#D4AF37] text-[#9A7D28] text-[11px] font-bold hover:bg-[#FFFCEE] transition active:scale-95"
+        >
+          <Home className="w-3.5 h-3.5" />
+          القائمة الرئيسية
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Starter menu (welcome screen) ──────────────────────────────────────
+// Replaces the old flat 3-button list with a categorized menu so the
+// visitor sees the breadth of what the bot can answer (listings,
+// packages, search, contact, plus AI tools for VIP tiers).
+type StarterCategory = {
+  title: string;
+  icon: string;     // emoji is fine — RTL, no extra import
+  tone: string;     // tailwind classes for the chip
+  questions: string[];
+};
+
+const STARTER_BASE: StarterCategory[] = [
+  {
+    title: "إضافة إعلان",
+    icon: "🏠",
+    tone: "border-slate-200 text-slate-700 hover:border-[#D4AF37] hover:text-[#002845] hover:bg-[#FFFCEE]",
+    questions: [
+      "كيف أضيف إعلان جديد؟",
+      "كم صورة يمكنني رفعها للعقار؟",
+      "هل أستطيع رفع فيديو للعقار؟",
+      "كم مدة عرض الإعلان؟",
+    ],
+  },
+  {
+    title: "الباقات والأسعار",
+    icon: "💼",
+    tone: "border-amber-200 text-amber-700 hover:border-[#D4AF37] hover:bg-[#FFFCEE]",
+    questions: [
+      "ما هي الباقات المتاحة؟",
+      "كم سعر كل باقة؟",
+      "ما الفرق بين الباقات؟",
+      "هل يوجد خصومات على الباقات؟",
+    ],
+  },
+  {
+    title: "البحث والشراء",
+    icon: "🔎",
+    tone: "border-blue-200 text-blue-700 hover:border-blue-400 hover:bg-blue-50",
+    questions: [
+      "كيف أبحث عن عقار؟",
+      "كيف أتواصل مع البائع؟",
+      "كيف أحجز موعد معاينة؟",
+      "ما هي رسوم العمولة؟",
+    ],
+  },
+  {
+    title: "الدعم والحساب",
+    icon: "🛟",
+    tone: "border-emerald-200 text-emerald-700 hover:border-emerald-400 hover:bg-emerald-50",
+    questions: [
+      "كيف أتواصل مع الدعم البشري؟",
+      "كيف أعدّل بيانات حسابي؟",
+      "نسيت كلمة المرور",
+      "كيف أتابع طلبات الدعم؟",
+    ],
+  },
+];
+
+const STARTER_VIP: StarterCategory[] = [
+  {
+    title: "كتابة الأوصاف (AI)",
+    icon: "✍️",
+    tone: "border-purple-200 text-purple-700 hover:border-purple-400 hover:bg-purple-50",
+    questions: [
+      "اكتب لي وصف فيلا فاخرة",
+      "اكتب لي وصف شقة عائلية",
+      "اكتب لي وصف أرض استثمارية",
+      "أعد كتابة وصفي بأسلوب تسويقي أقوى",
+    ],
+  },
+  {
+    title: "تسويق وأداء",
+    icon: "📈",
+    tone: "border-rose-200 text-rose-700 hover:border-rose-400 hover:bg-rose-50",
+    questions: [
+      "نصائح لزيادة مشاهدات إعلاني",
+      "ما أفضل وقت لنشر إعلان؟",
+      "كيف أحسّن صور إعلاني؟",
+      "استراتيجية بيع سريع",
+    ],
+  },
+  {
+    title: "تسعير واستشارة",
+    icon: "🎯",
+    tone: "border-amber-200 text-amber-700 hover:border-[#D4AF37] hover:bg-[#FFFCEE]",
+    questions: [
+      "كيف أحدد سعر عقاري؟",
+      "ما متوسط أسعار الحي؟",
+      "هل العرض المتاح مناسب؟",
+      "ما عوامل ارتفاع سعر العقار؟",
+    ],
+  },
+];
+
+function StarterMenu({
+  currentLevel,
+  onPick,
+}: {
+  currentLevel: number;
+  onPick: (q: string) => void;
+}) {
+  const cats = currentLevel >= 2 ? [...STARTER_VIP, ...STARTER_BASE] : STARTER_BASE;
+  return (
+    <div className="mt-4 w-full space-y-3 text-right">
+      <p className="text-[11px] text-slate-500 font-medium px-1">اختر سؤالاً للبدء، أو اكتب سؤالك:</p>
+      {cats.map((cat, i) => (
+        <div key={i} className="space-y-1.5">
+          <div className="flex items-center gap-1.5 px-1">
+            <span className="text-sm">{cat.icon}</span>
+            <span className="text-[11px] font-bold text-[#002845]">{cat.title}</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {cat.questions.map((q, j) => (
+              <button
+                key={j}
+                type="button"
+                onClick={() => onPick(q)}
+                className={`px-2.5 py-1.5 bg-white border rounded-full text-[11px] font-medium transition active:scale-95 ${cat.tone}`}
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 interface AILevelInfo {
@@ -411,9 +623,17 @@ export default function AIChatbot() {
         // failed silently on the backend, the customer must see a
         // clear success message — never a generic error. The ticket
         // row is what counts; notifications are best-effort.
+        // Rendered as a TicketCard (id, status badge, created time,
+        // follow-up button, home button) — see the renderer below.
         setMessages([...messages, {
           role: "assistant",
-          content: `✅ تم تحويل طلبك إلى الدعم البشري\n\nتذكرة رقم: ${data.ticketNumber}\nسيتواصل معك فريقنا قريباً، ويمكنك متابعة الرد من صفحة "طلبات الدعم" في حسابك.`
+          content: "تم تحويل طلبك إلى الدعم البشري",
+          ticket: {
+            ticketId: data.ticket?.id ?? data.ticketNumber,
+            ticketNumber: data.ticketNumber,
+            status: data.ticket?.status || "new",
+            createdAt: data.ticket?.created_at || new Date().toISOString(),
+          },
         }]);
         setShowEscalateOption(false);
         // Tick the navbar bell immediately — Navbar polls every 30s,
@@ -645,24 +865,7 @@ export default function AIChatbot() {
               )}
             </div>
 
-            <div className="flex flex-wrap justify-center gap-2 mt-4">
-              {(currentLevel >= 2
-                ? ["ساعدني في كتابة وصف لفيلا", "نصائح لزيادة مشاهدات إعلاني", "كيف أسوق عقاري؟"]
-                : ["كيف أضيف إعلان؟", "ما هي الباقات المتاحة؟", "كيف أبحث عن عقار؟"]
-              ).map((q, i) => (
-                <button
-                  key={i}
-                  onClick={() => void sendMessage(q)}
-                  className={`px-3 py-1.5 bg-white border rounded-full text-xs transition ${
-                    currentLevel >= 2
-                      ? "border-purple-200 text-purple-700 hover:border-purple-400 hover:bg-purple-50"
-                      : "border-slate-200 text-slate-600 hover:border-[#D4AF37] hover:text-[#002845]"
-                  }`}
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
+            <StarterMenu currentLevel={currentLevel} onPick={(q) => void sendMessage(q)} />
           </div>
         ) : (
           <div className="space-y-3">
@@ -672,8 +875,8 @@ export default function AIChatbot() {
                 className={`flex gap-2 ${msg.role === "user" ? "flex-row-reverse" : ""}`}
               >
                 <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
-                  msg.role === "user" 
-                    ? "bg-[#002845]" 
+                  msg.role === "user"
+                    ? "bg-[#002845]"
                     : `bg-gradient-to-br ${levelConfig.color}`
                 }`}>
                   {msg.role === "user" ? (
@@ -682,23 +885,30 @@ export default function AIChatbot() {
                     <LevelIcon className="w-3.5 h-3.5 text-white" />
                   )}
                 </div>
-                <div
-                  className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm leading-relaxed ${
-                    msg.role === "user"
-                      ? "bg-[#002845] text-white rounded-tr-none"
-                      : msg.escalated
-                        ? "bg-amber-50 border border-amber-200 text-slate-700 rounded-tl-none"
-                        : "bg-white border border-slate-200 text-slate-700 rounded-tl-none shadow-sm"
-                  }`}
-                >
-                  {msg.escalated && (
-                    <div className="flex items-center gap-1 text-amber-600 text-xs mb-1">
-                      <AlertTriangle className="w-3 h-3" />
-                      سيتم تحويلك للدعم
-                    </div>
-                  )}
-                  <div className="whitespace-pre-wrap">{msg.content}</div>
-                </div>
+                {msg.ticket ? (
+                  <TicketSuccessCard
+                    ticket={msg.ticket}
+                    onHome={resetChatToHome}
+                  />
+                ) : (
+                  <div
+                    className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm leading-relaxed ${
+                      msg.role === "user"
+                        ? "bg-[#002845] text-white rounded-tr-none"
+                        : msg.escalated
+                          ? "bg-amber-50 border border-amber-200 text-slate-700 rounded-tl-none"
+                          : "bg-white border border-slate-200 text-slate-700 rounded-tl-none shadow-sm"
+                    }`}
+                  >
+                    {msg.escalated && (
+                      <div className="flex items-center gap-1 text-amber-600 text-xs mb-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        سيتم تحويلك للدعم
+                      </div>
+                    )}
+                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                  </div>
+                )}
               </div>
             ))}
             {isLoading && (
