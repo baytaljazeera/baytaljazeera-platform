@@ -1813,6 +1813,64 @@ async function initializeDatabase() {
     await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_audit_created ON ai_audit_log (created_at DESC);`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_audit_action ON ai_audit_log (action);`);
 
+    // Lead Intelligence — tracks the funnel events the customer-chat
+    // classifier detects (lead, inquiry, visit_request, agent_request,
+    // sale) and the inferred intent (buyer/seller/investor).
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS ai_lead_events (
+        id SERIAL PRIMARY KEY,
+        session_id VARCHAR(100),
+        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        chat_log_id INTEGER REFERENCES ai_chat_logs(id) ON DELETE SET NULL,
+        event_type VARCHAR(40) NOT NULL,
+        intent VARCHAR(40),
+        confidence NUMERIC(4,3),
+        property_hint TEXT,
+        raw_message TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_lead_created ON ai_lead_events (created_at DESC);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_lead_event ON ai_lead_events (event_type);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_lead_session ON ai_lead_events (session_id);`);
+
+    // Vector search for the Knowledge Base. pgvector is shipped with
+    // Render PostgreSQL but the extension must be created explicitly,
+    // and `vector(1536)` is the dimension of OpenAI's
+    // text-embedding-3-small model. Wrapped in a DO/EXCEPTION block so
+    // a deployment without pgvector doesn't fail to boot — the
+    // retrieveKnowledge helper falls back to ILIKE when the column
+    // doesn't exist.
+    try {
+      await db.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
+      console.log("✅ pgvector extension ready");
+      await db.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name='ai_knowledge_articles' AND column_name='embedding'
+          ) THEN
+            ALTER TABLE ai_knowledge_articles ADD COLUMN embedding vector(1536);
+          END IF;
+        END $$;
+      `);
+      // Approximate HNSW index — built lazily; ignore failures (some
+      // pgvector versions only have ivfflat).
+      try {
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_kb_embedding ON ai_knowledge_articles USING hnsw (embedding vector_cosine_ops);`);
+      } catch {
+        try {
+          await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_kb_embedding ON ai_knowledge_articles USING ivfflat (embedding vector_cosine_ops) WITH (lists = 50);`);
+        } catch (e) {
+          console.warn("⚠️ pgvector index not created:", e.message);
+        }
+      }
+      console.log("✅ Knowledge Base vector column ready");
+    } catch (vecErr) {
+      console.warn("⚠️ pgvector not available — KB will use ILIKE fallback:", vecErr.message);
+    }
+
     await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_chat_logs_session ON ai_chat_logs(session_id);`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_chat_logs_escalated ON ai_chat_logs(escalated);`);
 

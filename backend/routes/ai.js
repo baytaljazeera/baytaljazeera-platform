@@ -167,6 +167,11 @@ const SETTINGS_DEFAULTS = {
   ai_ab_testing_enabled:     'false',
   ai_auto_escalate_negative: 'false',
   ai_knowledge_enabled:      'true',      // inject KB context into customer chat
+  ai_lead_detection_enabled: 'true',      // classify customer messages into funnel stages
+  ai_escalation_notify_email:    'false',
+  ai_escalation_notify_whatsapp: 'false',
+  ai_escalation_email_to:        '',      // comma-separated list of admin emails
+  ai_escalation_whatsapp_to:     '',      // comma-separated E.164 phone numbers
 };
 
 async function loadAiSettings() {
@@ -323,11 +328,75 @@ async function logBlocked({ sessionId, userId, userMessage, reason, matchedTerm 
   }
 }
 
-// ─── Knowledge Base retrieval ───────────────────────────────────────────
-// Lightweight Arabic-friendly relevance: token overlap + ILIKE fallback.
-// Returns up to `limit` active articles ordered by score.
+// ─── Knowledge Base — vector embeddings + retrieval ────────────────────
+const EMBEDDING_MODEL = 'text-embedding-3-small';
+const EMBEDDING_DIMS  = 1536;
+
+async function embedText(text) {
+  if (!text || !text.trim()) return null;
+  try {
+    const r = await openai.embeddings.create({
+      model: EMBEDDING_MODEL,
+      input: String(text).slice(0, 8000),
+    });
+    const v = r.data?.[0]?.embedding;
+    if (!Array.isArray(v) || v.length !== EMBEDDING_DIMS) return null;
+    // pgvector text format expects "[v1,v2,...,vN]"
+    return `[${v.join(',')}]`;
+  } catch (e) {
+    console.warn('[embed] failed:', e.message);
+    return null;
+  }
+}
+
+let _vectorAvailable = null; // cached: do we have pgvector + embedding col?
+async function isVectorAvailable() {
+  if (_vectorAvailable !== null) return _vectorAvailable;
+  try {
+    const r = await db.query(`
+      SELECT 1 FROM information_schema.columns
+       WHERE table_name = 'ai_knowledge_articles' AND column_name = 'embedding'
+       LIMIT 1
+    `);
+    _vectorAvailable = r.rows.length > 0;
+  } catch {
+    _vectorAvailable = false;
+  }
+  return _vectorAvailable;
+}
+
+// Vector retrieval when pgvector + embeddings are available; otherwise
+// falls back to the ILIKE keyword search so the system keeps working on
+// deployments without pgvector or when embeddings haven't been
+// backfilled yet.
 async function retrieveKnowledge(query, limit = 3) {
   if (!query || !query.trim()) return [];
+
+  // Try vector path first
+  if (await isVectorAvailable()) {
+    const embedding = await embedText(query);
+    if (embedding) {
+      try {
+        const r = await db.query(
+          `SELECT id, title, content, category_id, priority,
+                  1 - (embedding <=> $1::vector) AS similarity
+             FROM ai_knowledge_articles
+            WHERE is_active = true AND embedding IS NOT NULL
+            ORDER BY embedding <=> $1::vector
+            LIMIT $2`,
+          [embedding, limit]
+        );
+        // Filter very weak matches (cosine similarity < 0.30) to avoid
+        // injecting irrelevant articles.
+        const strong = r.rows.filter((row) => Number(row.similarity) >= 0.30);
+        if (strong.length > 0) return strong;
+      } catch (e) {
+        console.warn('[kb vector] failed, falling back:', e.message);
+      }
+    }
+  }
+
+  // Fallback: lightweight ILIKE token-overlap
   const words = query
     .toLowerCase()
     .replace(/[^؀-ۿ\w\s]/g, ' ')
@@ -335,7 +404,6 @@ async function retrieveKnowledge(query, limit = 3) {
     .filter((w) => w.length >= 3)
     .slice(0, 12);
   if (words.length === 0) return [];
-  // OR over title/keywords/content for each token. priority breaks ties.
   const likes = words.map((_, i) => `(title ILIKE $${i + 1} OR keywords ILIKE $${i + 1} OR content ILIKE $${i + 1})`);
   const params = words.map((w) => `%${w}%`);
   try {
@@ -354,6 +422,28 @@ async function retrieveKnowledge(query, limit = 3) {
   }
 }
 
+// Compute + store embedding for one article. Fire-and-forget on save.
+async function reindexArticle(id) {
+  if (!(await isVectorAvailable())) return;
+  try {
+    const r = await db.query(
+      `SELECT id, title, content, keywords FROM ai_knowledge_articles WHERE id = $1`,
+      [id]
+    );
+    if (r.rows.length === 0) return;
+    const a = r.rows[0];
+    const text = `${a.title}\n\n${a.content}\n\n${a.keywords || ''}`.trim();
+    const embedding = await embedText(text);
+    if (!embedding) return;
+    await db.query(
+      `UPDATE ai_knowledge_articles SET embedding = $1::vector WHERE id = $2`,
+      [embedding, id]
+    );
+  } catch (e) {
+    console.warn('[kb reindex] failed for id=' + id + ':', e.message);
+  }
+}
+
 function knowledgeAsContext(articles) {
   if (!articles || articles.length === 0) return '';
   const parts = articles.map(
@@ -369,7 +459,7 @@ async function createEscalation({ chatLogId, sessionId, userId, userMessage, rea
       `INSERT INTO ai_escalations
          (chat_log_id, session_id, user_id, last_user_message, reason, sentiment, status)
        VALUES ($1, $2, $3, $4, $5, $6, 'open')
-       RETURNING id`,
+       RETURNING *`,
       [
         chatLogId || null,
         sessionId || null,
@@ -379,11 +469,159 @@ async function createEscalation({ chatLogId, sessionId, userId, userMessage, rea
         sentiment || null,
       ]
     );
-    return r.rows[0]?.id || null;
+    const escalation = r.rows[0];
+    // Fire-and-forget — notification failures must never break the
+    // customer flow. cfg fetched here so the helper can stay pure.
+    if (escalation) {
+      loadAiSettings()
+        .then((cfg) => notifyEscalation(escalation, cfg))
+        .catch((e) => console.warn('[escalation notify] outer:', e.message));
+    }
+    return escalation?.id || null;
   } catch (e) {
     console.warn('[ai escalation create] failed:', e.message);
     return null;
   }
+}
+
+// ─── Lead Intelligence — funnel classification ─────────────────────────
+const LEAD_EVENTS = ['lead', 'inquiry', 'visit_request', 'agent_request', 'sale'];
+const LEAD_INTENTS = ['buyer', 'seller', 'investor', 'unknown'];
+
+/**
+ * Classify a customer message into a funnel stage + intent. Returns
+ * { event_type, intent, confidence, property_hint } or null when none
+ * detected. Uses gpt-4o-mini in JSON mode for cheap, structured output.
+ */
+async function classifyLeadSignal(message) {
+  if (!message || message.trim().length < 5) return null;
+  try {
+    const sys = `صنّف الرسالة وفق المراحل العقارية:
+- lead: اهتمام مبدئي / يسأل عن عقارات
+- inquiry: يسأل عن تفاصيل عقار معيّن (سعر، صور، مساحة...)
+- visit_request: يطلب زيارة أو معاينة
+- agent_request: يطلب التحدّث مع وكيل/مندوب
+- sale: ينوي الشراء أو يطلب التعاقد
+- none: ليس له صلة بالمبيعات
+
+أيضاً صنّف النية: buyer / seller / investor / unknown
+استخرج "property_hint" (المدينة/الحي/النوع) إن وُجد.
+
+أجب بـ JSON فقط:
+{"event_type": "lead|inquiry|visit_request|agent_request|sale|none",
+ "intent": "buyer|seller|investor|unknown",
+ "confidence": رقم بين 0 و 1,
+ "property_hint": "نص قصير أو null"}`;
+    const r = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: sys },
+        { role: 'user', content: String(message).slice(0, 800) },
+      ],
+      max_tokens: 120,
+      temperature: 0,
+      response_format: { type: 'json_object' },
+    });
+    const raw = r.choices[0]?.message?.content || '{}';
+    const parsed = JSON.parse(raw);
+    if (!parsed.event_type || parsed.event_type === 'none') return null;
+    if (!LEAD_EVENTS.includes(parsed.event_type)) return null;
+    return {
+      event_type: parsed.event_type,
+      intent: LEAD_INTENTS.includes(parsed.intent) ? parsed.intent : 'unknown',
+      confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0.5)),
+      property_hint: parsed.property_hint && parsed.property_hint !== 'null' ? String(parsed.property_hint).slice(0, 200) : null,
+    };
+  } catch (e) {
+    console.warn('[lead classify] failed:', e.message);
+    return null;
+  }
+}
+
+async function recordLeadEvent({ sessionId, userId, chatLogId, signal, rawMessage }) {
+  try {
+    await db.query(
+      `INSERT INTO ai_lead_events
+         (session_id, user_id, chat_log_id, event_type, intent, confidence, property_hint, raw_message)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        sessionId || null,
+        userId || null,
+        chatLogId || null,
+        signal.event_type,
+        signal.intent,
+        signal.confidence,
+        signal.property_hint,
+        (rawMessage || '').slice(0, 2000),
+      ]
+    );
+  } catch (e) {
+    console.warn('[lead event] failed:', e.message);
+  }
+}
+
+// ─── Escalation notifications (email + WhatsApp) ───────────────────────
+// Imported lazily to avoid circular deps with /routes/whatsapp.js, and
+// because emailService is loaded at boot.
+async function notifyEscalation(escalation, cfg) {
+  const lines = [];
+  // Email
+  if (cfg.ai_escalation_notify_email === 'true' && cfg.ai_escalation_email_to) {
+    try {
+      const { sendEmail } = require('../services/emailService');
+      const to = cfg.ai_escalation_email_to.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+      const subject = `🚨 تصعيد جديد — بيت الجزيرة AI`;
+      const body = `
+        <div dir="rtl" style="font-family: Tahoma, sans-serif; color: #002845;">
+          <h2 style="color:#9A7D28">تصعيد جديد من المساعد الآلي</h2>
+          <p><b>المعرّف:</b> #${escalation.id}</p>
+          <p><b>السبب:</b> ${escalation.reason || '—'}</p>
+          <p><b>المزاج:</b> ${escalation.sentiment || '—'}</p>
+          <p><b>رسالة العميل:</b></p>
+          <blockquote style="border-right: 3px solid #D4AF37; padding: 8px 12px; background: #FAF8F4;">
+            ${(escalation.last_user_message || '').replace(/</g, '&lt;')}
+          </blockquote>
+          <p style="margin-top: 16px;">
+            <a href="https://www.baytaljazeera.com/add-listing/admin/ai-center?tab=escalations" style="color:#9A7D28">افتح لوحة التصعيدات</a>
+          </p>
+        </div>
+      `;
+      for (const recipient of to) {
+        try {
+          await sendEmail(recipient, subject, body);
+          lines.push(`email→${recipient}`);
+        } catch (e) {
+          lines.push(`email-fail→${recipient}: ${e.message}`);
+        }
+      }
+    } catch (e) {
+      lines.push(`email-load-fail: ${e.message}`);
+    }
+  }
+  // WhatsApp
+  if (cfg.ai_escalation_notify_whatsapp === 'true' && cfg.ai_escalation_whatsapp_to) {
+    try {
+      const wa = require('./whatsapp');
+      const send = wa.sendWhatsAppMessage || wa.default?.sendWhatsAppMessage;
+      const to = cfg.ai_escalation_whatsapp_to.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+      const text = `🚨 تصعيد جديد — بيت الجزيرة AI\nمعرّف: #${escalation.id}\nالسبب: ${escalation.reason || '—'}\nالمزاج: ${escalation.sentiment || '—'}\n\nالرسالة:\n${(escalation.last_user_message || '').slice(0, 400)}\n\nاللوحة: https://www.baytaljazeera.com/add-listing/admin/ai-center?tab=escalations`;
+      if (typeof send !== 'function') {
+        lines.push('wa-no-send-fn');
+      } else {
+        for (const recipient of to) {
+          try {
+            await send(recipient, text);
+            lines.push(`wa→${recipient}`);
+          } catch (e) {
+            lines.push(`wa-fail→${recipient}: ${e.message}`);
+          }
+        }
+      }
+    } catch (e) {
+      lines.push(`wa-load-fail: ${e.message}`);
+    }
+  }
+  if (lines.length > 0) console.log(`[escalation notify #${escalation.id}]`, lines.join(', '));
 }
 
 // ─── Audit log ──────────────────────────────────────────────────────────
@@ -2847,6 +3085,18 @@ router.post("/customer-chat", asyncHandler(async (req, res) => {
       });
     }
 
+    // Phase: Lead Intelligence — classify the customer message into a
+    // funnel stage (lead → inquiry → visit_request → agent_request →
+    // sale) plus intent (buyer/seller/investor). Runs async after the
+    // log row exists so the funnel API can join chat_log_id back.
+    if (centralCfg.ai_lead_detection_enabled !== 'false' && userMessage && chatLogId) {
+      classifyLeadSignal(userMessage).then((signal) => {
+        if (signal) {
+          recordLeadEvent({ sessionId, userId, chatLogId, signal, rawMessage: userMessage });
+        }
+      }).catch((e) => console.warn('[lead detect]', e.message));
+    }
+
     res.json({
       message: assistantMessage,
       escalated,
@@ -3008,6 +3258,17 @@ router.post("/support-settings", authMiddleware, adminMiddleware, asyncHandler(a
   if (typeof body.ai_after_hours_mode === 'string' && ['respond', 'queue', 'disable'].includes(body.ai_after_hours_mode)) {
     updates.ai_after_hours_mode = body.ai_after_hours_mode;
   }
+  if (body.ai_lead_detection_enabled !== undefined) {
+    updates.ai_lead_detection_enabled = body.ai_lead_detection_enabled ? 'true' : 'false';
+  }
+  if (body.ai_escalation_notify_email !== undefined) {
+    updates.ai_escalation_notify_email = body.ai_escalation_notify_email ? 'true' : 'false';
+  }
+  if (body.ai_escalation_notify_whatsapp !== undefined) {
+    updates.ai_escalation_notify_whatsapp = body.ai_escalation_notify_whatsapp ? 'true' : 'false';
+  }
+  if (typeof body.ai_escalation_email_to === 'string')    updates.ai_escalation_email_to    = body.ai_escalation_email_to.slice(0, 500);
+  if (typeof body.ai_escalation_whatsapp_to === 'string') updates.ai_escalation_whatsapp_to = body.ai_escalation_whatsapp_to.slice(0, 500);
 
   // Snapshot the current values for the audit log diff.
   const before = await loadAiSettings();
@@ -3242,6 +3503,8 @@ router.post("/center/knowledge/articles", authMiddleware, adminMiddleware, async
     ]
   );
   await auditAi({ action: 'kb_article_create', targetKind: 'kb_article', targetId: r.rows[0].id, newValue: { title: r.rows[0].title }, actor: req.user });
+  // Fire-and-forget embedding refresh so vector search picks it up.
+  reindexArticle(r.rows[0].id).catch(() => null);
   res.json({ ok: true, article: r.rows[0] });
 }));
 
@@ -3274,6 +3537,10 @@ router.patch("/center/knowledge/articles/:id", authMiddleware, adminMiddleware, 
     newValue: { title: r.rows[0].title, is_active: r.rows[0].is_active },
     actor: req.user,
   });
+  // Refresh embedding if title/content/keywords changed.
+  if (b.title !== undefined || b.content !== undefined || b.keywords !== undefined) {
+    reindexArticle(r.rows[0].id).catch(() => null);
+  }
   res.json({ ok: true, article: r.rows[0] });
 }));
 
@@ -3356,6 +3623,87 @@ router.get("/center/audit", authMiddleware, adminMiddleware, asyncHandler(async 
     params
   );
   res.json({ entries: r.rows });
+}));
+
+// ─── Lead Intelligence — funnel + intent ────────────────────────────────
+router.get("/center/leads/funnel", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const window = String(req.query.window || '30d');
+  const interval = window === '7d' ? '7 days' : window === '24h' ? '24 hours' : '30 days';
+
+  const safe = async (sql, params = []) => {
+    try { const r = await db.query(sql, params); return r.rows; } catch { return []; }
+  };
+
+  const [byStage, byIntent, byProperty, recent, byDay] = await Promise.all([
+    safe(`SELECT event_type, COUNT(*)::int AS n
+            FROM ai_lead_events
+           WHERE created_at >= NOW() - INTERVAL '${interval}'
+           GROUP BY event_type`),
+    safe(`SELECT intent, COUNT(*)::int AS n
+            FROM ai_lead_events
+           WHERE created_at >= NOW() - INTERVAL '${interval}'
+           GROUP BY intent`),
+    safe(`SELECT property_hint, COUNT(*)::int AS n
+            FROM ai_lead_events
+           WHERE created_at >= NOW() - INTERVAL '${interval}'
+             AND property_hint IS NOT NULL AND property_hint <> ''
+           GROUP BY property_hint
+           ORDER BY n DESC LIMIT 10`),
+    safe(`SELECT id, event_type, intent, confidence, property_hint, raw_message, created_at, session_id
+            FROM ai_lead_events
+           WHERE created_at >= NOW() - INTERVAL '${interval}'
+           ORDER BY created_at DESC
+           LIMIT 50`),
+    safe(`SELECT date_trunc('day', created_at) AS day,
+                 event_type, COUNT(*)::int AS n
+            FROM ai_lead_events
+           WHERE created_at >= NOW() - INTERVAL '${interval}'
+           GROUP BY 1, 2
+           ORDER BY 1`),
+  ]);
+
+  // Convert byStage into a fixed-shape object for the funnel viz.
+  const stageCounts = { lead: 0, inquiry: 0, visit_request: 0, agent_request: 0, sale: 0 };
+  for (const row of byStage) {
+    if (stageCounts[row.event_type] !== undefined) stageCounts[row.event_type] = row.n;
+  }
+
+  res.json({
+    window,
+    stages: stageCounts,
+    intents: byIntent,
+    top_properties: byProperty,
+    recent,
+    by_day: byDay,
+  });
+}));
+
+// ─── Knowledge Base — bulk reindex of embeddings ────────────────────────
+router.post("/center/knowledge/reindex", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  if (!(await isVectorAvailable())) {
+    return res.status(503).json({ ok: false, error: "pgvector غير مفعّل على قاعدة البيانات" });
+  }
+  // Only reindex active articles missing an embedding, OR all when `force=1`.
+  const force = req.query.force === '1';
+  const r = await db.query(
+    force
+      ? `SELECT id FROM ai_knowledge_articles ORDER BY priority DESC, updated_at DESC`
+      : `SELECT id FROM ai_knowledge_articles WHERE embedding IS NULL`
+  );
+  let done = 0;
+  let failed = 0;
+  // Process serially to avoid hitting OpenAI's rate limit; this endpoint
+  // is operator-triggered and rare. Returns a summary.
+  for (const row of r.rows) {
+    try {
+      await reindexArticle(row.id);
+      done += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  await auditAi({ action: 'kb_reindex', targetKind: 'kb', targetId: force ? 'force' : 'missing', newValue: { done, failed }, actor: req.user });
+  res.json({ ok: true, processed: r.rows.length, done, failed });
 }));
 
 // ─── Enforcement metrics (Phase 7 add-ons) ──────────────────────────────

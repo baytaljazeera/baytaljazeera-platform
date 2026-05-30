@@ -77,10 +77,32 @@ interface AiSettings {
   ai_ab_testing_enabled: string;
   ai_auto_escalate_negative: string;
   ai_knowledge_enabled: string;
+  ai_lead_detection_enabled: string;
+  ai_escalation_notify_email: string;
+  ai_escalation_notify_whatsapp: string;
+  ai_escalation_email_to: string;
+  ai_escalation_whatsapp_to: string;
   _meta?: {
     allowed_models: string[];
     pricing_per_1k_tokens: Record<string, { input: number; output: number }>;
   };
+}
+
+interface LeadFunnel {
+  window: string;
+  stages: { lead: number; inquiry: number; visit_request: number; agent_request: number; sale: number };
+  intents: { intent: string; n: number }[];
+  top_properties: { property_hint: string; n: number }[];
+  recent: {
+    id: number;
+    event_type: string;
+    intent: string;
+    confidence: string;
+    property_hint: string | null;
+    raw_message: string;
+    created_at: string;
+    session_id: string | null;
+  }[];
 }
 
 interface KbCategory {
@@ -196,6 +218,7 @@ interface GeneratedDescription {
 // ─── Constants ─────────────────────────────────────────────────────────────
 const TABS = [
   { key: "overview", label: "نظرة عامة", icon: Activity },
+  { key: "leads", label: "ذكاء المبيعات", icon: TrendingUp },
   { key: "knowledge", label: "قاعدة المعرفة", icon: FileText },
   { key: "chat", label: "المساعد الذكي", icon: MessageSquare },
   { key: "generate", label: "توليد محتوى", icon: Wand2 },
@@ -205,6 +228,21 @@ const TABS = [
   { key: "audit", label: "سجل التدقيق", icon: SettingsIcon },
   { key: "settings", label: "الإعدادات المتقدّمة", icon: SettingsIcon },
 ] as const;
+
+const LEAD_STAGE_LABELS: Record<string, string> = {
+  lead: "اهتمام مبدئي",
+  inquiry: "استفسار",
+  visit_request: "طلب زيارة",
+  agent_request: "طلب وكيل",
+  sale: "نية شراء",
+};
+
+const INTENT_LABELS: Record<string, string> = {
+  buyer: "مشتري",
+  seller: "بائع",
+  investor: "مستثمر",
+  unknown: "غير محدّد",
+};
 
 const SENTIMENT_META: Record<string, { label: string; color: string; bg: string }> = {
   very_negative: { label: "سلبي جداً", color: "text-rose-700", bg: "bg-rose-500" },
@@ -296,6 +334,10 @@ export default function AICenterPage() {
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
 
+  // Lead Intelligence
+  const [leadFunnel, setLeadFunnel] = useState<LeadFunnel | null>(null);
+  const [reindexBusy, setReindexBusy] = useState(false);
+
   // Settings draft
   const [settingsDraft, setSettingsDraft] = useState<AiSettings | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -331,7 +373,39 @@ export default function AICenterPage() {
       fetchKbArticles(),
       fetchEscalations(),
       fetchAudit(),
+      fetchLeadFunnel(),
     ]);
+  }
+
+  async function fetchLeadFunnel() {
+    try {
+      const res = await fetch(`${API_URL}/api/ai/center/leads/funnel`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) setLeadFunnel(await res.json());
+    } catch { /* ignore */ }
+  }
+
+  async function reindexKnowledge(force = false) {
+    setReindexBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/api/ai/center/knowledge/reindex${force ? '?force=1' : ''}`, {
+        method: "POST",
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`تمت فهرسة ${data.done}/${data.processed} مقال`);
+      } else {
+        toast.error(data.error || "تعذّر الفهرسة");
+      }
+    } catch {
+      toast.error("خطأ في الاتصال");
+    } finally {
+      setReindexBusy(false);
+    }
   }
 
   async function fetchEnforcementStats() {
@@ -596,6 +670,11 @@ export default function AICenterPage() {
           ai_ab_testing_enabled: settingsDraft.ai_ab_testing_enabled === "true",
           ai_auto_escalate_negative: settingsDraft.ai_auto_escalate_negative === "true",
           ai_knowledge_enabled: settingsDraft.ai_knowledge_enabled === "true",
+          ai_lead_detection_enabled: settingsDraft.ai_lead_detection_enabled === "true",
+          ai_escalation_notify_email: settingsDraft.ai_escalation_notify_email === "true",
+          ai_escalation_notify_whatsapp: settingsDraft.ai_escalation_notify_whatsapp === "true",
+          ai_escalation_email_to: settingsDraft.ai_escalation_email_to,
+          ai_escalation_whatsapp_to: settingsDraft.ai_escalation_whatsapp_to,
         }),
       });
       if (res.ok) {
@@ -841,6 +920,8 @@ export default function AICenterPage() {
         />
       )}
 
+      {activeTab === "leads" && <LeadsTab data={leadFunnel} />}
+
       {activeTab === "knowledge" && (
         <KnowledgeTab
           categories={kbCategories}
@@ -848,6 +929,8 @@ export default function AICenterPage() {
           onSave={saveKbArticle}
           onDelete={deleteKbArticle}
           knowledgeEnabled={settings?.ai_knowledge_enabled === "true"}
+          onReindex={reindexKnowledge}
+          reindexBusy={reindexBusy}
         />
       )}
 
@@ -1693,7 +1776,12 @@ function SettingsTab({
       original.ai_ab_testing_enabled !== draft.ai_ab_testing_enabled ||
       original.ai_auto_escalate_negative !== draft.ai_auto_escalate_negative ||
       original.ai_after_hours_mode !== draft.ai_after_hours_mode ||
-      original.ai_knowledge_enabled !== draft.ai_knowledge_enabled
+      original.ai_knowledge_enabled !== draft.ai_knowledge_enabled ||
+      original.ai_lead_detection_enabled !== draft.ai_lead_detection_enabled ||
+      original.ai_escalation_notify_email !== draft.ai_escalation_notify_email ||
+      original.ai_escalation_notify_whatsapp !== draft.ai_escalation_notify_whatsapp ||
+      original.ai_escalation_email_to !== draft.ai_escalation_email_to ||
+      original.ai_escalation_whatsapp_to !== draft.ai_escalation_whatsapp_to
     );
   }, [draft, original]);
 
@@ -1861,6 +1949,52 @@ function SettingsTab({
           value={draft.ai_knowledge_enabled === "true"}
           onChange={(v) => setDraft({ ...draft, ai_knowledge_enabled: v ? "true" : "false" })}
         />
+        <ToggleRow
+          label="تحليل ذكاء المبيعات (Lead Detection)"
+          hint="تصنيف رسائل العملاء آلياً إلى مراحل (lead → inquiry → visit → agent → sale) ونيّتهم (مشتري/بائع/مستثمر)."
+          value={draft.ai_lead_detection_enabled === "true"}
+          onChange={(v) => setDraft({ ...draft, ai_lead_detection_enabled: v ? "true" : "false" })}
+        />
+      </div>
+
+      {/* Escalation notifications */}
+      <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6 space-y-4">
+        <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-rose-500" />
+          إشعارات التصعيد
+        </h3>
+        <p className="text-xs text-slate-500">
+          إرسال إشعار فوري لفريق الدعم عند تصعيد أي محادثة. يدعم البريد و واتساب — تعمل
+          فقط لو الـ Twilio (واتساب) و Gmail OAuth (بريد) معدّان على Render.
+        </p>
+        <ToggleRow
+          label="إرسال إشعار بالبريد عند التصعيد"
+          value={draft.ai_escalation_notify_email === "true"}
+          onChange={(v) => setDraft({ ...draft, ai_escalation_notify_email: v ? "true" : "false" })}
+        />
+        {draft.ai_escalation_notify_email === "true" && (
+          <FormInput
+            label="بريد المستلمين"
+            value={draft.ai_escalation_email_to}
+            onChange={(v) => setDraft({ ...draft, ai_escalation_email_to: v })}
+            placeholder="admin@aqar.sa, support@aqar.sa"
+            hint="مفصولة بفواصل أو فاصلة منقوطة. لكل بريد إرسال مستقل."
+          />
+        )}
+        <ToggleRow
+          label="إرسال إشعار بواتساب عند التصعيد"
+          value={draft.ai_escalation_notify_whatsapp === "true"}
+          onChange={(v) => setDraft({ ...draft, ai_escalation_notify_whatsapp: v ? "true" : "false" })}
+        />
+        {draft.ai_escalation_notify_whatsapp === "true" && (
+          <FormInput
+            label="أرقام واتساب"
+            value={draft.ai_escalation_whatsapp_to}
+            onChange={(v) => setDraft({ ...draft, ai_escalation_whatsapp_to: v })}
+            placeholder="+966500000000, +966500000001"
+            hint="بتنسيق E.164. مفصولة بفواصل."
+          />
+        )}
       </div>
 
       <div className="sticky bottom-4 z-10 rounded-2xl border border-[#EDE6D6] bg-white shadow-lg p-4 flex items-center justify-between">
@@ -1881,6 +2015,132 @@ function SettingsTab({
 }
 
 // ─── Small form primitives ────────────────────────────────────────────────
+// ─── Lead Intelligence tab ────────────────────────────────────────────────
+function LeadsTab({ data }: { data: LeadFunnel | null }) {
+  if (!data) {
+    return (
+      <div className="rounded-3xl border border-dashed border-[#EDE6D6] bg-white p-16 text-center">
+        <TrendingUp className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+        <p className="text-sm text-slate-500">لا توجد بيانات تحليلية بعد. ستظهر هنا فور تصنيف رسائل العملاء.</p>
+      </div>
+    );
+  }
+
+  const order: (keyof LeadFunnel["stages"])[] = ["lead", "inquiry", "visit_request", "agent_request", "sale"];
+  const maxStage = Math.max(...order.map((k) => data.stages[k]), 1);
+  const totalConversations = Object.values(data.stages).reduce((s, n) => s + (Number(n) || 0), 0);
+  const conversionRate = data.stages.lead > 0 ? ((data.stages.sale / data.stages.lead) * 100).toFixed(1) : "0";
+  const visitRate = data.stages.lead > 0 ? ((data.stages.visit_request / data.stages.lead) * 100).toFixed(1) : "0";
+
+  return (
+    <section className="space-y-5">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 md:gap-4">
+        <StatCard icon={TrendingUp} label="إجمالي الأحداث" value={totalConversations} sub="آخر ٣٠ يوم" />
+        <StatCard icon={Activity} label="معدل التحويل (lead → sale)" value={`${conversionRate}%`} />
+        <StatCard icon={Users} label="معدل طلبات الزيارة" value={`${visitRate}%`} />
+        <StatCard icon={AlertTriangle} label="نوايا الشراء" value={data.stages.sale} tone={data.stages.sale > 0 ? "attention" : "normal"} />
+      </div>
+
+      <section className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
+        <h3 className="text-base font-bold text-[#002845] mb-5">قمع المبيعات</h3>
+        <div className="space-y-3">
+          {order.map((stage) => {
+            const n = data.stages[stage];
+            const pct = (n / maxStage) * 100;
+            return (
+              <div key={stage} className="flex items-center gap-3">
+                <div className="w-32 shrink-0 text-sm font-semibold text-[#002845]">
+                  {LEAD_STAGE_LABELS[stage]}
+                </div>
+                <div className="flex-1 h-9 rounded-xl bg-[#FAF8F4] border border-[#EDE6D6] overflow-hidden relative">
+                  <div
+                    className="h-full bg-gradient-to-l from-[#D4AF37] to-[#E6C966] transition-all"
+                    style={{ width: `${pct}%`, minWidth: n > 0 ? 20 : 0 }}
+                  />
+                  <span className="absolute inset-0 flex items-center justify-end pr-3 text-sm font-bold text-[#002845] tabular-nums">
+                    {n}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5">
+        <section className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
+          <h3 className="text-base font-bold text-[#002845] mb-4">توزيع النوايا</h3>
+          {data.intents.length === 0 ? (
+            <p className="text-sm text-slate-400 py-6 text-center">لا توجد بيانات</p>
+          ) : (
+            <ul className="space-y-2">
+              {data.intents.map((i) => {
+                const total = data.intents.reduce((s, x) => s + x.n, 0) || 1;
+                const pct = ((i.n / total) * 100).toFixed(0);
+                return (
+                  <li key={i.intent} className="flex items-center gap-3">
+                    <span className="w-20 text-sm text-slate-600">{INTENT_LABELS[i.intent] || i.intent}</span>
+                    <div className="flex-1 h-2 bg-[#FAF8F4] rounded-full overflow-hidden">
+                      <div className="h-full bg-[#D4AF37]" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-sm font-bold text-[#002845] tabular-nums w-10 text-right">{i.n}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
+        <section className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
+          <h3 className="text-base font-bold text-[#002845] mb-4">أكثر العقارات ذكراً</h3>
+          {data.top_properties.length === 0 ? (
+            <p className="text-sm text-slate-400 py-6 text-center">لا توجد بيانات</p>
+          ) : (
+            <ul className="divide-y divide-[#F1ECE0]">
+              {data.top_properties.map((p, i) => (
+                <li key={i} className="py-2 flex items-center justify-between gap-3">
+                  <span className="text-sm text-[#002845] truncate">{p.property_hint}</span>
+                  <span className="text-sm font-bold text-[#9A7D28] tabular-nums">{p.n}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      <section className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
+        <h3 className="text-base font-bold text-[#002845] mb-4">أحدث الأحداث المُصنّفة</h3>
+        {data.recent.length === 0 ? (
+          <p className="text-sm text-slate-400 py-6 text-center">لا توجد بيانات</p>
+        ) : (
+          <ul className="divide-y divide-[#F1ECE0]">
+            {data.recent.map((e) => (
+              <li key={e.id} className="py-3">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#FFFCEE] border border-[#D4AF37]/40 text-[#9A7D28] font-bold">
+                    {LEAD_STAGE_LABELS[e.event_type] || e.event_type}
+                  </span>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#FAF8F4] border border-[#EDE6D6] text-slate-600">
+                    {INTENT_LABELS[e.intent] || e.intent}
+                  </span>
+                  {e.property_hint && (
+                    <span className="text-[11px] text-slate-500">📍 {e.property_hint}</span>
+                  )}
+                  <span className="text-[11px] text-slate-400 tabular-nums">
+                    ثقة: {(Number(e.confidence) * 100).toFixed(0)}%
+                  </span>
+                  <span className="text-[11px] text-slate-400 mr-auto">{timeAgo(e.created_at)}</span>
+                </div>
+                <p className="text-sm text-[#002845]">{e.raw_message}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </section>
+  );
+}
+
 // ─── Knowledge Base tab ───────────────────────────────────────────────────
 function KnowledgeTab({
   categories,
@@ -1888,12 +2148,16 @@ function KnowledgeTab({
   onSave,
   onDelete,
   knowledgeEnabled,
+  onReindex,
+  reindexBusy,
 }: {
   categories: KbCategory[];
   articles: KbArticle[];
   onSave: (p: Partial<KbArticle> & { id?: number }) => void;
   onDelete: (id: number) => void;
   knowledgeEnabled: boolean;
+  onReindex: (force?: boolean) => void;
+  reindexBusy: boolean;
 }) {
   const [draft, setDraft] = useState<{
     id?: number;
@@ -1951,6 +2215,33 @@ function KnowledgeTab({
           من تبويب الإعدادات المتقدّمة ليصبح هذا المحتوى مصدر الحقيقة.
         </div>
       )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#EDE6D6] bg-white p-3 md:p-4">
+        <p className="text-xs text-slate-500">
+          البحث عبر vector embeddings (OpenAI text-embedding-3-small + pgvector). يحتاج فهرسة بعد كل تعديل جذري.
+        </p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => onReindex(false)}
+            disabled={reindexBusy}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#D4AF37]/40 text-[#9A7D28] bg-white hover:bg-[#FFFCEE] transition text-xs disabled:opacity-50"
+          >
+            {reindexBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+            فهرسة المقالات الجديدة
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm("إعادة فهرسة كل المقالات؟ قد تستغرق وقتاً.")) onReindex(true);
+            }}
+            disabled={reindexBusy}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition text-xs disabled:opacity-50"
+          >
+            فهرسة شاملة
+          </button>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-5">
         <div className="lg:col-span-1 rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6 space-y-3 sticky top-4 self-start">
