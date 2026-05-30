@@ -1944,9 +1944,27 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
 
     res.json({ ok: true, results, skipped });
   } catch (err) {
-    await client.query('ROLLBACK');
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackErr) {
+      console.error('Reset test data — rollback also failed:', rollbackErr);
+    }
     console.error('Reset test data error:', err);
-    res.status(500).json({ ok: false, error: "حدث خطأ أثناء تصفير البيانات" });
+    // Surface the actual PG error fields so the operator can see exactly
+    // which table/column/constraint blocked instead of a generic 500.
+    const body = {
+      ok: false,
+      error: (err && err.message) || "حدث خطأ أثناء تصفير البيانات",
+      results,
+      skipped,
+    };
+    if (err && typeof err === 'object') {
+      const pgKeys = ['code', 'severity', 'detail', 'hint', 'schema', 'table', 'column', 'dataType', 'constraint', 'where', 'routine'];
+      for (const k of pgKeys) {
+        if (err[k] != null && err[k] !== '') body[k] = err[k];
+      }
+    }
+    res.status(500).json(body);
   } finally {
     client.release();
   }

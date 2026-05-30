@@ -211,11 +211,38 @@ export default function ResetDataPage() {
         setConfirmText("");
         fetchStats();
       } else {
-        setMessage({ type: "error", text: data.error || "حدث خطأ" });
-        setSkipped(null);
+        const d = data as {
+          error?: string;
+          code?: string;
+          table?: string;
+          column?: string;
+          constraint?: string;
+          detail?: string;
+          hint?: string;
+          skipped?: Array<{ label: string; code: string; detail?: string }>;
+          results?: Record<string, Record<string, number>>;
+        };
+        // Surface the actual PG error so the operator can see what blocked.
+        const lines = [
+          d.error || "فشل التصفير",
+          d.code && `الكود: ${d.code}`,
+          d.table && `الجدول: ${d.table}`,
+          d.column && `العمود: ${d.column}`,
+          d.constraint && `القيد: ${d.constraint}`,
+          d.detail && `التفاصيل: ${d.detail}`,
+          d.hint && `تلميح: ${d.hint}`,
+        ].filter(Boolean);
+        setMessage({ type: "error", text: lines.join(" · ") });
+        setSkipped(Array.isArray(d.skipped) ? d.skipped : null);
+        if (d.results) setResults(d.results);
       }
-    } catch {
-      setMessage({ type: "error", text: "حدث خطأ في الاتصال" });
+    } catch (err) {
+      setMessage({
+        type: "error",
+        text:
+          "حدث خطأ في الاتصال — " +
+          (err instanceof Error ? err.message : String(err)),
+      });
     } finally {
       setResetting(false);
       setConfirmModal(false);
