@@ -46,7 +46,34 @@ const API_URL =
 // Stamped per build so the operator can confirm which JS bundle their
 // browser actually loaded — helps when CDN/ISP caching makes a deploy
 // look like it didnt land. Bumped manually with each visible change.
-const BUILD_TAG = "2026-05-30/salaam";
+const BUILD_TAG = "2026-05-30/hard-refresh";
+
+// Owner reports stale chunks served by ISP/edge caches on the office
+// network. This button is a nuclear option: unregister any lingering
+// service workers, wipe every Cache Storage entry the page can see,
+// then reload bypassing the HTTP cache.
+async function hardRefreshAndReload() {
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+  } catch {}
+  try {
+    if (typeof caches !== "undefined") {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+  } catch {}
+  try {
+    localStorage.removeItem("__dashboard_build_tag");
+  } catch {}
+  // Cache-busting query so even an aggressive intermediate proxy can't
+  // hand back the old HTML.
+  const url = new URL(window.location.href);
+  url.searchParams.set("_v", String(Date.now()));
+  window.location.replace(url.toString());
+}
 
 // ─── Brand palette ────────────────────────────────────────────────────────────
 // Single accent (gold), navy for text/structure. Status hues are reserved for
@@ -409,8 +436,8 @@ export default function AdminDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-3 text-sm">
-          <div className="flex flex-col items-end text-[10px] text-slate-300 font-mono leading-tight">
-            <span>v.{BUILD_TAG}</span>
+          <div className="flex flex-col items-end text-[10px] text-slate-400 font-mono leading-tight">
+            <span className="text-[#9A7D28]">v.{BUILD_TAG}</span>
             <span>آخر تحديث: {lastUpdate}</span>
           </div>
           <button
@@ -424,6 +451,15 @@ export default function AdminDashboard() {
               <RefreshCw className="w-4 h-4" />
             )}
             تحديث
+          </button>
+          <button
+            type="button"
+            onClick={() => void hardRefreshAndReload()}
+            title="مسح كاش المتصفح وإعادة التحميل القاسي"
+            className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-slate-200 text-slate-500 bg-white hover:bg-slate-50 hover:text-[#9A7D28] hover:border-[#D4AF37]/40 active:scale-95 transition"
+            aria-label="تحديث قاسي"
+          >
+            <Sparkles className="w-4 h-4" />
           </button>
         </div>
       </header>
