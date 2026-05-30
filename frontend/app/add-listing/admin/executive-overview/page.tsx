@@ -237,6 +237,7 @@ export default function ExecutiveOverviewPage() {
                 value={data.kpis.listings_pending}
                 sub={`+${data.kpis.listings_new_7d} خلال ٧ أيام`}
                 href="/add-listing/admin/listings"
+                tone={toneByCount(data.kpis.listings_pending, 3, 10)}
               />
               <Kpi
                 icon={InboxIcon}
@@ -244,6 +245,7 @@ export default function ExecutiveOverviewPage() {
                 value={data.kpis.complaints_open}
                 sub={`+${data.kpis.complaints_new_24h} اليوم`}
                 href="/add-listing/admin/customer-service"
+                tone={toneByCount(data.kpis.complaints_open, 1, 5)}
               />
               <Kpi
                 icon={AlertTriangle}
@@ -251,7 +253,7 @@ export default function ExecutiveOverviewPage() {
                 value={data.kpis.complaints_breached_sla}
                 sub="بحاجة تدخّل فوري"
                 href="/add-listing/admin/customer-service"
-                urgent={data.kpis.complaints_breached_sla > 0}
+                tone={data.kpis.complaints_breached_sla > 0 ? "urgent" : "normal"}
               />
               <Kpi
                 icon={Wallet}
@@ -272,6 +274,7 @@ export default function ExecutiveOverviewPage() {
                 value={data.kpis.contracts_expiring_30d}
                 sub="خلال ٣٠ يوم"
                 href="/add-listing/admin/hr"
+                tone={toneByCount(data.kpis.contracts_expiring_30d, 1, 5)}
               />
               <Kpi
                 icon={Activity}
@@ -279,6 +282,7 @@ export default function ExecutiveOverviewPage() {
                 value={data.kpis.vacations_pending}
                 sub="بانتظار البتّ"
                 href="/add-listing/admin/hr"
+                tone={toneByCount(data.kpis.vacations_pending, 1, 5)}
               />
               <Kpi
                 icon={ShieldCheck}
@@ -286,6 +290,7 @@ export default function ExecutiveOverviewPage() {
                 value={data.bottlenecks.pending_approvals_count}
                 sub="إعلانات/إجازات/عضويات"
                 href="/add-listing/admin/dashboard"
+                tone={toneByCount(data.bottlenecks.pending_approvals_count, 1, 10)}
               />
               <Kpi
                 icon={Clock}
@@ -302,7 +307,13 @@ export default function ExecutiveOverviewPage() {
                 label="معدّل تجاوز SLA"
                 value={`${(data.health.sla_breach_rate_24h * 100).toFixed(0)}%`}
                 sub="آخر ٢٤ ساعة"
-                urgent={data.health.sla_breach_rate_24h > 0.2}
+                tone={
+                  data.health.sla_breach_rate_24h > 0.2
+                    ? "urgent"
+                    : data.health.sla_breach_rate_24h > 0.05
+                      ? "attention"
+                      : "normal"
+                }
               />
             </div>
           </section>
@@ -486,46 +497,90 @@ function Panel({
   );
 }
 
+type KpiTone = "normal" | "attention" | "urgent";
+
+// Threshold helper — keeps the call sites readable.
+function toneByCount(n: number, attentionAt: number, urgentAt: number): KpiTone {
+  if (n >= urgentAt) return "urgent";
+  if (n >= attentionAt) return "attention";
+  return "normal";
+}
+
 function Kpi({
   icon: Icon,
   label,
   value,
   sub,
   href,
-  urgent,
+  tone = "normal",
 }: {
   icon: typeof Crown;
   label: string;
   value: string | number;
   sub?: string;
   href?: string;
-  urgent?: boolean;
+  tone?: KpiTone;
 }) {
+  // Three visual states. Urgent screams (rose chrome + ring + pulse dot),
+  // attention nudges (amber accent), normal is calm gold-on-paper.
+  const chrome =
+    tone === "urgent"
+      ? "border-rose-300 bg-rose-50 ring-2 ring-rose-200 shadow-[0_0_0_4px_rgba(244,63,94,0.05)] hover:border-rose-400"
+      : tone === "attention"
+        ? "border-amber-200 bg-amber-50/60 hover:border-amber-300"
+        : "border-[#EDE6D6] bg-white hover:border-[#D4AF37]/50 hover:shadow-[0_1px_24px_-12px_rgba(212,175,55,0.4)]";
+
+  const iconColor =
+    tone === "urgent"
+      ? "text-rose-600"
+      : tone === "attention"
+        ? "text-amber-600"
+        : "text-[#D4AF37]";
+
+  const numberColor =
+    tone === "urgent"
+      ? "text-rose-700"
+      : tone === "attention"
+        ? "text-amber-800"
+        : "text-[#002845]";
+
   const inner = (
     <div
-      className={`group h-full rounded-2xl border bg-white p-4 md:p-5 transition ${
-        urgent
-          ? "border-rose-200 bg-rose-50/40 hover:border-rose-300"
-          : "border-[#EDE6D6] hover:border-[#D4AF37]/50 hover:shadow-[0_1px_24px_-12px_rgba(212,175,55,0.4)]"
-      }`}
+      className={`group relative h-full rounded-2xl border bg-white p-4 md:p-5 transition ${chrome}`}
     >
-      <div className="flex items-start justify-between mb-3">
-        <Icon
-          className={`w-5 h-5 ${urgent ? "text-rose-500" : "text-[#D4AF37]"}`}
+      {tone === "urgent" && (
+        <span
+          className="absolute top-3 left-3 w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse ring-4 ring-rose-100"
+          aria-label="عاجل"
         />
-        {href && (
+      )}
+      <div className="flex items-start justify-between mb-3">
+        <Icon className={`w-5 h-5 ${iconColor}`} />
+        {href && tone !== "urgent" && (
           <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-[#D4AF37] transition" />
         )}
       </div>
       <p
-        className={`text-2xl md:text-3xl font-black leading-none tabular-nums ${
-          urgent ? "text-rose-700" : "text-[#002845]"
-        }`}
+        className={`text-2xl md:text-3xl font-black leading-none tabular-nums ${numberColor}`}
       >
         {value}
       </p>
-      <p className="text-sm font-semibold text-[#002845] mt-3">{label}</p>
-      {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
+      <p
+        className={`text-sm font-semibold mt-3 ${
+          tone === "urgent" ? "text-rose-900" : "text-[#002845]"
+        }`}
+      >
+        {label}
+      </p>
+      {sub && (
+        <p
+          className={`text-xs mt-1 ${
+            tone === "urgent" ? "text-rose-700" : "text-slate-500"
+          }`}
+        >
+          {sub}
+        </p>
+      )}
     </div>
   );
   return href ? (
