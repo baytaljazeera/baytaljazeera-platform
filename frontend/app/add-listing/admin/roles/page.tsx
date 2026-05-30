@@ -1853,8 +1853,21 @@ function AdminRolesPageContent() {
               </div>
 
               <div className="p-5">
-                <p className="text-sm text-slate-600 mb-4">اختر الدور الذي سيتم تعيينه للموظف الجديد:</p>
-                
+                <p className="text-sm text-slate-600 mb-3">اختر الدور الذي سيتم تعيينه للموظف الجديد:</p>
+
+                {/* شارة تشخيص: يُظهر دور المُتقدّم ودورك أنت، حتى تعرف */}
+                {/* لماذا قد يكون خيار "المدير العام" مخفياً. */}
+                <div className="flex flex-wrap gap-2 mb-4 text-[11px]">
+                  <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                    دورك الحالي: <span className="font-bold text-[#002845]">{currentUserRole || "—"}</span>
+                  </span>
+                  {currentUserRole !== "super_admin" && (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                      ⚠ خيار "المدير العام" مخفي — يلزم أن تكون super_admin أنت أولاً
+                    </span>
+                  )}
+                </div>
+
                 <div className="space-y-2 mb-6">
                   {/* المدير العام (super_admin) لا يظهر إلا للمدير العام نفسه — */}
                   {/* الترقية إلى super_admin لا رجعة عنها وتعطي تحكماً كاملاً. */}

@@ -3142,19 +3142,32 @@ async function initializeDatabase() {
     // ترقية صاحب المشروع إلى مدير عام دون لمس كلمة المرور.
     // لا نُدرجه في adminRoles[] لأن تلك القائمة تُعيد ضبط كلمة المرور
     // عند كل إقلاع. هنا نقتصر على رفع الدور لو الحساب موجود.
+    // LOWER() على الطرفين لأن السجل قد يكون مخزّناً بأحرف مختلفة.
     try {
-      const ownerRoleRes = await db.query(
-        `UPDATE users
-           SET role = 'super_admin',
-               role_level = 100,
-               locked_until = NULL,
-               failed_login_attempts = 0,
-               updated_at = NOW()
-         WHERE email = 'husseinbabsail@gmail.com'
-           AND (role IS DISTINCT FROM 'super_admin' OR role_level IS DISTINCT FROM 100)`
+      const ownerCheck = await db.query(
+        "SELECT id, email, role, role_level FROM users WHERE LOWER(email) = LOWER($1)",
+        ['husseinbabsail@gmail.com']
       );
-      if (ownerRoleRes.rowCount > 0) {
-        console.log("👑 تمت ترقية husseinbabsail@gmail.com إلى super_admin");
+      if (ownerCheck.rows.length === 0) {
+        console.log("ℹ️ صاحب المشروع husseinbabsail@gmail.com غير مسجّل بعد — تخطي الترقية");
+      } else {
+        const current = ownerCheck.rows[0];
+        console.log(`👀 صاحب المشروع الحالي: email=${current.email} role=${current.role} role_level=${current.role_level}`);
+        if (current.role !== 'super_admin' || current.role_level !== 100) {
+          await db.query(
+            `UPDATE users
+               SET role = 'super_admin',
+                   role_level = 100,
+                   locked_until = NULL,
+                   failed_login_attempts = 0,
+                   updated_at = NOW()
+             WHERE id = $1`,
+            [current.id]
+          );
+          console.log(`👑 تمت ترقية ${current.email} إلى super_admin`);
+        } else {
+          console.log("✅ صاحب المشروع super_admin بالفعل — لا حاجة للترقية");
+        }
       }
     } catch (ownerErr) {
       console.warn("⚠️ لم تتمّ ترقية صاحب المشروع:", ownerErr.message);
