@@ -1927,8 +1927,14 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
       await trackDelete('wallet_transactions', 'DELETE FROM wallet_transactions WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
       await trackDelete('ambassador_withdrawal_requests', 'DELETE FROM ambassador_withdrawal_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
       await trackDelete('ambassador_wallet', 'DELETE FROM ambassador_wallet WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await trackDelete('referrals', 'DELETE FROM referrals WHERE referrer_id IN (SELECT id FROM users WHERE role = $1) OR referred_id IN (SELECT id FROM users WHERE role = $1)', ['user', 'user']);
-      await trackDelete('advertiser_reviews', 'DELETE FROM advertiser_reviews WHERE reviewer_id IN (SELECT id FROM users WHERE role = $1) OR advertiser_id IN (SELECT id FROM users WHERE role = $1)', ['user', 'user']);
+      // $1 is referenced twice; pg expects exactly one parameter because
+      // there is only one distinct placeholder. Passing ['user','user']
+      // triggers 08P01 "bind message supplies 2 parameters, but prepared
+      // statement requires 1", and 08P01 is not in safeRun's skip list,
+      // so it aborts the whole customers wipe with a 500. That was the
+      // real reason DELETE FROM users never ran.
+      await trackDelete('referrals', 'DELETE FROM referrals WHERE referrer_id IN (SELECT id FROM users WHERE role = $1) OR referred_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('advertiser_reviews', 'DELETE FROM advertiser_reviews WHERE reviewer_id IN (SELECT id FROM users WHERE role = $1) OR advertiser_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
       await trackDelete('advertiser_reputation', 'DELETE FROM advertiser_reputation WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
       await trackDelete('listing_media', 'DELETE FROM listing_media WHERE listing_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', ['user']);
       await trackDelete('elite_extension_requests', 'DELETE FROM elite_extension_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
