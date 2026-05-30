@@ -661,23 +661,33 @@ function AdminRolesPageContent() {
 
   async function approveApplication() {
     if (!selectedApplication) return;
+    if (!assignedRole) {
+      toast.error("اختر الدور أولاً");
+      return;
+    }
     try {
       setProcessingApplication(true);
-      const res = await fetch(`/api/membership/admin/requests/${selectedApplication.id}/approve`, {
+      // Backend reads { assigned_role } (snake_case) — was sending { role }
+      // which arrived as undefined and triggered "يجب تحديد الدور للموظف".
+      // Also needs the Bearer header on cross-origin (incognito Safari).
+      const res = await fetch(`${API_URL}/api/membership/admin/requests/${selectedApplication.id}/approve`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         credentials: "include",
-        body: JSON.stringify({ role: assignedRole }),
+        body: JSON.stringify({ assigned_role: assignedRole }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        setSuccessModal({ 
-          show: true, 
-          message: `تم قبول الطلب بنجاح!\n\nالبريد: ${data.email}\nكلمة المرور المؤقتة: ${data.tempPassword}` 
+        setSuccessModal({
+          show: true,
+          message: data.tempPassword
+            ? `تم قبول الطلب بنجاح!\n\nالبريد: ${data.email}\nكلمة المرور المؤقتة: ${data.tempPassword}`
+            : `تم قبول الطلب وتعيين الدور بنجاح`,
         });
         setShowApproveModal(false);
         setSelectedApplication(null);
+        setAssignedRole("");
         fetchApplications();
         fetchUsers();
       } else {
