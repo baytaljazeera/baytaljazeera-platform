@@ -1902,7 +1902,7 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
         ['DELETE FROM ambassador_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'ambassador_requests'],
         ['DELETE FROM listing_audit_events WHERE property_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', 'listing_audit_events'],
         ['DELETE FROM listing_workflows WHERE property_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', 'listing_workflows'],
-        ['DELETE FROM listing_reports WHERE property_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', 'listing_reports'],
+        ['DELETE FROM listing_reports WHERE listing_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', 'listing_reports'],
       ];
       for (const [sql, label] of EXTRA_USER_DELETES) {
         await safeRun(client, sql, ['user'], label);
@@ -1940,7 +1940,19 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
       await trackDelete('user_plans', 'DELETE FROM user_plans WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
       await trackDelete('favorites', 'DELETE FROM favorites WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
       await trackDelete('properties', 'DELETE FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+
+      // Diagnostic: capture customer count immediately before + after
+      // the final DELETE. If "before" > 0 but "deleted_users" = 0 and
+      // "after" is still > 0, the issue is something outside this code
+      // path (e.g. row-level security, a stricter role enum, or a
+      // protective trigger) — we surface the numbers so the operator
+      // can show me what really happened without guessing.
+      const beforeUsers = await client.query("SELECT COUNT(*)::int AS c FROM users WHERE role = $1", ['user']);
+      customerDeleteCounts._users_count_before_delete = beforeUsers.rows[0].c;
       await trackDelete('deleted_users', 'DELETE FROM users WHERE role = $1', ['user']);
+      const afterUsers = await client.query("SELECT COUNT(*)::int AS c FROM users WHERE role = $1", ['user']);
+      customerDeleteCounts._users_count_after_delete = afterUsers.rows[0].c;
+
       results.customers = customerDeleteCounts;
     }
 
