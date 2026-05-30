@@ -161,10 +161,12 @@ const SETTINGS_DEFAULTS = {
   ai_banned_topics:          '',          // comma/newline-separated keywords
   ai_working_hours_start:    '',          // 24h "HH:MM" — empty = always on
   ai_working_hours_end:      '',
+  ai_after_hours_mode:       'respond',   // respond | queue | disable
   ai_per_user_daily_limit:   '30',
   ai_sentiment_enabled:      'true',
   ai_ab_testing_enabled:     'false',
-  ai_auto_escalate_negative: 'false',     // escalate when sentiment is 'very_negative'
+  ai_auto_escalate_negative: 'false',
+  ai_knowledge_enabled:      'true',      // inject KB context into customer chat
 };
 
 async function loadAiSettings() {
@@ -233,6 +235,177 @@ async function analyzeSentiment(text) {
   } catch (e) {
     console.warn('[sentiment] failed:', e.message);
     return null;
+  }
+}
+
+// ─── Settings enforcement helpers ───────────────────────────────────────
+// Parse a banned-topics blob (comma or newline-separated) into lowercase
+// keywords. Empty strings are dropped, and the result is unique.
+function parseBannedTopics(blob) {
+  if (!blob) return [];
+  return Array.from(
+    new Set(
+      blob
+        .split(/[\n,،;]/)
+        .map((s) => s.trim().toLowerCase())
+        .filter((s) => s.length > 1)
+    )
+  );
+}
+
+// Returns the first matched banned term in `text`, or null. Compares
+// normalized lowercase strings; works for both Arabic and English.
+function findBannedTopic(text, topics) {
+  if (!text || topics.length === 0) return null;
+  const norm = String(text).toLowerCase();
+  for (const t of topics) {
+    if (norm.includes(t)) return t;
+  }
+  return null;
+}
+
+// Returns true if "now" (Asia/Riyadh) is OUTSIDE the configured window.
+// Empty start or end means always-on. Window can span midnight
+// (e.g. 22:00 → 06:00).
+function isAfterHours(start, end) {
+  if (!start || !end) return false;
+  const parseHHMM = (s) => {
+    const [h, m] = String(s).split(':').map((n) => parseInt(n, 10));
+    if (Number.isNaN(h) || Number.isNaN(m)) return null;
+    return h * 60 + m;
+  };
+  const s = parseHHMM(start);
+  const e = parseHHMM(end);
+  if (s == null || e == null) return false;
+  const now = new Date();
+  // Use Riyadh local time (UTC+3) consistently for business hours.
+  const riyadh = new Date(now.getTime() + (3 * 60 - now.getTimezoneOffset()) * 60_000);
+  const cur = riyadh.getUTCHours() * 60 + riyadh.getUTCMinutes();
+  if (s <= e) return !(cur >= s && cur < e);
+  // Window spans midnight: open if cur >= s OR cur < e.
+  return !(cur >= s || cur < e);
+}
+
+// Count how many chats this session/user has used today.
+async function countTodaysChats({ sessionId, userId }) {
+  const params = [];
+  const conds = [`created_at >= date_trunc('day', NOW())`, `source = 'customer'`];
+  if (userId) {
+    params.push(userId);
+    conds.push(`(user_id = $${params.length} OR session_id = $${params.length + 1})`);
+    params.push(sessionId || '');
+  } else if (sessionId) {
+    params.push(sessionId);
+    conds.push(`session_id = $${params.length}`);
+  } else {
+    return 0;
+  }
+  try {
+    const r = await db.query(
+      `SELECT COUNT(*)::int AS c FROM ai_chat_logs WHERE ${conds.join(' AND ')}`,
+      params
+    );
+    return r.rows[0]?.c || 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function logBlocked({ sessionId, userId, userMessage, reason, matchedTerm }) {
+  try {
+    await db.query(
+      `INSERT INTO ai_blocked_attempts (session_id, user_id, user_message, reason, matched_term)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [sessionId || null, userId || null, (userMessage || '').slice(0, 2000), reason, matchedTerm || null]
+    );
+  } catch (e) {
+    console.warn('[ai blocked log] failed:', e.message);
+  }
+}
+
+// ─── Knowledge Base retrieval ───────────────────────────────────────────
+// Lightweight Arabic-friendly relevance: token overlap + ILIKE fallback.
+// Returns up to `limit` active articles ordered by score.
+async function retrieveKnowledge(query, limit = 3) {
+  if (!query || !query.trim()) return [];
+  const words = query
+    .toLowerCase()
+    .replace(/[^؀-ۿ\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= 3)
+    .slice(0, 12);
+  if (words.length === 0) return [];
+  // OR over title/keywords/content for each token. priority breaks ties.
+  const likes = words.map((_, i) => `(title ILIKE $${i + 1} OR keywords ILIKE $${i + 1} OR content ILIKE $${i + 1})`);
+  const params = words.map((w) => `%${w}%`);
+  try {
+    const r = await db.query(
+      `SELECT id, title, content, category_id, priority
+         FROM ai_knowledge_articles
+        WHERE is_active = true
+          AND (${likes.join(' OR ')})
+        ORDER BY priority DESC, updated_at DESC
+        LIMIT $${params.length + 1}`,
+      [...params, limit]
+    );
+    return r.rows;
+  } catch {
+    return [];
+  }
+}
+
+function knowledgeAsContext(articles) {
+  if (!articles || articles.length === 0) return '';
+  const parts = articles.map(
+    (a, i) => `[#${i + 1}] ${a.title}\n${(a.content || '').slice(0, 600)}`
+  );
+  return `\n\n--- معلومات معتمدة من قاعدة المعرفة (استخدم هذه فقط ولا تتعدّاها) ---\n${parts.join('\n\n')}\n--- نهاية المعلومات ---`;
+}
+
+// ─── Escalation queue ───────────────────────────────────────────────────
+async function createEscalation({ chatLogId, sessionId, userId, userMessage, reason, sentiment }) {
+  try {
+    const r = await db.query(
+      `INSERT INTO ai_escalations
+         (chat_log_id, session_id, user_id, last_user_message, reason, sentiment, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'open')
+       RETURNING id`,
+      [
+        chatLogId || null,
+        sessionId || null,
+        userId || null,
+        (userMessage || '').slice(0, 2000),
+        (reason || '').slice(0, 500),
+        sentiment || null,
+      ]
+    );
+    return r.rows[0]?.id || null;
+  } catch (e) {
+    console.warn('[ai escalation create] failed:', e.message);
+    return null;
+  }
+}
+
+// ─── Audit log ──────────────────────────────────────────────────────────
+async function auditAi({ action, targetKind, targetId, oldValue, newValue, actor }) {
+  try {
+    await db.query(
+      `INSERT INTO ai_audit_log
+         (action, target_kind, target_id, old_value, new_value, actor_id, actor_name, actor_role)
+       VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8)`,
+      [
+        action,
+        targetKind || null,
+        targetId != null ? String(targetId).slice(0, 80) : null,
+        oldValue == null ? null : JSON.stringify(oldValue),
+        newValue == null ? null : JSON.stringify(newValue),
+        actor?.id || null,
+        actor?.name || null,
+        actor?.role || null,
+      ]
+    );
+  } catch (e) {
+    console.warn('[ai audit] failed:', e.message);
   }
 }
 
@@ -2430,17 +2603,88 @@ router.post("/customer-chat", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "الرسائل مطلوبة" });
   }
 
-    const settingsResult = await db.query(
-      "SELECT value FROM app_settings WHERE key = 'ai_support_enabled'"
-    );
-    const aiEnabled = settingsResult.rows[0]?.value === 'true';
+    // Load all AI center settings once so we can enforce them — banned
+    // topics, working hours, daily limits, knowledge injection, and A/B.
+    const centralCfg = await loadAiSettings();
+    const aiEnabled = centralCfg.ai_support_enabled === 'true';
+    const userMessage = messages[messages.length - 1]?.content || '';
 
     if (!aiEnabled) {
-      return res.json({ 
+      return res.json({
         message: "شكراً لتواصلك! سيتم الرد عليك من فريق الدعم قريباً.",
         escalated: true,
         reason: "الدعم الآلي معطل حالياً"
       });
+    }
+
+    // Phase 1.1 — banned topics enforcement
+    const bannedTopics = parseBannedTopics(centralCfg.ai_banned_topics);
+    const matchedTerm = findBannedTopic(userMessage, bannedTopics);
+    if (matchedTerm) {
+      await logBlocked({ sessionId, userId, userMessage, reason: 'banned_topic', matchedTerm });
+      return res.json({
+        blocked: true,
+        reason: 'banned_topic',
+        message: 'هذا الموضوع خارج نطاق المساعد. سيسعدنا مساعدتك في موضوع آخر يخص العقارات أو الباقات.',
+      });
+    }
+
+    // Phase 1.2 — working hours
+    const afterHours = isAfterHours(centralCfg.ai_working_hours_start, centralCfg.ai_working_hours_end);
+    if (afterHours) {
+      const mode = centralCfg.ai_after_hours_mode || 'respond';
+      if (mode === 'disable') {
+        await logBlocked({ sessionId, userId, userMessage, reason: 'after_hours_disabled', matchedTerm: null });
+        return res.json({
+          blocked: true,
+          reason: 'after_hours',
+          message: `خدمة الدعم الآلي متاحة فقط بين ${centralCfg.ai_working_hours_start} و ${centralCfg.ai_working_hours_end}. تواصل معنا خلال هذه الساعات أو اترك رسالة وسنرد لاحقاً.`,
+        });
+      }
+      if (mode === 'queue') {
+        await logBlocked({ sessionId, userId, userMessage, reason: 'after_hours_queued', matchedTerm: null });
+        // We dont actually queue/send notifications here; create an
+        // escalation row tagged as after_hours so the next available
+        // human picks it up from the escalations board.
+        await createEscalation({
+          sessionId,
+          userId,
+          userMessage,
+          reason: `تم خارج ساعات العمل (${centralCfg.ai_working_hours_start} → ${centralCfg.ai_working_hours_end})`,
+          sentiment: null,
+        });
+        return res.json({
+          queued: true,
+          reason: 'after_hours',
+          message: 'استلمنا رسالتك وسيتم الرد عليك خلال ساعات العمل. شكراً لصبرك.',
+        });
+      }
+      // mode === 'respond' → fall through and answer normally.
+    }
+
+    // Phase 1.3 — per-user/session daily limit (admins exempt — we look
+    // them up by role so an authenticated admin doesnt get blocked).
+    const limit = parseInt(centralCfg.ai_per_user_daily_limit, 10);
+    if (Number.isFinite(limit) && limit > 0) {
+      let isAdminUser = false;
+      if (userId) {
+        try {
+          const ur = await db.query('SELECT role FROM users WHERE id = $1', [userId]);
+          const role = ur.rows[0]?.role || '';
+          isAdminUser = ['super_admin', 'admin', 'admin_manager', 'finance_admin', 'support_admin', 'content_admin'].includes(role);
+        } catch { /* fall through */ }
+      }
+      if (!isAdminUser) {
+        const used = await countTodaysChats({ sessionId, userId });
+        if (used >= limit) {
+          await logBlocked({ sessionId, userId, userMessage, reason: 'daily_limit', matchedTerm: String(limit) });
+          return res.json({
+            blocked: true,
+            reason: 'daily_limit',
+            message: `لقد استخدمت الحد اليومي المسموح (${limit} محادثات). يمكنك المحاولة غداً أو التواصل مع الدعم البشري.`,
+          });
+        }
+      }
     }
 
     // Get user's AI support level from their active plan
@@ -2492,10 +2736,7 @@ router.post("/customer-chat", asyncHandler(async (req, res) => {
       plansInfo = "لا توجد باقات متوفرة حالياً";
     }
 
-    // Load central settings + maybe pick an A/B variant. When A/B is on
-    // and there is at least one active variant, its prompt replaces the
-    // baseline customer prompt; otherwise we use the standard one.
-    const centralCfg = await loadAiSettings();
+    // centralCfg already loaded above for enforcement; reuse it.
     let systemPrompt = getCustomerSupportPrompt(plansInfo, aiLevel, userName);
     let variantId = null;
     if (centralCfg.ai_ab_testing_enabled === 'true') {
@@ -2505,11 +2746,21 @@ router.post("/customer-chat", asyncHandler(async (req, res) => {
         variantId = variant.id;
       }
     }
+
+    // Phase 2 — inject Knowledge Base context. Customer messages get
+    // searched against the KB and the top matches are appended to the
+    // system prompt so the bot answers from the operators source of
+    // truth instead of stale memory.
+    if (centralCfg.ai_knowledge_enabled !== 'false') {
+      const kbArticles = await retrieveKnowledge(userMessage, 3);
+      const kbContext = knowledgeAsContext(kbArticles);
+      if (kbContext) systemPrompt = systemPrompt + kbContext;
+    }
+
     const chatModel = ALLOWED_MODELS.includes(centralCfg.ai_model) ? centralCfg.ai_model : 'gpt-4o-mini';
 
     // Adjust model and tokens based on AI level
     const maxTokens = aiLevel >= 2 ? 800 : (aiLevel === 1 ? 500 : 300);
-    const userMessage = messages[messages.length - 1]?.content || '';
 
   try {
     const response = await openai.chat.completions.create({
@@ -2554,13 +2805,15 @@ router.post("/customer-chat", asyncHandler(async (req, res) => {
       }
     }
 
+    let chatLogId = null;
     if (sessionId) {
-      await db.query(
+      const ins = await db.query(
         `INSERT INTO ai_chat_logs
            (session_id, user_message, ai_response, escalated, escalate_reason,
             source, model, prompt_tokens, completion_tokens, cost_usd,
             sentiment, sentiment_score, variant_id, created_at)
-         VALUES ($1, $2, $3, $4, $5, 'customer', $6, $7, $8, $9, $10, $11, $12, NOW())`,
+         VALUES ($1, $2, $3, $4, $5, 'customer', $6, $7, $8, $9, $10, $11, $12, NOW())
+         RETURNING id`,
         [
           sessionId,
           userMessage,
@@ -2576,6 +2829,22 @@ router.post("/customer-chat", asyncHandler(async (req, res) => {
           variantId,
         ]
       );
+      chatLogId = ins.rows[0]?.id || null;
+    }
+
+    // Phase 4 — feed the escalation queue. Anything flagged escalated=true
+    // becomes a row in ai_escalations so the support team gets a board to
+    // work from instead of a boolean stuck in the chat log.
+    let escalationId = null;
+    if (escalated) {
+      escalationId = await createEscalation({
+        chatLogId,
+        sessionId,
+        userId,
+        userMessage,
+        reason: escalateReason,
+        sentiment: sentiment?.label || null,
+      });
     }
 
     res.json({
@@ -2583,6 +2852,7 @@ router.post("/customer-chat", asyncHandler(async (req, res) => {
       escalated,
       reason: escalateReason,
       sentiment: sentiment?.label || null,
+      escalation_id: escalationId,
     });
   } catch (error) {
     return handleOpenAIError(error, res);
@@ -2732,6 +3002,15 @@ router.post("/support-settings", authMiddleware, adminMiddleware, asyncHandler(a
   if (body.ai_auto_escalate_negative !== undefined) {
     updates.ai_auto_escalate_negative = body.ai_auto_escalate_negative ? 'true' : 'false';
   }
+  if (body.ai_knowledge_enabled !== undefined) {
+    updates.ai_knowledge_enabled = body.ai_knowledge_enabled ? 'true' : 'false';
+  }
+  if (typeof body.ai_after_hours_mode === 'string' && ['respond', 'queue', 'disable'].includes(body.ai_after_hours_mode)) {
+    updates.ai_after_hours_mode = body.ai_after_hours_mode;
+  }
+
+  // Snapshot the current values for the audit log diff.
+  const before = await loadAiSettings();
 
   for (const [key, value] of Object.entries(updates)) {
     await db.query(
@@ -2742,6 +3021,21 @@ router.post("/support-settings", authMiddleware, adminMiddleware, asyncHandler(a
   }
 
   const fresh = await loadAiSettings();
+
+  // Audit log per changed key. Skips no-op writes.
+  for (const key of Object.keys(updates)) {
+    if (before[key] !== updates[key]) {
+      await auditAi({
+        action: 'settings_change',
+        targetKind: 'app_settings',
+        targetId: key,
+        oldValue: { [key]: before[key] },
+        newValue: { [key]: updates[key] },
+        actor: req.user,
+      });
+    }
+  }
+
   res.json({ ok: true, message: "تم حفظ الإعدادات", settings: fresh, saved_keys: Object.keys(updates) });
 }));
 
@@ -2823,6 +3117,7 @@ router.post("/center/prompt-variants", authMiddleware, adminMiddleware, asyncHan
      RETURNING *`,
     [label.slice(0, 100), prompt_text.slice(0, 8000), w, a]
   );
+  await auditAi({ action: 'prompt_variant_create', targetKind: 'prompt_variant', targetId: r.rows[0].id, newValue: { label: r.rows[0].label }, actor: req.user });
   res.json({ ok: true, variant: r.rows[0] });
 }));
 
@@ -2843,13 +3138,254 @@ router.patch("/center/prompt-variants/:id", authMiddleware, adminMiddleware, asy
     values
   );
   if (r.rows.length === 0) return res.status(404).json({ error: "غير موجود" });
+  await auditAi({ action: 'prompt_variant_update', targetKind: 'prompt_variant', targetId: id, newValue: { label: r.rows[0].label, is_active: r.rows[0].is_active }, actor: req.user });
   res.json({ ok: true, variant: r.rows[0] });
 }));
 
 router.delete("/center/prompt-variants/:id", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
   const { id } = req.params;
   await db.query(`DELETE FROM ai_prompt_variants WHERE id = $1`, [id]);
+  await auditAi({ action: 'prompt_variant_delete', targetKind: 'prompt_variant', targetId: id, actor: req.user });
   res.json({ ok: true });
+}));
+
+// ─── Knowledge Base CRUD ────────────────────────────────────────────────
+router.get("/center/knowledge/categories", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const r = await db.query(
+    `SELECT c.id, c.slug, c.name, c.sort_order, c.is_active,
+            COUNT(a.id) FILTER (WHERE a.is_active)::int AS active_articles,
+            COUNT(a.id)::int AS total_articles
+       FROM ai_knowledge_categories c
+       LEFT JOIN ai_knowledge_articles a ON a.category_id = c.id
+       GROUP BY c.id
+       ORDER BY c.sort_order, c.id`
+  );
+  res.json({ categories: r.rows });
+}));
+
+router.post("/center/knowledge/categories", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { slug, name, sort_order, is_active } = req.body || {};
+  if (!slug || !name) return res.status(400).json({ error: "slug و name مطلوبان" });
+  const r = await db.query(
+    `INSERT INTO ai_knowledge_categories (slug, name, sort_order, is_active)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, sort_order = EXCLUDED.sort_order, is_active = EXCLUDED.is_active, updated_at = NOW()
+     RETURNING *`,
+    [String(slug).slice(0, 60), String(name).slice(0, 120), parseInt(sort_order, 10) || 0, is_active !== false]
+  );
+  await auditAi({ action: 'kb_category_save', targetKind: 'kb_category', targetId: r.rows[0].id, newValue: r.rows[0], actor: req.user });
+  res.json({ ok: true, category: r.rows[0] });
+}));
+
+router.patch("/center/knowledge/categories/:id", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const fields = [];
+  const values = [];
+  const b = req.body || {};
+  if (typeof b.name === 'string') { fields.push(`name = $${fields.length + 1}`); values.push(b.name.slice(0, 120)); }
+  if (b.sort_order !== undefined) { fields.push(`sort_order = $${fields.length + 1}`); values.push(parseInt(b.sort_order, 10) || 0); }
+  if (b.is_active !== undefined)  { fields.push(`is_active = $${fields.length + 1}`); values.push(!!b.is_active); }
+  if (fields.length === 0) return res.status(400).json({ error: "لا حقول للتحديث" });
+  fields.push(`updated_at = NOW()`);
+  values.push(id);
+  const r = await db.query(
+    `UPDATE ai_knowledge_categories SET ${fields.join(', ')} WHERE id = $${values.length} RETURNING *`,
+    values
+  );
+  if (r.rows.length === 0) return res.status(404).json({ error: "غير موجود" });
+  await auditAi({ action: 'kb_category_update', targetKind: 'kb_category', targetId: id, newValue: r.rows[0], actor: req.user });
+  res.json({ ok: true, category: r.rows[0] });
+}));
+
+router.delete("/center/knowledge/categories/:id", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await db.query(`DELETE FROM ai_knowledge_categories WHERE id = $1`, [id]);
+  await auditAi({ action: 'kb_category_delete', targetKind: 'kb_category', targetId: id, actor: req.user });
+  res.json({ ok: true });
+}));
+
+router.get("/center/knowledge/articles", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { category_id, q, active } = req.query;
+  const conds = [];
+  const params = [];
+  if (category_id) { params.push(category_id); conds.push(`a.category_id = $${params.length}`); }
+  if (q) { params.push(`%${String(q).trim()}%`); conds.push(`(a.title ILIKE $${params.length} OR a.content ILIKE $${params.length} OR a.keywords ILIKE $${params.length})`); }
+  if (active === '1' || active === 'true') conds.push(`a.is_active = true`);
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+  const r = await db.query(
+    `SELECT a.*, c.name AS category_name, c.slug AS category_slug
+       FROM ai_knowledge_articles a
+       LEFT JOIN ai_knowledge_categories c ON c.id = a.category_id
+       ${where}
+       ORDER BY a.priority DESC, a.updated_at DESC
+       LIMIT 200`,
+    params
+  );
+  res.json({ articles: r.rows });
+}));
+
+router.post("/center/knowledge/articles", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { category_id, title, content, keywords, is_active, priority } = req.body || {};
+  if (!title || !content) return res.status(400).json({ error: "title و content مطلوبان" });
+  const r = await db.query(
+    `INSERT INTO ai_knowledge_articles (category_id, title, content, keywords, is_active, priority, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING *`,
+    [
+      category_id ? parseInt(category_id, 10) : null,
+      String(title).slice(0, 200),
+      String(content).slice(0, 10000),
+      keywords ? String(keywords).slice(0, 1000) : null,
+      is_active !== false,
+      parseInt(priority, 10) || 0,
+      req.user?.id || null,
+    ]
+  );
+  await auditAi({ action: 'kb_article_create', targetKind: 'kb_article', targetId: r.rows[0].id, newValue: { title: r.rows[0].title }, actor: req.user });
+  res.json({ ok: true, article: r.rows[0] });
+}));
+
+router.patch("/center/knowledge/articles/:id", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const before = await db.query(`SELECT * FROM ai_knowledge_articles WHERE id = $1`, [id]);
+  if (before.rows.length === 0) return res.status(404).json({ error: "غير موجود" });
+  const b = req.body || {};
+  const fields = [];
+  const values = [];
+  if (b.category_id !== undefined) { fields.push(`category_id = $${fields.length + 1}`); values.push(b.category_id ? parseInt(b.category_id, 10) : null); }
+  if (typeof b.title === 'string')   { fields.push(`title = $${fields.length + 1}`); values.push(b.title.slice(0, 200)); }
+  if (typeof b.content === 'string') { fields.push(`content = $${fields.length + 1}`); values.push(b.content.slice(0, 10000)); }
+  if (b.keywords !== undefined)      { fields.push(`keywords = $${fields.length + 1}`); values.push(b.keywords ? String(b.keywords).slice(0, 1000) : null); }
+  if (b.is_active !== undefined)     { fields.push(`is_active = $${fields.length + 1}`); values.push(!!b.is_active); }
+  if (b.priority !== undefined)      { fields.push(`priority = $${fields.length + 1}`); values.push(parseInt(b.priority, 10) || 0); }
+  if (req.user?.id)                  { fields.push(`updated_by = $${fields.length + 1}`); values.push(req.user.id); }
+  if (fields.length === 0) return res.status(400).json({ error: "لا حقول للتحديث" });
+  fields.push(`updated_at = NOW()`);
+  values.push(id);
+  const r = await db.query(
+    `UPDATE ai_knowledge_articles SET ${fields.join(', ')} WHERE id = $${values.length} RETURNING *`,
+    values
+  );
+  await auditAi({
+    action: 'kb_article_update',
+    targetKind: 'kb_article',
+    targetId: id,
+    oldValue: { title: before.rows[0].title, is_active: before.rows[0].is_active },
+    newValue: { title: r.rows[0].title, is_active: r.rows[0].is_active },
+    actor: req.user,
+  });
+  res.json({ ok: true, article: r.rows[0] });
+}));
+
+router.delete("/center/knowledge/articles/:id", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await db.query(`DELETE FROM ai_knowledge_articles WHERE id = $1`, [id]);
+  await auditAi({ action: 'kb_article_delete', targetKind: 'kb_article', targetId: id, actor: req.user });
+  res.json({ ok: true });
+}));
+
+// ─── Escalations queue ──────────────────────────────────────────────────
+router.get("/center/escalations", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { status, limit } = req.query;
+  const conds = [];
+  const params = [];
+  if (status && ['open', 'assigned', 'resolved'].includes(String(status))) {
+    params.push(status);
+    conds.push(`e.status = $${params.length}`);
+  }
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+  const limitN = Math.min(500, Math.max(1, parseInt(String(limit || 100), 10) || 100));
+  const r = await db.query(
+    `SELECT e.*, u.name AS assigned_to_name
+       FROM ai_escalations e
+       LEFT JOIN users u ON u.id = e.assigned_to
+       ${where}
+       ORDER BY e.created_at DESC
+       LIMIT ${limitN}`,
+    params
+  );
+  res.json({ escalations: r.rows });
+}));
+
+router.patch("/center/escalations/:id/assign", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { assigned_to } = req.body || {};
+  const target = assigned_to || req.user?.id;
+  if (!target) return res.status(400).json({ error: "assigned_to مطلوب" });
+  const r = await db.query(
+    `UPDATE ai_escalations
+       SET assigned_to = $1, status = 'assigned', updated_at = NOW()
+     WHERE id = $2
+     RETURNING *`,
+    [target, id]
+  );
+  if (r.rows.length === 0) return res.status(404).json({ error: "غير موجود" });
+  await auditAi({ action: 'escalation_assign', targetKind: 'escalation', targetId: id, newValue: { assigned_to: target }, actor: req.user });
+  res.json({ ok: true, escalation: r.rows[0] });
+}));
+
+router.patch("/center/escalations/:id/resolve", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { resolution_note } = req.body || {};
+  const r = await db.query(
+    `UPDATE ai_escalations
+       SET status = 'resolved', resolved_at = NOW(), resolution_note = $1, updated_at = NOW()
+     WHERE id = $2
+     RETURNING *`,
+    [resolution_note ? String(resolution_note).slice(0, 1000) : null, id]
+  );
+  if (r.rows.length === 0) return res.status(404).json({ error: "غير موجود" });
+  await auditAi({ action: 'escalation_resolve', targetKind: 'escalation', targetId: id, newValue: { resolution_note }, actor: req.user });
+  res.json({ ok: true, escalation: r.rows[0] });
+}));
+
+// ─── Audit log feed ─────────────────────────────────────────────────────
+router.get("/center/audit", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { action, limit } = req.query;
+  const conds = [];
+  const params = [];
+  if (action) { params.push(action); conds.push(`action = $${params.length}`); }
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+  const limitN = Math.min(500, Math.max(1, parseInt(String(limit || 100), 10) || 100));
+  const r = await db.query(
+    `SELECT id, action, target_kind, target_id, old_value, new_value, actor_id, actor_name, actor_role, created_at
+       FROM ai_audit_log
+       ${where}
+       ORDER BY created_at DESC
+       LIMIT ${limitN}`,
+    params
+  );
+  res.json({ entries: r.rows });
+}));
+
+// ─── Enforcement metrics (Phase 7 add-ons) ──────────────────────────────
+router.get("/center/enforcement-stats", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const r = await db.query(`
+    SELECT
+      COUNT(*) FILTER (WHERE reason = 'banned_topic'         AND created_at >= NOW() - INTERVAL '24 hours')::int  AS banned_today,
+      COUNT(*) FILTER (WHERE reason = 'banned_topic'         AND created_at >= NOW() - INTERVAL '30 days')::int   AS banned_month,
+      COUNT(*) FILTER (WHERE reason LIKE 'after_hours%'      AND created_at >= NOW() - INTERVAL '24 hours')::int  AS after_hours_today,
+      COUNT(*) FILTER (WHERE reason = 'daily_limit'          AND created_at >= NOW() - INTERVAL '24 hours')::int  AS limit_today,
+      COUNT(*) FILTER (WHERE reason = 'daily_limit'          AND created_at >= NOW() - INTERVAL '30 days')::int   AS limit_month
+    FROM ai_blocked_attempts
+  `);
+  const esc = await db.query(`
+    SELECT
+      COUNT(*) FILTER (WHERE status = 'open')::int     AS open_escalations,
+      COUNT(*) FILTER (WHERE status = 'assigned')::int AS assigned_escalations,
+      COUNT(*) FILTER (WHERE status = 'resolved' AND resolved_at >= NOW() - INTERVAL '7 days')::int AS resolved_week
+    FROM ai_escalations
+  `);
+  const kb = await db.query(`
+    SELECT COUNT(*) FILTER (WHERE is_active)::int AS active_articles,
+           COUNT(*)::int                          AS total_articles
+    FROM ai_knowledge_articles
+  `);
+  res.json({
+    blocked: r.rows[0],
+    escalations: esc.rows[0],
+    knowledge: kb.rows[0],
+  });
 }));
 
 // Sentiment summary for the overview card / pie chart.

@@ -1706,6 +1706,113 @@ async function initializeDatabase() {
       );
     `);
 
+    // ─── AI Center — Phase 1/2/4/8 storage ─────────────────────────────
+    // Blocked attempts log (banned topics, daily-limit, after-hours rejects)
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS ai_blocked_attempts (
+        id SERIAL PRIMARY KEY,
+        session_id VARCHAR(100),
+        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        user_message TEXT,
+        reason VARCHAR(40) NOT NULL,
+        matched_term TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_blocked_created ON ai_blocked_attempts (created_at DESC);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_blocked_reason ON ai_blocked_attempts (reason);`);
+
+    // Knowledge Base — two tables, simple Arabic text-search
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS ai_knowledge_categories (
+        id SERIAL PRIMARY KEY,
+        slug VARCHAR(60) UNIQUE NOT NULL,
+        name VARCHAR(120) NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS ai_knowledge_articles (
+        id SERIAL PRIMARY KEY,
+        category_id INTEGER REFERENCES ai_knowledge_categories(id) ON DELETE SET NULL,
+        title VARCHAR(200) NOT NULL,
+        content TEXT NOT NULL,
+        keywords TEXT,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        priority INTEGER NOT NULL DEFAULT 0,
+        updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_kb_articles_active ON ai_knowledge_articles (is_active, priority DESC);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_kb_articles_cat ON ai_knowledge_articles (category_id);`);
+
+    // Seed default categories once. Idempotent via ON CONFLICT.
+    const DEFAULT_KB_CATEGORIES = [
+      { slug: 'packages',      name: 'الباقات',                  sort_order: 10 },
+      { slug: 'pricing',       name: 'الأسعار',                  sort_order: 20 },
+      { slug: 'subscriptions', name: 'سياسات الاشتراك',           sort_order: 30 },
+      { slug: 'advertising',   name: 'سياسات الإعلانات',          sort_order: 40 },
+      { slug: 'refunds',       name: 'سياسة الاسترداد',           sort_order: 50 },
+      { slug: 'faq',           name: 'أسئلة شائعة',               sort_order: 60 },
+      { slug: 'company',       name: 'معلومات الشركة',            sort_order: 70 },
+      { slug: 'cities',        name: 'المدن المدعومة',            sort_order: 80 },
+      { slug: 'contact',       name: 'معلومات التواصل',           sort_order: 90 },
+    ];
+    for (const cat of DEFAULT_KB_CATEGORIES) {
+      await db.query(
+        `INSERT INTO ai_knowledge_categories (slug, name, sort_order, is_active)
+         VALUES ($1, $2, $3, true)
+         ON CONFLICT (slug) DO NOTHING`,
+        [cat.slug, cat.name, cat.sort_order]
+      );
+    }
+
+    // Escalation queue — fed by /customer-chat when escalated=true,
+    // shown to admins in a kanban (open / assigned / resolved).
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS ai_escalations (
+        id SERIAL PRIMARY KEY,
+        chat_log_id INTEGER REFERENCES ai_chat_logs(id) ON DELETE SET NULL,
+        session_id VARCHAR(100),
+        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        last_user_message TEXT,
+        reason TEXT,
+        sentiment VARCHAR(20),
+        status VARCHAR(20) NOT NULL DEFAULT 'open',
+        assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,
+        resolved_at TIMESTAMPTZ,
+        resolution_note TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_esc_status_created ON ai_escalations (status, created_at DESC);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_esc_assigned ON ai_escalations (assigned_to);`);
+
+    // Audit log — every settings/prompt/knowledge change is recorded
+    // so the operator can answer "who edited this and when".
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS ai_audit_log (
+        id SERIAL PRIMARY KEY,
+        action VARCHAR(60) NOT NULL,
+        target_kind VARCHAR(40),
+        target_id VARCHAR(80),
+        old_value JSONB,
+        new_value JSONB,
+        actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        actor_name TEXT,
+        actor_role VARCHAR(30),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_audit_created ON ai_audit_log (created_at DESC);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_audit_action ON ai_audit_log (action);`);
+
     await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_chat_logs_session ON ai_chat_logs(session_id);`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_chat_logs_escalated ON ai_chat_logs(escalated);`);
 

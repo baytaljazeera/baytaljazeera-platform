@@ -22,11 +22,11 @@ import {
   Send,
   Settings as SettingsIcon,
   Sparkles,
+  Trash2,
   TrendingUp,
   User as UserIcon,
   Users,
   Wand2,
-  ChevronRight,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -71,14 +71,77 @@ interface AiSettings {
   ai_banned_topics: string;
   ai_working_hours_start: string;
   ai_working_hours_end: string;
+  ai_after_hours_mode: string;
   ai_per_user_daily_limit: string;
   ai_sentiment_enabled: string;
   ai_ab_testing_enabled: string;
   ai_auto_escalate_negative: string;
+  ai_knowledge_enabled: string;
   _meta?: {
     allowed_models: string[];
     pricing_per_1k_tokens: Record<string, { input: number; output: number }>;
   };
+}
+
+interface KbCategory {
+  id: number;
+  slug: string;
+  name: string;
+  sort_order: number;
+  is_active: boolean;
+  active_articles?: number;
+  total_articles?: number;
+}
+
+interface KbArticle {
+  id: number;
+  category_id: number | null;
+  category_name?: string;
+  title: string;
+  content: string;
+  keywords: string | null;
+  is_active: boolean;
+  priority: number;
+  updated_at: string;
+}
+
+interface Escalation {
+  id: number;
+  chat_log_id: number | null;
+  session_id: string | null;
+  last_user_message: string | null;
+  reason: string | null;
+  sentiment: string | null;
+  status: "open" | "assigned" | "resolved";
+  assigned_to: string | null;
+  assigned_to_name: string | null;
+  resolved_at: string | null;
+  resolution_note: string | null;
+  created_at: string;
+}
+
+interface AuditEntry {
+  id: number;
+  action: string;
+  target_kind: string | null;
+  target_id: string | null;
+  old_value: unknown;
+  new_value: unknown;
+  actor_name: string | null;
+  actor_role: string | null;
+  created_at: string;
+}
+
+interface EnforcementStats {
+  blocked: {
+    banned_today: number;
+    banned_month: number;
+    after_hours_today: number;
+    limit_today: number;
+    limit_month: number;
+  };
+  escalations: { open_escalations: number; assigned_escalations: number; resolved_week: number };
+  knowledge: { active_articles: number; total_articles: number };
 }
 
 interface PromptVariant {
@@ -133,10 +196,13 @@ interface GeneratedDescription {
 // ─── Constants ─────────────────────────────────────────────────────────────
 const TABS = [
   { key: "overview", label: "نظرة عامة", icon: Activity },
+  { key: "knowledge", label: "قاعدة المعرفة", icon: FileText },
   { key: "chat", label: "المساعد الذكي", icon: MessageSquare },
   { key: "generate", label: "توليد محتوى", icon: Wand2 },
   { key: "logs", label: "سجل المحادثات", icon: FileText },
+  { key: "escalations", label: "التصعيدات", icon: AlertTriangle },
   { key: "ab", label: "تجارب A/B", icon: TrendingUp },
+  { key: "audit", label: "سجل التدقيق", icon: SettingsIcon },
   { key: "settings", label: "الإعدادات المتقدّمة", icon: SettingsIcon },
 ] as const;
 
@@ -223,6 +289,13 @@ export default function AICenterPage() {
   const [sentiment, setSentiment] = useState<SentimentSummary | null>(null);
   const [variants, setVariants] = useState<PromptVariant[]>([]);
 
+  // Phase 1/2/4/8 — enforcement stats, knowledge base, escalations, audit
+  const [enforcementStats, setEnforcementStats] = useState<EnforcementStats | null>(null);
+  const [kbCategories, setKbCategories] = useState<KbCategory[]>([]);
+  const [kbArticles, setKbArticles] = useState<KbArticle[]>([]);
+  const [escalations, setEscalations] = useState<Escalation[]>([]);
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
+
   // Settings draft
   const [settingsDraft, setSettingsDraft] = useState<AiSettings | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -248,7 +321,141 @@ export default function AICenterPage() {
   }, [activeTab, logSource, logEscalated]);
 
   async function refreshAll() {
-    await Promise.all([fetchStats(), fetchSettings(), fetchSentiment(), fetchVariants()]);
+    await Promise.all([
+      fetchStats(),
+      fetchSettings(),
+      fetchSentiment(),
+      fetchVariants(),
+      fetchEnforcementStats(),
+      fetchKbCategories(),
+      fetchKbArticles(),
+      fetchEscalations(),
+      fetchAudit(),
+    ]);
+  }
+
+  async function fetchEnforcementStats() {
+    try {
+      const res = await fetch(`${API_URL}/api/ai/center/enforcement-stats`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) setEnforcementStats(await res.json());
+    } catch { /* ignore */ }
+  }
+
+  async function fetchKbCategories() {
+    try {
+      const res = await fetch(`${API_URL}/api/ai/center/knowledge/categories`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setKbCategories(data.categories || []);
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function fetchKbArticles() {
+    try {
+      const res = await fetch(`${API_URL}/api/ai/center/knowledge/articles`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setKbArticles(data.articles || []);
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function fetchEscalations() {
+    try {
+      const res = await fetch(`${API_URL}/api/ai/center/escalations`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setEscalations(data.escalations || []);
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function fetchAudit() {
+    try {
+      const res = await fetch(`${API_URL}/api/ai/center/audit`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAuditEntries(data.entries || []);
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function saveKbArticle(payload: Partial<KbArticle> & { id?: number }) {
+    const isNew = !payload.id;
+    const url = isNew
+      ? `${API_URL}/api/ai/center/knowledge/articles`
+      : `${API_URL}/api/ai/center/knowledge/articles/${payload.id}`;
+    const res = await fetch(url, {
+      method: isNew ? "POST" : "PATCH",
+      credentials: "include",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      toast.success(isNew ? "تمت إضافة المقال" : "تم التحديث");
+      void fetchKbArticles();
+      void fetchEnforcementStats();
+    } else {
+      toast.error("تعذّر الحفظ");
+    }
+  }
+
+  async function deleteKbArticle(id: number) {
+    if (!confirm("حذف هذا المقال؟")) return;
+    const res = await fetch(`${API_URL}/api/ai/center/knowledge/articles/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      toast.success("تم الحذف");
+      void fetchKbArticles();
+    } else {
+      toast.error("تعذّر الحذف");
+    }
+  }
+
+  async function assignEscalation(id: number) {
+    const res = await fetch(`${API_URL}/api/ai/center/escalations/${id}/assign`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (res.ok) {
+      toast.success("تم استلام التصعيد");
+      void fetchEscalations();
+    } else toast.error("تعذّر الاستلام");
+  }
+
+  async function resolveEscalation(id: number) {
+    const note = window.prompt("ملاحظة الحل (اختياري):") || "";
+    const res = await fetch(`${API_URL}/api/ai/center/escalations/${id}/resolve`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ resolution_note: note }),
+    });
+    if (res.ok) {
+      toast.success("تم إغلاق التصعيد");
+      void fetchEscalations();
+    } else toast.error("تعذّر الإغلاق");
   }
 
   async function fetchSentiment() {
@@ -383,7 +590,12 @@ export default function AICenterPage() {
           ai_banned_topics: settingsDraft.ai_banned_topics,
           ai_working_hours_start: settingsDraft.ai_working_hours_start,
           ai_working_hours_end: settingsDraft.ai_working_hours_end,
+          ai_after_hours_mode: settingsDraft.ai_after_hours_mode,
           ai_per_user_daily_limit: settingsDraft.ai_per_user_daily_limit,
+          ai_sentiment_enabled: settingsDraft.ai_sentiment_enabled === "true",
+          ai_ab_testing_enabled: settingsDraft.ai_ab_testing_enabled === "true",
+          ai_auto_escalate_negative: settingsDraft.ai_auto_escalate_negative === "true",
+          ai_knowledge_enabled: settingsDraft.ai_knowledge_enabled === "true",
         }),
       });
       if (res.ok) {
@@ -622,11 +834,32 @@ export default function AICenterPage() {
         <OverviewTab
           stats={stats}
           sentiment={sentiment}
+          enforcement={enforcementStats}
           totalToday={totalToday}
           loadingStats={loadingStats}
           onJump={(k) => setActiveTab(k)}
         />
       )}
+
+      {activeTab === "knowledge" && (
+        <KnowledgeTab
+          categories={kbCategories}
+          articles={kbArticles}
+          onSave={saveKbArticle}
+          onDelete={deleteKbArticle}
+          knowledgeEnabled={settings?.ai_knowledge_enabled === "true"}
+        />
+      )}
+
+      {activeTab === "escalations" && (
+        <EscalationsTab
+          items={escalations}
+          onAssign={assignEscalation}
+          onResolve={resolveEscalation}
+        />
+      )}
+
+      {activeTab === "audit" && <AuditTab entries={auditEntries} />}
 
       {activeTab === "chat" && (
         <ChatTab
@@ -757,12 +990,14 @@ function StatCard({
 function OverviewTab({
   stats,
   sentiment,
+  enforcement,
   totalToday,
   loadingStats,
   onJump,
 }: {
   stats: CenterStats | null;
   sentiment: SentimentSummary | null;
+  enforcement: EnforcementStats | null;
   totalToday: number;
   loadingStats: boolean;
   onJump: (k: TabKey) => void;
@@ -814,6 +1049,59 @@ function OverviewTab({
           />
         </div>
       </section>
+
+      {enforcement && (
+        <section>
+          <SectionTitle title="تطبيق الإعدادات والتصعيدات" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+            <StatCard
+              icon={AlertTriangle}
+              label="مواضيع محظورة (اليوم)"
+              value={enforcement.blocked.banned_today}
+              sub={`${enforcement.blocked.banned_month} هذا الشهر`}
+              tone={enforcement.blocked.banned_today > 0 ? "attention" : "normal"}
+              onClick={() => onJump("settings")}
+            />
+            <StatCard
+              icon={Clock}
+              label="خارج ساعات العمل"
+              value={enforcement.blocked.after_hours_today}
+              sub="آخر ٢٤ ساعة"
+              tone={enforcement.blocked.after_hours_today > 0 ? "attention" : "normal"}
+            />
+            <StatCard
+              icon={UserIcon}
+              label="تجاوز الحد اليومي"
+              value={enforcement.blocked.limit_today}
+              sub={`${enforcement.blocked.limit_month} هذا الشهر`}
+              tone={enforcement.blocked.limit_today > 0 ? "attention" : "normal"}
+            />
+            <StatCard
+              icon={AlertTriangle}
+              label="تصعيدات مفتوحة"
+              value={enforcement.escalations.open_escalations}
+              sub={`${enforcement.escalations.assigned_escalations} قيد العمل · ${enforcement.escalations.resolved_week} حُلّت/أسبوع`}
+              tone={
+                enforcement.escalations.open_escalations >= 5
+                  ? "urgent"
+                  : enforcement.escalations.open_escalations > 0
+                    ? "attention"
+                    : "normal"
+              }
+              onClick={() => onJump("escalations")}
+            />
+          </div>
+          {enforcement.knowledge.total_articles > 0 ? (
+            <p className="mt-3 text-xs text-slate-500">
+              قاعدة المعرفة: {enforcement.knowledge.active_articles} مقال نشط من أصل {enforcement.knowledge.total_articles}
+            </p>
+          ) : (
+            <p className="mt-3 text-xs text-amber-700">
+              ⚠ لا مقالات في قاعدة المعرفة بعد — البوت يجاوب من ذاكرته فقط. أضف مقالات من تبويب "قاعدة المعرفة".
+            </p>
+          )}
+        </section>
+      )}
 
       {sentiment && sentiment.scored > 0 && (
         <section>
@@ -1403,7 +1691,9 @@ function SettingsTab({
       original.ai_per_user_daily_limit !== draft.ai_per_user_daily_limit ||
       original.ai_sentiment_enabled !== draft.ai_sentiment_enabled ||
       original.ai_ab_testing_enabled !== draft.ai_ab_testing_enabled ||
-      original.ai_auto_escalate_negative !== draft.ai_auto_escalate_negative
+      original.ai_auto_escalate_negative !== draft.ai_auto_escalate_negative ||
+      original.ai_after_hours_mode !== draft.ai_after_hours_mode ||
+      original.ai_knowledge_enabled !== draft.ai_knowledge_enabled
     );
   }, [draft, original]);
 
@@ -1504,6 +1794,31 @@ function SettingsTab({
             />
           </div>
 
+          <div>
+            <label className="block text-sm font-bold text-[#002845] mb-2">سلوك خارج ساعات العمل</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { v: "respond", l: "ردّ ٢٤/٧", h: "البوت يعمل دائماً" },
+                { v: "queue", l: "احتفظ ورُدّ", h: "ارسال رسالة انتظار + إنشاء تصعيد" },
+                { v: "disable", l: "تعطيل", h: "البوت يرفض الردّ" },
+              ].map((opt) => (
+                <button
+                  key={opt.v}
+                  type="button"
+                  onClick={() => setDraft({ ...draft, ai_after_hours_mode: opt.v })}
+                  className={`p-2.5 rounded-xl border text-right transition ${
+                    draft.ai_after_hours_mode === opt.v
+                      ? "border-[#D4AF37] bg-[#FFFCEE]"
+                      : "border-[#EDE6D6] bg-white hover:border-[#D4AF37]/40"
+                  }`}
+                >
+                  <p className="text-xs font-bold text-[#002845]">{opt.l}</p>
+                  <p className="text-[10px] text-slate-500 mt-1">{opt.h}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <FormInput
             label="حد يومي لكل عميل"
             value={draft.ai_per_user_daily_limit}
@@ -1540,6 +1855,12 @@ function SettingsTab({
           value={draft.ai_ab_testing_enabled === "true"}
           onChange={(v) => setDraft({ ...draft, ai_ab_testing_enabled: v ? "true" : "false" })}
         />
+        <ToggleRow
+          label="حقن قاعدة المعرفة في ردود البوت"
+          hint="عند تفعيله، البوت يقرأ من تبويب 'قاعدة المعرفة' قبل أن يجيب — يصبح مصدر الحقيقة الوحيد."
+          value={draft.ai_knowledge_enabled === "true"}
+          onChange={(v) => setDraft({ ...draft, ai_knowledge_enabled: v ? "true" : "false" })}
+        />
       </div>
 
       <div className="sticky bottom-4 z-10 rounded-2xl border border-[#EDE6D6] bg-white shadow-lg p-4 flex items-center justify-between">
@@ -1560,6 +1881,417 @@ function SettingsTab({
 }
 
 // ─── Small form primitives ────────────────────────────────────────────────
+// ─── Knowledge Base tab ───────────────────────────────────────────────────
+function KnowledgeTab({
+  categories,
+  articles,
+  onSave,
+  onDelete,
+  knowledgeEnabled,
+}: {
+  categories: KbCategory[];
+  articles: KbArticle[];
+  onSave: (p: Partial<KbArticle> & { id?: number }) => void;
+  onDelete: (id: number) => void;
+  knowledgeEnabled: boolean;
+}) {
+  const [draft, setDraft] = useState<{
+    id?: number;
+    category_id: string;
+    title: string;
+    content: string;
+    keywords: string;
+    is_active: boolean;
+    priority: string;
+  }>({
+    category_id: "",
+    title: "",
+    content: "",
+    keywords: "",
+    is_active: true,
+    priority: "0",
+  });
+  const [search, setSearch] = useState("");
+  const [filterCat, setFilterCat] = useState<string>("");
+
+  const filtered = useMemo(
+    () =>
+      articles
+        .filter((a) => (filterCat ? String(a.category_id) === filterCat : true))
+        .filter((a) =>
+          search
+            ? (a.title + " " + a.content + " " + (a.keywords || "")).toLowerCase().includes(search.toLowerCase())
+            : true
+        ),
+    [articles, filterCat, search]
+  );
+
+  function loadIntoForm(a: KbArticle) {
+    setDraft({
+      id: a.id,
+      category_id: a.category_id ? String(a.category_id) : "",
+      title: a.title,
+      content: a.content,
+      keywords: a.keywords || "",
+      is_active: a.is_active,
+      priority: String(a.priority || 0),
+    });
+  }
+
+  function resetForm() {
+    setDraft({ category_id: "", title: "", content: "", keywords: "", is_active: true, priority: "0" });
+  }
+
+  return (
+    <section className="space-y-5">
+      {!knowledgeEnabled && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          ⚠ حقن قاعدة المعرفة معطّل حالياً. البوت يجيب من ذاكرته فقط. فعّل
+          <strong className="mx-1">"حقن قاعدة المعرفة"</strong>
+          من تبويب الإعدادات المتقدّمة ليصبح هذا المحتوى مصدر الحقيقة.
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-5">
+        <div className="lg:col-span-1 rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6 space-y-3 sticky top-4 self-start">
+          <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
+            <FileText className="w-4 h-4 text-[#D4AF37]" />
+            {draft.id ? "تعديل مقال" : "مقال جديد"}
+          </h3>
+          <FormSelect
+            label="الفئة"
+            value={draft.category_id}
+            onChange={(v) => setDraft({ ...draft, category_id: v })}
+            options={categories.map((c) => `${c.id}:${c.name}`)}
+          />
+          <FormInput
+            label="العنوان"
+            value={draft.title}
+            onChange={(v) => setDraft({ ...draft, title: v })}
+            placeholder="مثال: شروط استرداد قيمة الباقة"
+          />
+          <FormTextarea
+            label="المحتوى"
+            value={draft.content}
+            onChange={(v) => setDraft({ ...draft, content: v })}
+            rows={6}
+            placeholder="اكتب الإجابة المعتمدة هنا..."
+          />
+          <FormInput
+            label="كلمات مفتاحية"
+            value={draft.keywords}
+            onChange={(v) => setDraft({ ...draft, keywords: v })}
+            placeholder="باقة، سعر، اشتراك..."
+            hint="مفصولة بفواصل. تُستخدم للبحث."
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <FormInput
+              label="الأولوية"
+              value={draft.priority}
+              onChange={(v) => setDraft({ ...draft, priority: v })}
+              type="number"
+              hint="الأعلى يُفضّل عند البحث"
+            />
+            <div>
+              <label className="block text-sm font-bold text-[#002845] mb-2">الحالة</label>
+              <button
+                type="button"
+                onClick={() => setDraft({ ...draft, is_active: !draft.is_active })}
+                className={`w-full px-3 py-2 rounded-lg border text-sm transition ${
+                  draft.is_active
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                    : "border-slate-300 bg-slate-50 text-slate-500"
+                }`}
+              >
+                {draft.is_active ? "نشط" : "معطّل"}
+              </button>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              disabled={!draft.title || !draft.content}
+              onClick={() => {
+                onSave({
+                  ...(draft.id ? { id: draft.id } : {}),
+                  category_id: draft.category_id ? parseInt(draft.category_id.split(":")[0], 10) : null,
+                  title: draft.title,
+                  content: draft.content,
+                  keywords: draft.keywords,
+                  is_active: draft.is_active,
+                  priority: parseInt(draft.priority, 10) || 0,
+                });
+                resetForm();
+              }}
+              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-[#D4AF37] text-white font-bold hover:bg-[#B8932E] active:scale-95 transition disabled:opacity-40"
+            >
+              <Save className="w-4 h-4" />
+              {draft.id ? "تحديث" : "إضافة"}
+            </button>
+            {draft.id && (
+              <button
+                onClick={resetForm}
+                className="px-3 py-2.5 rounded-2xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition"
+              >
+                إلغاء
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="lg:col-span-2 space-y-3">
+          <div className="rounded-2xl border border-[#EDE6D6] bg-white p-3 md:p-4 flex flex-wrap items-center gap-3">
+            <span className="text-xs text-slate-500">تصفية:</span>
+            <select
+              value={filterCat}
+              onChange={(e) => setFilterCat(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-[#002845]"
+            >
+              <option value="">كل الفئات</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.active_articles || 0})
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="بحث..."
+              className="flex-1 min-w-[180px] rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-[#002845] placeholder:text-slate-400"
+            />
+            <span className="text-xs text-slate-500 tabular-nums">
+              {filtered.length} / {articles.length}
+            </span>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-[#EDE6D6] bg-white p-12 text-center">
+              <FileText className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+              <p className="text-sm text-slate-500">لا مقالات بعد. أضف الأول من النموذج جانباً.</p>
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {filtered.map((a) => (
+                <li
+                  key={a.id}
+                  className={`rounded-2xl border p-4 transition ${
+                    a.is_active ? "border-[#EDE6D6] bg-white" : "border-slate-200 bg-slate-50/60 opacity-70"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <p className="font-bold text-[#002845]">{a.title}</p>
+                        {a.category_name && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full border border-[#EDE6D6] bg-[#FAF8F4] text-slate-500">
+                            {a.category_name}
+                          </span>
+                        )}
+                        {a.priority > 0 && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700">
+                            أولوية {a.priority}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-600 line-clamp-3 whitespace-pre-wrap mt-1">{a.content}</p>
+                      {a.keywords && (
+                        <p className="text-[10px] text-slate-400 mt-1.5">🔍 {a.keywords}</p>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2 shrink-0">
+                      <button
+                        onClick={() => loadIntoForm(a)}
+                        className="text-xs px-3 py-1 rounded-full border border-[#D4AF37]/40 text-[#9A7D28] hover:bg-[#FFFCEE] transition"
+                      >
+                        تعديل
+                      </button>
+                      <button
+                        onClick={() => onDelete(a.id)}
+                        className="text-xs px-3 py-1 rounded-full border border-rose-200 text-rose-600 hover:bg-rose-50 transition"
+                      >
+                        حذف
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Escalations tab ───────────────────────────────────────────────────────
+function EscalationsTab({
+  items,
+  onAssign,
+  onResolve,
+}: {
+  items: Escalation[];
+  onAssign: (id: number) => void;
+  onResolve: (id: number) => void;
+}) {
+  const groups = useMemo(() => {
+    return {
+      open: items.filter((i) => i.status === "open"),
+      assigned: items.filter((i) => i.status === "assigned"),
+      resolved: items.filter((i) => i.status === "resolved"),
+    };
+  }, [items]);
+
+  if (items.length === 0) {
+    return (
+      <div className="rounded-3xl border border-dashed border-[#EDE6D6] bg-white p-16 text-center">
+        <AlertTriangle className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+        <p className="text-sm text-slate-500">لا توجد تصعيدات بعد. ستظهر هنا عند تصعيد البوت لأي محادثة.</p>
+      </div>
+    );
+  }
+
+  return (
+    <section className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-5">
+      {(["open", "assigned", "resolved"] as const).map((col) => {
+        const meta =
+          col === "open"
+            ? { title: "مفتوحة", icon: AlertTriangle, color: "border-rose-200 bg-rose-50/40", dot: "bg-rose-500" }
+            : col === "assigned"
+              ? { title: "قيد العمل", icon: Clock, color: "border-amber-200 bg-amber-50/40", dot: "bg-amber-500" }
+              : { title: "محلولة", icon: Check, color: "border-emerald-200 bg-emerald-50/40", dot: "bg-emerald-500" };
+        const Icon = meta.icon;
+        return (
+          <div key={col} className={`rounded-3xl border bg-white p-4 ${meta.color}`}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Icon className="w-4 h-4 text-[#002845]" />
+                <h3 className="font-bold text-[#002845]">{meta.title}</h3>
+              </div>
+              <span className="text-xs text-slate-500 tabular-nums">{groups[col].length}</span>
+            </div>
+            <ul className="space-y-2 max-h-[60vh] overflow-y-auto">
+              {groups[col].length === 0 && (
+                <li className="text-xs text-slate-400 text-center py-6">لا توجد</li>
+              )}
+              {groups[col].map((e) => (
+                <li key={e.id} className="rounded-2xl border border-[#EDE6D6] bg-white p-3">
+                  <div className="flex items-start gap-2 mb-2">
+                    <span className={`mt-1.5 shrink-0 w-2 h-2 rounded-full ${meta.dot}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-[#002845] line-clamp-2">{e.last_user_message || "—"}</p>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        {e.reason || "بدون سبب"} · {timeAgo(e.created_at)}
+                      </p>
+                      {e.sentiment && SENTIMENT_META[e.sentiment] && (
+                        <span className={`inline-flex items-center gap-1 text-[10px] mt-1 ${SENTIMENT_META[e.sentiment].color}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${SENTIMENT_META[e.sentiment].bg}`} />
+                          {SENTIMENT_META[e.sentiment].label}
+                        </span>
+                      )}
+                      {e.assigned_to_name && (
+                        <p className="text-[10px] text-slate-400 mt-1">مسند إلى: {e.assigned_to_name}</p>
+                      )}
+                      {e.resolution_note && (
+                        <p className="text-[10px] text-emerald-700 mt-1 italic">✓ {e.resolution_note}</p>
+                      )}
+                    </div>
+                  </div>
+                  {col !== "resolved" && (
+                    <div className="flex gap-1.5 mt-2">
+                      {col === "open" && (
+                        <button
+                          onClick={() => onAssign(e.id)}
+                          className="flex-1 text-[11px] px-2 py-1 rounded-full border border-[#D4AF37]/40 text-[#9A7D28] hover:bg-[#FFFCEE]"
+                        >
+                          استلام
+                        </button>
+                      )}
+                      <button
+                        onClick={() => onResolve(e.id)}
+                        className="flex-1 text-[11px] px-2 py-1 rounded-full border border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                      >
+                        إغلاق
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+// ─── Audit log tab ─────────────────────────────────────────────────────────
+function AuditTab({ entries }: { entries: AuditEntry[] }) {
+  const actionLabels: Record<string, string> = {
+    settings_change: "تعديل إعداد",
+    prompt_variant_create: "إضافة نسخة",
+    prompt_variant_update: "تعديل نسخة",
+    prompt_variant_delete: "حذف نسخة",
+    kb_article_create: "إضافة مقال",
+    kb_article_update: "تعديل مقال",
+    kb_article_delete: "حذف مقال",
+    kb_category_save: "حفظ فئة",
+    kb_category_update: "تعديل فئة",
+    kb_category_delete: "حذف فئة",
+    escalation_assign: "استلام تصعيد",
+    escalation_resolve: "إغلاق تصعيد",
+  };
+
+  if (entries.length === 0) {
+    return (
+      <div className="rounded-3xl border border-dashed border-[#EDE6D6] bg-white p-16 text-center">
+        <SettingsIcon className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+        <p className="text-sm text-slate-500">سجل التدقيق فارغ. كل تعديل في المركز سيُسجَّل هنا.</p>
+      </div>
+    );
+  }
+
+  return (
+    <section className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
+      <h3 className="text-base font-bold text-[#002845] mb-4 flex items-center gap-2">
+        <SettingsIcon className="w-4 h-4 text-[#D4AF37]" />
+        آخر {entries.length} عملية
+      </h3>
+      <ul className="divide-y divide-[#F1ECE0]">
+        {entries.map((e) => (
+          <li key={e.id} className="py-3">
+            <div className="flex items-start gap-3">
+              <span className="mt-1.5 shrink-0 w-2 h-2 rounded-full bg-[#D4AF37]" />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="px-2 py-0.5 rounded-full bg-[#FAF8F4] border border-[#EDE6D6] text-[11px] text-slate-600">
+                    {actionLabels[e.action] || e.action}
+                  </span>
+                  {e.target_id && (
+                    <span className="text-[11px] text-slate-400">
+                      #{e.target_id} {e.target_kind ? `(${e.target_kind})` : ""}
+                    </span>
+                  )}
+                  <span className="text-[11px] text-slate-400 mr-auto">{timeAgo(e.created_at)}</span>
+                </div>
+                {(e.old_value || e.new_value) ? (
+                  <div className="text-[11px] text-slate-500 bg-[#FAF8F4] rounded-lg p-2 mt-1 font-mono whitespace-pre-wrap break-all">
+                    {e.old_value ? `قبل: ${JSON.stringify(e.old_value)}\n` : ""}
+                    {e.new_value ? `بعد: ${JSON.stringify(e.new_value)}` : ""}
+                  </div>
+                ) : null}
+                <p className="text-[10px] text-slate-400 mt-1.5">
+                  بواسطة: {e.actor_name || "—"} {e.actor_role ? `(${e.actor_role})` : ""}
+                </p>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function ToggleRow({
   label,
   hint,
