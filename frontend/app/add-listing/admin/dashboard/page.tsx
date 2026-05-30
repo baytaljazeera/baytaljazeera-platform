@@ -43,6 +43,11 @@ import { PlatformPulse } from "@/components/admin/PlatformPulse";
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://baytaljazeera-backend.onrender.com";
 
+// Stamped per build so the operator can confirm which JS bundle their
+// browser actually loaded — helps when CDN/ISP caching makes a deploy
+// look like it didnt land. Bumped manually with each visible change.
+const BUILD_TAG = "2026-05-30/salaam";
+
 // ─── Brand palette ────────────────────────────────────────────────────────────
 // Single accent (gold), navy for text/structure. Status hues are reserved for
 // state — they are NOT used to tint category cards.
@@ -404,7 +409,10 @@ export default function AdminDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-3 text-sm">
-          <span className="text-slate-400 text-xs">آخر تحديث: {lastUpdate}</span>
+          <div className="flex flex-col items-end text-[10px] text-slate-300 font-mono leading-tight">
+            <span>v.{BUILD_TAG}</span>
+            <span>آخر تحديث: {lastUpdate}</span>
+          </div>
           <button
             onClick={fetchDashboardData}
             disabled={loading}
