@@ -15,6 +15,7 @@ import {
   Mailbox, LayoutGrid, UserPlus2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuthStore } from "@/lib/stores/authStore";
 
 type UserItem = {
   id: string;
@@ -189,6 +190,13 @@ function AdminRolesPageContent() {
   // the "demote me" path — guards owners from accidentally locking
   // themselves out (the backend rejects this too in admin.js).
   const [currentUserId, setCurrentUserId] = useState<string>("");
+  // Fallback for the role. AuthStore is hydrated at login from the
+  // backend response and survives page reloads via the store's
+  // persistence layer — much more reliable than waiting for the
+  // /api/auth/me round-trip on every page mount. Use whichever source
+  // can prove the user is super_admin.
+  const { user: authStoreUser } = useAuthStore();
+  const effectiveRole = currentUserRole || authStoreUser?.role || "";
 
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [permissionCategories, setPermissionCategories] = useState<Record<string, PermissionCategory>>({});
@@ -1869,9 +1877,9 @@ function AdminRolesPageContent() {
                 {/* لماذا قد يكون خيار "المدير العام" مخفياً. */}
                 <div className="flex flex-wrap gap-2 mb-4 text-[11px]">
                   <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                    دورك الحالي: <span className="font-bold text-[#002845]">{currentUserRole || "—"}</span>
+                    دورك الحالي: <span className="font-bold text-[#002845]">{effectiveRole || "—"}</span>
                   </span>
-                  {currentUserRole !== "super_admin" && (
+                  {effectiveRole !== "super_admin" && (
                     <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
                       ⚠ خيار "المدير العام" مخفي — يلزم أن تكون super_admin أنت أولاً
                     </span>
@@ -1882,7 +1890,7 @@ function AdminRolesPageContent() {
                   {/* المدير العام (super_admin) لا يظهر إلا للمدير العام نفسه — */}
                   {/* الترقية إلى super_admin لا رجعة عنها وتعطي تحكماً كاملاً. */}
                   {adminRoles
-                    .filter(r => r.key !== 'super_admin' || currentUserRole === 'super_admin')
+                    .filter(r => r.key !== 'super_admin' || effectiveRole === 'super_admin')
                     .map((role) => {
                     const Icon = getIconComponent(role.icon || 'Shield');
                     const color = role.color || '#6B7280';
