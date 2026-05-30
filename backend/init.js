@@ -3129,6 +3129,27 @@ async function initializeDatabase() {
       UPDATE users SET email_verified = true, email_verified_at = COALESCE(email_verified_at, NOW())
       WHERE email = 'husseinbabsail@gmail.com' AND (email_verified = false OR email_verified IS NULL)
     `);
+
+    // ترقية صاحب المشروع إلى مدير عام دون لمس كلمة المرور.
+    // لا نُدرجه في adminRoles[] لأن تلك القائمة تُعيد ضبط كلمة المرور
+    // عند كل إقلاع. هنا نقتصر على رفع الدور لو الحساب موجود.
+    try {
+      const ownerRoleRes = await db.query(
+        `UPDATE users
+           SET role = 'super_admin',
+               role_level = 100,
+               locked_until = NULL,
+               failed_login_attempts = 0,
+               updated_at = NOW()
+         WHERE email = 'husseinbabsail@gmail.com'
+           AND (role IS DISTINCT FROM 'super_admin' OR role_level IS DISTINCT FROM 100)`
+      );
+      if (ownerRoleRes.rowCount > 0) {
+        console.log("👑 تمت ترقية husseinbabsail@gmail.com إلى super_admin");
+      }
+    } catch (ownerErr) {
+      console.warn("⚠️ لم تتمّ ترقية صاحب المشروع:", ownerErr.message);
+    }
     
     // 🔍 إضافة Indexes ناقصة لتحسين الأداء (تلقائياً عند كل نشر)
     try {
