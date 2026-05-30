@@ -1927,14 +1927,13 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
       await trackDelete('wallet_transactions', 'DELETE FROM wallet_transactions WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
       await trackDelete('ambassador_withdrawal_requests', 'DELETE FROM ambassador_withdrawal_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
       await trackDelete('ambassador_wallet', 'DELETE FROM ambassador_wallet WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      // $1 is referenced twice; pg expects exactly one parameter because
-      // there is only one distinct placeholder. Passing ['user','user']
-      // triggers 08P01 "bind message supplies 2 parameters, but prepared
-      // statement requires 1", and 08P01 is not in safeRun's skip list,
-      // so it aborts the whole customers wipe with a 500. That was the
-      // real reason DELETE FROM users never ran.
+      // $1 is referenced twice but pg expects exactly one parameter
+      // because there is only one distinct placeholder. Passing two used
+      // to trigger 08P01 and abort the whole customers wipe — fixed.
       await trackDelete('referrals', 'DELETE FROM referrals WHERE referrer_id IN (SELECT id FROM users WHERE role = $1) OR referred_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await trackDelete('advertiser_reviews', 'DELETE FROM advertiser_reviews WHERE reviewer_id IN (SELECT id FROM users WHERE role = $1) OR advertiser_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      // advertiser_reviews never shipped to this deployment (relation
+      // does not exist). The runtime advertiser ratings live in
+      // advertiser_ratings, which CASCADEs on users delete. Skipping.
       await trackDelete('advertiser_reputation', 'DELETE FROM advertiser_reputation WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
       await trackDelete('listing_media', 'DELETE FROM listing_media WHERE listing_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', ['user']);
       await trackDelete('elite_extension_requests', 'DELETE FROM elite_extension_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
@@ -1946,19 +1945,7 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
       await trackDelete('user_plans', 'DELETE FROM user_plans WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
       await trackDelete('favorites', 'DELETE FROM favorites WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
       await trackDelete('properties', 'DELETE FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-
-      // Diagnostic: capture customer count immediately before + after
-      // the final DELETE. If "before" > 0 but "deleted_users" = 0 and
-      // "after" is still > 0, the issue is something outside this code
-      // path (e.g. row-level security, a stricter role enum, or a
-      // protective trigger) — we surface the numbers so the operator
-      // can show me what really happened without guessing.
-      const beforeUsers = await client.query("SELECT COUNT(*)::int AS c FROM users WHERE role = $1", ['user']);
-      customerDeleteCounts._users_count_before_delete = beforeUsers.rows[0].c;
       await trackDelete('deleted_users', 'DELETE FROM users WHERE role = $1', ['user']);
-      const afterUsers = await client.query("SELECT COUNT(*)::int AS c FROM users WHERE role = $1", ['user']);
-      customerDeleteCounts._users_count_after_delete = afterUsers.rows[0].c;
-
       results.customers = customerDeleteCounts;
     }
 
