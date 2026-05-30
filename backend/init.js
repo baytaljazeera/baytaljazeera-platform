@@ -1661,6 +1661,27 @@ async function initializeDatabase() {
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+    // Columns added later for AI Command Center stats.
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ai_chat_logs' AND column_name='source') THEN
+          ALTER TABLE ai_chat_logs ADD COLUMN source VARCHAR(20) DEFAULT 'customer';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ai_chat_logs' AND column_name='model') THEN
+          ALTER TABLE ai_chat_logs ADD COLUMN model VARCHAR(50);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ai_chat_logs' AND column_name='prompt_tokens') THEN
+          ALTER TABLE ai_chat_logs ADD COLUMN prompt_tokens INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ai_chat_logs' AND column_name='completion_tokens') THEN
+          ALTER TABLE ai_chat_logs ADD COLUMN completion_tokens INTEGER DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ai_chat_logs' AND column_name='cost_usd') THEN
+          ALTER TABLE ai_chat_logs ADD COLUMN cost_usd NUMERIC(10,6) DEFAULT 0;
+        END IF;
+      END $$;
+    `);
 
     await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_chat_logs_session ON ai_chat_logs(session_id);`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_ai_chat_logs_escalated ON ai_chat_logs(escalated);`);

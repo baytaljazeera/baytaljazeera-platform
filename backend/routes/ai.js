@@ -127,7 +127,7 @@ process.on('beforeExit', () => {
   videoOperations.clear();
 });
 
-const SYSTEM_PROMPT = `أنت مساعد ذكي لمنصة "بيت الجزيرة" - منصة عقارية سعودية فاخرة.
+const DEFAULT_SYSTEM_PROMPT = `أنت مساعد ذكي لمنصة "بيت الجزيرة" - منصة عقارية سعودية فاخرة.
 مهمتك مساعدة المدراء في:
 - إدارة الإعلانات والعقارات
 - فهم تقارير المبيعات والإحصائيات
@@ -138,6 +138,69 @@ const SYSTEM_PROMPT = `أنت مساعد ذكي لمنصة "بيت الجزير�
 
 أجب دائماً باللغة العربية بأسلوب احترافي ومختصر.
 كن مفيداً وودوداً في ردودك.`;
+
+// Approximate USD pricing (per 1K tokens) — used only for cost estimation
+// in the admin Command Center; refresh as OpenAI publishes new rates.
+const MODEL_PRICING = {
+  'gpt-4o':       { input: 0.0025,   output: 0.01 },
+  'gpt-4o-mini':  { input: 0.00015,  output: 0.0006 },
+  'gpt-3.5-turbo':{ input: 0.0005,   output: 0.0015 },
+};
+
+const ALLOWED_MODELS = Object.keys(MODEL_PRICING);
+
+// All center-controlled settings live in app_settings under ai_* keys.
+// Defaults are returned when a key is missing so first-time access doesn't
+// look broken.
+const SETTINGS_DEFAULTS = {
+  ai_support_enabled:     'true',
+  ai_system_prompt:       DEFAULT_SYSTEM_PROMPT,
+  ai_model:               'gpt-4o-mini',
+  ai_temperature:         '0.7',
+  ai_max_tokens:          '1000',
+  ai_banned_topics:       '',          // comma/newline-separated keywords
+  ai_working_hours_start: '',          // 24h "HH:MM" — empty = always on
+  ai_working_hours_end:   '',
+  ai_per_user_daily_limit:'30',
+};
+
+async function loadAiSettings() {
+  try {
+    const r = await db.query("SELECT key, value FROM app_settings WHERE key LIKE 'ai_%'");
+    const out = { ...SETTINGS_DEFAULTS };
+    for (const row of r.rows) out[row.key] = row.value;
+    return out;
+  } catch {
+    return { ...SETTINGS_DEFAULTS };
+  }
+}
+
+function computeCostUsd(model, promptTokens, completionTokens) {
+  const p = MODEL_PRICING[model] || MODEL_PRICING['gpt-4o-mini'];
+  return ((promptTokens / 1000) * p.input + (completionTokens / 1000) * p.output);
+}
+
+async function logAdminChat(client, { userMessage, aiResponse, model, usage, sessionId }) {
+  try {
+    await client.query(
+      `INSERT INTO ai_chat_logs (session_id, user_message, ai_response, source, model, prompt_tokens, completion_tokens, cost_usd, created_at)
+       VALUES ($1, $2, $3, 'admin', $4, $5, $6, $7, NOW())`,
+      [
+        sessionId || null,
+        (userMessage || '').slice(0, 4000),
+        (aiResponse || '').slice(0, 4000),
+        model,
+        usage?.prompt_tokens || 0,
+        usage?.completion_tokens || 0,
+        computeCostUsd(model, usage?.prompt_tokens || 0, usage?.completion_tokens || 0),
+      ]
+    );
+  } catch (logErr) {
+    console.warn('[ai chat-log] failed:', logErr.message);
+  }
+}
+
+const SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT;
 
 // Helper function for OpenAI error handling
 function handleOpenAIError(error, res) {
@@ -187,23 +250,47 @@ router.post("/chat", authMiddleware, adminMiddleware, asyncHandler(async (req, r
     return res.status(400).json({ error: "الرسائل مطلوبة" });
   }
 
+  const cfg = await loadAiSettings();
+  const model = ALLOWED_MODELS.includes(cfg.ai_model) ? cfg.ai_model : 'gpt-4o-mini';
+  const temperature = Math.min(2, Math.max(0, parseFloat(cfg.ai_temperature) || 0.7));
+  const maxTokens = Math.min(4000, Math.max(50, parseInt(cfg.ai_max_tokens, 10) || 1000));
+  const systemPrompt = cfg.ai_system_prompt || DEFAULT_SYSTEM_PROMPT;
+
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        ...messages.map(m => ({
-          role: m.role,
-          content: m.content
-        }))
+        { role: "system", content: systemPrompt },
+        ...messages.map(m => ({ role: m.role, content: m.content })),
       ],
-      max_tokens: 1000,
-      temperature: 0.7,
+      max_tokens: maxTokens,
+      temperature,
     });
 
     const assistantMessage = response.choices[0]?.message?.content || "عذراً، لم أتمكن من الرد.";
+    const usage = response.usage || {};
+    const lastUser = [...messages].reverse().find(m => m.role === 'user')?.content || '';
 
-    res.json({ message: assistantMessage });
+    // Log admin chat (was previously not captured anywhere — admins
+    // querying the bot for sensitive data left no audit trail).
+    await logAdminChat(db, {
+      userMessage: lastUser,
+      aiResponse: assistantMessage,
+      model,
+      usage,
+      sessionId: req.user?.id ? `admin:${req.user.id}` : null,
+    });
+
+    res.json({
+      message: assistantMessage,
+      usage: {
+        prompt_tokens: usage.prompt_tokens || 0,
+        completion_tokens: usage.completion_tokens || 0,
+        total_tokens: usage.total_tokens || 0,
+        estimated_cost_usd: computeCostUsd(model, usage.prompt_tokens || 0, usage.completion_tokens || 0),
+        model,
+      },
+    });
   } catch (error) {
     return handleOpenAIError(error, res);
   }
@@ -2490,26 +2577,136 @@ router.post("/escalate", authMiddleware, asyncHandler(async (req, res) => {
 }));
 
 router.get("/support-settings", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
-  const result = await db.query(
-    "SELECT key, value FROM app_settings WHERE key LIKE 'ai_%'"
-  );
-  const settings = {};
-  result.rows.forEach(row => {
-    settings[row.key] = row.value;
+  const settings = await loadAiSettings();
+  res.json({
+    ...settings,
+    _meta: {
+      allowed_models: ALLOWED_MODELS,
+      defaults: SETTINGS_DEFAULTS,
+      pricing_per_1k_tokens: MODEL_PRICING,
+    },
   });
-  res.json(settings);
 }));
 
 router.post("/support-settings", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
-  const { ai_support_enabled } = req.body;
-  
-  await db.query(
-    `INSERT INTO app_settings (key, value) VALUES ('ai_support_enabled', $1)
-     ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
-    [ai_support_enabled ? 'true' : 'false']
+  // Accept the full configurable set. Values are stored as text in
+  // app_settings so booleans become 'true'/'false' strings — the
+  // loadAiSettings consumer parses on read.
+  const body = req.body || {};
+  const updates = {};
+  if (body.ai_support_enabled !== undefined) {
+    updates.ai_support_enabled = body.ai_support_enabled ? 'true' : 'false';
+  }
+  if (typeof body.ai_system_prompt === 'string')   updates.ai_system_prompt = body.ai_system_prompt.slice(0, 8000);
+  if (typeof body.ai_model === 'string' && ALLOWED_MODELS.includes(body.ai_model)) updates.ai_model = body.ai_model;
+  if (body.ai_temperature !== undefined) {
+    const t = parseFloat(body.ai_temperature);
+    if (!Number.isNaN(t) && t >= 0 && t <= 2) updates.ai_temperature = String(t);
+  }
+  if (body.ai_max_tokens !== undefined) {
+    const n = parseInt(body.ai_max_tokens, 10);
+    if (Number.isFinite(n) && n >= 50 && n <= 4000) updates.ai_max_tokens = String(n);
+  }
+  if (typeof body.ai_banned_topics === 'string')  updates.ai_banned_topics = body.ai_banned_topics.slice(0, 4000);
+  if (typeof body.ai_working_hours_start === 'string') updates.ai_working_hours_start = body.ai_working_hours_start.slice(0, 5);
+  if (typeof body.ai_working_hours_end === 'string')   updates.ai_working_hours_end = body.ai_working_hours_end.slice(0, 5);
+  if (body.ai_per_user_daily_limit !== undefined) {
+    const n = parseInt(body.ai_per_user_daily_limit, 10);
+    if (Number.isFinite(n) && n >= 0 && n <= 1000) updates.ai_per_user_daily_limit = String(n);
+  }
+
+  for (const [key, value] of Object.entries(updates)) {
+    await db.query(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      [key, value]
+    );
+  }
+
+  const fresh = await loadAiSettings();
+  res.json({ ok: true, message: "تم حفظ الإعدادات", settings: fresh, saved_keys: Object.keys(updates) });
+}));
+
+// ─── AI Command Center — overview stats ────────────────────────────────────
+router.get("/center/stats", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const safe = async (sql, params = []) => {
+    try {
+      const r = await db.query(sql, params);
+      return r.rows;
+    } catch (e) {
+      return [];
+    }
+  };
+
+  const [today, week, month, byHour, escalated, topUsers] = await Promise.all([
+    safe(`SELECT
+            COUNT(*) FILTER (WHERE source = 'customer')::int AS customer_chats,
+            COUNT(*) FILTER (WHERE source = 'admin')::int    AS admin_chats,
+            COUNT(*) FILTER (WHERE escalated)::int           AS escalations,
+            COALESCE(SUM(prompt_tokens), 0)::int             AS prompt_tokens,
+            COALESCE(SUM(completion_tokens), 0)::int         AS completion_tokens,
+            COALESCE(SUM(cost_usd), 0)::numeric              AS cost_usd
+          FROM ai_chat_logs WHERE created_at >= NOW() - INTERVAL '24 hours'`),
+    safe(`SELECT
+            COUNT(*)::int                                    AS total_chats,
+            COUNT(*) FILTER (WHERE escalated)::int           AS escalations,
+            COALESCE(SUM(cost_usd), 0)::numeric              AS cost_usd
+          FROM ai_chat_logs WHERE created_at >= NOW() - INTERVAL '7 days'`),
+    safe(`SELECT
+            COUNT(*)::int                                    AS total_chats,
+            COUNT(*) FILTER (WHERE escalated)::int           AS escalations,
+            COALESCE(SUM(cost_usd), 0)::numeric              AS cost_usd
+          FROM ai_chat_logs WHERE created_at >= NOW() - INTERVAL '30 days'`),
+    safe(`SELECT date_trunc('hour', created_at) AS hour, COUNT(*)::int AS n
+          FROM ai_chat_logs WHERE created_at >= NOW() - INTERVAL '24 hours'
+          GROUP BY 1 ORDER BY 1`),
+    safe(`SELECT id, user_message, escalate_reason, created_at
+          FROM ai_chat_logs WHERE escalated = true
+          ORDER BY created_at DESC LIMIT 5`),
+    safe(`SELECT session_id, COUNT(*)::int AS chats
+          FROM ai_chat_logs WHERE created_at >= NOW() - INTERVAL '7 days' AND session_id IS NOT NULL
+          GROUP BY session_id ORDER BY chats DESC LIMIT 5`),
+  ]);
+
+  res.json({
+    today: today[0] || { customer_chats: 0, admin_chats: 0, escalations: 0, prompt_tokens: 0, completion_tokens: 0, cost_usd: 0 },
+    week:  week[0]  || { total_chats: 0, escalations: 0, cost_usd: 0 },
+    month: month[0] || { total_chats: 0, escalations: 0, cost_usd: 0 },
+    by_hour_24h: byHour,
+    recent_escalations: escalated,
+    top_sessions_7d: topUsers,
+  });
+}));
+
+// ─── AI Command Center — logs feed ────────────────────────────────────────
+router.get("/center/logs", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
+  const { source, escalated, q, limit } = req.query;
+  const conditions = [];
+  const params = [];
+  if (source === 'customer' || source === 'admin') {
+    conditions.push(`source = $${params.length + 1}`);
+    params.push(source);
+  }
+  if (escalated === '1' || escalated === 'true') {
+    conditions.push(`escalated = true`);
+  }
+  if (q && String(q).trim()) {
+    conditions.push(`(user_message ILIKE $${params.length + 1} OR ai_response ILIKE $${params.length + 1})`);
+    params.push(`%${String(q).trim()}%`);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const limitN = Math.min(500, Math.max(1, parseInt(String(limit || 100), 10) || 100));
+  const result = await db.query(
+    `SELECT id, session_id, source, model, user_message, ai_response,
+            escalated, escalate_reason, prompt_tokens, completion_tokens,
+            cost_usd, created_at
+       FROM ai_chat_logs
+       ${where}
+       ORDER BY created_at DESC
+       LIMIT ${limitN}`,
+    params
   );
-  
-  res.json({ ok: true, message: "تم حفظ الإعدادات" });
+  res.json({ logs: result.rows });
 }));
 
 router.get("/chat-logs", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
