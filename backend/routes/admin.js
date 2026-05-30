@@ -1807,34 +1807,45 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
       // Clean every table linked to role='user' rows. Order matters: child
       // rows first, then user_plans/properties, then users themselves.
 
-      // Step 0: break FK refs from columns that point at users(id) WITHOUT
-      // an explicit ON DELETE (default = NO ACTION = blocks the delete).
-      // Setting them NULL keeps the history row, just severs the link to
-      // the user we're about to delete. Without this the final
-      // DELETE FROM users fails with 23503 and the whole reset aborts —
-      // which is exactly the "looks like nothing happened" symptom.
-      const USER_REF_NULL_UPDATES = [
-        // self-ref on users
-        ["UPDATE users SET referred_by = NULL WHERE referred_by IN (SELECT id FROM users WHERE role = $1)", "users.referred_by"],
-        // listing review trail
-        ["UPDATE properties SET reviewed_by = NULL WHERE reviewed_by IN (SELECT id FROM users WHERE role = $1)", "properties.reviewed_by"],
-        ["UPDATE listing_workflows SET reviewed_by = NULL WHERE reviewed_by IN (SELECT id FROM users WHERE role = $1)", "listing_workflows.reviewed_by"],
-        ["UPDATE listing_audit_events SET actor_id = NULL WHERE actor_id IN (SELECT id FROM users WHERE role = $1)", "listing_audit_events.actor_id"],
-        // plans
-        ["UPDATE user_plans SET suspended_by = NULL WHERE suspended_by IN (SELECT id FROM users WHERE role = $1)", "user_plans.suspended_by"],
-        // ambassador / wallet review trail
-        ["UPDATE wallet_transactions SET ambassador_reviewed_by = NULL WHERE ambassador_reviewed_by IN (SELECT id FROM users WHERE role = $1)", "wallet_transactions.ambassador_reviewed_by"],
-        ["UPDATE wallet_transactions SET finance_reviewed_by = NULL WHERE finance_reviewed_by IN (SELECT id FROM users WHERE role = $1)", "wallet_transactions.finance_reviewed_by"],
-        ["UPDATE ambassador_requests SET reviewed_by = NULL WHERE reviewed_by IN (SELECT id FROM users WHERE role = $1)", "ambassador_requests.reviewed_by"],
-        ["UPDATE ambassador_withdrawal_requests SET created_by = NULL WHERE created_by IN (SELECT id FROM users WHERE role = $1)", "ambassador_withdrawal_requests.created_by"],
-        ["UPDATE ambassador_wallet SET created_by = NULL WHERE created_by IN (SELECT id FROM users WHERE role = $1)", "ambassador_wallet.created_by"],
-        ["UPDATE ambassador_settings SET updated_by = NULL WHERE updated_by IN (SELECT id FROM users WHERE role = $1)", "ambassador_settings.updated_by"],
-        // elite / ratings review trail
-        ["UPDATE elite_extension_requests SET processed_by = NULL WHERE processed_by IN (SELECT id FROM users WHERE role = $1)", "elite_extension_requests.processed_by"],
-        ["UPDATE advertiser_ratings SET reviewed_by = NULL WHERE reviewed_by IN (SELECT id FROM users WHERE role = $1)", "advertiser_ratings.reviewed_by"],
-      ];
-      for (const [sql, label] of USER_REF_NULL_UPDATES) {
-        await safeRun(client, sql, ['user'], label);
+      // Step 0: dynamically discover every FK column on any table that
+      // points at users.id where the ON DELETE action is NO ACTION or
+      // RESTRICT — those are the columns that block DELETE FROM users
+      // with 23503. The old hardcoded list missed real blockers (e.g.
+      // wallet_transactions.created_by) and held dead entries for
+      // columns that never existed (e.g. ambassador_wallet.created_by).
+      // pg_catalog is the source of truth, so we ask it.
+      const blockingFks = await client.query(`
+        SELECT
+          n.nspname AS schemaname,
+          c.relname AS tablename,
+          a.attname AS colname,
+          a.attnotnull AS notnull
+        FROM pg_constraint con
+        JOIN pg_class c ON c.oid = con.conrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = con.conrelid
+                           AND a.attnum = ANY (con.conkey)
+                           AND NOT a.attisdropped
+        WHERE con.contype = 'f'
+          AND con.confrelid = (
+            SELECT oid FROM pg_class
+            WHERE relname = 'users' AND relnamespace = (
+              SELECT oid FROM pg_namespace WHERE nspname = 'public'
+            )
+          )
+          AND n.nspname = 'public'
+          AND con.confdeltype IN ('a', 'r')
+      `);
+      for (const fk of blockingFks.rows) {
+        // Skip NOT NULL columns — UPDATE to NULL would fail with 23502.
+        // For those, the row itself must be deleted (handled by the
+        // explicit delete chain below) or the FK redesigned.
+        if (fk.notnull) continue;
+        const ident = (s) => `"${String(s).replace(/"/g, '""')}"`;
+        const tbl = `${ident(fk.schemaname)}.${ident(fk.tablename)}`;
+        const col = ident(fk.colname);
+        const sql = `UPDATE ${tbl} SET ${col} = NULL WHERE ${col} IN (SELECT id FROM users WHERE role = $1)`;
+        await safeRun(client, sql, ['user'], `dyn-null ${fk.tablename}.${fk.colname}`);
       }
 
       // Step 1: explicit cleanup for customer-data tables NOT covered by
