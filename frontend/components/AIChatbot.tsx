@@ -12,6 +12,69 @@ interface Message {
   escalated?: boolean;
 }
 
+// ─── Follow-up chip system ──────────────────────────────────────────────
+// Detects what the user/bot just talked about and surfaces 3-4 chips so
+// the visitor always has a next step instead of staring at a blank box.
+// Built in the frontend (not relying on GPT to remember) — GPT also gets
+// a system-prompt nudge to end with a short follow-up question.
+type ChatIntent = "description" | "packages" | "search" | "edit" | "general";
+
+interface FollowUpChip {
+  label: string;
+  payload: string; // sentinel "__home__" or "__escalate__" or literal text
+}
+
+const HOME_CHIP: FollowUpChip = { label: "🏠 القائمة الرئيسية", payload: "__home__" };
+const ESCALATE_CHIP: FollowUpChip = { label: "👨‍💼 تحدث مع موظف", payload: "__escalate__" };
+
+function detectLastBotIntent(lastUser: string, lastBot: string): ChatIntent {
+  const text = `${lastUser || ""} ${lastBot || ""}`.toLowerCase();
+  if (/تعديل|عدّل|عدل |غيّر|اقصر|أطول|أعد كتابة/.test(text)) return "edit";
+  if (/وصف|اكتب لي|اوصف|وصفاً|description/i.test(text)) return "description";
+  if (/(باقة|الباقات|اشتراك|بريميوم|نخبة|premium|elite|سعر الباقة)/i.test(text)) return "packages";
+  if (/ابحث|بحث عن|عقار في|الرياض|جدة|مكة|المدينة|الدمام|ميزانية/.test(text)) return "search";
+  return "general";
+}
+
+function getFollowUpChips(intent: ChatIntent): FollowUpChip[] {
+  switch (intent) {
+    case "description":
+      return [
+        { label: "✏️ عدّل الوصف", payload: "عدّل هذا الوصف وحسّن صياغته" },
+        { label: "📝 وصف أقصر", payload: "اكتب وصفاً أقصر للعقار نفسه" },
+        { label: "🚀 تسويق أقوى", payload: "أعد كتابة الوصف بأسلوب تسويقي أقوى يجذب المشترين" },
+        HOME_CHIP,
+      ];
+    case "edit":
+      return [
+        { label: "📏 اقصر منه", payload: "اكتبه أقصر" },
+        { label: "📖 أطول وأشمل", payload: "اكتبه أطول وأشمل" },
+        { label: "🎨 أسلوب مختلف", payload: "أعد كتابته بأسلوب مختلف تماماً" },
+        HOME_CHIP,
+      ];
+    case "packages":
+      return [
+        { label: "📦 اعرض الباقات", payload: "اعرض كل الباقات المتاحة مع الأسعار والميزات" },
+        { label: "⚖️ قارن الباقات", payload: "قارن بين الباقات حسب السعر والميزات" },
+        ESCALATE_CHIP,
+        HOME_CHIP,
+      ];
+    case "search":
+      return [
+        { label: "🏙️ ابحث في الرياض", payload: "أريد البحث عن عقارات في الرياض" },
+        { label: "🌊 ابحث في جدة", payload: "أريد البحث عن عقارات في جدة" },
+        { label: "💰 حدد الميزانية", payload: "كيف أحدد ميزانية البحث بشكل صحيح؟" },
+        HOME_CHIP,
+      ];
+    default:
+      return [
+        { label: "❓ سؤال آخر", payload: "لدي سؤال آخر" },
+        ESCALATE_CHIP,
+        HOME_CHIP,
+      ];
+  }
+}
+
 interface AILevelInfo {
   level: number;
   levelName: string;
@@ -199,10 +262,14 @@ export default function AIChatbot() {
     }
   }, [isOpen, isAuthenticated, user]);
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+  // sendMessage accepts an explicit text so chip-clicks can fire a
+  // message without round-tripping through the input state (which can
+  // race against setState batching).
+  const sendMessage = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || isLoading) return;
 
-    const userMessage: Message = { role: "user", content: input };
+    const userMessage: Message = { role: "user", content: trimmed };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInput("");
@@ -222,10 +289,10 @@ export default function AIChatbot() {
       const data = await response.json();
 
       if (response.ok) {
-        setMessages([...newMessages, { 
-          role: "assistant", 
+        setMessages([...newMessages, {
+          role: "assistant",
           content: data.message,
-          escalated: data.escalated 
+          escalated: data.escalated
         }]);
         if (data.escalated) {
           setShowEscalateOption(true);
@@ -238,6 +305,24 @@ export default function AIChatbot() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSend = () => sendMessage(input);
+
+  // Reset the chat back to its welcome state without closing the
+  // popover — the visitor stays inside the same session but starts
+  // fresh. We deliberately keep sessionId so backend analytics still
+  // tie everything to one customer journey.
+  const resetChatToHome = () => {
+    setMessages([]);
+    setInput("");
+    setShowEscalateOption(false);
+  };
+
+  const handleChipClick = (payload: string) => {
+    if (payload === "__home__") return resetChatToHome();
+    if (payload === "__escalate__") return handleEscalate();
+    void sendMessage(payload);
   };
 
   const handleEscalate = async () => {
@@ -351,13 +436,24 @@ export default function AIChatbot() {
               <p className="text-xs text-slate-300">متصل الآن</p>
             </div>
           </div>
-          <button
-            onClick={() => setIsOpen(false)}
-            className="w-8 h-8 rounded-full bg-white/10 hover:bg-red-500/80 flex items-center justify-center transition group"
-            title="إغلاق المحادثة"
-          >
-            <X className="w-4 h-4 group-hover:scale-110 transition-transform" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {messages.length > 0 && (
+              <button
+                onClick={resetChatToHome}
+                className="px-2.5 h-8 rounded-full bg-white/10 hover:bg-[#D4AF37]/30 text-xs font-bold flex items-center gap-1 transition"
+                title="الرجوع للقائمة الرئيسية"
+              >
+                🏠 قائمة
+              </button>
+            )}
+            <button
+              onClick={() => setIsOpen(false)}
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-red-500/80 flex items-center justify-center transition group"
+              title="إغلاق المحادثة"
+            >
+              <X className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            </button>
+          </div>
         </div>
 
       <div className={`px-4 py-2 bg-gradient-to-l ${levelConfig.color} text-white flex items-center justify-between`}>
@@ -478,27 +574,22 @@ export default function AIChatbot() {
             </div>
 
             <div className="flex flex-wrap justify-center gap-2 mt-4">
-              {currentLevel >= 2 ? (
-                ["ساعدني في كتابة وصف لفيلا", "نصائح لزيادة مشاهدات إعلاني", "كيف أسوق عقاري؟"].map((q, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setInput(q)}
-                    className="px-3 py-1.5 bg-white border border-purple-200 rounded-full text-xs text-purple-700 hover:border-purple-400 hover:bg-purple-50 transition"
-                  >
-                    {q}
-                  </button>
-                ))
-              ) : (
-                ["كيف أضيف إعلان؟", "ما هي الباقات المتاحة؟", "كيف أبحث عن عقار؟"].map((q, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setInput(q)}
-                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-full text-xs text-slate-600 hover:border-[#D4AF37] hover:text-[#002845] transition"
-                  >
-                    {q}
-                  </button>
-                ))
-              )}
+              {(currentLevel >= 2
+                ? ["ساعدني في كتابة وصف لفيلا", "نصائح لزيادة مشاهدات إعلاني", "كيف أسوق عقاري؟"]
+                : ["كيف أضيف إعلان؟", "ما هي الباقات المتاحة؟", "كيف أبحث عن عقار؟"]
+              ).map((q, i) => (
+                <button
+                  key={i}
+                  onClick={() => void sendMessage(q)}
+                  className={`px-3 py-1.5 bg-white border rounded-full text-xs transition ${
+                    currentLevel >= 2
+                      ? "border-purple-200 text-purple-700 hover:border-purple-400 hover:bg-purple-50"
+                      : "border-slate-200 text-slate-600 hover:border-[#D4AF37] hover:text-[#002845]"
+                  }`}
+                >
+                  {q}
+                </button>
+              ))}
             </div>
           </div>
         ) : (
@@ -551,6 +642,37 @@ export default function AIChatbot() {
                 </div>
               </div>
             )}
+
+            {/* Follow-up chips — show after the latest assistant reply
+                so the visitor always has a clear next step. Detection
+                runs in the frontend so it works even when GPT forgets
+                to add the prompt at the end. */}
+            {!isLoading && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (() => {
+              const lastBot = messages[messages.length - 1].content;
+              const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content || "";
+              const intent = detectLastBotIntent(lastUser, lastBot);
+              const chips = getFollowUpChips(intent).slice(0, 4);
+              return (
+                <div className="flex flex-wrap gap-1.5 mt-1 pr-9">
+                  {chips.map((c, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => handleChipClick(c.payload)}
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition active:scale-95 ${
+                        c.payload === "__home__"
+                          ? "border-[#D4AF37] bg-[#FFFCEE] text-[#9A7D28] hover:bg-[#FFF7E0]"
+                          : c.payload === "__escalate__"
+                            ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                            : "border-slate-200 bg-white text-slate-600 hover:border-[#D4AF37] hover:text-[#002845]"
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
             <div ref={messagesEndRef} />
           </div>
         )}
