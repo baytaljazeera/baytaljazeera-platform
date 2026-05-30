@@ -1706,6 +1706,13 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
     }
 
     if (categories.includes('messages')) {
+      // complaint_events must go before account_complaints (FK
+      // complaint_events.complaint_id → account_complaints.id with
+      // RESTRICT). account_complaints itself used to live only under
+      // the 'customers' wipe, which is why the support/finance inboxes
+      // kept showing test rows after the operator reset everything
+      // except customers. It belongs here — complaints are customer-
+      // generated messages in every meaningful sense.
       results.messages = {
         messages:                await safeDelete(client, 'DELETE FROM messages'),
         conversations:           await safeDelete(client, 'DELETE FROM conversations'),
@@ -1718,6 +1725,7 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
         support_tickets:         await safeDelete(client, 'DELETE FROM support_tickets'),
         listing_messages:        await safeDelete(client, 'DELETE FROM listing_messages'),
         complaint_events:        await safeDelete(client, 'DELETE FROM complaint_events'),
+        account_complaints:      await safeDelete(client, 'DELETE FROM account_complaints'),
         flagged_conversations:   await safeDelete(client, 'DELETE FROM flagged_conversations'),
       };
     }
@@ -1923,6 +1931,8 @@ router.get("/reset-test-data/stats", authMiddleware, requireRoles('super_admin')
       { name: 'conversations', q: 'SELECT COUNT(*) FROM conversations' },
       { name: 'admin_messages', q: 'SELECT COUNT(*) FROM admin_messages' },
       { name: 'admin_conversations', q: 'SELECT COUNT(*) FROM admin_conversations' },
+      { name: 'account_complaints', q: 'SELECT COUNT(*) FROM account_complaints' },
+      { name: 'support_tickets', q: 'SELECT COUNT(*) FROM support_tickets' },
     ]},
     { key: 'ambassador', queries: [
       { name: 'wallet_transactions', q: 'SELECT COUNT(*) FROM wallet_transactions' },
