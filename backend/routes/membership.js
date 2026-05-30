@@ -256,6 +256,15 @@ router.post("/admin/requests/:id/approve", authMiddleware, adminMiddleware, asyn
     if (!assigned_role) {
       return res.status(400).json({ error: "يجب تحديد الدور للموظف" });
     }
+
+    // Promotion to super_admin is irreversible from this UI and grants
+    // full control of the platform, so we only let an existing super
+    // admin perform it. Any other admin trying to do it gets 403.
+    if (assigned_role === "super_admin" && req.user.role !== "super_admin") {
+      return res.status(403).json({
+        error: "ترقية إلى المدير العام مسموحة فقط لمدير عام موجود",
+      });
+    }
     
     let userId = request.user_id;
     

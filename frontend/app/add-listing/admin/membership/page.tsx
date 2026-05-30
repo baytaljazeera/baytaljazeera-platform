@@ -2,12 +2,13 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect } from "react";
-import { 
-  UserPlus2, Check, X, Clock, Eye, Mail, Phone, Calendar, 
+import { useState, useEffect, useMemo } from "react";
+import {
+  UserPlus2, Check, X, Clock, Eye, Mail, Phone, Calendar,
   Crown, RefreshCw, Loader2, MapPin, Briefcase, FileText,
-  Download, User, Shield, ChevronDown, AlertTriangle, Search
+  Download, User, Shield, ChevronDown, AlertTriangle, Search,
 } from "lucide-react";
+import { useAuthStore } from "@/lib/stores/authStore";
 
 interface MembershipRequest {
   id: number;
@@ -44,6 +45,15 @@ const ROLES = [
   { id: 'admin', name: 'مدير', color: '#D4AF37' },
 ];
 
+// Adding "المدير العام" (super_admin) is an irreversible elevation, so we
+// only surface it when the current operator is themselves a super_admin.
+// Backend enforces the same rule.
+const SUPER_ADMIN_ROLE = {
+  id: 'super_admin',
+  name: 'المدير العام',
+  color: '#9A7D28',
+};
+
 const JOB_TITLE_LABELS: Record<string, string> = {
   marketing_manager: 'مدير التسويق',
   content_manager: 'مدير المحتوى',
@@ -60,7 +70,16 @@ const statusColors: Record<string, { bg: string; text: string; label: string }> 
   rejected: { bg: "bg-red-100", text: "text-red-700", label: "مرفوض" },
 };
 
+function useAvailableRoles() {
+  const { user } = useAuthStore();
+  return useMemo(() => {
+    const isSuperAdmin = user?.role === "super_admin";
+    return isSuperAdmin ? [...ROLES, SUPER_ADMIN_ROLE] : ROLES;
+  }, [user?.role]);
+}
+
 export default function MembershipPage() {
+  const availableRoles = useAvailableRoles();
   const [requests, setRequests] = useState<MembershipRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("pending");
@@ -510,7 +529,7 @@ export default function MembershipPage() {
                   الدور الوظيفي <span className="text-red-500">*</span>
                 </label>
                 <div className="grid grid-cols-1 gap-2">
-                  {ROLES.map((role) => (
+                  {availableRoles.map((role) => (
                     <button
                       key={role.id}
                       type="button"
