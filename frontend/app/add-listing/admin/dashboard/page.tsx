@@ -120,14 +120,10 @@ interface AmbassadorChartData {
   consumptions: number;
 }
 
-// ─── Time-of-day greeting (يفتح النفس) ───────────────────────────────────────
+// Owner asked for the Islamic salaam as the standing greeting — not a
+// time-of-day phrase. Kept the helper name so the call sites don't move.
 function getGreeting() {
-  const h = new Date().getHours();
-  if (h < 5) return "تصبحون على خير";
-  if (h < 12) return "صباح الخير";
-  if (h < 17) return "نهارك سعيد";
-  if (h < 21) return "مساء الخير";
-  return "مساء النور";
+  return "السلام عليكم ورحمة الله وبركاته";
 }
 
 function formatTodayAr() {
@@ -400,13 +396,12 @@ export default function AdminDashboard() {
             <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
             {formatTodayAr()}
           </p>
-          <h1 className="text-3xl md:text-4xl font-black text-[#002845] leading-tight">
+          <h1 className="text-2xl md:text-3xl font-black text-[#002845] leading-tight">
             {getGreeting()}
-            <span className="text-[#D4AF37]"> ·</span>{" "}
-            <span className="text-slate-500 font-normal text-2xl md:text-3xl">
-              نظرة على المنصة
-            </span>
           </h1>
+          <p className="text-base md:text-lg text-slate-500 font-normal mt-1">
+            نظرة على المنصة
+          </p>
         </div>
         <div className="flex items-center gap-3 text-sm">
           <span className="text-slate-400 text-xs">آخر تحديث: {lastUpdate}</span>
