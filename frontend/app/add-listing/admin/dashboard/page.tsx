@@ -46,7 +46,7 @@ const API_URL =
 // Stamped per build so the operator can confirm which JS bundle their
 // browser actually loaded — helps when CDN/ISP caching makes a deploy
 // look like it didnt land. Bumped manually with each visible change.
-const BUILD_TAG = "2026-05-30/alerts";
+const BUILD_TAG = "2026-05-30/live-pulse";
 
 // Owner reports stale chunks served by ISP/edge caches on the office
 // network. This button is a nuclear option: unregister any lingering
