@@ -229,6 +229,50 @@ export default function AIChatbot() {
     }
   };
 
+  // Anchor the desktop popover relative to the button (Intercom/Drift
+  // style: panel pops up next to the launcher). Previously we placed
+  // the popover at the button's (x,y) then clamped with
+  // Math.min(y, innerHeight - 540) — that means a button sitting near
+  // the bottom of a tall screen pushed the panel up to top: small
+  // number, so it materialised far away from the launcher and felt
+  // like "the message appears at the top of the screen". The new
+  // logic: prefer placing the panel ABOVE the button; if there isnt
+  // enough headroom, place it BELOW; clamp to viewport with a small
+  // gutter so it never overlaps the launcher.
+  const computePopoverPosition = () => {
+    if (typeof window === "undefined") {
+      return { left: position.x, top: position.y };
+    }
+    const PANEL_WIDTH = 360;
+    const PANEL_HEIGHT = 520;
+    const BUTTON_SIZE = 56;
+    const GAP = 12;
+    const GUTTER = 8;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // X: align the panel near the button. If the button sits on the
+    // right half of the screen, right-align the panel; otherwise
+    // left-align. Then clamp inside the viewport with a small gutter.
+    let left;
+    if (position.x + BUTTON_SIZE / 2 > vw / 2) {
+      left = position.x + BUTTON_SIZE - PANEL_WIDTH;
+    } else {
+      left = position.x;
+    }
+    left = Math.max(GUTTER, Math.min(left, vw - PANEL_WIDTH - GUTTER));
+
+    // Y: try ABOVE the button first.
+    let top = position.y - PANEL_HEIGHT - GAP;
+    if (top < GUTTER) {
+      // Not enough headroom — drop below the button.
+      top = position.y + BUTTON_SIZE + GAP;
+    }
+    // Final clamp so we never overflow the bottom edge either.
+    top = Math.max(GUTTER, Math.min(top, vh - PANEL_HEIGHT - GUTTER));
+    return { left, top };
+  };
+
   useEffect(() => {
     async function fetchAILevel() {
       if (!isAuthenticated || !user) {
@@ -296,6 +340,12 @@ export default function AIChatbot() {
         }]);
         if (data.escalated) {
           setShowEscalateOption(true);
+          // Bot-side escalation also creates an ai_escalations row +
+          // (future) customer-inbox notification — keep the bell in
+          // sync without waiting for the 30s navbar poll.
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("notificationsUpdated"));
+          }
         }
       } else {
         setMessages([...newMessages, { role: "assistant", content: "عذراً، حدث خطأ. حاول مرة أخرى." }]);
@@ -366,6 +416,14 @@ export default function AIChatbot() {
           content: `✅ تم تحويل طلبك إلى الدعم البشري\n\nتذكرة رقم: ${data.ticketNumber}\nسيتواصل معك فريقنا قريباً، ويمكنك متابعة الرد من صفحة "طلبات الدعم" في حسابك.`
         }]);
         setShowEscalateOption(false);
+        // Tick the navbar bell immediately — Navbar polls every 30s,
+        // but it also listens for this event so a fresh notification
+        // shows up the moment the ticket row + customer inbox row
+        // exist. Without this the bell stayed stale up to half a
+        // minute after the escalation message appeared in the chat.
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("notificationsUpdated"));
+        }
       } else {
         const backendMsg = data?.error || data?.message;
         setMessages([...messages, {
@@ -430,14 +488,15 @@ export default function AIChatbot() {
         style={typeof window !== "undefined" && window.innerWidth < 768 ? {
           height: "calc(100vh - 5rem)",
           maxHeight: "calc(100vh - 5rem)",
-        } : {
-          height: "520px", 
-          maxHeight: "calc(100vh - 100px)",
-          left: `${position.x}px`,
-          top: typeof window !== "undefined" 
-            ? `${Math.max(0, Math.min(position.y, window.innerHeight - 540))}px`
-            : `${position.y}px`,
-        }}
+        } : (() => {
+          const { left, top } = computePopoverPosition();
+          return {
+            height: "520px",
+            maxHeight: "calc(100vh - 16px)",
+            left: `${left}px`,
+            top: `${top}px`,
+          };
+        })()}
       >
         <div className="bg-gradient-to-l from-[#002845] to-[#003d66] text-white p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
