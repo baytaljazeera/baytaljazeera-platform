@@ -46,7 +46,7 @@ const API_URL =
 // Stamped per build so the operator can confirm which JS bundle their
 // browser actually loaded — helps when CDN/ISP caching makes a deploy
 // look like it didnt land. Bumped manually with each visible change.
-const BUILD_TAG = "2026-05-30/hard-refresh";
+const BUILD_TAG = "2026-05-30/hero";
 
 // Owner reports stale chunks served by ISP/edge caches on the office
 // network. This button is a nuclear option: unregister any lingering
@@ -421,46 +421,60 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-10 md:space-y-14" dir="rtl">
-      {/* ─── Header — calm, no chrome ─────────────────────────────────────── */}
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-sm text-slate-500 mb-1.5 flex items-center gap-2">
-            <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
-            {formatTodayAr()}
-          </p>
-          <h1 className="text-2xl md:text-3xl font-black text-[#002845] leading-tight">
-            {getGreeting()}
-          </h1>
-          <p className="text-base md:text-lg text-slate-500 font-normal mt-1">
-            نظرة على المنصة
-          </p>
-        </div>
-        <div className="flex items-center gap-3 text-sm">
-          <div className="flex flex-col items-end text-[10px] text-slate-400 font-mono leading-tight">
-            <span className="text-[#9A7D28]">v.{BUILD_TAG}</span>
-            <span>آخر تحديث: {lastUpdate}</span>
+      {/* ─── Hero header ─────────────────────────────────────────────── */}
+      <header className="relative overflow-hidden rounded-3xl border border-[#EDE6D6] bg-gradient-to-l from-white via-[#FAF8F4] to-white">
+        {/* Subtle Islamic-inspired dot grid + corner glows */}
+        <div className="pointer-events-none absolute -left-12 -top-12 w-48 h-48 rounded-full bg-[#D4AF37]/15 blur-3xl" />
+        <div className="pointer-events-none absolute -right-16 -bottom-12 w-56 h-56 rounded-full bg-[#002845]/5 blur-3xl" />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.04]"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 1px 1px, #002845 1px, transparent 0)",
+            backgroundSize: "24px 24px",
+          }}
+          aria-hidden
+        />
+        <div className="relative flex flex-wrap items-end justify-between gap-4 px-6 md:px-8 py-7 md:py-9">
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-[#9A7D28] tracking-[0.2em] uppercase mb-2 flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5" />
+              {formatTodayAr()}
+            </p>
+            <h1 className="text-2xl md:text-3xl font-black text-[#002845] leading-tight">
+              {getGreeting()}
+            </h1>
+            <p className="text-base md:text-lg text-slate-500 font-normal mt-1.5">
+              نظرة على المنصة
+            </p>
           </div>
-          <button
-            onClick={fetchDashboardData}
-            disabled={loading}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#D4AF37]/40 text-[#9A7D28] bg-white hover:bg-[#FFFCEE] active:scale-95 transition disabled:opacity-50"
-          >
-            {loading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <RefreshCw className="w-4 h-4" />
-            )}
-            تحديث
-          </button>
-          <button
-            type="button"
-            onClick={() => void hardRefreshAndReload()}
-            title="مسح كاش المتصفح وإعادة التحميل القاسي"
-            className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-slate-200 text-slate-500 bg-white hover:bg-slate-50 hover:text-[#9A7D28] hover:border-[#D4AF37]/40 active:scale-95 transition"
-            aria-label="تحديث قاسي"
-          >
-            <Sparkles className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-3 text-sm">
+            <div className="flex flex-col items-end text-[10px] text-slate-400 font-mono leading-tight">
+              <span className="text-[#9A7D28]">v.{BUILD_TAG}</span>
+              <span>آخر تحديث: {lastUpdate}</span>
+            </div>
+            <button
+              onClick={fetchDashboardData}
+              disabled={loading}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#D4AF37]/40 text-[#9A7D28] bg-white hover:bg-[#FFFCEE] active:scale-95 transition disabled:opacity-50"
+            >
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              تحديث
+            </button>
+            <button
+              type="button"
+              onClick={() => void hardRefreshAndReload()}
+              title="مسح كاش المتصفح وإعادة التحميل القاسي"
+              className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-slate-200 text-slate-500 bg-white hover:bg-slate-50 hover:text-[#9A7D28] hover:border-[#D4AF37]/40 active:scale-95 transition"
+              aria-label="تحديث قاسي"
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </header>
 
