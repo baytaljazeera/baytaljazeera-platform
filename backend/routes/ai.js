@@ -455,6 +455,9 @@ function knowledgeAsContext(articles) {
 // ─── Escalation queue ───────────────────────────────────────────────────
 async function createEscalation({ chatLogId, sessionId, userId, userMessage, reason, sentiment }) {
   try {
+    // session_id is VARCHAR(100); user_id is UUID. Frontend generates
+    // session_<ts>_<rand> which fits, but defensively slice anyway so
+    // a longer client-injected id can never break the INSERT.
     const r = await db.query(
       `INSERT INTO ai_escalations
          (chat_log_id, session_id, user_id, last_user_message, reason, sentiment, status)
@@ -462,7 +465,7 @@ async function createEscalation({ chatLogId, sessionId, userId, userMessage, rea
        RETURNING *`,
       [
         chatLogId || null,
-        sessionId || null,
+        sessionId ? String(sessionId).slice(0, 100) : null,
         userId || null,
         (userMessage || '').slice(0, 2000),
         (reason || '').slice(0, 500),
@@ -470,16 +473,30 @@ async function createEscalation({ chatLogId, sessionId, userId, userMessage, rea
       ]
     );
     const escalation = r.rows[0];
+    if (!escalation) {
+      console.warn('[escalation create] INSERT returned no row');
+      return null;
+    }
+    console.log('[escalation create] row inserted', JSON.stringify({
+      id: escalation.id,
+      chatLogId: chatLogId || null,
+      sessionId: sessionId || null,
+      userId: userId || null,
+    }));
     // Fire-and-forget — notification failures must never break the
     // customer flow. cfg fetched here so the helper can stay pure.
-    if (escalation) {
-      loadAiSettings()
-        .then((cfg) => notifyEscalation(escalation, cfg))
-        .catch((e) => console.warn('[escalation notify] outer:', e.message));
-    }
-    return escalation?.id || null;
+    loadAiSettings()
+      .then((cfg) => {
+        console.log(`[escalation notify #${escalation.id}] started`, JSON.stringify({
+          email: cfg.ai_escalation_notify_email === 'true',
+          whatsapp: cfg.ai_escalation_notify_whatsapp === 'true',
+        }));
+        return notifyEscalation(escalation, cfg);
+      })
+      .catch((e) => console.warn(`[escalation notify #${escalation.id}] outer:`, e.message));
+    return escalation.id;
   } catch (e) {
-    console.warn('[ai escalation create] failed:', e.message);
+    console.warn('[escalation create] INSERT failed:', e.message, '| chatLogId=', chatLogId, '| sessionId=', sessionId, '| userId=', userId);
     return null;
   }
 }
@@ -621,7 +638,11 @@ async function notifyEscalation(escalation, cfg) {
       lines.push(`wa-load-fail: ${e.message}`);
     }
   }
-  if (lines.length > 0) console.log(`[escalation notify #${escalation.id}]`, lines.join(', '));
+  if (lines.length > 0) {
+    console.log(`[escalation notify #${escalation.id}] done:`, lines.join(', '));
+  } else {
+    console.log(`[escalation notify #${escalation.id}] done: no channels enabled`);
+  }
 }
 
 // ─── Audit log ──────────────────────────────────────────────────────────
@@ -3002,19 +3023,27 @@ router.post("/customer-chat", asyncHandler(async (req, res) => {
     // Adjust model and tokens based on AI level
     const maxTokens = aiLevel >= 2 ? 800 : (aiLevel === 1 ? 500 : 300);
 
-  try {
-    const response = await openai.chat.completions.create({
-      model: chatModel,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...messages.map(m => ({
-          role: m.role,
-          content: m.content
-        }))
-      ],
-      max_tokens: maxTokens,
-      temperature: 0.7,
-    });
+    // ─── OpenAI call ─────────────────────────────────────────────────
+    // ONLY the OpenAI request is wrapped by handleOpenAIError. Anything
+    // after must never bubble a 500 — the customer already has a reply
+    // ready and deserves to see it, plus the escalation flag if any.
+    let response;
+    try {
+      response = await openai.chat.completions.create({
+        model: chatModel,
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...messages.map(m => ({
+            role: m.role,
+            content: m.content
+          }))
+        ],
+        max_tokens: maxTokens,
+        temperature: 0.7,
+      });
+    } catch (error) {
+      return handleOpenAIError(error, res);
+    }
 
     let assistantMessage = response.choices[0]?.message?.content || "عذراً، لم أتمكن من الرد.";
     const usage = response.usage || {};
@@ -3027,56 +3056,75 @@ router.post("/customer-chat", asyncHandler(async (req, res) => {
       const parts = assistantMessage.split("[ESCALATE]");
       escalateReason = parts[1]?.trim() || "يحتاج تدخل بشري";
       assistantMessage = "شكراً لتواصلك! سأقوم بتحويل استفسارك لفريق الدعم المختص للمساعدة بشكل أفضل. سيتواصل معك أحد ممثلي الدعم قريباً.";
+      console.log('[escalation] flow entered via [ESCALATE] tag', JSON.stringify({ sessionId: sessionId || null, userId: userId || null }));
     }
 
-    // Sentiment analysis runs in parallel with the response handling.
-    // If it returns very_negative AND auto-escalate is on, force an
-    // escalation flag so a human picks it up regardless of the bot reply.
+    // Sentiment analysis — isolated so an OpenAI hiccup here never
+    // blocks the customer's reply or the escalation row.
     let sentiment = null;
     if (centralCfg.ai_sentiment_enabled === 'true' && userMessage) {
-      sentiment = await analyzeSentiment(userMessage);
-      if (
-        sentiment?.label === 'very_negative' &&
-        centralCfg.ai_auto_escalate_negative === 'true' &&
-        !escalated
-      ) {
-        escalated = true;
-        escalateReason = `تصعيد تلقائي — مزاج العميل سلبي جداً (score=${sentiment.score})`;
+      try {
+        sentiment = await analyzeSentiment(userMessage);
+        if (
+          sentiment?.label === 'very_negative' &&
+          centralCfg.ai_auto_escalate_negative === 'true' &&
+          !escalated
+        ) {
+          escalated = true;
+          escalateReason = `تصعيد تلقائي — مزاج العميل سلبي جداً (score=${sentiment.score})`;
+          console.log('[escalation] flow entered via auto-sentiment', JSON.stringify({ sessionId: sessionId || null, score: sentiment.score }));
+        }
+      } catch (sentErr) {
+        console.warn('[customer-chat sentiment] failed:', sentErr.message);
       }
     }
 
+    // Chat-log INSERT — wrapped so a schema drift or constraint hit
+    // doesnt nuke the customers reply. We still try to create the
+    // escalation row even if the log row failed (chatLogId stays null).
     let chatLogId = null;
     if (sessionId) {
-      const ins = await db.query(
-        `INSERT INTO ai_chat_logs
-           (session_id, user_message, ai_response, escalated, escalate_reason,
-            source, model, prompt_tokens, completion_tokens, cost_usd,
-            sentiment, sentiment_score, variant_id, created_at)
-         VALUES ($1, $2, $3, $4, $5, 'customer', $6, $7, $8, $9, $10, $11, $12, NOW())
-         RETURNING id`,
-        [
-          sessionId,
-          userMessage,
-          assistantMessage,
-          escalated,
-          escalateReason,
-          chatModel,
-          usage.prompt_tokens || 0,
-          usage.completion_tokens || 0,
-          computeCostUsd(chatModel, usage.prompt_tokens || 0, usage.completion_tokens || 0),
-          sentiment?.label || null,
-          sentiment?.score ?? null,
-          variantId,
-        ]
-      );
-      chatLogId = ins.rows[0]?.id || null;
+      try {
+        const ins = await db.query(
+          `INSERT INTO ai_chat_logs
+             (session_id, user_message, ai_response, escalated, escalate_reason,
+              source, model, prompt_tokens, completion_tokens, cost_usd,
+              sentiment, sentiment_score, variant_id, created_at)
+           VALUES ($1, $2, $3, $4, $5, 'customer', $6, $7, $8, $9, $10, $11, $12, NOW())
+           RETURNING id`,
+          [
+            String(sessionId).slice(0, 100),
+            userMessage,
+            assistantMessage,
+            escalated,
+            escalateReason,
+            chatModel,
+            usage.prompt_tokens || 0,
+            usage.completion_tokens || 0,
+            computeCostUsd(chatModel, usage.prompt_tokens || 0, usage.completion_tokens || 0),
+            sentiment?.label || null,
+            sentiment?.score ?? null,
+            variantId,
+          ]
+        );
+        chatLogId = ins.rows[0]?.id || null;
+      } catch (logErr) {
+        console.warn('[customer-chat ai_chat_logs insert] failed:', logErr.message);
+      }
     }
 
-    // Phase 4 — feed the escalation queue. Anything flagged escalated=true
-    // becomes a row in ai_escalations so the support team gets a board to
-    // work from instead of a boolean stuck in the chat log.
+    // Phase 4 — feed the escalation queue. createEscalation already
+    // swallows its own errors and returns null on failure, so this can
+    // never throw to us. We still log the outcome so the operator can
+    // trace bot-reply → escalation row in one grep.
     let escalationId = null;
     if (escalated) {
+      console.log('[escalation] creating row', JSON.stringify({
+        sessionId: sessionId || null,
+        userId: userId || null,
+        chatLogId,
+        reason: (escalateReason || '').slice(0, 120),
+      }));
       escalationId = await createEscalation({
         chatLogId,
         sessionId,
@@ -3085,12 +3133,10 @@ router.post("/customer-chat", asyncHandler(async (req, res) => {
         reason: escalateReason,
         sentiment: sentiment?.label || null,
       });
+      console.log('[escalation] row created', JSON.stringify({ escalationId, chatLogId }));
     }
 
-    // Phase: Lead Intelligence — classify the customer message into a
-    // funnel stage (lead → inquiry → visit_request → agent_request →
-    // sale) plus intent (buyer/seller/investor). Runs async after the
-    // log row exists so the funnel API can join chat_log_id back.
+    // Phase: Lead Intelligence — already async/fire-and-forget.
     if (centralCfg.ai_lead_detection_enabled !== 'false' && userMessage && chatLogId) {
       classifyLeadSignal(userMessage).then((signal) => {
         if (signal) {
@@ -3099,36 +3145,50 @@ router.post("/customer-chat", asyncHandler(async (req, res) => {
       }).catch((e) => console.warn('[lead detect]', e.message));
     }
 
-    res.json({
+    if (escalated) {
+      console.log('[escalation] returning to frontend', JSON.stringify({ escalationId, escalated: true }));
+    }
+
+    return res.json({
       message: assistantMessage,
       escalated,
       reason: escalateReason,
       sentiment: sentiment?.label || null,
       escalation_id: escalationId,
     });
-  } catch (error) {
-    return handleOpenAIError(error, res);
-  }
 }));
 
 router.post("/escalate", authMiddleware, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { sessionId, lastMessage, reason } = req.body;
-    
-    // جلب اسم المستخدم
-    let userName = "مستخدم";
-    try {
-      const userResult = await db.query("SELECT name FROM users WHERE id = $1", [userId]);
-      if (userResult.rows[0]?.name) {
-        userName = userResult.rows[0].name;
-      }
-    } catch (e) {
-      // استخدام الاسم الافتراضي
+
+  console.log('[escalate] entered', JSON.stringify({
+    userId,
+    sessionId: sessionId || null,
+    reason: (reason || '').slice(0, 120),
+  }));
+
+  // جلب اسم المستخدم
+  let userName = "مستخدم";
+  try {
+    const userResult = await db.query("SELECT name FROM users WHERE id = $1", [userId]);
+    if (userResult.rows[0]?.name) {
+      userName = userResult.rows[0].name;
     }
-    
-    const ticketNumber = `TKT-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-    // source_ref stores ai_session_id for joining ai_chat_logs / future admin UI (Omnichannel Phase 1).
-    // TODO Phase 2 (Frontend): Admin support detail — show "عرض سجل المحادثة" by session id from source_ref.
+  } catch (e) {
+    console.warn('[escalate] user name lookup failed:', e.message);
+  }
+
+  const ticketNumber = `TKT-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+  const reasonText = reason || 'يحتاج تدخل بشري';
+  const lastMsgText = (lastMessage || '').toString();
+
+  // ─── Ticket INSERT — the one step that MUST succeed. If this fails
+  // the customer truly has no ticket and we must tell them. We try
+  // once with source/source_ref (new schema) and fall back to the
+  // narrow form for environments that havent run the migration yet.
+  let ticket = null;
+  try {
     const result = await db.query(
       `INSERT INTO support_tickets (user_id, ticket_number, category, priority, subject, description, status, source, source_ref)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -3139,31 +3199,67 @@ router.post("/escalate", authMiddleware, asyncHandler(async (req, res) => {
         'ai_escalation',
         'medium',
         'تصعيد من الدعم الآلي',
-        `سبب التصعيد: ${reason}\n\nآخر رسالة: ${lastMessage}`,
+        `سبب التصعيد: ${reasonText}\n\nآخر رسالة: ${lastMsgText}`,
         'new',
         'ai_chatbot',
         sessionId || null,
       ]
     );
-
-    const ticket = result.rows[0];
-
+    ticket = result.rows[0];
+  } catch (insertErr) {
+    console.warn('[escalate] support_tickets full INSERT failed, retrying narrow:', insertErr.message);
     try {
-      await db.query(
-        `INSERT INTO notifications (user_id, title, body, type, link, created_at)
-         VALUES ($1, $2, $3, 'support_ticket_created', $4, NOW())`,
+      const result = await db.query(
+        `INSERT INTO support_tickets (user_id, ticket_number, category, priority, subject, description, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING *`,
         [
           userId,
-          "تم فتح طلب دعم",
-          `تم تسجيل تذكرة ${ticketNumber} بعد التصعيد من الدعم الآلي. يمكنك متابعة رد فريق الدعم من صفحة طلبات الدعم.`,
-          `/account/my-tickets?open=${ticket.id}`,
+          ticketNumber,
+          'ai_escalation',
+          'medium',
+          'تصعيد من الدعم الآلي',
+          `سبب التصعيد: ${reasonText}\n\nآخر رسالة: ${lastMsgText}`,
+          'new',
         ]
       );
-    } catch (e) {
-      console.error("[ai escalate] customer notification:", e.message);
+      ticket = result.rows[0];
+    } catch (fallbackErr) {
+      console.error('[escalate] support_tickets INSERT failed (both shapes):', fallbackErr.message);
+      return res.status(500).json({
+        error: 'تعذّر إنشاء تذكرة الدعم حالياً. حاول مرة أخرى أو راسلنا مباشرة.',
+        errorEn: 'Could not create support ticket',
+      });
     }
+  }
 
-    // Add the first reply with the conversation context
+  console.log('[escalate] ticket row created', JSON.stringify({
+    ticketId: ticket.id,
+    ticketNumber,
+    userId,
+  }));
+
+  // ─── Everything below is best-effort: notifications, admin pings,
+  // the first reply transcript. None of these failing should ever
+  // hide success from the customer.
+
+  try {
+    await db.query(
+      `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+       VALUES ($1, $2, $3, 'support_ticket_created', $4, NOW())`,
+      [
+        userId,
+        "تم فتح طلب دعم",
+        `تم تسجيل تذكرة ${ticketNumber} بعد التصعيد من الدعم الآلي. يمكنك متابعة رد فريق الدعم من صفحة طلبات الدعم.`,
+        `/account/my-tickets?open=${ticket.id}`,
+      ]
+    );
+    console.log(`[escalate] customer inbox notified ticket=${ticket.id}`);
+  } catch (e) {
+    console.error("[escalate] customer notification failed:", e.message);
+  }
+
+  try {
     await db.query(
       `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
        VALUES ($1, $2, $3, $4)`,
@@ -3171,40 +3267,77 @@ router.post("/escalate", authMiddleware, asyncHandler(async (req, res) => {
         ticket.id,
         userId,
         'user',
-        `تم التصعيد من الدعم الآلي\n\nسبب التصعيد: ${reason || 'يحتاج تدخل بشري'}\n\nآخر رسالة من العميل:\n${lastMessage}`
+        `تم التصعيد من الدعم الآلي\n\nسبب التصعيد: ${reasonText}\n\nآخر رسالة من العميل:\n${lastMsgText}`
       ]
     );
-    
-    // إرسال إشعار للمشرفين (بدون إيقاف العملية عند الفشل)
-    try {
-      const supportAdmins = await db.query(
-        "SELECT id FROM users WHERE role IN ('super_admin', 'admin', 'support_admin')"
-      );
-      
-      for (const admin of supportAdmins.rows) {
-        try {
-          await db.query(
-            `INSERT INTO notifications (user_id, title, body, type, link, created_at)
-             VALUES ($1, $2, $3, $4, $5, NOW())`,
-            [
-              admin.id,
-              '🚨 تصعيد من الدعم الآلي',
-              `${userName} يحتاج مساعدة بشرية (${ticketNumber})`,
-              'support_escalation',
-              `/admin/support`
-            ]
-          );
-        } catch (notifErr) {
-          console.error(`Failed to notify admin ${admin.id}:`, notifErr.message);
-        }
+    console.log(`[escalate] transcript first-reply inserted ticket=${ticket.id}`);
+  } catch (e) {
+    console.error('[escalate] support_ticket_replies INSERT failed:', e.message);
+  }
+
+  // Admin pings (in-app notifications). Each admin in its own try so
+  // one bad row never poisons the others.
+  try {
+    const supportAdmins = await db.query(
+      "SELECT id FROM users WHERE role IN ('super_admin', 'admin', 'support_admin')"
+    );
+    let notifiedCount = 0;
+    for (const admin of supportAdmins.rows) {
+      try {
+        await db.query(
+          `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())`,
+          [
+            admin.id,
+            '🚨 تصعيد من الدعم الآلي',
+            `${userName} يحتاج مساعدة بشرية (${ticketNumber})`,
+            'support_escalation',
+            `/admin/support`
+          ]
+        );
+        notifiedCount += 1;
+      } catch (notifErr) {
+        console.error(`[escalate] admin notify failed admin=${admin.id}:`, notifErr.message);
       }
-    } catch (notifErr) {
-      console.error("Failed to fetch admins for notification:", notifErr.message);
     }
-    
-    console.log(`🚨 تصعيد جديد من الدعم الآلي: ${ticketNumber} من ${userName}`);
-    
-    res.json({ ok: true, ticket: ticket, ticketNumber });
+    console.log(`[escalate] admin pings sent count=${notifiedCount} of=${supportAdmins.rows.length}`);
+  } catch (notifErr) {
+    console.error('[escalate] admin lookup failed:', notifErr.message);
+  }
+
+  // Email + WhatsApp fan-out for this manual escalation as well —
+  // reuse the AI-center notifyEscalation by synthesising an escalation
+  // row shape it understands. Wrapped in try so a missing helper or
+  // bad credentials never break the customer success path.
+  try {
+    const cfg = await loadAiSettings();
+    if (cfg.ai_escalation_notify_email === 'true' || cfg.ai_escalation_notify_whatsapp === 'true') {
+      console.log(`[escalate notify ticket=${ticket.id}] started`, JSON.stringify({
+        email: cfg.ai_escalation_notify_email === 'true',
+        whatsapp: cfg.ai_escalation_notify_whatsapp === 'true',
+      }));
+      notifyEscalation(
+        {
+          id: ticketNumber,
+          last_user_message: lastMsgText,
+          reason: reasonText,
+          sentiment: null,
+        },
+        cfg
+      ).catch((e) => console.error(`[escalate notify ticket=${ticket.id}] failed:`, e.message));
+    }
+  } catch (e) {
+    console.error(`[escalate notify ticket=${ticket.id}] settings load failed:`, e.message);
+  }
+
+  console.log(`🚨 تصعيد جديد من الدعم الآلي: ${ticketNumber} من ${userName}`);
+  console.log('[escalate] returning to frontend', JSON.stringify({
+    ticketId: ticket.id,
+    ticketNumber,
+    ok: true,
+  }));
+
+  return res.json({ ok: true, ticket, ticketNumber });
 }));
 
 router.get("/support-settings", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {

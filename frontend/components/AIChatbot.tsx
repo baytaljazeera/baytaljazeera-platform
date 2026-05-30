@@ -327,9 +327,9 @@ export default function AIChatbot() {
 
   const handleEscalate = async () => {
     if (!user) {
-      setMessages([...messages, { 
-        role: "assistant", 
-        content: "للتواصل مع فريق الدعم، يرجى تسجيل الدخول أولاً." 
+      setMessages([...messages, {
+        role: "assistant",
+        content: "للتواصل مع فريق الدعم، يرجى تسجيل الدخول أولاً."
       }]);
       return;
     }
@@ -337,28 +337,41 @@ export default function AIChatbot() {
     setIsLoading(true);
     try {
       const lastUserMessage = messages.filter(m => m.role === "user").pop()?.content || "";
-      
+
+      // Bearer header is mandatory — without it Safari incognito drops
+      // the cookie cross-origin and the request 401s. Previously this
+      // was the actual cause of the "عذراً حدث خطأ" the customer saw
+      // *after* a successful bot escalation reply.
       const response = await fetch(`${API_URL}/api/ai/escalate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
-        body: JSON.stringify({ 
-          sessionId, 
+        body: JSON.stringify({
+          sessionId,
           lastMessage: lastUserMessage,
           reason: "طلب العميل التحدث مع الدعم البشري"
         }),
       });
 
-      const data = await response.json();
+      let data: any = null;
+      try { data = await response.json(); } catch { /* non-JSON body */ }
 
-      if (response.ok) {
-        setMessages([...messages, { 
-          role: "assistant", 
-          content: `تم إنشاء تذكرة دعم برقم: ${data.ticketNumber}\n\nسيتواصل معك فريق الدعم قريباً. يمكنك متابعة التذكرة من صفحة حسابك.` 
+      if (response.ok && data?.ticketNumber) {
+        // Owner requirement: even if email/WhatsApp notifications
+        // failed silently on the backend, the customer must see a
+        // clear success message — never a generic error. The ticket
+        // row is what counts; notifications are best-effort.
+        setMessages([...messages, {
+          role: "assistant",
+          content: `✅ تم تحويل طلبك إلى الدعم البشري\n\nتذكرة رقم: ${data.ticketNumber}\nسيتواصل معك فريقنا قريباً، ويمكنك متابعة الرد من صفحة "طلبات الدعم" في حسابك.`
         }]);
         setShowEscalateOption(false);
       } else {
-        setMessages([...messages, { role: "assistant", content: "عذراً، حدث خطأ. حاول لاحقاً." }]);
+        const backendMsg = data?.error || data?.message;
+        setMessages([...messages, {
+          role: "assistant",
+          content: backendMsg || "تعذّر فتح التذكرة الآن. حاول بعد قليل أو راسلنا مباشرة."
+        }]);
       }
     } catch (error) {
       setMessages([...messages, { role: "assistant", content: "عذراً، لا يمكن الاتصال. حاول لاحقاً." }]);
