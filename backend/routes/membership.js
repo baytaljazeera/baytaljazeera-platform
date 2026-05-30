@@ -72,12 +72,22 @@ router.post("/apply", cvUpload.single('cv'), asyncHandler(async (req, res) => {
 
   const cvPath = req.file ? `/uploads/cv/${req.file.filename}` : null;
 
+  // Best-effort link to an existing user account by email so the admin
+  // reviewing the request can act on it (promote/contact). When no user
+  // exists yet we leave user_id NULL — the schema is nullable since the
+  // form is public.
+  const userLookup = await db.query(
+    "SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1",
+    [email]
+  );
+  const linkedUserId = userLookup.rows[0]?.id || null;
+
   const result = await db.query(
-    `INSERT INTO membership_requests 
+    `INSERT INTO membership_requests
      (user_id, request_type, full_name, email, phone, age, country, job_title, cover_letter, cv_path, status, created_at)
-     VALUES (NULL, 'admin_promotion', $1, $2, $3, $4, $5, $6, $7, $8, 'pending', NOW())
+     VALUES ($1, 'admin_promotion', $2, $3, $4, $5, $6, $7, $8, $9, 'pending', NOW())
      RETURNING *`,
-    [full_name, email, phone, age || null, country || null, job_title, cover_letter || null, cvPath]
+    [linkedUserId, full_name, email, phone, age || null, country || null, job_title, cover_letter || null, cvPath]
   );
 
   res.json({ 

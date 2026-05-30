@@ -806,6 +806,15 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'membership_requests' AND column_name = 'assigned_role') THEN
           ALTER TABLE membership_requests ADD COLUMN assigned_role VARCHAR(50);
         END IF;
+        -- /api/membership/apply is a public form for staff applicants who
+        -- may not yet have an account, so user_id must be nullable. It
+        -- was authored NOT NULL in the original schema, which is why
+        -- /request-access submissions failed with 23502.
+        BEGIN
+          ALTER TABLE membership_requests ALTER COLUMN user_id DROP NOT NULL;
+        EXCEPTION
+          WHEN OTHERS THEN NULL;
+        END;
       END $$;
     `);
     console.log("✅ Membership requests extended with staff application fields");
