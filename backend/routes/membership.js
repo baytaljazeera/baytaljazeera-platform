@@ -285,9 +285,13 @@ router.post("/admin/requests/:id/approve", authMiddleware, adminMiddleware, asyn
           [assigned_role, request.full_name, request.phone, userId]
         );
       } else {
+        // users.password_hash + no status column (init.js line 12-25).
+        // The old INSERT referenced "password" + "status" which never
+        // existed in this schema — failed with 42703 the moment an
+        // applicant didnt already have an account.
         const newUser = await db.query(
-          `INSERT INTO users (name, email, phone, password, role, status, created_at)
-           VALUES ($1, $2, $3, $4, $5, 'active', NOW())
+          `INSERT INTO users (name, email, phone, password_hash, role, created_at, updated_at)
+           VALUES ($1, LOWER($2), $3, $4, $5, NOW(), NOW())
            RETURNING id`,
           [request.full_name, request.email, request.phone, hashedPassword, assigned_role]
         );
