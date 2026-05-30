@@ -309,11 +309,21 @@ function AdminRolesPageContent() {
 
   async function fetchCurrentUser() {
     try {
-      const res = await fetch('/api/auth/me', { credentials: 'include' });
+      // Use the full API URL + Bearer header from localStorage so this works
+      // in Safari incognito (where the SameSite cookie often doesn't survive
+      // the cross-origin hop to the backend). Without the header, /me
+      // returned 401 and currentUserRole stayed empty — which is exactly
+      // why "المدير العام" never showed up in the role picker.
+      const res = await fetch(`${API_URL}/api/auth/me`, {
+        credentials: 'include',
+        headers: getAuthHeaders(),
+      });
       if (res.ok) {
         const data = await res.json();
         setCurrentUserRole(data.role);
         setCurrentUserId(String(data.id ?? data.user?.id ?? ""));
+      } else {
+        console.warn('[roles] /api/auth/me responded', res.status);
       }
     } catch (err) {
       console.error('Error fetching user:', err);
