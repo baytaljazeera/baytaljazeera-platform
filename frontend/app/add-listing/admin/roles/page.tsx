@@ -1863,18 +1863,20 @@ function AdminRolesPageContent() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e: React.MouseEvent) => e.stopPropagation()}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden"
             >
-              <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-green-500 to-green-600">
+              {/* Sticky header */}
+              <div className="shrink-0 p-5 border-b border-slate-100 bg-gradient-to-r from-green-500 to-green-600">
                 <h3 className="text-lg font-bold text-white">قبول الطلب وتعيين الدور</h3>
                 <p className="text-white/80 text-sm mt-1">{selectedApplication.full_name}</p>
               </div>
 
-              <div className="p-5">
+              {/* Scrollable body — overflow-y-auto so a long role list
+                  never pushes the action buttons off-screen on short
+                  viewports (iPhone landscape, small laptops). */}
+              <div className="flex-1 overflow-y-auto overscroll-contain p-5">
                 <p className="text-sm text-slate-600 mb-3">اختر الدور الذي سيتم تعيينه للموظف الجديد:</p>
 
-                {/* شارة تشخيص: يُظهر دور المُتقدّم ودورك أنت، حتى تعرف */}
-                {/* لماذا قد يكون خيار "المدير العام" مخفياً. */}
                 <div className="flex flex-wrap gap-2 mb-4 text-[11px]">
                   <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
                     دورك الحالي: <span className="font-bold text-[#002845]">{effectiveRole || "—"}</span>
@@ -1886,7 +1888,7 @@ function AdminRolesPageContent() {
                   )}
                 </div>
 
-                <div className="space-y-2 mb-6">
+                <div className="space-y-2">
                   {/* المدير العام (super_admin) لا يظهر إلا للمدير العام نفسه — */}
                   {/* الترقية إلى super_admin لا رجعة عنها وتعطي تحكماً كاملاً. */}
                   {adminRoles
@@ -1926,7 +1928,11 @@ function AdminRolesPageContent() {
                     );
                   })}
                 </div>
+              </div>
 
+              {/* Sticky footer — always visible no matter how long the
+                  role list is. */}
+              <div className="shrink-0 border-t border-slate-100 bg-white p-4">
                 <div className="flex gap-3">
                   <button
                     onClick={() => setShowApproveModal(false)}
