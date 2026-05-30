@@ -137,6 +137,44 @@ function timeAgo(iso?: string) {
   const d = Math.floor(h / 24);
   return `قبل ${d} يوم`;
 }
+
+// Age-based urgency. Anything that sits more than 24h in the executive
+// inbox is a warning sign; past 48h it is screaming for action. Used to
+// tint the whole card chrome AND the time cell so a four-day-old case
+// can't blend in with a fresh one.
+type AgeTone = "normal" | "warn" | "urgent";
+function ageTone(iso?: string): { tone: AgeTone; hours: number } {
+  if (!iso) return { tone: "normal", hours: 0 };
+  const hours = (Date.now() - new Date(iso).getTime()) / 3_600_000;
+  if (hours >= 48) return { tone: "urgent", hours };
+  if (hours >= 24) return { tone: "warn", hours };
+  return { tone: "normal", hours };
+}
+
+const AGE_CARD_CHROME: Record<AgeTone, string> = {
+  urgent:
+    "border-rose-300 ring-2 ring-rose-200 shadow-[0_0_0_4px_rgba(244,63,94,0.06)]",
+  warn: "border-amber-300 ring-1 ring-amber-200",
+  normal: "border-slate-200",
+};
+
+const AGE_STRIP_BG: Record<AgeTone, string> = {
+  urgent: "bg-gradient-to-l from-rose-50 to-white",
+  warn: "bg-gradient-to-l from-amber-50 to-white",
+  normal: "bg-gradient-to-l from-[#FFF7E0] to-white",
+};
+
+const AGE_TIME_BOX: Record<AgeTone, string> = {
+  urgent: "bg-rose-50 border-rose-200 text-rose-700",
+  warn: "bg-amber-50 border-amber-200 text-amber-800",
+  normal: "bg-slate-50 border-slate-100 text-[#002845]",
+};
+
+const AGE_TIME_LABEL: Record<AgeTone, string> = {
+  urgent: "متجاوز ٤٨ ساعة",
+  warn: "تجاوز ٢٤ ساعة",
+  normal: "ضمن المهلة",
+};
 function formatFullDate(iso?: string) {
   if (!iso) return "";
   return new Date(iso).toLocaleString("ar-SA", {
@@ -386,11 +424,21 @@ export default function ExecutiveInboxPage() {
               const events = eventsById[c.id] || [];
               const transferEvent = events.find((e) => e.event_type === "transferred");
               const isOpen = expandedId === c.id;
+              const age = ageTone(c.created_at);
 
               return (
-                <div key={c.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                <div
+                  key={c.id}
+                  className={`relative bg-white border rounded-2xl overflow-hidden shadow-sm transition ${AGE_CARD_CHROME[age.tone]}`}
+                >
+                  {age.tone === "urgent" && (
+                    <span
+                      className="absolute top-3 left-3 w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse ring-4 ring-rose-100"
+                      aria-label="متجاوز المهلة"
+                    />
+                  )}
                   {/* Header strip — identity + critical badges */}
-                  <div className="px-4 py-3 border-b border-slate-100 bg-gradient-to-l from-[#FFF7E0] to-white">
+                  <div className={`px-4 py-3 border-b border-slate-100 ${AGE_STRIP_BG[age.tone]}`}>
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="min-w-0 flex-1">
                         <p className="font-bold text-[#002845] text-base truncate">{c.subject}</p>
@@ -433,12 +481,43 @@ export default function ExecutiveInboxPage() {
                           </p>
                         )}
                       </div>
-                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-2.5">
-                        <p className="text-[10px] text-slate-400 mb-0.5">التوقيت</p>
-                        <p className="font-semibold text-[#002845] flex items-center gap-1">
-                          <Clock className="w-3 h-3" /> {timeAgo(c.created_at)}
+                      <div className={`border rounded-lg p-2.5 ${AGE_TIME_BOX[age.tone]}`}>
+                        <div className="flex items-center justify-between mb-0.5">
+                          <p className="text-[10px] opacity-80">التوقيت</p>
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                              age.tone === "urgent"
+                                ? "bg-rose-500 text-white"
+                                : age.tone === "warn"
+                                  ? "bg-amber-500 text-white"
+                                  : "bg-emerald-500/80 text-white"
+                            }`}
+                          >
+                            {AGE_TIME_LABEL[age.tone]}
+                          </span>
+                        </div>
+                        <p className="font-bold flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5" />
+                          <span className={age.tone !== "normal" ? "tabular-nums" : ""}>
+                            {timeAgo(c.created_at)}
+                          </span>
+                          {age.tone !== "normal" && (
+                            <span className="text-[10px] opacity-75 font-normal">
+                              ({Math.round(age.hours)} ساعة)
+                            </span>
+                          )}
                         </p>
-                        <p className="text-slate-500 mt-0.5 text-[11px]">{formatFullDate(c.created_at)}</p>
+                        <p
+                          className={`mt-0.5 text-[11px] ${
+                            age.tone === "urgent"
+                              ? "text-rose-600/80"
+                              : age.tone === "warn"
+                                ? "text-amber-700/80"
+                                : "text-slate-500"
+                          }`}
+                        >
+                          {formatFullDate(c.created_at)}
+                        </p>
                       </div>
                     </div>
 
