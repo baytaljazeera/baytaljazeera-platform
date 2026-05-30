@@ -1876,6 +1876,12 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
       // Step 1: explicit cleanup for customer-data tables NOT covered by
       // the existing chain below. Wrong column names / missing tables are
       // surfaced via the `skipped` list rather than aborting.
+      // Column names corrected against actual schema (init.js):
+      //   violations_archive  has violator_user_id, not user_id
+      //   listing_audit_events / listing_workflows use property_id
+      //   ai_chat_logs has NO user FK (session_id only) — skip entirely
+      //   ai_fraud_scans is ambassador-scoped (ambassador_id) — skip
+      //   listing_reports also uses property_id, not listing_id
       const EXTRA_USER_DELETES = [
         ['DELETE FROM client_ratings WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'client_ratings'],
         ['DELETE FROM user_activity_logs WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'user_activity_logs'],
@@ -1885,57 +1891,57 @@ router.post("/reset-test-data", authMiddleware, requireRoles('super_admin'), asy
         ['DELETE FROM promotion_usage WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'promotion_usage'],
         ['DELETE FROM membership_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'membership_requests'],
         ['DELETE FROM user_badge_state WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'user_badge_state'],
-        ['DELETE FROM violations_archive WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'violations_archive'],
+        ['DELETE FROM violations_archive WHERE violator_user_id IN (SELECT id FROM users WHERE role = $1)', 'violations_archive'],
         ['DELETE FROM launch_trials WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'launch_trials'],
         ['DELETE FROM property_status_reminders WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'property_status_reminders'],
         ['DELETE FROM google_review_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'google_review_requests'],
         ['DELETE FROM payment_idempotency WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'payment_idempotency'],
-        ['DELETE FROM ai_fraud_scans WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'ai_fraud_scans'],
         ['DELETE FROM rating_rewards WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'rating_rewards'],
         ['DELETE FROM referral_rewards WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'referral_rewards'],
         ['DELETE FROM ambassador_consumptions WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'ambassador_consumptions'],
         ['DELETE FROM ambassador_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', 'ambassador_requests'],
-        ['DELETE FROM listing_audit_events WHERE listing_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', 'listing_audit_events'],
-        ['DELETE FROM listing_workflows WHERE listing_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', 'listing_workflows'],
-        ['DELETE FROM listing_reports WHERE listing_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', 'listing_reports'],
+        ['DELETE FROM listing_audit_events WHERE property_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', 'listing_audit_events'],
+        ['DELETE FROM listing_workflows WHERE property_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', 'listing_workflows'],
+        ['DELETE FROM listing_reports WHERE property_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', 'listing_reports'],
       ];
       for (const [sql, label] of EXTRA_USER_DELETES) {
         await safeRun(client, sql, ['user'], label);
       }
 
-      const accountComplaints = await safeDelete(client, 'DELETE FROM account_complaints');
-      await safeDelete(client, 'DELETE FROM messages');
-      await safeDelete(client, 'DELETE FROM conversations');
-      await safeDelete(client, 'DELETE FROM listing_messages');
-      await safeDelete(client, 'DELETE FROM complaint_events');
-      await safeDelete(client, 'DELETE FROM omni_messages');
-      await safeDelete(client, 'DELETE FROM omni_conversations');
-      await safeDelete(client, 'DELETE FROM support_ticket_replies');
-      await safeDelete(client, 'DELETE FROM support_tickets');
-      await safeDelete(client, 'DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await safeDelete(client, 'DELETE FROM account_alerts WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await safeDelete(client, 'DELETE FROM ai_chat_logs WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await safeDelete(client, 'DELETE FROM wallet_transactions WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await safeDelete(client, 'DELETE FROM ambassador_withdrawal_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await safeDelete(client, 'DELETE FROM ambassador_wallet WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await safeDelete(client, 'DELETE FROM referrals WHERE referrer_id IN (SELECT id FROM users WHERE role = $1) OR referred_id IN (SELECT id FROM users WHERE role = $1)', ['user', 'user']);
-      await safeDelete(client, 'DELETE FROM advertiser_reviews WHERE reviewer_id IN (SELECT id FROM users WHERE role = $1) OR advertiser_id IN (SELECT id FROM users WHERE role = $1)', ['user', 'user']);
-      await safeDelete(client, 'DELETE FROM advertiser_reputation WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await safeDelete(client, 'DELETE FROM listing_media WHERE listing_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', ['user']);
-      await safeDelete(client, 'DELETE FROM elite_extension_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await safeDelete(client, 'DELETE FROM elite_slot_reservations WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await safeDelete(client, 'DELETE FROM refunds WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await safeDelete(client, 'DELETE FROM invoices WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await safeDelete(client, 'DELETE FROM payments WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await safeDelete(client, 'DELETE FROM quota_buckets WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await safeDelete(client, 'DELETE FROM user_plans WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await safeDelete(client, 'DELETE FROM favorites WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      await safeDelete(client, 'DELETE FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
-      const deletedUsers = await safeDelete(client, 'DELETE FROM users WHERE role = $1', ['user']);
-      results.customers = {
-        account_complaints: accountComplaints,
-        deleted_users: deletedUsers,
+      const customerDeleteCounts = {};
+      const trackDelete = async (key, sql, params = []) => {
+        customerDeleteCounts[key] = await safeRun(client, sql, params, key);
       };
+
+      await trackDelete('account_complaints', 'DELETE FROM account_complaints');
+      await trackDelete('messages', 'DELETE FROM messages');
+      await trackDelete('conversations', 'DELETE FROM conversations');
+      await trackDelete('listing_messages', 'DELETE FROM listing_messages');
+      await trackDelete('complaint_events', 'DELETE FROM complaint_events');
+      await trackDelete('omni_messages', 'DELETE FROM omni_messages');
+      await trackDelete('omni_conversations', 'DELETE FROM omni_conversations');
+      await trackDelete('support_ticket_replies', 'DELETE FROM support_ticket_replies');
+      await trackDelete('support_tickets', 'DELETE FROM support_tickets');
+      await trackDelete('notifications', 'DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('account_alerts', 'DELETE FROM account_alerts WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('wallet_transactions', 'DELETE FROM wallet_transactions WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('ambassador_withdrawal_requests', 'DELETE FROM ambassador_withdrawal_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('ambassador_wallet', 'DELETE FROM ambassador_wallet WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('referrals', 'DELETE FROM referrals WHERE referrer_id IN (SELECT id FROM users WHERE role = $1) OR referred_id IN (SELECT id FROM users WHERE role = $1)', ['user', 'user']);
+      await trackDelete('advertiser_reviews', 'DELETE FROM advertiser_reviews WHERE reviewer_id IN (SELECT id FROM users WHERE role = $1) OR advertiser_id IN (SELECT id FROM users WHERE role = $1)', ['user', 'user']);
+      await trackDelete('advertiser_reputation', 'DELETE FROM advertiser_reputation WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('listing_media', 'DELETE FROM listing_media WHERE listing_id IN (SELECT id FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1))', ['user']);
+      await trackDelete('elite_extension_requests', 'DELETE FROM elite_extension_requests WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('elite_slot_reservations', 'DELETE FROM elite_slot_reservations WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('refunds', 'DELETE FROM refunds WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('invoices', 'DELETE FROM invoices WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('payments', 'DELETE FROM payments WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('quota_buckets', 'DELETE FROM quota_buckets WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('user_plans', 'DELETE FROM user_plans WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('favorites', 'DELETE FROM favorites WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('properties', 'DELETE FROM properties WHERE user_id IN (SELECT id FROM users WHERE role = $1)', ['user']);
+      await trackDelete('deleted_users', 'DELETE FROM users WHERE role = $1', ['user']);
+      results.customers = customerDeleteCounts;
     }
 
     await client.query('COMMIT');
