@@ -220,10 +220,40 @@ export default function PlansManagement() {
   const [availableIcons, setAvailableIcons] = useState<IconFile[]>([]);
   const [uploadingIcon, setUploadingIcon] = useState(false);
 
+  // Launch-mode detector — fetches what a Saudi customer ACTUALLY
+  // sees via /api/plans/by-country/SA. If every plan resolves to
+  // local_price=0 while the base price > 0, then someone has set
+  // country overrides that hide all real prices. Surfaces a banner
+  // so the owner doesnt scratch their head wondering why everything
+  // shows as مجاني on the live site.
+  const [saLaunchMode, setSaLaunchMode] = useState<{
+    active: boolean;
+    overriddenCount: number;
+    totalPaidPlans: number;
+  } | null>(null);
+
   useEffect(() => {
     fetchPlans();
     fetchIcons();
+    fetchSaLaunchMode();
   }, []);
+
+  const fetchSaLaunchMode = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/plans/by-country/SA`);
+      const data = await res.json();
+      const list: Array<{ price: number | string; local_price: number | string; is_country_pricing: boolean }> = data.plans || [];
+      const paid = list.filter((p) => Number(p.price) > 0);
+      const overridden = paid.filter((p) => p.is_country_pricing && Number(p.local_price) === 0);
+      setSaLaunchMode({
+        active: paid.length > 0 && overridden.length === paid.length,
+        overriddenCount: overridden.length,
+        totalPaidPlans: paid.length,
+      });
+    } catch {
+      setSaLaunchMode(null);
+    }
+  };
 
   const fetchIcons = async () => {
     try {
@@ -449,6 +479,34 @@ export default function PlansManagement() {
           {message.type === "error" && <AlertTriangle className="w-5 h-5" />}
           {message.type === "success" && <Check className="w-5 h-5" />}
           {message.text}
+        </div>
+      )}
+
+      {/* ─── Launch-mode banner ───────────────────────────────────
+          When all paid plans are overridden to local_price=0 for
+          Saudi Arabia, the live customer site shows everything as
+          مجاني — even though the base prices in this table show
+          real numbers. Owner kept seeing "كل الباقات مجانية"
+          without knowing why; this banner spells it out and links
+          straight to country-pricing to switch overrides on/off. */}
+      {saLaunchMode?.active && (
+        <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 flex items-start gap-3">
+          <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <div className="font-bold text-amber-900">
+              وضع الإطلاق المجاني (السعودية) — مفعّل حالياً
+            </div>
+            <p className="text-sm text-amber-800 mt-1 leading-relaxed">
+              العملاء داخل السعودية يرون <strong>كل الباقات بسعر 0 ريال</strong> لأن هناك تخفيضات قُطرية مفعّلة في "تسعير حسب الدولة" (السعر المحلي = 0 لكل الباقات المدفوعة الـ {saLaunchMode.totalPaidPlans}). الأسعار الأصلية في الجدول أدناه لم تتغيّر — فقط ما يُعرض للعميل السعودي.
+            </p>
+            <Link
+              href="/admin/plans/country-pricing?country=SA"
+              className="inline-flex items-center gap-1.5 mt-2 text-sm font-bold text-amber-900 underline hover:text-amber-700"
+            >
+              <Globe className="w-4 h-4" />
+              افتح تسعير الدولة لإلغاء التخفيض ←
+            </Link>
+          </div>
         </div>
       )}
 

@@ -709,18 +709,43 @@ export default function SettingsPage() {
               </button>
             </div>
             <hr className="border-slate-200" />
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-700">نظام الفواتير</p>
-                <p className="text-xs text-slate-500">عند التفعيل، تُنشأ فاتورة لكل عملية دفع (لا تشمل الباقات المجانية)</p>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-medium text-slate-700">نظام الفواتير</p>
+                  {/* Explicit status pill — no more guessing from a color */}
+                  <span
+                    className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+                      settings.invoiceSystemEnabled
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : "bg-slate-100 text-slate-600 border-slate-200"
+                    }`}
+                  >
+                    {settings.invoiceSystemEnabled ? "✓ مفعّل الآن" : "✗ معطّل الآن"}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  عند التفعيل، تُنشأ فاتورة تلقائياً لكل عملية دفع (لا تشمل الباقات المجانية).
+                </p>
+                {!settings.invoiceSystemEnabled && (
+                  <p className="text-[11px] text-amber-700 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                    <strong>قبل التفعيل:</strong> تأكّد من تسجيل الشركة (سجل تجاري + الرقم الضريبي) وربط بوابة الدفع، وإلا ستُنشأ فواتير بدون كيان قانوني يدعمها.
+                  </p>
+                )}
+                {settings.invoiceSystemEnabled && (
+                  <p className="text-[11px] text-emerald-700 mt-2 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+                    <strong>الآن:</strong> كل دفعة جديدة بقيمة &gt; 0 ستُولّد فاتورة في صفحة الفواتير تلقائياً.
+                  </p>
+                )}
               </div>
               <button
                 onClick={() =>
                   setSettings({ ...settings, invoiceSystemEnabled: !settings.invoiceSystemEnabled })
                 }
-                className={`w-12 h-6 rounded-full transition relative ${
+                className={`shrink-0 mt-0.5 w-12 h-6 rounded-full transition relative ${
                   settings.invoiceSystemEnabled ? "bg-green-500" : "bg-slate-300"
                 }`}
+                title={settings.invoiceSystemEnabled ? "اضغط للتعطيل" : "اضغط للتفعيل"}
               >
                 <div
                   className={`w-5 h-5 bg-white rounded-full shadow absolute top-0.5 transition-all ${

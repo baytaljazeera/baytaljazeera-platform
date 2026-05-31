@@ -190,13 +190,9 @@ export const adminSections: AdminSection[] = [
         icon: Wallet,
         permissionKey: "finance",
       },
-      {
-        href: "/admin/plans",
-        label: "إدارة الباقات",
-        icon: CreditCard,
-        permissionKey: "plans",
-        childRoutes: ["/admin/plans/country-pricing"],
-      },
+      // إدارة الباقات نُقلت إلى "النظام والحوكمة" — قرار استراتيجي
+      // (تسعير، تجارب مجانية، إطلاقات) يخص الإدارة العليا، لا المحاسب
+      // المالي. المحاسب ينفّذ ويدقّق؛ السياسة فوقه.
     ],
   },
   {
@@ -263,6 +259,16 @@ export const adminSections: AdminSection[] = [
     icon: Lock,
     colorClass: "text-slate-400",
     links: [
+      {
+        // نقلت من قسم "المالية والاشتراكات" — تسعير الباقات قرار
+        // إدارة عليا. مفتاح الصلاحية يبقى "plans" لكن الباكاند الآن
+        // يحصره في super_admin + admin_manager فقط (راجع routes/plans.js).
+        href: "/admin/plans",
+        label: "إدارة الباقات والتسعير",
+        icon: CreditCard,
+        permissionKey: "plans",
+        childRoutes: ["/admin/plans/country-pricing"],
+      },
       {
         href: "/admin/ai-center",
         label: "مركز الذكاء الاصطناعي",

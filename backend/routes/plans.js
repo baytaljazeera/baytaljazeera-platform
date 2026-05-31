@@ -3,7 +3,7 @@ const express = require("express");
 const db = require("../db");
 const fs = require("fs");
 const path = require("path");
-const { authMiddleware, authMiddlewareWithEmailCheck, adminOnly, requirePermission } = require("../middleware/auth");
+const { authMiddleware, authMiddlewareWithEmailCheck, adminOnly, requirePermission, requireRoles } = require("../middleware/auth");
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { subscriptionLimiter } = require("../config/security");
 const pricingService = require("../services/pricingService");
@@ -12,7 +12,39 @@ const promotionService = require("../services/promotionService");
 
 const router = express.Router();
 
-const adminAuth = [authMiddleware, adminOnly];
+// Plans are a STRATEGIC governance setting (pricing, free trials,
+// country overrides, launch promos). Restricted to senior management.
+// Previously any of 6 admin roles could mutate prices — that mixed
+// "policy" with "finance ops" and let any finance_admin change
+// pricing without senior review. Now: super_admin + admin_manager
+// only. Read endpoints (GET) stay public for the customer site.
+const adminAuth = [authMiddleware, requireRoles('super_admin', 'admin_manager')];
+
+// ─── Plan-change audit ────────────────────────────────────────────
+// Every write to plans / country_plan_prices passes through here so
+// we have an immutable "who changed what when" trail. Best-effort —
+// failures are logged but never block the actual change.
+async function auditPlanChange({ actor, action, planId, countryCode, before, after }) {
+  try {
+    await db.query(
+      `INSERT INTO ai_audit_log
+         (action, target_kind, target_id, old_value, new_value, actor_id, actor_name, actor_role)
+       VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8)`,
+      [
+        action,
+        countryCode ? 'plan_country_price' : 'plan',
+        planId != null ? String(planId).slice(0, 80) : null,
+        before == null ? null : JSON.stringify(before),
+        after == null ? null : JSON.stringify(after),
+        actor?.id || null,
+        actor?.name || null,
+        actor?.role || null,
+      ]
+    );
+  } catch (e) {
+    console.warn('[plans audit] failed:', e.message);
+  }
+}
 
 const SUPPORTED_COUNTRIES = [
   ...Object.values(pricingService.SUPPORTED_COUNTRIES).map(c => ({
@@ -103,12 +135,19 @@ router.get("/:id", asyncHandler(async (req, res) => {
 
 router.put("/:id", adminAuth, async (req, res) => {
   const { id } = req.params;
-  
+
   const planId = parseInt(id, 10);
   if (isNaN(planId) || planId <= 0 || String(planId) !== id) {
     return res.status(400).json({ error: "معرف غير صالح", errorEn: "Invalid plan ID" });
   }
-  
+
+  // Snapshot BEFORE so the audit trail captures the old price.
+  let beforeSnap = null;
+  try {
+    const r = await db.query('SELECT id, name_ar, price, visible FROM plans WHERE id = $1', [planId]);
+    beforeSnap = r.rows[0] || null;
+  } catch { /* best-effort snapshot */ }
+
   try {
     const adminUserId = req.user.id;
     const result = await planService.updatePlan(planId, req.body, adminUserId);
@@ -122,11 +161,18 @@ router.put("/:id", adminAuth, async (req, res) => {
     }
     
     console.log(`Plan ${planId} updated successfully with propagation:`, result.propagation);
-    res.json({ 
-      ok: true, 
-      plan: result.plan, 
+    auditPlanChange({
+      actor: req.user,
+      action: 'plan.update',
+      planId,
+      before: beforeSnap,
+      after: result.plan ? { id: result.plan.id, name_ar: result.plan.name_ar, price: result.plan.price, visible: result.plan.visible } : null,
+    });
+    res.json({
+      ok: true,
+      plan: result.plan,
       propagation: result.propagation,
-      message: "تم تحديث الباقة بنجاح وانعكست التغييرات على المشتركين الحاليين" 
+      message: "تم تحديث الباقة بنجاح وانعكست التغييرات على المشتركين الحاليين"
     });
   } catch (err) {
     console.error(`[Plans] ❌ Error updating plan ${planId}:`, err.message, err.stack);
@@ -436,17 +482,36 @@ router.post("/admin/country-prices", adminAuth, asyncHandler(async (req, res) =>
     return res.status(400).json({ error: "الدولة غير مدعومة", errorEn: "Country not supported" });
   }
   
+  // Snapshot current price for audit (may be null on first insert).
+  let beforeRow = null;
+  try {
+    const r = await db.query(
+      'SELECT price, is_active FROM country_plan_prices WHERE plan_id = $1 AND country_code = $2',
+      [plan_id, upperCode]
+    );
+    beforeRow = r.rows[0] || null;
+  } catch { /* ignore */ }
+
   // Upsert price
   const result = await db.query(`
     INSERT INTO country_plan_prices (plan_id, country_code, country_name_ar, currency_code, currency_symbol, price)
     VALUES ($1, $2, $3, $4, $5, $6)
-    ON CONFLICT (plan_id, country_code) 
+    ON CONFLICT (plan_id, country_code)
     DO UPDATE SET price = $6, updated_at = NOW()
     RETURNING *
   `, [plan_id, upperCode, country.name_ar, country.currency_code, country.currency_symbol, price]);
-  
-  res.json({ 
-    ok: true, 
+
+  auditPlanChange({
+    actor: req.user,
+    action: beforeRow ? 'plan_country_price.update' : 'plan_country_price.create',
+    planId: plan_id,
+    countryCode: upperCode,
+    before: beforeRow,
+    after: { price: parseFloat(result.rows[0].price), is_active: result.rows[0].is_active },
+  });
+
+  res.json({
+    ok: true,
     price: result.rows[0],
     message: "تم حفظ السعر بنجاح"
   });
@@ -500,24 +565,44 @@ router.patch("/admin/country-prices/:id/toggle", adminAuth, asyncHandler(async (
     `UPDATE country_plan_prices SET is_active = NOT is_active, updated_at = NOW() WHERE id = $1 RETURNING *`,
     [id]
   );
-  
+
   if (result.rows.length === 0) {
     return res.status(404).json({ error: "السعر غير موجود", errorEn: "Price not found" });
   }
-  
-  res.json({ ok: true, price: result.rows[0] });
+
+  const row = result.rows[0];
+  auditPlanChange({
+    actor: req.user,
+    action: 'plan_country_price.toggle',
+    planId: row.plan_id,
+    countryCode: row.country_code,
+    before: { is_active: !row.is_active },
+    after: { is_active: row.is_active },
+  });
+
+  res.json({ ok: true, price: row });
 }));
 
 // ADMIN: Delete country price
 router.delete("/admin/country-prices/:id", adminAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  
+
   const result = await db.query("DELETE FROM country_plan_prices WHERE id = $1 RETURNING *", [id]);
-  
+
   if (result.rows.length === 0) {
     return res.status(404).json({ error: "السعر غير موجود", errorEn: "Price not found" });
   }
-  
+
+  const row = result.rows[0];
+  auditPlanChange({
+    actor: req.user,
+    action: 'plan_country_price.delete',
+    planId: row.plan_id,
+    countryCode: row.country_code,
+    before: { price: parseFloat(row.price), is_active: row.is_active },
+    after: null,
+  });
+
   res.json({ ok: true, message: "تم حذف السعر بنجاح" });
 }));
 
