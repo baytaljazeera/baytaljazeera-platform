@@ -197,6 +197,32 @@ export default function ResetDataPage() {
       });
       const data = await res.json();
       if (data.ok) {
+        // ─── Purge client-side state too ────────────────────────────
+        // The DB reset can't touch localStorage, so the half-finished
+        // listing draft / AI description history / feedback timers
+        // survive every wipe. That's why an old draft kept asking the
+        // owner "هل تريد المتابعة من حيث توقفت؟" right after a clean
+        // reset. Clear them here on EVERY successful reset (they're
+        // all UI conveniences, not data — safe to drop in bulk).
+        let clientCleared = 0;
+        if (typeof window !== "undefined") {
+          const CLIENT_KEYS = [
+            "bj_new_listing_draft_v1",          // /listings/new autosave
+            "baytaljazeera_ai_descriptions_history", // AI-description history
+            "feedback_last_shown",              // feedback-modal cooldown
+            "bj.search.sideMapOpen",            // search/map UI state
+            "__dashboard_build_tag",            // forces dashboard refetch
+          ];
+          for (const k of CLIENT_KEYS) {
+            try {
+              if (window.localStorage.getItem(k) !== null) {
+                window.localStorage.removeItem(k);
+                clientCleared += 1;
+              }
+            } catch { /* ignore quota / privacy mode errors */ }
+          }
+        }
+
         const skippedList = Array.isArray(data.skipped) ? data.skipped : [];
         setSkipped(skippedList);
         setMessage({
@@ -204,7 +230,7 @@ export default function ResetDataPage() {
           text:
             skippedList.length > 0
               ? `تم التصفير لكن تم تخطّي ${skippedList.length} عملية — راجع التفاصيل أدناه`
-              : "تم تصفير البيانات بنجاح",
+              : `تم تصفير البيانات بنجاح${clientCleared > 0 ? ` (وتم مسح ${clientCleared} مفتاح حالة من المتصفح)` : ""}`,
         });
         setResults(data.results);
         setSelected(new Set());
