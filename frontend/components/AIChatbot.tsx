@@ -2,7 +2,7 @@
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { MessageCircle, X, Send, Loader2, Bot, User, AlertTriangle, Headphones, Crown, Lock, Sparkles, CheckCircle2, Clock, ExternalLink, Home } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
 
@@ -343,28 +343,29 @@ export default function AIChatbot() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { user, isAuthenticated } = useAuthStore();
   
-  // Draggable button state
+  // Draggable button state. ALWAYS clamp to current viewport so a
+  // localStorage value saved from a taller screen (or a rotated phone)
+  // cant push the button off-screen. Previously desktop returned the
+  // saved position raw — on a smaller viewport the button rendered
+  // below the fold and the popover anchored to a non-visible launcher.
   const [position, setPosition] = useState<{ x: number; y: number }>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("chatbot-position");
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          // On mobile, ensure button is within screen bounds
-          if (window.innerWidth < 768) {
-            return {
-              x: Math.max(8, Math.min(parsed.x, window.innerWidth - 64)),
-              y: Math.max(8, Math.min(parsed.y, window.innerHeight - 64))
-            };
-          }
-          return parsed;
-        } catch {
-          // Default position
-          return { x: 12, y: window.innerHeight - 80 };
-        }
-      }
+    if (typeof window === "undefined") return { x: 0, y: 0 };
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const BTN = 56;
+    const clampPt = (x: number, y: number) => ({
+      x: Math.max(8, Math.min(x, vw - BTN - 8)),
+      y: Math.max(8, Math.min(y, vh - BTN - 8)),
+    });
+    const saved = localStorage.getItem("chatbot-position");
+    if (saved) {
+      try {
+        const p = JSON.parse(saved);
+        return clampPt(p.x, p.y);
+      } catch { /* fall through to default */ }
     }
-    return { x: 0, y: 0 };
+    const defaultX = vw < 768 ? 12 : 24;
+    return clampPt(defaultX, vh - 80);
   });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -378,15 +379,22 @@ export default function AIChatbot() {
     scrollToBottom();
   }, [messages]);
 
-  // Initialize position on mount
+  // Re-clamp position to the viewport when the window resizes so a
+  // browser shrink (or device rotation) never strands the button below
+  // the fold. The clamp formula matches the initial-state clamp.
   useEffect(() => {
-    if (typeof window !== "undefined" && position.x === 0 && position.y === 0) {
-      // Set default position based on screen size
-      const isMobile = window.innerWidth < 768;
-      const defaultX = isMobile ? 12 : 24;
-      const defaultY = isMobile ? window.innerHeight - 80 : window.innerHeight - 80;
-      setPosition({ x: defaultX, y: defaultY });
-    }
+    if (typeof window === "undefined") return;
+    const onResize = () => {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const BTN = 56;
+      setPosition((p) => ({
+        x: Math.max(8, Math.min(p.x, vw - BTN - 8)),
+        y: Math.max(8, Math.min(p.y, vh - BTN - 8)),
+      }));
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, []);
 
   // Save position to localStorage
@@ -441,49 +449,83 @@ export default function AIChatbot() {
     }
   };
 
-  // Anchor the desktop popover relative to the button (Intercom/Drift
-  // style: panel pops up next to the launcher). Previously we placed
-  // the popover at the button's (x,y) then clamped with
-  // Math.min(y, innerHeight - 540) — that means a button sitting near
-  // the bottom of a tall screen pushed the panel up to top: small
-  // number, so it materialised far away from the launcher and felt
-  // like "the message appears at the top of the screen". The new
-  // logic: prefer placing the panel ABOVE the button; if there isnt
-  // enough headroom, place it BELOW; clamp to viewport with a small
-  // gutter so it never overlaps the launcher.
-  const computePopoverPosition = () => {
-    if (typeof window === "undefined") {
-      return { left: position.x, top: position.y };
+  // ─── Desktop popover positioning ─────────────────────────────────
+  // Computed from the live button rect via getBoundingClientRect on
+  // every open + on every window resize/scroll. This guarantees the
+  // panel is always anchored to where the launcher actually is in the
+  // viewport — not where state thinks it is. Mobile uses a fixed
+  // bottom-sheet layout via Tailwind and ignores popoverPos entirely.
+  const [popoverPos, setPopoverPos] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    if (typeof window === "undefined") return;
+    if (window.innerWidth < 768) {
+      setPopoverPos(null);
+      return;
     }
-    const PANEL_WIDTH = 360;
-    const PANEL_HEIGHT = 520;
-    const BUTTON_SIZE = 56;
+    const PANEL_W = 360;
+    const PANEL_MAX_H = Math.min(620, window.innerHeight - 32);
     const GAP = 12;
-    const GUTTER = 8;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+    const GUTTER = 16;
+    const compute = () => {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const cap = Math.min(620, vh - 32);
+      // Prefer the live button rect; if its somehow unmounted, fall
+      // back to the stored position (clamped) — but with the button
+      // always mounted now, this rect path is the normal path.
+      const rect = buttonRef.current?.getBoundingClientRect();
+      const bx = rect ? rect.left : position.x;
+      const by = rect ? rect.top : position.y;
+      const bw = rect ? rect.width : 56;
+      const bh = rect ? rect.height : 56;
 
-    // X: align the panel near the button. If the button sits on the
-    // right half of the screen, right-align the panel; otherwise
-    // left-align. Then clamp inside the viewport with a small gutter.
-    let left;
-    if (position.x + BUTTON_SIZE / 2 > vw / 2) {
-      left = position.x + BUTTON_SIZE - PANEL_WIDTH;
-    } else {
-      left = position.x;
-    }
-    left = Math.max(GUTTER, Math.min(left, vw - PANEL_WIDTH - GUTTER));
+      // X: if the launcher sits on the right half of the viewport,
+      // right-align the panel to it; otherwise left-align. Then clamp.
+      let left;
+      if (bx + bw / 2 > vw / 2) {
+        left = bx + bw - PANEL_W;
+      } else {
+        left = bx;
+      }
+      left = Math.max(GUTTER, Math.min(left, vw - PANEL_W - GUTTER));
 
-    // Y: try ABOVE the button first.
-    let top = position.y - PANEL_HEIGHT - GAP;
-    if (top < GUTTER) {
-      // Not enough headroom — drop below the button.
-      top = position.y + BUTTON_SIZE + GAP;
-    }
-    // Final clamp so we never overflow the bottom edge either.
-    top = Math.max(GUTTER, Math.min(top, vh - PANEL_HEIGHT - GUTTER));
-    return { left, top };
-  };
+      // Y: prefer ABOVE the launcher. Available space above = by - GAP.
+      // If thats >= 300px we can fit a usable panel there. Otherwise
+      // try BELOW. If neither has space (very short viewport), fall
+      // back to the largest panel that fits inside [GUTTER, vh-GUTTER]
+      // and pin it to top:GUTTER.
+      const above = by - GAP - GUTTER;
+      const below = vh - (by + bh) - GAP - GUTTER;
+      let top: number;
+      let maxHeight: number;
+      if (above >= 300) {
+        maxHeight = Math.min(cap, above);
+        top = by - GAP - maxHeight;
+      } else if (below >= 300) {
+        maxHeight = Math.min(cap, below);
+        top = by + bh + GAP;
+      } else {
+        maxHeight = Math.max(240, vh - GUTTER * 2);
+        top = GUTTER;
+      }
+      // Belt and suspenders — never let top + maxHeight overflow.
+      top = Math.max(GUTTER, Math.min(top, vh - maxHeight - GUTTER));
+      setPopoverPos({ left, top, maxHeight });
+    };
+    compute();
+    // Recompute on resize/scroll so the panel tracks the launcher even
+    // if the user resizes the window or scrolls inside an inner
+    // scroll-container while the popover is open. capture:true so
+    // scroll events from nested scroll-containers also reach us.
+    window.addEventListener("resize", compute);
+    window.addEventListener("scroll", compute, true);
+    return () => {
+      window.removeEventListener("resize", compute);
+      window.removeEventListener("scroll", compute, true);
+    };
+  }, [isOpen, position.x, position.y]);
 
   useEffect(() => {
     async function fetchAILevel() {
@@ -662,61 +704,74 @@ export default function AIChatbot() {
   const levelConfig = AI_LEVEL_CONFIG[currentLevel as keyof typeof AI_LEVEL_CONFIG] || AI_LEVEL_CONFIG[0];
   const LevelIcon = levelConfig.icon;
 
+  // The launcher button stays mounted at all times so
+  // getBoundingClientRect() can read its viewport position while the
+  // popover is open. Without this the rect-based anchoring above
+  // cant work — closing/re-opening would always race against state.
+  const launcher = (
+    <button
+      ref={buttonRef}
+      onMouseDown={handleMouseDown}
+      onClick={() => {
+        if (!isDragging) setIsOpen((v) => !v);
+      }}
+      style={{
+        position: "fixed",
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+        cursor: isDragging ? "grabbing" : "grab",
+      }}
+      className="z-50 w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-transform active:cursor-grabbing touch-none"
+      aria-label={isOpen ? "إغلاق المحادثة" : "فتح المحادثة"}
+    >
+      {isOpen ? (
+        <X className="w-5 h-5 text-[#002845] pointer-events-none" />
+      ) : (
+        <>
+          <MessageCircle className="w-6 h-6 text-[#002845] pointer-events-none" />
+          <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse pointer-events-none" />
+        </>
+      )}
+    </button>
+  );
+
   if (!isOpen) {
-    return (
-      <button
-        ref={buttonRef}
-        onMouseDown={handleMouseDown}
-        onClick={(e) => {
-          // Only open if not dragging
-          if (!isDragging) {
-            setIsOpen(true);
-          }
-        }}
-        style={{
-          position: "fixed",
-          left: `${position.x}px`,
-          top: `${position.y}px`,
-          cursor: isDragging ? "grabbing" : "grab",
-        }}
-        className="z-50 w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-transform active:cursor-grabbing touch-none"
-        aria-label="فتح المحادثة"
-      >
-        <MessageCircle className="w-6 h-6 text-[#002845] pointer-events-none" />
-        <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse pointer-events-none" />
-      </button>
-    );
+    return launcher;
   }
+
+  // Desktop popover style — built from the live-measured rect via
+  // popoverPos (set in useLayoutEffect). First-paint may be null for
+  // one frame; in that case we render off-screen briefly so the panel
+  // doesnt flash at (0,0).
+  const isDesktop = typeof window !== "undefined" && window.innerWidth >= 768;
+  const desktopStyle: React.CSSProperties = popoverPos
+    ? {
+        left: `${popoverPos.left}px`,
+        top: `${popoverPos.top}px`,
+        height: `${popoverPos.maxHeight}px`,
+        maxHeight: `${popoverPos.maxHeight}px`,
+      }
+    : { left: "-9999px", top: "-9999px", height: "520px", maxHeight: "calc(100vh - 32px)" };
 
   return (
     <>
-      <div 
+      {launcher}
+      <div
         className="fixed inset-0 bg-black/20 z-40 md:bg-transparent"
         onClick={() => setIsOpen(false)}
         aria-hidden="true"
       />
-      <div 
+      <div
         className={`fixed z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col transition-all duration-300 ease-out ${
-          typeof window !== "undefined" && window.innerWidth < 768
-            ? "w-[calc(100vw-1rem)] left-2 right-2 bottom-4 top-auto max-h-[calc(100vh-5rem)] animate-in slide-in-from-bottom-4 fade-in"
-            : `w-[360px] max-w-[calc(100vw-2rem)] ${
-                typeof window !== "undefined" && position.x > window.innerWidth / 2
+          isDesktop
+            ? `w-[360px] max-w-[calc(100vw-2rem)] ${
+                position.x > (typeof window !== "undefined" ? window.innerWidth / 2 : 0)
                   ? "animate-in slide-in-from-right-4 fade-in"
                   : "animate-in slide-in-from-left-4 fade-in"
               }`
+            : "w-[calc(100vw-1rem)] left-2 right-2 bottom-4 top-auto max-h-[calc(100vh-5rem)] animate-in slide-in-from-bottom-4 fade-in"
         }`}
-        style={typeof window !== "undefined" && window.innerWidth < 768 ? {
-          height: "calc(100vh - 5rem)",
-          maxHeight: "calc(100vh - 5rem)",
-        } : (() => {
-          const { left, top } = computePopoverPosition();
-          return {
-            height: "520px",
-            maxHeight: "calc(100vh - 16px)",
-            left: `${left}px`,
-            top: `${top}px`,
-          };
-        })()}
+        style={isDesktop ? desktopStyle : { height: "calc(100vh - 5rem)", maxHeight: "calc(100vh - 5rem)" }}
       >
         <div className="bg-gradient-to-l from-[#002845] to-[#003d66] text-white p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
