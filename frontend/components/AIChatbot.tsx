@@ -3,6 +3,8 @@
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
 import { useState, useRef, useEffect, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
+import { usePathname, useSearchParams } from "next/navigation";
 import { MessageCircle, X, Send, Loader2, Bot, User, AlertTriangle, Headphones, Crown, Lock, Sparkles, CheckCircle2, Clock, ExternalLink, Home } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
 
@@ -342,6 +344,24 @@ export default function AIChatbot() {
   const [aiLevelInfo, setAiLevelInfo] = useState<AILevelInfo | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { user, isAuthenticated } = useAuthStore();
+
+  // ─── Portal target (document.body) ────────────────────────────────
+  // Rendering via createPortal escapes every parent stacking context
+  // (the search page has a sticky filter bar z-[100], promo overlays
+  // z-[1000], and filter dropdowns z-[9999] which were eating the
+  // chatbot panel that lived in the page tree at z-50). Once portaled
+  // to body, we control the z-stack absolutely.
+  const [portalReady, setPortalReady] = useState(false);
+  useEffect(() => { setPortalReady(true); }, []);
+
+  // ─── Map-aware layout ────────────────────────────────────────────
+  // /search?view=map has a sticky filter bar at top-[75px], promo
+  // overlays, and floating map controls. Anchoring the panel above
+  // the launcher position there means the panel slides under those
+  // overlays. Switch to a SAFE fixed bottom-left anchor on this page.
+  const pathname = usePathname() || '';
+  const searchParams = useSearchParams();
+  const isMapPage = pathname.startsWith('/search') && (searchParams?.get('view') ?? 'map') === 'map';
   
   // Draggable button state. ALWAYS clamp to current viewport so a
   // localStorage value saved from a taller screen (or a rotated phone)
@@ -464,6 +484,13 @@ export default function AIChatbot() {
       setPopoverPos(null);
       return;
     }
+    if (isMapPage) {
+      // Map view: skip the dynamic launcher-anchored computation
+      // entirely. The render path uses a safe static
+      // bottom-left/width/maxHeight instead.
+      setPopoverPos(null);
+      return;
+    }
     const PANEL_W = 360;
     const PANEL_MAX_H = Math.min(620, window.innerHeight - 32);
     const GAP = 12;
@@ -525,7 +552,7 @@ export default function AIChatbot() {
       window.removeEventListener("resize", compute);
       window.removeEventListener("scroll", compute, true);
     };
-  }, [isOpen, position.x, position.y]);
+  }, [isOpen, position.x, position.y, isMapPage]);
 
   useEffect(() => {
     async function fetchAILevel() {
@@ -706,22 +733,26 @@ export default function AIChatbot() {
 
   // The launcher button stays mounted at all times so
   // getBoundingClientRect() can read its viewport position while the
-  // popover is open. Without this the rect-based anchoring above
-  // cant work — closing/re-opening would always race against state.
+  // popover is open. Without this the rect-based anchoring cant work
+  // — closing/re-opening would always race against state.
+  //
+  // On the map page (which is awash in absolute/sticky overlays),
+  // pin the launcher to a SAFE bottom-left slot so it cant disappear
+  // behind a promo banner or the sticky filter bar — the dragged
+  // position is ignored there.
   const launcher = (
     <button
       ref={buttonRef}
-      onMouseDown={handleMouseDown}
+      onMouseDown={isMapPage ? undefined : handleMouseDown}
       onClick={() => {
         if (!isDragging) setIsOpen((v) => !v);
       }}
-      style={{
-        position: "fixed",
-        left: `${position.x}px`,
-        top: `${position.y}px`,
-        cursor: isDragging ? "grabbing" : "grab",
-      }}
-      className="z-50 w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-transform active:cursor-grabbing touch-none"
+      style={
+        isMapPage
+          ? { position: "fixed", left: "24px", bottom: "24px", zIndex: 10000, cursor: "pointer" }
+          : { position: "fixed", left: `${position.x}px`, top: `${position.y}px`, zIndex: 10000, cursor: isDragging ? "grabbing" : "grab" }
+      }
+      className="w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-[#D4AF37] to-[#B8860B] rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-transform active:cursor-grabbing touch-none"
       aria-label={isOpen ? "إغلاق المحادثة" : "فتح المحادثة"}
     >
       {isOpen ? (
@@ -735,44 +766,58 @@ export default function AIChatbot() {
     </button>
   );
 
-  if (!isOpen) {
-    return launcher;
-  }
-
-  // Desktop popover style — built from the live-measured rect via
-  // popoverPos (set in useLayoutEffect). First-paint may be null for
-  // one frame; in that case we render off-screen briefly so the panel
-  // doesnt flash at (0,0).
+  // Desktop popover style. Three branches:
+  //   isMapPage    → SAFE fixed bottom-left slot above the filter bar
+  //   popoverPos   → live-measured launcher anchoring (default desktop)
+  //   else         → off-screen until popoverPos settles (no flash)
   const isDesktop = typeof window !== "undefined" && window.innerWidth >= 768;
-  const desktopStyle: React.CSSProperties = popoverPos
+  const desktopStyle: React.CSSProperties = isMapPage
     ? {
-        left: `${popoverPos.left}px`,
-        top: `${popoverPos.top}px`,
-        height: `${popoverPos.maxHeight}px`,
-        maxHeight: `${popoverPos.maxHeight}px`,
+        left: "24px",
+        bottom: "96px",
+        width: "380px",
+        maxWidth: "calc(100vw - 32px)",
+        maxHeight: "min(620px, calc(100dvh - 180px))",
       }
-    : { left: "-9999px", top: "-9999px", height: "520px", maxHeight: "calc(100vh - 32px)" };
+    : popoverPos
+      ? {
+          left: `${popoverPos.left}px`,
+          top: `${popoverPos.top}px`,
+          height: `${popoverPos.maxHeight}px`,
+          maxHeight: `${popoverPos.maxHeight}px`,
+        }
+      : { left: "-9999px", top: "-9999px", height: "520px", maxHeight: "calc(100dvh - 32px)" };
 
-  return (
+  // Build the actual tree once and portal it. Portaling escapes any
+  // ancestor stacking context — without this, even z-index: 99999 on
+  // the panel cant outrank a sibling z-100 element if the chatbot
+  // sits inside a parent that already created a stacking context.
+  const tree = (
     <>
       {launcher}
-      <div
-        className="fixed inset-0 bg-black/20 z-40 md:bg-transparent"
-        onClick={() => setIsOpen(false)}
-        aria-hidden="true"
-      />
-      <div
-        className={`fixed z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col transition-all duration-300 ease-out ${
-          isDesktop
-            ? `w-[360px] max-w-[calc(100vw-2rem)] ${
-                position.x > (typeof window !== "undefined" ? window.innerWidth / 2 : 0)
-                  ? "animate-in slide-in-from-right-4 fade-in"
-                  : "animate-in slide-in-from-left-4 fade-in"
-              }`
-            : "w-[calc(100vw-1rem)] left-2 right-2 bottom-4 top-auto max-h-[calc(100vh-5rem)] animate-in slide-in-from-bottom-4 fade-in"
-        }`}
-        style={isDesktop ? desktopStyle : { height: "calc(100vh - 5rem)", maxHeight: "calc(100vh - 5rem)" }}
-      >
+      {isOpen && (
+        <>
+          <div
+            // Backdrop sits under the panel but above page content.
+            // Map view skips the dim backdrop on desktop so the map
+            // remains visible behind the panel (Intercom feel).
+            className={`fixed inset-0 ${isMapPage ? "bg-transparent" : "bg-black/20"} md:bg-transparent`}
+            style={{ zIndex: 9998 }}
+            onClick={() => setIsOpen(false)}
+            aria-hidden="true"
+          />
+          <div
+            className={`fixed bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col transition-all duration-300 ease-out ${
+              isDesktop
+                ? `${isMapPage ? "animate-in slide-in-from-left-4 fade-in" : `w-[360px] max-w-[calc(100vw-2rem)] ${
+                    position.x > (typeof window !== "undefined" ? window.innerWidth / 2 : 0)
+                      ? "animate-in slide-in-from-right-4 fade-in"
+                      : "animate-in slide-in-from-left-4 fade-in"
+                  }`}`
+                : "w-[calc(100vw-1rem)] left-2 right-2 bottom-4 top-auto max-h-[calc(100dvh-5rem)] animate-in slide-in-from-bottom-4 fade-in"
+            }`}
+            style={isDesktop ? { ...desktopStyle, zIndex: 10000 } : { height: "calc(100dvh - 5rem)", maxHeight: "calc(100dvh - 5rem)", zIndex: 10000 }}
+          >
         <div className="bg-gradient-to-l from-[#002845] to-[#003d66] text-white p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37] to-[#B8860B] flex items-center justify-center">
@@ -824,9 +869,12 @@ export default function AIChatbot() {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 bg-gradient-to-b from-slate-50 to-white">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 bg-gradient-to-b from-slate-50 to-white">
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center px-4">
+          // min-h-full lets the welcome content scroll naturally when
+          // the panel is short (laptop / map view with reduced height)
+          // instead of clipping the bottom of the starter menu.
+          <div className="min-h-full flex flex-col items-center text-center px-4 py-2">
             <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${levelConfig.color} flex items-center justify-center mb-4 shadow-lg`}>
               <LevelIcon className="w-8 h-8 text-white" />
             </div>
@@ -1049,6 +1097,16 @@ export default function AIChatbot() {
         </div>
       </div>
     </div>
+        </>
+      )}
     </>
   );
+
+  // Portal target = document.body. Skip on SSR (portalReady=false on
+  // first render) and mount on the next tick — this avoids hydration
+  // mismatch and guarantees we escape every parent stacking context.
+  if (!portalReady || typeof document === "undefined") {
+    return null;
+  }
+  return createPortal(tree, document.body);
 }
