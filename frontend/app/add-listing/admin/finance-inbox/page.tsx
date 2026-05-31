@@ -111,8 +111,17 @@ export default function FinanceInboxPage() {
     setLoading(true);
     setError(null);
     try {
+      // Triage-first governance: Finance Inbox now ONLY shows
+      // complaints that a support agent has explicitly transferred
+      // to finance_admin. The old client-side filter
+      // (category=billing OR invoice attached) was leaking every
+      // new "billing"-flagged complaint into both inboxes, but the
+      // notification only fired for Support so the Finance counter
+      // never ticked — confusing for the operator. Backend now
+      // accepts ?assigned_role=finance_admin and returns the right
+      // subset.
       const [cRes, tRes, rRes] = await Promise.all([
-        fetch(`${API_URL}/api/account-complaints?status=new&limit=50`, {
+        fetch(`${API_URL}/api/account-complaints?status=new&assigned_role=finance_admin&limit=50`, {
           credentials: "include", headers: getAuthHeaders(),
         }),
         fetch(`${API_URL}/api/support?status=new`, {
@@ -127,15 +136,8 @@ export default function FinanceInboxPage() {
       const tData = tRes.ok ? await tRes.json() : { tickets: [] };
       const rData = rRes.ok ? await rRes.json() : { refunds: [] };
 
-      const allComplaints: Complaint[] = cData.complaints || [];
-      // Keep only the ones that should land on a finance_admin's desk —
-      // category=billing OR complaint_type IN (billing,refund) OR an
-      // invoice was attached. Same predicate as the backend scope rule.
-      const financialComplaints = allComplaints.filter((c) =>
-        (c.category && ["billing", "subscription", "refund"].includes(c.category)) ||
-        (c.complaint_type && ["billing", "refund"].includes(c.complaint_type)) ||
-        c.invoice_id != null
-      );
+      // Already pre-filtered by the backend — use as-is.
+      const financialComplaints: Complaint[] = cData.complaints || [];
 
       const allTickets: Ticket[] = tData.tickets || [];
       const financialTickets = allTickets.filter((t) => t.department === "financial");
@@ -165,7 +167,10 @@ export default function FinanceInboxPage() {
               صندوق الوصول المالي
             </h1>
             <p className="text-slate-500 text-sm mt-1">
-              كل الشكاوى المالية وتذاكر المالية وطلبات الاسترداد في مكان واحد. {totalPending > 0 && `(${totalPending} عنصر بانتظارك)`}
+              الشكاوى المُحوّلة إليك من فريق الدعم + التذاكر المالية + طلبات الاسترداد. {totalPending > 0 && `(${totalPending} عنصر بانتظارك)`}
+            </p>
+            <p className="text-[11px] text-slate-500 mt-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 inline-block">
+              💡 الشكاوى الجديدة تصل فريق الدعم أولاً للفرز — إذا قرّروا أنها مالية فعلاً، يحوّلونها إليك وتظهر هنا مع تنبيه على عدّادك.
             </p>
           </div>
           <button

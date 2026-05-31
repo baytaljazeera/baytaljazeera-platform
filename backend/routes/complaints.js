@@ -788,7 +788,7 @@ router.get("/stats", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), as
 }));
 
 router.get("/", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), asyncHandler(async (req, res) => {
-  const { status, complaint_type, page = 1, limit = 20 } = req.query;
+  const { status, complaint_type, assigned_role, page = 1, limit = 20 } = req.query;
   const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
   const whereConditions = [];
@@ -804,6 +804,20 @@ router.get("/", authMiddleware, requireRoles(...COMPLAINTS_ADMIN_ROLES), asyncHa
   if (complaint_type && complaint_type !== 'all') {
     whereConditions.push(`c.complaint_type = $${paramIndex}`);
     params.push(complaint_type);
+    paramIndex++;
+  }
+
+  // ?assigned_role=finance_admin — used by the Finance Inbox so it
+  // ONLY sees complaints transferred to finance by a support agent
+  // during triage. Previously the Finance Inbox filtered client-side
+  // by category=billing, which meant every "billing"-flagged
+  // complaint appeared in BOTH the Support and Finance views even
+  // though the notification (and counter) only fired for Support.
+  // Triage-first governance: Support is the front door; only
+  // explicit transfer makes a complaint visible to Finance.
+  if (assigned_role && typeof assigned_role === 'string') {
+    whereConditions.push(`c.auto_assigned_role = $${paramIndex}`);
+    params.push(assigned_role);
     paramIndex++;
   }
 
