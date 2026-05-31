@@ -14,6 +14,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { confirmDialog, alertDialog } from "@/components/ui/ConfirmDialog";
 
 interface Question {
   id: number;
@@ -124,14 +125,24 @@ export default function FeedbackQuestionsPage() {
       await fetchQuestions();
       cancelForm();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "خطأ");
+      await alertDialog({
+        title: "فشل الحفظ",
+        body: e instanceof Error ? e.message : "خطأ غير معروف",
+        variant: "danger",
+      });
     } finally {
       setSaving(false);
     }
   };
 
   const deleteQuestion = async (id: number) => {
-    if (!confirm("هل تريد حذف هذا السؤال؟")) return;
+    const ok = await confirmDialog({
+      title: "حذف سؤال التغذية الراجعة",
+      body: "سيتم حذف هذا السؤال نهائياً. الردود السابقة عليه ستبقى محفوظة في سجل التقييمات.",
+      confirmText: "احذف السؤال",
+      variant: "danger",
+    });
+    if (!ok) return;
     setDeletingId(id);
     try {
       const res = await fetch(`${API_URL}/api/feedback/admin/questions/${id}`, {
@@ -142,7 +153,11 @@ export default function FeedbackQuestionsPage() {
       if (!res.ok) throw new Error("فشل الحذف");
       await fetchQuestions();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "فشل الحذف");
+      await alertDialog({
+        title: "فشل الحذف",
+        body: e instanceof Error ? e.message : "خطأ غير معروف",
+        variant: "danger",
+      });
     } finally {
       setDeletingId(null);
     }

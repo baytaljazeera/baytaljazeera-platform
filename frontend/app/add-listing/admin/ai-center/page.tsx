@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { toast } from "sonner";
+import { confirmDialog, promptDialog } from "@/components/ui/ConfirmDialog";
 import {
   Activity,
   AlertTriangle,
@@ -491,7 +492,15 @@ export default function AICenterPage() {
   }
 
   async function deleteKbArticle(id: number) {
-    if (!confirm("حذف هذا المقال؟")) return;
+    {
+      const ok = await confirmDialog({
+        title: "حذف مقال من قاعدة المعرفة",
+        body: "سيتم حذف هذا المقال من قاعدة المعرفة. لن يقدر المساعد الذكي استخدامه في الإجابات بعد الحذف.",
+        confirmText: "احذف المقال",
+        variant: "danger",
+      });
+      if (!ok) return;
+    }
     const res = await fetch(`${API_URL}/api/ai/center/knowledge/articles/${id}`, {
       method: "DELETE",
       credentials: "include",
@@ -519,7 +528,17 @@ export default function AICenterPage() {
   }
 
   async function resolveEscalation(id: number) {
-    const note = window.prompt("ملاحظة الحل (اختياري):") || "";
+    const noteResult = await promptDialog({
+      title: "إغلاق التصعيد",
+      body: "اكتب ملاحظة موجزة عن طريقة الحل — تظهر في سجل التصعيد لاحقاً.",
+      placeholder: "تم التواصل مع العميل وتم الرد على استفساره",
+      multiline: true,
+      minLength: 0,
+      confirmText: "أغلق التصعيد",
+      variant: "success",
+    });
+    if (noteResult === null) return;
+    const note = noteResult;
     const res = await fetch(`${API_URL}/api/ai/center/escalations/${id}/resolve`, {
       method: "PATCH",
       credentials: "include",
@@ -580,7 +599,15 @@ export default function AICenterPage() {
   }
 
   async function deleteVariant(id: number) {
-    if (!confirm("حذف هذه النسخة؟")) return;
+    {
+      const ok = await confirmDialog({
+        title: "حذف نسخة الـ Prompt",
+        body: "سيتم حذف هذه النسخة من اختبار الـ A/B. النسخ الأخرى ستبقى مفعّلة بأوزانها الحالية.",
+        confirmText: "احذف النسخة",
+        variant: "danger",
+      });
+      if (!ok) return;
+    }
     const res = await fetch(`${API_URL}/api/ai/center/prompt-variants/${id}`, {
       method: "DELETE",
       credentials: "include",
@@ -2233,7 +2260,13 @@ function KnowledgeTab({
           <button
             type="button"
             onClick={() => {
-              if (confirm("إعادة فهرسة كل المقالات؟ قد تستغرق وقتاً.")) onReindex(true);
+              confirmDialog({
+                title: "إعادة فهرسة كل المقالات",
+                body: "سيتم إعادة بناء الـ embeddings لكل مقالات قاعدة المعرفة من الصفر. قد يستغرق ذلك دقائق ويستهلك كوتا OpenAI. خلال المعالجة قد تكون نتائج البحث مؤقتاً غير محدثة.",
+                hint: "عملية ثقيلة — استخدمها فقط عند تغيير جذري في النموذج",
+                confirmText: "ابدأ الفهرسة الشاملة",
+                variant: "warning",
+              }).then((ok) => { if (ok) onReindex(true); });
             }}
             disabled={reindexBusy}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 transition text-xs disabled:opacity-50"

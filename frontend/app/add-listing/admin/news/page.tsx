@@ -1,6 +1,7 @@
 "use client";
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { confirmDialog } from "@/components/ui/ConfirmDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -226,7 +227,13 @@ export default function NewsPage() {
   };
 
   const deleteNews = async (id: number) => {
-    if (!confirm("هل أنت متأكد من حذف هذا الخبر؟")) return;
+    const ok = await confirmDialog({
+      title: "حذف الخبر",
+      body: "سيتم حذف هذا الخبر من شريط الأخبار. الزوار لن يروه بعد الحذف.",
+      confirmText: "احذف الخبر",
+      variant: "danger",
+    });
+    if (!ok) return;
     
     try {
       const res = await fetch(`/api/news/${id}`, {

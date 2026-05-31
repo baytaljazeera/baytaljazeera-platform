@@ -1,6 +1,7 @@
 "use client";
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { promptDialog } from "@/components/ui/ConfirmDialog";
 
 export const dynamic = 'force-dynamic';
 
@@ -576,11 +577,17 @@ function AdminRolesPageContent() {
     // (>= 4 chars) on every destructive action, and the delete is a soft
     // deactivation (is_active=false + deleted_at) instead of a hard wipe.
     // We prompt for the reason here and pass it through the request body.
-    const reason = typeof window !== 'undefined'
-      ? window.prompt('سبب التعطيل (مطلوب — لن يمكن إنجاز الإجراء بدونه):')
-      : '';
+    const reason = await promptDialog({
+      title: "تعطيل الدور",
+      body: "اكتب سبباً واضحاً لتعطيل هذا الدور — سيُسجَّل في سجل التدقيق ويظل مرتبطاً بالإجراء.",
+      placeholder: "مثال: لم يعد مستخدماً بعد إعادة هيكلة الفريق",
+      multiline: true,
+      minLength: 4,
+      confirmText: "تابع التعطيل",
+      variant: "warning",
+      hint: "السبب مطلوب (4 أحرف على الأقل)",
+    });
     if (!reason || reason.trim().length < 4) {
-      toast.error('السبب مطلوب (4 أحرف على الأقل)');
       return;
     }
     setConfirmModal({

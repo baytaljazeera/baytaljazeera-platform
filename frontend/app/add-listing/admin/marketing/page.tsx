@@ -1,6 +1,7 @@
 "use client";
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { alertDialog } from "@/components/ui/ConfirmDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -1258,7 +1259,11 @@ function WhatsappModal({ selectedUsers, users, onClose, onSuccess }: { selectedU
       const recipients = users.filter(u => u.phone || u.whatsapp).map(u => ({ userId: u.id, phone: u.whatsapp || u.phone }));
       
       if (recipients.length === 0) {
-        alert("لا يوجد عملاء بأرقام هواتف");
+        await alertDialog({
+          title: "لا يوجد عملاء بأرقام هواتف",
+          body: "لم نجد أي عميل لديه رقم جوال أو واتساب مسجّل في الفلتر الحالي.",
+          variant: "warning",
+        });
         setLoading(false);
         return;
       }

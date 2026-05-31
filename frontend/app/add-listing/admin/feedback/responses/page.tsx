@@ -12,6 +12,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { alertDialog } from "@/components/ui/ConfirmDialog";
 
 interface ResponseItem {
   id: number;
@@ -93,14 +94,20 @@ export default function FeedbackResponsesPage() {
       }
       const data = await res.json();
       const tn = data.ticket?.ticket_number || "";
-      window.alert(
-        tn
-          ? `تم إنشاء/تحديث تذكرة الدعم ${tn}. سيصل إشعار للعميل ويمكنه المتابعة من حسابه.`
-          : "تم إرسال المتابعة بنجاح."
-      );
+      await alertDialog({
+        title: tn ? `تم إنشاء تذكرة الدعم ${tn}` : "تم إرسال المتابعة",
+        body: tn
+          ? "سيصل إشعار للعميل، وستظهر التذكرة في صفحة \"طلباتي\" في حسابه."
+          : "تم إرسال المتابعة بنجاح للعميل.",
+        variant: "success",
+      });
       closeMessageModal();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "فشل إرسال المتابعة");
+      await alertDialog({
+        title: "فشل إرسال المتابعة",
+        body: e instanceof Error ? e.message : "خطأ غير معروف",
+        variant: "danger",
+      });
     } finally {
       setSendingMessage(false);
     }
@@ -148,7 +155,11 @@ export default function FeedbackResponsesPage() {
       if (!res.ok) throw new Error("فشل الحذف");
       await fetchResponses();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "فشل الحذف");
+      await alertDialog({
+        title: "فشل الحذف",
+        body: e instanceof Error ? e.message : "خطأ غير معروف",
+        variant: "danger",
+      });
     } finally {
       setDeletingId(null);
     }

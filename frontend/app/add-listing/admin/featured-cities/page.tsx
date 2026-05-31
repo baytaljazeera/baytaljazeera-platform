@@ -1,6 +1,7 @@
 "use client";
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { confirmDialog } from "@/components/ui/ConfirmDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -93,7 +94,13 @@ export default function FeaturedCitiesPage() {
   };
 
   const deleteCity = async (id: number) => {
-    if (!confirm("هل أنت متأكد من حذف هذه المدينة؟")) return;
+    const ok = await confirmDialog({
+      title: "حذف المدينة المميزة",
+      body: "سيتم حذف هذه المدينة من قائمة المدن المميزة. الإعلانات في هذه المدينة لن تتأثر، فقط ستخرج من القسم المميز في الصفحة الرئيسية.",
+      confirmText: "احذف المدينة",
+      variant: "danger",
+    });
+    if (!ok) return;
     
     try {
       const res = await fetch(`/api/featured-cities/${id}`, {

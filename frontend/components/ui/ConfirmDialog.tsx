@@ -49,6 +49,21 @@ export interface AlertOptions {
   buttonText?: string;
 }
 
+export interface PromptOptions {
+  title: string;
+  body?: ReactNode;
+  placeholder?: string;
+  initialValue?: string;
+  /** Minimum length the user must type before submit enables. Default 1. */
+  minLength?: number;
+  /** Multi-line textarea instead of single input. */
+  multiline?: boolean;
+  confirmText?: string;
+  cancelText?: string;
+  variant?: DialogVariant;
+  hint?: string;
+}
+
 // ─── Variant styles ──────────────────────────────────────────────────
 const VARIANT_CONFIG: Record<DialogVariant, {
   iconBg: string;
@@ -105,9 +120,11 @@ const VARIANT_CONFIG: Record<DialogVariant, {
 // calls through it via a tiny event bus. This avoids needing a Provider
 // in the layout tree.
 type ResolveFn = (value: boolean) => void;
+type PromptResolveFn = (value: string | null) => void;
 type Request =
   | { kind: "confirm"; opts: ConfirmOptions; resolve: ResolveFn }
-  | { kind: "alert"; opts: AlertOptions; resolve: ResolveFn };
+  | { kind: "alert"; opts: AlertOptions; resolve: ResolveFn }
+  | { kind: "prompt"; opts: PromptOptions; resolve: PromptResolveFn };
 
 let push: ((r: Request) => void) | null = null;
 
@@ -123,6 +140,18 @@ export function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
       return;
     }
     push({ kind: "confirm", opts, resolve });
+  });
+}
+
+export function promptDialog(opts: PromptOptions): Promise<string | null> {
+  if (typeof window === "undefined") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    if (!push) {
+      const value = window.prompt(opts.title + (opts.body ? "\n" + String(opts.body) : ""), opts.initialValue || "");
+      resolve(value);
+      return;
+    }
+    push({ kind: "prompt", opts, resolve: resolve as PromptResolveFn });
   });
 }
 
@@ -151,11 +180,18 @@ export function DialogHost() {
     push = (r: Request) => setQueue((q) => [...q, r]);
     return () => { push = null; };
   }, []);
-  const dismiss = useCallback((value: boolean) => {
+  const dismiss = useCallback((value: boolean | string | null) => {
     setQueue((q) => {
       if (q.length === 0) return q;
       const [first, ...rest] = q;
-      first.resolve(value);
+      // Each resolver type only accepts its native shape — coerce
+      // when the caller passed the "wrong" shape (e.g. backdrop click
+      // on a prompt should resolve with null, not false).
+      if (first.kind === "prompt") {
+        (first.resolve as PromptResolveFn)(typeof value === "string" ? value : null);
+      } else {
+        (first.resolve as ResolveFn)(typeof value === "boolean" ? value : false);
+      }
       return rest;
     });
   }, []);
@@ -175,45 +211,71 @@ export function DialogHost() {
 }
 
 // ─── Dialog body ─────────────────────────────────────────────────────
-function DialogBody({ request, onClose }: { request: Request; onClose: (v: boolean) => void }) {
+function DialogBody({ request, onClose }: { request: Request; onClose: (v: boolean | string | null) => void }) {
   const isAlert = request.kind === "alert";
-  const opts = request.opts as ConfirmOptions & AlertOptions;
-  const variant: DialogVariant = opts.variant ?? (isAlert ? "info" : "warning");
+  const isPrompt = request.kind === "prompt";
+  const opts = request.opts as ConfirmOptions & AlertOptions & PromptOptions;
+  const variant: DialogVariant = opts.variant ?? (isAlert ? "info" : isPrompt ? "info" : "warning");
   const cfg = VARIANT_CONFIG[variant];
   const Icon = cfg.Icon;
 
   const [acknowledged, setAcknowledged] = useState(!opts.acknowledgeText);
   const [doubleArmed, setDoubleArmed] = useState(!(request.kind === "confirm" && (opts as ConfirmOptions).doubleConfirm));
+  const [promptValue, setPromptValue] = useState<string>(isPrompt ? ((opts as PromptOptions).initialValue || "") : "");
+  const promptMinLen = isPrompt ? Math.max(0, (opts as PromptOptions).minLength ?? 1) : 0;
+  const promptValid = !isPrompt || promptValue.trim().length >= promptMinLen;
+
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
-  // Focus the cancel button by default for confirm (safer); the OK
-  // button for alert (faster dismiss). User can Tab + Enter either way.
+  // Focus: input for prompt, cancel for confirm, OK for alert.
   useEffect(() => {
+    if (isPrompt && inputRef.current) {
+      inputRef.current.focus();
+      // place caret at end so initial value is editable, not selected
+      const len = inputRef.current.value.length;
+      try { inputRef.current.setSelectionRange(len, len); } catch { /* readonly types */ }
+      return;
+    }
     const target = isAlert ? confirmRef.current : cancelRef.current;
     target?.focus();
-  }, [isAlert]);
+  }, [isAlert, isPrompt]);
 
-  // Keyboard shortcuts: Esc cancels, Enter confirms (when enabled).
+  // Keyboard: Esc cancels (resolves null for prompt, false for confirm,
+  // true for alert). Enter submits when valid. Multi-line prompts only
+  // submit on Enter when Cmd/Ctrl is held so newlines work normally.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose(isAlert);
+        onClose(isPrompt ? null : isAlert);
         return;
       }
       if (e.key === "Enter" && acknowledged && doubleArmed) {
+        if (isPrompt) {
+          if ((opts as PromptOptions).multiline && !(e.metaKey || e.ctrlKey)) return;
+          if (!promptValid) return;
+          e.preventDefault();
+          onClose(promptValue.trim());
+          return;
+        }
         e.preventDefault();
         onClose(true);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, isAlert, acknowledged, doubleArmed]);
+  }, [onClose, isAlert, isPrompt, acknowledged, doubleArmed, promptValue, promptValid, opts]);
 
   const handleConfirm = () => {
     if (request.kind === "confirm" && (opts as ConfirmOptions).doubleConfirm && !doubleArmed) {
       setDoubleArmed(true);
+      return;
+    }
+    if (isPrompt) {
+      if (!promptValid) return;
+      onClose(promptValue.trim());
       return;
     }
     onClose(true);
@@ -284,7 +346,36 @@ function DialogBody({ request, onClose }: { request: Request; onClose: (v: boole
               </p>
             )}
 
-            {!isAlert && (opts as ConfirmOptions).acknowledgeText && (
+            {isPrompt && (
+              <div className="mt-4">
+                {(opts as PromptOptions).multiline ? (
+                  <textarea
+                    ref={(el) => { inputRef.current = el; }}
+                    value={promptValue}
+                    onChange={(e) => setPromptValue(e.target.value)}
+                    placeholder={(opts as PromptOptions).placeholder}
+                    rows={3}
+                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 focus:border-[#D4AF37] resize-y"
+                  />
+                ) : (
+                  <input
+                    ref={(el) => { inputRef.current = el; }}
+                    type="text"
+                    value={promptValue}
+                    onChange={(e) => setPromptValue(e.target.value)}
+                    placeholder={(opts as PromptOptions).placeholder}
+                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 focus:border-[#D4AF37]"
+                  />
+                )}
+                {promptMinLen > 0 && !promptValid && promptValue.length > 0 && (
+                  <p className="mt-1.5 text-[11px] text-amber-700">
+                    الحد الأدنى: {promptMinLen} حرف ({promptValue.trim().length}/{promptMinLen})
+                  </p>
+                )}
+              </div>
+            )}
+
+            {!isAlert && !isPrompt && (opts as ConfirmOptions).acknowledgeText && (
               <label className="mt-4 flex items-start gap-2.5 cursor-pointer select-none p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-[#D4AF37]/50 transition">
                 <input
                   type="checkbox"
@@ -301,24 +392,26 @@ function DialogBody({ request, onClose }: { request: Request; onClose: (v: boole
                 <button
                   ref={cancelRef}
                   type="button"
-                  onClick={() => onClose(false)}
+                  onClick={() => onClose(isPrompt ? null : false)}
                   className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:border-slate-400 transition focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40"
                 >
-                  {(opts as ConfirmOptions).cancelText || "إلغاء"}
+                  {(isPrompt ? (opts as PromptOptions).cancelText : (opts as ConfirmOptions).cancelText) || "إلغاء"}
                 </button>
               )}
               <button
                 ref={confirmRef}
                 type="button"
                 onClick={handleConfirm}
-                disabled={!acknowledged}
+                disabled={!acknowledged || (isPrompt && !promptValid)}
                 className={`px-5 py-2.5 rounded-xl text-sm transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#D4AF37] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${cfg.confirmBtn}`}
               >
                 {isAlert
                   ? (opts as AlertOptions).buttonText || "تم"
-                  : (!doubleArmed
-                      ? `${(opts as ConfirmOptions).confirmText || "تأكيد"} — اضغط مرة أخرى للتأكيد`
-                      : (opts as ConfirmOptions).confirmText || "تأكيد")}
+                  : isPrompt
+                    ? ((opts as PromptOptions).confirmText || "تأكيد")
+                    : (!doubleArmed
+                        ? `${(opts as ConfirmOptions).confirmText || "تأكيد"} — اضغط مرة أخرى للتأكيد`
+                        : (opts as ConfirmOptions).confirmText || "تأكيد")}
               </button>
             </div>
           </div>
@@ -332,11 +425,12 @@ function DialogBody({ request, onClose }: { request: Request; onClose: (v: boole
 const DialogContext = createContext<{
   confirm: (opts: ConfirmOptions) => Promise<boolean>;
   alert: (opts: AlertOptions) => Promise<boolean>;
+  prompt: (opts: PromptOptions) => Promise<string | null>;
 } | null>(null);
 
 export function DialogProvider({ children }: { children: ReactNode }) {
   return (
-    <DialogContext.Provider value={{ confirm: confirmDialog, alert: alertDialog }}>
+    <DialogContext.Provider value={{ confirm: confirmDialog, alert: alertDialog, prompt: promptDialog }}>
       {children}
       <DialogHost />
     </DialogContext.Provider>
@@ -345,5 +439,5 @@ export function DialogProvider({ children }: { children: ReactNode }) {
 
 export function useDialog() {
   const ctx = useContext(DialogContext);
-  return ctx || { confirm: confirmDialog, alert: alertDialog };
+  return ctx || { confirm: confirmDialog, alert: alertDialog, prompt: promptDialog };
 }

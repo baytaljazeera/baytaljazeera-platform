@@ -9,6 +9,7 @@ import {
   Download, User, Shield, ChevronDown, AlertTriangle, Search,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
+import { alertDialog } from "@/components/ui/ConfirmDialog";
 
 interface MembershipRequest {
   id: number;
@@ -148,7 +149,20 @@ export default function MembershipPage() {
         setMessage({ type: "success", text: data.message });
         if (data.temp_password) {
           setTempPassword(data.temp_password);
-          alert(`تم إنشاء حساب للموظف\n\nالبريد: ${data.user_email}\nكلمة المرور المؤقتة: ${data.temp_password}\n\nيرجى إبلاغ الموظف بهذه البيانات`);
+          await alertDialog({
+            title: "تم إنشاء حساب الموظف",
+            body: (
+              <div className="space-y-2">
+                <div className="text-slate-700">يرجى إبلاغ الموظف بهذه البيانات يدوياً (لن تُعرض مرة أخرى):</div>
+                <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 space-y-1.5 font-mono text-xs">
+                  <div><span className="text-slate-500">البريد:</span> <span className="text-[#002845] font-bold">{data.user_email}</span></div>
+                  <div><span className="text-slate-500">كلمة المرور المؤقتة:</span> <span className="text-[#002845] font-bold">{data.temp_password}</span></div>
+                </div>
+              </div>
+            ),
+            variant: "success",
+            buttonText: "تم — نسختها",
+          });
         }
         fetchRequests();
         setShowApproveModal(null);

@@ -10,6 +10,7 @@ import {
   useMemo,
 } from "react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { confirmDialog } from "@/components/ui/ConfirmDialog";
 import {
   MessageCircle,
   Send,
@@ -393,13 +394,14 @@ export default function WhatsAppCommandCenter() {
   };
 
   const handleDeleteConversation = async (phone: string) => {
-    if (
-      !confirm(
-        "هل أنت متأكد من حذف هذه المحادثة بالكامل؟ لا يمكن التراجع عن هذا الإجراء."
-      )
-    ) {
-      return;
-    }
+    const ok = await confirmDialog({
+      title: "حذف محادثة الواتساب",
+      body: "سيتم حذف هذه المحادثة بالكامل (كل الرسائل + سجل الحالة). العميل سيظل قادراً على مراسلتك من جديد، لكن السجل القديم سيضيع.",
+      hint: "لا يمكن التراجع عن هذا الإجراء",
+      confirmText: "احذف المحادثة",
+      variant: "danger",
+    });
+    if (!ok) return;
     try {
       const res = await fetch(
         `${API_URL}/api/admin/whatsapp/conversations/${encodeURIComponent(phone)}`,
