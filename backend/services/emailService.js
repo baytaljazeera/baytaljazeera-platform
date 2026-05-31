@@ -53,11 +53,15 @@ async function sendEmail(to, subject, htmlBody, textBody = null) {
   }
 
   try {
-    if (authClient) {
+    // Fix: was referencing `authClient` which was never declared (the
+    // OAuth client variable is `oauth2Client`, see line 22). Caused
+    // every sendEmail to throw ReferenceError: "authClient is not
+    // defined" — surfaced as "فشل إرسال إيميل التأكيد" on signup.
+    if (oauth2Client) {
       console.log('🔄 [EmailService] Refreshing access token...');
       try {
-        const { credentials } = await authClient.refreshAccessToken();
-        authClient.setCredentials(credentials);
+        const { credentials } = await oauth2Client.refreshAccessToken();
+        oauth2Client.setCredentials(credentials);
         console.log('✅ [EmailService] Access token refreshed');
       } catch (refreshError) {
         console.warn('⚠️ [EmailService] Token refresh failed, continuing...', refreshError.message);
