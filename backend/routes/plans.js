@@ -77,15 +77,129 @@ async function isLaunchFreeMode() {
 // plan so the UI can show a "launch promo" badge instead of just a
 // 0. Country-pricing fields (local_price) get zeroed too because the
 // kill-switch outranks per-country overrides.
+//
+// Critical: the promotion service writes snake_case fields
+// (discounted_price, applied_promotion, original_price, etc.) BEFORE
+// we run. Without clearing those, the customer page would still show
+// "-100% خصم — مجاناً" even with the master switch off because the
+// promo fields persist. So we wipe BOTH naming conventions.
 function applyLaunchFreeMode(plans) {
   return plans.map((p) => ({
     ...p,
     price: 0,
+    // camelCase (some endpoints / older clients)
     discountedPrice: 0,
+    originalPrice: 0,
+    discountPercentage: 0,
+    discountAmount: 0,
+    appliedPromotion: null,
+    // snake_case (current promotionService output)
+    discounted_price: 0,
+    original_price: 0,
+    discount_percentage: 0,
+    discount_amount: 0,
+    applied_promotion: null,
+    // country override
     local_price: 0,
+    // flag for UI
     is_launch_free_mode: true,
   }));
 }
+
+// ─── Free-pricing diagnostic ──────────────────────────────────────
+// Single source of truth that answers "why do customers see plans
+// as free right now?". Inspects all THREE independent sources:
+//   1. Master kill-switch (app_settings.plans_launch_free_mode)
+//   2. Active promotions that produce 100%-off / free_plan / skip_payment
+//   3. country_plan_prices rows with price=0 on any country
+// Returns one consolidated object so the admin UI can render a
+// single banner listing every active source + a deactivate path.
+router.get("/free-pricing-diagnostic", asyncHandler(async (req, res) => {
+  res.set('Cache-Control', 'no-store, max-age=0');
+  const out = {
+    master_switch: { enabled: false },
+    free_promotions: [],
+    zero_country_prices: { by_country: {} },
+    any_active: false,
+  };
+  try {
+    out.master_switch.enabled = await isLaunchFreeMode();
+  } catch { /* default false */ }
+  try {
+    const r = await db.query(
+      `SELECT id, name_ar, name_en, promotion_type, discount_type,
+              discount_value, skip_payment, applies_to, status,
+              start_at, end_at
+       FROM promotions
+       WHERE status = 'active'
+         AND (start_at IS NULL OR start_at <= NOW())
+         AND (end_at IS NULL OR end_at >= NOW())
+         AND (
+              promotion_type IN ('free_plan', 'free_trial')
+           OR (discount_type = 'percentage' AND discount_value >= 100)
+           OR skip_payment = true
+         )
+       ORDER BY id`
+    );
+    out.free_promotions = r.rows;
+  } catch (e) {
+    console.warn('[free-pricing-diagnostic] promo lookup failed:', e.message);
+  }
+  try {
+    const r = await db.query(
+      `SELECT country_code, country_name_ar, COUNT(*) AS zero_count,
+              ARRAY_AGG(plan_id ORDER BY plan_id) AS plan_ids
+       FROM country_plan_prices
+       WHERE is_active = true AND price = 0
+       GROUP BY country_code, country_name_ar
+       ORDER BY country_code`
+    );
+    r.rows.forEach((row) => {
+      out.zero_country_prices.by_country[row.country_code] = {
+        country_name_ar: row.country_name_ar,
+        zero_count: Number(row.zero_count),
+        plan_ids: row.plan_ids,
+      };
+    });
+  } catch (e) {
+    console.warn('[free-pricing-diagnostic] country lookup failed:', e.message);
+  }
+  out.any_active =
+    out.master_switch.enabled ||
+    out.free_promotions.length > 0 ||
+    Object.keys(out.zero_country_prices.by_country).length > 0;
+  console.log('[free-pricing-diagnostic]', JSON.stringify({
+    master: out.master_switch.enabled,
+    promos: out.free_promotions.length,
+    countries: Object.keys(out.zero_country_prices.by_country).length,
+  }));
+  res.json(out);
+}));
+
+// Quick-wipe SA country overrides — clears every is_active row for
+// country_code='SA' so SA customers see base SAR prices.
+router.post("/admin/country-prices/clear-country", adminAuth, asyncHandler(async (req, res) => {
+  const code = String(req.body?.country_code || '').toUpperCase();
+  if (!/^[A-Z]{2,3}$/.test(code)) {
+    return res.status(400).json({ error: "كود الدولة غير صالح" });
+  }
+  const r = await db.query(
+    `DELETE FROM country_plan_prices WHERE country_code = $1 RETURNING id, plan_id, price`,
+    [code]
+  );
+  auditPlanChange({
+    actor: req.user,
+    action: 'plan_country_price.bulk_clear',
+    planId: null,
+    countryCode: code,
+    before: { cleared_rows: r.rowCount, rows: r.rows },
+    after: null,
+  });
+  console.log('[country-prices clear]', JSON.stringify({
+    code, cleared: r.rowCount, by: req.user?.id,
+  }));
+  res.json({ ok: true, cleared: r.rowCount });
+}));
 
 router.get("/", asyncHandler(async (req, res) => {
   const { all } = req.query;

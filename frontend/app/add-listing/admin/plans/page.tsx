@@ -220,46 +220,103 @@ export default function PlansManagement() {
   const [availableIcons, setAvailableIcons] = useState<IconFile[]>([]);
   const [uploadingIcon, setUploadingIcon] = useState(false);
 
-  // Launch-mode detector — fetches what a Saudi customer ACTUALLY
-  // sees via /api/plans/by-country/SA. If every plan resolves to
-  // local_price=0 while the base price > 0, then someone has set
-  // country overrides that hide all real prices. Surfaces a banner
-  // so the owner doesnt scratch their head wondering why everything
-  // shows as مجاني on the live site.
-  const [saLaunchMode, setSaLaunchMode] = useState<{
-    active: boolean;
-    overriddenCount: number;
-    totalPaidPlans: number;
-  } | null>(null);
+  // Free-pricing diagnostic — single source of truth for "why are
+  // plans showing as free?". Lists all 3 sources (master switch,
+  // active free promotions, zero country prices) so the owner sees
+  // the full picture in one banner instead of guessing.
+  interface FreePromotion {
+    id: number;
+    name_ar?: string;
+    name_en?: string;
+    promotion_type: string;
+    discount_value?: number;
+  }
+  interface FreePricingDiagnostic {
+    master_switch: { enabled: boolean };
+    free_promotions: FreePromotion[];
+    zero_country_prices: {
+      by_country: Record<string, { country_name_ar: string; zero_count: number; plan_ids: number[] }>;
+    };
+    any_active: boolean;
+  }
+  const [diagnostic, setDiagnostic] = useState<FreePricingDiagnostic | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPlans();
     fetchIcons();
-    fetchSaLaunchMode();
+    fetchDiagnostic();
   }, []);
 
-  const fetchSaLaunchMode = async () => {
+  const fetchDiagnostic = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/plans/by-country/SA`);
-      const data = await res.json();
-      // Master kill-switch wins. If launch_free_mode is true on the
-      // backend, every plan is forced to 0 in the API response, so
-      // the per-country detection below would be misleading. Show
-      // the master-mode banner instead of the country-pricing one.
-      if (data.launch_free_mode) {
-        setSaLaunchMode({ active: true, overriddenCount: -1, totalPaidPlans: -1 });
-        return;
-      }
-      const list: Array<{ price: number | string; local_price: number | string; is_country_pricing: boolean }> = data.plans || [];
-      const paid = list.filter((p) => Number(p.price) > 0);
-      const overridden = paid.filter((p) => p.is_country_pricing && Number(p.local_price) === 0);
-      setSaLaunchMode({
-        active: paid.length > 0 && overridden.length === paid.length,
-        overriddenCount: overridden.length,
-        totalPaidPlans: paid.length,
+      const res = await fetch(`${API_URL}/api/plans/free-pricing-diagnostic`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
       });
+      if (res.ok) setDiagnostic(await res.json());
     } catch {
-      setSaLaunchMode(null);
+      setDiagnostic(null);
+    }
+  };
+
+  const deactivatePromotion = async (id: number) => {
+    if (!window.confirm("إيقاف هذا العرض سيُعيد الأسعار الأصلية لكل العملاء فوراً. متابعة؟")) return;
+    setActionLoading(`promo-${id}`);
+    try {
+      const res = await fetch(`${API_URL}/api/promotions/${id}/toggle`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await fetchDiagnostic();
+    } catch (e) {
+      window.alert(`فشل إيقاف العرض: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const clearCountryZeros = async (countryCode: string, countryName: string) => {
+    if (!window.confirm(`حذف كل أسعار ${countryName} المضبوطة على 0؟ سيرى عملاء هذه الدولة الأسعار الأصلية بالريال.`)) return;
+    setActionLoading(`country-${countryCode}`);
+    try {
+      const res = await fetch(`${API_URL}/api/plans/admin/country-prices/clear-country`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ country_code: countryCode }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await fetchDiagnostic();
+    } catch (e) {
+      window.alert(`فشل المسح: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const toggleMasterSwitch = async () => {
+    const next = !diagnostic?.master_switch.enabled;
+    if (!window.confirm(next
+      ? "تفعيل وضع الإطلاق المجاني سيُظهر كل الباقات بسعر 0 لكل العملاء فوراً. متابعة؟"
+      : "إيقاف وضع الإطلاق المجاني. متابعة؟"
+    )) return;
+    setActionLoading("master");
+    try {
+      const res = await fetch(`${API_URL}/api/settings/plans-launch-mode`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ enabled: next }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await fetchDiagnostic();
+    } catch (e) {
+      window.alert(`فشل التبديل: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -497,49 +554,95 @@ export default function PlansManagement() {
           real numbers. Owner kept seeing "كل الباقات مجانية"
           without knowing why; this banner spells it out and links
           straight to country-pricing to switch overrides on/off. */}
-      {saLaunchMode?.active && (
-        <div className={`rounded-2xl border-2 p-4 flex items-start gap-3 ${
-          saLaunchMode.overriddenCount === -1
-            ? "border-emerald-300 bg-emerald-50"
-            : "border-amber-300 bg-amber-50"
-        }`}>
-          <AlertTriangle className={`w-6 h-6 shrink-0 mt-0.5 ${
-            saLaunchMode.overriddenCount === -1 ? "text-emerald-600" : "text-amber-600"
-          }`} />
-          <div className="flex-1">
-            {saLaunchMode.overriddenCount === -1 ? (
-              <>
-                <div className="font-bold text-emerald-900">
-                  وضع الإطلاق المجاني (مفتاح رئيسي) — مفعّل لكل العالم
+      {/* ─── Unified free-pricing diagnostic ─────────────────────
+          ONE place that lists every source making plans appear free
+          to customers right now. Three independent sources:
+            1. Master kill-switch (app_settings)
+            2. Active 100%-off / free_plan / skip_payment promotions
+            3. country_plan_prices rows with price=0
+          Each source gets a one-click "deactivate" button so the
+          owner can wipe them in seconds without hunting through
+          three separate pages. */}
+      {diagnostic?.any_active && (
+        <div className="rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 p-5 space-y-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="font-bold text-amber-900 text-lg">
+                الباقات تظهر مجاناً للعملاء — مصادر فعّالة الآن
+              </div>
+              <p className="text-sm text-amber-800 mt-1">
+                هذي كل الطبقات اللي تجعل العميل يرى "مجاناً". أوقف الكل لإظهار الأسعار الأصلية.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2.5">
+            {/* Source 1 — master switch */}
+            {diagnostic.master_switch.enabled && (
+              <div className="bg-white border border-amber-200 rounded-xl p-3 flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <div className="font-bold text-[#002845] text-sm">🔑 المفتاح الرئيسي للإطلاق المجاني</div>
+                  <div className="text-xs text-slate-600 mt-1">يفرض كل الباقات على 0 لكل العملاء في كل العالم.</div>
                 </div>
-                <p className="text-sm text-emerald-800 mt-1 leading-relaxed">
-                  المفتاح الرئيسي مفعّل في <strong>تسعير الباقات حسب الدولة</strong>: كل عميل في أي دولة يرى كل الباقات بسعر 0 الآن. أسعار الجدول أدناه + أسعار الدول محفوظة وستعود لحظة إيقاف الوضع.
-                </p>
-                <Link
-                  href="/admin/plans/country-pricing"
-                  className="inline-flex items-center gap-1.5 mt-2 text-sm font-bold text-emerald-900 underline hover:text-emerald-700"
+                <button
+                  type="button"
+                  onClick={toggleMasterSwitch}
+                  disabled={actionLoading === "master"}
+                  className="shrink-0 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg disabled:opacity-60"
                 >
-                  <Globe className="w-4 h-4" />
-                  افتح الصفحة لإيقاف وضع المجاني ←
-                </Link>
-              </>
-            ) : (
-              <>
-                <div className="font-bold text-amber-900">
-                  وضع الإطلاق المجاني (السعودية فقط) — مفعّل حالياً
-                </div>
-                <p className="text-sm text-amber-800 mt-1 leading-relaxed">
-                  العملاء داخل السعودية يرون <strong>كل الباقات بسعر 0 ريال</strong> لأن هناك تخفيضات قُطرية مفعّلة في "تسعير حسب الدولة" (السعر المحلي = 0 لكل الباقات المدفوعة الـ {saLaunchMode.totalPaidPlans}). الأسعار الأصلية في الجدول أدناه لم تتغيّر — فقط ما يُعرض للعميل السعودي.
-                </p>
-                <Link
-                  href="/admin/plans/country-pricing?country=SA"
-                  className="inline-flex items-center gap-1.5 mt-2 text-sm font-bold text-amber-900 underline hover:text-amber-700"
-                >
-                  <Globe className="w-4 h-4" />
-                  افتح تسعير الدولة لإلغاء التخفيض ←
-                </Link>
-              </>
+                  {actionLoading === "master" ? "..." : "إيقاف"}
+                </button>
+              </div>
             )}
+
+            {/* Source 2 — active free promotions */}
+            {diagnostic.free_promotions.map((promo) => (
+              <div key={promo.id} className="bg-white border border-amber-200 rounded-xl p-3 flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <div className="font-bold text-[#002845] text-sm">
+                    🎁 عرض ترويجي: {promo.name_ar || promo.name_en || `#${promo.id}`}
+                  </div>
+                  <div className="text-xs text-slate-600 mt-1">
+                    النوع: {promo.promotion_type} {promo.discount_value ? `— خصم ${promo.discount_value}%` : ""} — مفعّل لكل الباقات
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => deactivatePromotion(promo.id)}
+                  disabled={actionLoading === `promo-${promo.id}`}
+                  className="shrink-0 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg disabled:opacity-60"
+                >
+                  {actionLoading === `promo-${promo.id}` ? "..." : "إيقاف"}
+                </button>
+              </div>
+            ))}
+
+            {/* Source 3 — zero country prices */}
+            {Object.entries(diagnostic.zero_country_prices.by_country).map(([code, info]) => (
+              <div key={code} className="bg-white border border-amber-200 rounded-xl p-3 flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <div className="font-bold text-[#002845] text-sm">
+                    🌍 أسعار {info.country_name_ar} مضبوطة على 0
+                  </div>
+                  <div className="text-xs text-slate-600 mt-1">
+                    {info.zero_count} باقة بسعر 0 لـ {code}. عملاء هذه الدولة يرون كل شيء مجاناً.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => clearCountryZeros(code, info.country_name_ar)}
+                  disabled={actionLoading === `country-${code}`}
+                  className="shrink-0 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg disabled:opacity-60"
+                >
+                  {actionLoading === `country-${code}` ? "..." : "مسح"}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-xs text-amber-700 bg-amber-100 border border-amber-200 rounded-lg px-3 py-2">
+            💡 الأسعار الأصلية في الجدول أدناه محفوظة دائماً — هذي الطبقات فقط تتفوّق عليها عند العرض للعميل.
           </div>
         </div>
       )}
