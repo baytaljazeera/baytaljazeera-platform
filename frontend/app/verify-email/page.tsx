@@ -59,11 +59,24 @@ function VerifyEmailContent() {
     setLoading(false);
   }
 
-  async function resendVerification() {
-    if (!email) return;
-    setResending(true);
-    setResendSuccess(false);
-    setError(null);
+  // Auto-retry: when the email service returns a transient error
+  // (Gmail OAuth token blip, network hiccup, 5xx), schedule one
+  // automatic retry after 30s instead of leaving the user staring
+  // at a failure. Permanent errors (404 user not found, 400 already
+  // verified, 429 rate-limited) are NOT retried.
+  function isTransientError(status: number, errMsg?: string): boolean {
+    if (status === 0) return true; // network failure
+    if (status >= 500) return true;
+    if (status === 502 || status === 503 || status === 504) return true;
+    const txt = String(errMsg || "").toLowerCase();
+    if (txt.includes("timeout") || txt.includes("network") || txt.includes("econn")) return true;
+    if (txt.includes("authclient") || txt.includes("oauth")) return true;
+    return false;
+  }
+
+  const [autoRetryCountdown, setAutoRetryCountdown] = useState<number | null>(null);
+
+  async function doResendOnce(): Promise<{ ok: boolean; status: number; error?: string }> {
     try {
       const res = await fetch(`${API_URL}/api/auth/resend-verification`, {
         method: "POST",
@@ -71,18 +84,60 @@ function VerifyEmailContent() {
         credentials: "include",
         body: JSON.stringify({ email }),
       });
-      const data = await res.json();
-
-      if (res.ok) {
-        setResendSuccess(true);
-      } else {
-        setError(data.error || "فشل إرسال رابط التأكيد.");
-      }
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, status: res.status, error: data?.error };
     } catch (err) {
-      setError("حدث خطأ في الاتصال. يرجى المحاولة مرة أخرى.");
-    } finally {
-      setResending(false);
+      return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) };
     }
+  }
+
+  async function resendVerification() {
+    if (!email) return;
+    setResending(true);
+    setResendSuccess(false);
+    setError(null);
+    setAutoRetryCountdown(null);
+
+    const first = await doResendOnce();
+    if (first.ok) {
+      setResendSuccess(true);
+      setResending(false);
+      return;
+    }
+
+    // If non-transient, surface the real error and stop.
+    if (!isTransientError(first.status, first.error)) {
+      setError(first.error || "فشل إرسال رابط التأكيد.");
+      setResending(false);
+      return;
+    }
+
+    // Schedule auto-retry — show a countdown so the user knows
+    // something is happening instead of a stuck spinner.
+    setError("الخدمة بطيئة الآن — سنحاول تلقائياً مرة أخرى خلال 30 ثانية…");
+    let remaining = 30;
+    setAutoRetryCountdown(remaining);
+    const tick = setInterval(() => {
+      remaining -= 1;
+      setAutoRetryCountdown(remaining);
+      if (remaining <= 0) clearInterval(tick);
+    }, 1000);
+
+    await new Promise((r) => setTimeout(r, 30000));
+    clearInterval(tick);
+    setAutoRetryCountdown(null);
+
+    const second = await doResendOnce();
+    if (second.ok) {
+      setResendSuccess(true);
+      setError(null);
+    } else {
+      setError(
+        (second.error || "فشل إرسال رابط التأكيد بعد محاولتين.") +
+        " — تواصل مع الدعم على info@Baytaljazeera.com"
+      );
+    }
+    setResending(false);
   }
 
   return (
@@ -156,23 +211,48 @@ function VerifyEmailContent() {
               )}
               
               {error && (
-                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
-                  <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                <div className={`mb-4 p-4 rounded-xl flex items-start gap-3 ${
+                  autoRetryCountdown !== null
+                    ? "bg-amber-50 border border-amber-200"
+                    : "bg-red-50 border border-red-200"
+                }`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    autoRetryCountdown !== null ? "bg-amber-100" : "bg-red-100"
+                  }`}>
+                    {autoRetryCountdown !== null ? (
+                      <svg className="w-5 h-5 text-amber-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    )}
                   </div>
-                  <p className="text-red-700 text-sm font-medium">{error}</p>
+                  <div className="flex-1">
+                    <p className={`text-sm font-medium ${autoRetryCountdown !== null ? "text-amber-800" : "text-red-700"}`}>
+                      {error}
+                    </p>
+                    {autoRetryCountdown !== null && autoRetryCountdown > 0 && (
+                      <p className="mt-1 text-xs text-amber-700 font-bold">
+                        إعادة المحاولة خلال {autoRetryCountdown} ثانية…
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
-              
+
               <div className="space-y-3">
-                <button 
+                <button
                   onClick={resendVerification}
                   disabled={resending}
                   className="block w-full bg-gradient-to-r from-[#0B6B4C] to-[#085239] text-white font-bold py-3 rounded-xl transition-all hover:shadow-lg disabled:opacity-50"
                 >
-                  {resending ? 'جاري الإرسال...' : 'إعادة إرسال رابط التأكيد'}
+                  {resending
+                    ? (autoRetryCountdown !== null
+                        ? `جاري المحاولة التلقائية (${autoRetryCountdown}s)…`
+                        : "جاري الإرسال…")
+                    : "إعادة إرسال رابط التأكيد"}
                 </button>
                 <Link 
                   href="/login"

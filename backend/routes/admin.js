@@ -191,8 +191,9 @@ router.get("/users", authMiddleware, requireRoles('super_admin'), validatePagina
   
   const result = await paginatedQuery(db, {
     baseQuery: `
-      SELECT 
+      SELECT
         id, name, email, phone, role, role_level, status, created_at,
+        email_verified, email_verified_at,
         (SELECT p.name_ar FROM user_plans up JOIN plans p ON up.plan_id = p.id WHERE up.user_id = users.id AND (up.expires_at IS NULL OR up.expires_at > NOW()) AND up.status = 'active' ORDER BY up.created_at DESC LIMIT 1) as plan_name
       FROM users
       ${whereClause}
@@ -479,13 +480,69 @@ router.patch("/users/:id/status", authMiddleware, requireRoles('super_admin'), a
 router.patch("/users/:id/verify-email", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const result = await db.query(
-    "UPDATE users SET email_verified = true, email_verified_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING id, name, email, email_verified",
+    "UPDATE users SET email_verified = true, email_verified_at = NOW(), email_verification_token = NULL, email_verification_expires = NULL, updated_at = NOW() WHERE id = $1 RETURNING id, name, email, email_verified",
     [id]
   );
   if (result.rows.length === 0) {
     return res.status(404).json({ error: "المستخدم غير موجود" });
   }
-  res.json({ ok: true, user: result.rows[0], message: "تم تفعيل البريد الإلكتروني بنجاح" });
+  await logAdminAction(req, AUDIT_ACTIONS.USER_UPDATE || 'user.verify_email_manual', 'user', id, {
+    userName: result.rows[0].name,
+    userEmail: result.rows[0].email,
+    action: 'manual_email_verification',
+  });
+  res.json({ ok: true, user: result.rows[0], message: "تم تفعيل البريد الإلكتروني يدوياً" });
+}));
+
+// Force-resend verification email to a specific user. Same email
+// flow as the public /api/auth/resend-verification but bypasses
+// the rate limiter (operator action) and logs to audit.
+router.post("/users/:id/resend-verification", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const userRes = await db.query(
+    `SELECT id, name, email, email_verified_at
+     FROM users WHERE id = $1`,
+    [id]
+  );
+  if (userRes.rows.length === 0) {
+    return res.status(404).json({ error: "المستخدم غير موجود" });
+  }
+  const user = userRes.rows[0];
+  if (user.email_verified_at) {
+    return res.status(400).json({ error: "البريد الإلكتروني مؤكد بالفعل" });
+  }
+
+  // Generate fresh token + 24h expiry
+  const crypto = require('crypto');
+  const token = crypto.randomBytes(32).toString('hex');
+  const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  await db.query(
+    `UPDATE users SET email_verification_token = $1, email_verification_expires = $2, updated_at = NOW() WHERE id = $3`,
+    [token, expires, id]
+  );
+
+  try {
+    const { sendEmailVerificationEmail } = require('../services/emailService');
+    const result = await sendEmailVerificationEmail(user.email, token, user.name);
+    if (!result?.success) {
+      return res.status(502).json({
+        error: result?.error || "فشل إرسال إيميل التأكيد",
+      });
+    }
+  } catch (e) {
+    return res.status(500).json({
+      error: "خدمة إرسال البريد غير متاحة",
+      detail: e.message,
+    });
+  }
+
+  await logAdminAction(req, AUDIT_ACTIONS.USER_UPDATE || 'user.verify_email_resend', 'user', id, {
+    userName: user.name,
+    userEmail: user.email,
+    action: 'force_resend_verification_email',
+  });
+
+  res.json({ ok: true, message: "تم إعادة إرسال إيميل التأكيد بنجاح" });
 }));
 
 router.delete("/users/:id", authMiddleware, requireRoles('super_admin'), asyncHandler(async (req, res) => {

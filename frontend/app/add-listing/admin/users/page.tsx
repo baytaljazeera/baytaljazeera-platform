@@ -3,13 +3,14 @@
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
-import { 
-  Users, Search, User, Mail, Phone, Calendar, RefreshCw, 
+import {
+  Users, Search, User, Mail, Phone, Calendar, RefreshCw,
   Ban, Trash2, Check, Loader2, Clock, AlertTriangle,
   Crown, Eye, MoreVertical, UserX, PauseCircle, PlayCircle,
-  TrendingUp, BarChart3, Shield
+  TrendingUp, BarChart3, Shield, MailCheck, MailWarning, Send
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { confirmDialog, alertDialog } from "@/components/ui/ConfirmDialog";
 
 interface Plan {
   id: number;
@@ -34,6 +35,8 @@ interface UserData {
   plan_logo?: string;
   subscription_status?: string;
   subscription_expires?: string;
+  email_verified?: boolean;
+  email_verified_at?: string | null;
 }
 
 const AUTH_PROVIDER_LABELS: Record<string, { label: string; icon: string; color: string }> = {
@@ -215,6 +218,84 @@ export default function UsersPage() {
     } finally {
       setActionLoading(null);
       setConfirmModal(null);
+    }
+  }
+
+  // ─── Email-verification governance ─────────────────────────────
+  // Two flows for stuck signups:
+  //   1) verifyEmailManual — flips email_verified=true server-side.
+  //      Use when youve verified the customer some other way
+  //      (phone, in-person, owner override). Logged to audit.
+  //   2) resendVerification — fires a fresh verification email with
+  //      a new 24h token. Use when the original email was lost or
+  //      the OAuth token expired during the first send.
+  async function verifyEmailManual(userId: string, userName: string, userEmail: string) {
+    const ok = await confirmDialog({
+      title: `تأكيد البريد يدوياً لـ ${userName}`,
+      body: `سيتم تعليم البريد ${userEmail} كـ"مُؤكَّد" بدون انتظار العميل. استخدم هذا فقط بعد التأكد من هوية العميل بطريقة أخرى (هاتفية، حضورياً، إلخ).`,
+      hint: "سيُسجَّل الإجراء باسمك في سجل التدقيق",
+      confirmText: "أكّد البريد يدوياً",
+      variant: "warning",
+    });
+    if (!ok) return;
+    setActionLoading(userId);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/users/${userId}/verify-email`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      setMessage({ type: "success", text: `تم تأكيد بريد ${userName} يدوياً` });
+      fetchData();
+    } catch (e) {
+      await alertDialog({
+        title: "فشل التأكيد اليدوي",
+        body: e instanceof Error ? e.message : String(e),
+        variant: "danger",
+      });
+    } finally {
+      setActionLoading(null);
+      setOpenDropdown(null);
+    }
+  }
+
+  async function resendVerification(userId: string, userName: string, userEmail: string) {
+    const ok = await confirmDialog({
+      title: `إعادة إرسال إيميل التأكيد`,
+      body: `سيُرسَل إيميل تأكيد جديد إلى ${userEmail}. الرابط القديم سيتعطّل ويُستبدل برابط جديد صالح لـ 24 ساعة.`,
+      confirmText: "أعد الإرسال الآن",
+      variant: "info",
+    });
+    if (!ok) return;
+    setActionLoading(userId);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/users/${userId}/resend-verification`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || data.detail || `HTTP ${res.status}`);
+      }
+      await alertDialog({
+        title: "تم إرسال الإيميل",
+        body: `تم إرسال إيميل تأكيد جديد إلى ${userEmail}. اطلب من العميل فحص بريده + مجلد الـ Spam.`,
+        variant: "success",
+      });
+    } catch (e) {
+      await alertDialog({
+        title: "فشل إعادة الإرسال",
+        body: e instanceof Error ? e.message : String(e),
+        variant: "danger",
+      });
+    } finally {
+      setActionLoading(null);
+      setOpenDropdown(null);
     }
   }
 
@@ -740,9 +821,25 @@ export default function UsersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 text-sm text-slate-600">
-                        <Mail className="w-3 h-3" />
-                        {user.email}
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1 text-sm text-slate-600">
+                          <Mail className="w-3 h-3" />
+                          {user.email}
+                        </div>
+                        {/* Email verification badge — surfaces stuck
+                            signups so the operator can verify
+                            manually or resend without digging. */}
+                        {user.email_verified || user.email_verified_at ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 w-fit">
+                            <MailCheck className="w-2.5 h-2.5" />
+                            بريد مؤكَّد
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 w-fit">
+                            <MailWarning className="w-2.5 h-2.5" />
+                            بريد غير مؤكَّد
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -841,14 +938,37 @@ export default function UsersPage() {
                                   تحت التدقيق
                                 </button>
                               )}
-                              
+
+                              {/* Email verification actions — only
+                                  for unverified accounts (verified
+                                  accounts don't need either). */}
+                              {!user.email_verified && !user.email_verified_at && (
+                                <>
+                                  <div className="border-t border-slate-100 my-1"></div>
+                                  <button
+                                    onClick={() => verifyEmailManual(user.id, user.name || "هذا المستخدم", user.email)}
+                                    className="w-full px-4 py-2 text-right text-sm hover:bg-emerald-50 flex items-center gap-2 text-emerald-700"
+                                  >
+                                    <MailCheck className="w-4 h-4" />
+                                    تأكيد البريد يدوياً
+                                  </button>
+                                  <button
+                                    onClick={() => resendVerification(user.id, user.name || "هذا المستخدم", user.email)}
+                                    className="w-full px-4 py-2 text-right text-sm hover:bg-blue-50 flex items-center gap-2 text-blue-700"
+                                  >
+                                    <Send className="w-4 h-4" />
+                                    إعادة إرسال إيميل التأكيد
+                                  </button>
+                                </>
+                              )}
+
                               <div className="border-t border-slate-100 my-1"></div>
-                              
+
                               <button
-                                onClick={() => setConfirmModal({ 
-                                  show: true, 
-                                  action: "delete", 
-                                  userId: user.id, 
+                                onClick={() => setConfirmModal({
+                                  show: true,
+                                  action: "delete",
+                                  userId: user.id,
                                   userName: user.name || "هذا المستخدم"
                                 })}
                                 className="w-full px-4 py-2 text-right text-sm hover:bg-red-50 flex items-center gap-2 text-red-600"
