@@ -36,7 +36,31 @@ interface SupportTicket {
   reply_count: number;
   created_at: string;
   updated_at: string;
+  ticket_type?: string | null;
+  related_property_id?: string | null;
+  invoice_id?: number | null;
+  report_reason_code?: string | null;
+  source?: string | null;
+  department?: string | null;
 }
+
+// Unified taxonomy labels — surfaces ticket_type as a colored chip on
+// each ticket card so the operator instantly sees "this is a property
+// report" / "this is a billing complaint" / "this is an escalation"
+// without opening the ticket. Matches the type enum from
+// frontend/components/requests/RequestComposer.tsx.
+const TICKET_TYPE_BADGES: Record<string, { label: string; tone: string; icon: string }> = {
+  financial:          { label: "مالية",            tone: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: "💳" },
+  account:            { label: "حسابي",             tone: "bg-blue-50 text-blue-700 border-blue-200",          icon: "👤" },
+  technical:          { label: "تقنية",             tone: "bg-purple-50 text-purple-700 border-purple-200",    icon: "🛠️" },
+  billing_complaint:  { label: "شكوى مالية",        tone: "bg-amber-50 text-amber-700 border-amber-200",       icon: "🧾" },
+  refund_claim:       { label: "طلب استرداد",       tone: "bg-rose-50 text-rose-700 border-rose-200",          icon: "↩️" },
+  service_complaint:  { label: "شكوى خدمة",         tone: "bg-amber-50 text-amber-700 border-amber-200",       icon: "📝" },
+  general_complaint:  { label: "شكوى عامة",         tone: "bg-amber-50 text-amber-700 border-amber-200",       icon: "📣" },
+  property_report:    { label: "بلاغ ضد إعلان",     tone: "bg-rose-50 text-rose-700 border-rose-200",          icon: "🚩" },
+  content_report:     { label: "بلاغ محتوى",        tone: "bg-rose-50 text-rose-700 border-rose-200",          icon: "🚫" },
+  escalation:         { label: "تصعيد من المساعد", tone: "bg-violet-50 text-violet-700 border-violet-200",    icon: "🤖" },
+};
 
 interface AccountComplaint {
   id: number;
@@ -659,16 +683,41 @@ export default function CustomerServicePage() {
                   <div className="p-4 md:p-6">
                     <div className="flex flex-col md:flex-row gap-4">
                       <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-3">
+                        <div className="flex items-center gap-2 mb-3 flex-wrap">
                           <span className={`px-3 py-1 rounded-full text-xs font-bold ${supportStatusColors[ticket.status]?.bg} ${supportStatusColors[ticket.status]?.text}`}>
                             {supportStatusColors[ticket.status]?.label}
                           </span>
                           <span className={`px-2 py-1 rounded-lg text-xs ${priorityColors[ticket.priority]?.bg} ${priorityColors[ticket.priority]?.text}`}>
                             {priorityColors[ticket.priority]?.label}
                           </span>
-                          <span className="text-xs text-slate-400">#{ticket.ticket_number}</span>
+                          {/* Unified ticket_type chip — falls back to
+                              department when ticket_type isn't set
+                              (legacy rows). */}
+                          {(() => {
+                            const typeKey = ticket.ticket_type || ticket.department || null;
+                            const badge = typeKey && TICKET_TYPE_BADGES[typeKey];
+                            if (!badge) return null;
+                            return (
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${badge.tone}`}>
+                                <span>{badge.icon}</span>
+                                {badge.label}
+                              </span>
+                            );
+                          })()}
+                          {ticket.related_property_id && (
+                            <a
+                              href={`/listing/${ticket.related_property_id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 transition"
+                              title="افتح صفحة الإعلان المُبلَّغ عنه"
+                            >
+                              🏠 افتح الإعلان
+                            </a>
+                          )}
+                          <span className="text-xs text-slate-400 ms-auto">#{ticket.ticket_number}</span>
                         </div>
-                        
+
                         <h3 className="text-lg font-bold text-[#002845] mb-2">{ticket.subject}</h3>
                         <p className="text-sm text-slate-600 line-clamp-2 mb-3">{ticket.description}</p>
                         

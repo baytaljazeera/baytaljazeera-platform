@@ -173,19 +173,71 @@ router.get("/stats", authMiddleware, adminMiddleware, asyncHandler(async (req, r
   res.json(result.rows[0]);
 }));
 
+// ─── UNIFIED ticket_type taxonomy (June 2026) ────────────────────
+// support_tickets is now the single home for ALL customer requests:
+// support, complaints, property reports, escalations. ticket_type
+// is the new top-level taxonomy. department still drives admin
+// scope / auto-assignment so the existing inbox keeps working.
+const TICKET_TYPE_TO_DEPARTMENT = {
+  // Pure support flavors (legacy compatible)
+  financial: 'financial',
+  account: 'account',
+  technical: 'technical',
+  // Complaint flavors absorbed from account_complaints
+  billing_complaint: 'financial',
+  refund_claim: 'financial',
+  service_complaint: 'account',
+  general_complaint: 'account',
+  // Property-page reports
+  property_report: 'account',
+  content_report: 'account',
+  // AI chatbot escalations
+  escalation: 'account',
+};
+const VALID_TICKET_TYPES = Object.keys(TICKET_TYPE_TO_DEPARTMENT);
+
 router.post("/", authMiddleware, asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { department, subcategory, priority, subject, description } = req.body;
-  
+  const {
+    department: rawDepartment,
+    subcategory,
+    priority,
+    subject,
+    description,
+    // ── new unified fields (all optional, backward compatible) ──
+    ticket_type: rawTicketType,
+    invoice_id,
+    refund_id,
+    related_property_id,
+    report_reason_code,
+  } = req.body;
+
   if (!subject || !description) {
     return res.status(400).json({ error: "الموضوع والوصف مطلوبان" });
   }
-  
-  if (!department || !['financial', 'account', 'technical'].includes(department)) {
-    return res.status(400).json({ error: "يرجى اختيار نوع المشكلة (مالية/حسابي/تقنية)" });
+
+  // Resolve ticket_type + department. Three valid input shapes:
+  //   1. {department}                 — legacy support flow
+  //   2. {ticket_type}                — new unified flow
+  //   3. {ticket_type, department}    — explicit override
+  let ticketType = null;
+  let department = null;
+  if (rawTicketType && VALID_TICKET_TYPES.includes(rawTicketType)) {
+    ticketType = rawTicketType;
+    department = rawDepartment && ['financial', 'account', 'technical'].includes(rawDepartment)
+      ? rawDepartment
+      : TICKET_TYPE_TO_DEPARTMENT[rawTicketType];
+  } else if (rawDepartment && ['financial', 'account', 'technical'].includes(rawDepartment)) {
+    department = rawDepartment;
+    ticketType = rawDepartment; // legacy: type === department
+  } else {
+    return res.status(400).json({ error: "يرجى اختيار نوع الطلب" });
   }
 
-  const allowedSources = new Set(["manual", "complaint_page", "ai_chatbot", "feedback_followup"]);
+  const allowedSources = new Set([
+    "manual", "complaint_page", "ai_chatbot", "feedback_followup",
+    "property_report", "unified_composer",
+  ]);
   const source = allowedSources.has(req.body?.source) ? req.body.source : "manual";
 
   /** Optional triage tag (e.g. billing_hint) — stored in category column; keeps CS queue + transfer workflow */
@@ -285,6 +337,58 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
   }
 
   const ticket = result.rows[0];
+
+  // Stamp the unified-system fields if they were provided. Done as a
+  // post-insert UPDATE so the resilient INSERT ladder above doesn't
+  // need a 4th tier — these columns are nullable and only one
+  // UPDATE fires per ticket. 42703 catch lets old envs ignore the
+  // call until the migration lands.
+  if (ticketType || invoice_id || refund_id || related_property_id || report_reason_code) {
+    try {
+      const updRes = await db.query(
+        `UPDATE support_tickets
+         SET ticket_type = COALESCE($1, ticket_type),
+             invoice_id = COALESCE($2, invoice_id),
+             refund_id = COALESCE($3, refund_id),
+             related_property_id = COALESCE($4, related_property_id),
+             report_reason_code = COALESCE($5, report_reason_code)
+         WHERE id = $6
+         RETURNING ticket_type, invoice_id, refund_id, related_property_id, report_reason_code`,
+        [
+          ticketType,
+          invoice_id ? parseInt(invoice_id, 10) : null,
+          refund_id ? parseInt(refund_id, 10) : null,
+          related_property_id || null,
+          report_reason_code || null,
+          ticket.id,
+        ]
+      );
+      if (updRes.rows[0]) Object.assign(ticket, updRes.rows[0]);
+    } catch (e) {
+      if (e && e.code !== '42703') {
+        console.warn('[support POST] unified-fields update:', e.message);
+      }
+    }
+  }
+
+  // Audit-log entry for the create event (best-effort, never blocks).
+  try {
+    await db.query(
+      `INSERT INTO support_ticket_audit_log
+         (ticket_id, event_type, actor_user_id, actor_name_snapshot,
+          actor_email_snapshot, actor_role_snapshot, to_role, to_status, payload)
+       VALUES ($1, 'created', $2, $3, $4, $5, $6, 'new', $7::jsonb)`,
+      [
+        ticket.id, userId, req.user?.name || null, req.user?.email || null,
+        req.user?.role || 'user', routing.role,
+        JSON.stringify({ ticket_type: ticketType, source, related_property_id, invoice_id }),
+      ]
+    );
+  } catch (e) {
+    if (e && e.code !== '42P01') {
+      console.warn('[support POST] audit log:', e.message);
+    }
+  }
 
   try {
     await db.query(

@@ -18,6 +18,7 @@ import {
 import ShareButton from "@/components/shared/ShareButton";
 import AdvertiserReputation from "@/components/ratings/AdvertiserReputation";
 import RatingModal from "@/components/ratings/RatingModal";
+import RequestComposer from "@/components/requests/RequestComposer";
 import { getImageUrl } from "@/lib/imageUrl";
 
 type ListingDetail = {
@@ -97,6 +98,7 @@ export default function ListingDetailPage() {
   const [pollingVideo, setPollingVideo] = useState(false);
   const [priceInUsd, setPriceInUsd] = useState<number | null>(null);
   const [showRatingModal, setShowRatingModal] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const [canRate, setCanRate] = useState(false);
   
   const SAR = { code: 'SAR', symbol: 'ريال', name: 'ريال سعودي' };
@@ -1276,13 +1278,14 @@ export default function ListingDetailPage() {
                       قيّم تجربتك مع المعلن
                     </button>
                   )}
-                  <Link
-                    href={`/report?listing=${listing.id}`}
-                    className="flex items-center justify-center gap-2 w-full mt-4 py-2 text-slate-500 hover:text-red-500 text-sm"
+                  <button
+                    type="button"
+                    onClick={() => setShowReport(true)}
+                    className="flex items-center justify-center gap-2 w-full mt-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:text-red-600 hover:border-red-200 hover:bg-red-50 text-sm font-medium transition"
                   >
                     <Flag className="w-4 h-4" />
-                    الإبلاغ عن مشكلة
-                  </Link>
+                    الإبلاغ عن هذا الإعلان
+                  </button>
                 </>
               )}
 
@@ -1594,6 +1597,22 @@ export default function ListingDetailPage() {
           advertiserId={listing.user_id}
           listingId={listing.id}
           advertiserName={listing.owner_name}
+        />
+      )}
+
+      {/* Unified report composer — pre-fills as a property_report
+          ticket with the listing context, so the operator instantly
+          sees WHICH listing was flagged + WHY. Routes to content_admin
+          via the unified support endpoint's ticket_type mapping. */}
+      {listing && (
+        <RequestComposer
+          open={showReport}
+          onClose={() => setShowReport(false)}
+          initialTicketType="property_report"
+          initialContext={{
+            relatedPropertyId: String(listing.id),
+            propertyTitle: listing.title,
+          }}
         />
       )}
     </div>

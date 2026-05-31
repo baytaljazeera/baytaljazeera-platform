@@ -926,11 +926,63 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'admin_last_read_at') THEN
           ALTER TABLE support_tickets ADD COLUMN admin_last_read_at TIMESTAMPTZ;
         END IF;
+        -- Unified-request fields (owner-driven consolidation, June 2026):
+        -- ticket_type widens the old "department" (financial|account|technical)
+        -- to absorb complaint flavors + property reports + escalations into
+        -- ONE table. invoice_id/refund_id let billing complaints reference
+        -- the disputed payment. related_property_id is for property-page
+        -- reports (إبلاغ ضد إعلان). All nullable, all additive — zero risk.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'ticket_type') THEN
+          ALTER TABLE support_tickets ADD COLUMN ticket_type VARCHAR(50);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'invoice_id') THEN
+          ALTER TABLE support_tickets ADD COLUMN invoice_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'refund_id') THEN
+          ALTER TABLE support_tickets ADD COLUMN refund_id INTEGER REFERENCES refunds(id) ON DELETE SET NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'related_property_id') THEN
+          ALTER TABLE support_tickets ADD COLUMN related_property_id UUID;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'report_reason_code') THEN
+          ALTER TABLE support_tickets ADD COLUMN report_reason_code VARCHAR(60);
+        END IF;
       END $$;
     `);
-    
+
     // فهرس للقسم لتسريع الفلترة
     await db.query(`CREATE INDEX IF NOT EXISTS idx_support_tickets_department ON support_tickets(department);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_support_tickets_ticket_type ON support_tickets(ticket_type);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_support_tickets_related_property ON support_tickets(related_property_id) WHERE related_property_id IS NOT NULL;`);
+
+    // Audit log mirroring complaint_events shape — every state change,
+    // assignment, transfer, status update on a ticket writes here so the
+    // owner finally has a "who did what when" trail across the unified
+    // request system.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS support_ticket_audit_log (
+        id BIGSERIAL PRIMARY KEY,
+        ticket_id INTEGER NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+        event_type VARCHAR(40) NOT NULL,
+        actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        actor_name_snapshot VARCHAR(200),
+        actor_email_snapshot VARCHAR(200),
+        actor_role_snapshot VARCHAR(40),
+        from_role VARCHAR(40),
+        to_role VARCHAR(40),
+        from_status VARCHAR(30),
+        to_status VARCHAR(30),
+        note TEXT,
+        target_kind VARCHAR(30),
+        target_user_id UUID,
+        target_role VARCHAR(40),
+        target_name_snapshot VARCHAR(200),
+        payload JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_support_ticket_audit_ticket_at ON support_ticket_audit_log(ticket_id, created_at DESC);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_support_ticket_audit_event_type ON support_ticket_audit_log(event_type);`);
 
     // Omnichannel: link tickets to AI session or feedback ref (mirrors migration 20260406000000)
     await db.query(`

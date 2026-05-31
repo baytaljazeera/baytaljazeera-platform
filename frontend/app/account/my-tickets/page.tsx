@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import RequestComposer from "@/components/requests/RequestComposer";
 
 interface Reply {
   id: number;
@@ -42,8 +43,11 @@ interface SupportTicketRow {
   reply_count: number;
   sla_hours?: number;
   created_at: string;
+  updated_at?: string;
   source?: string | null;
   category?: string | null;
+  ticket_type?: string | null;
+  related_property_id?: string | null;
 }
 
 const statusColors: Record<string, { bg: string; text: string; label: string }> = {
@@ -124,6 +128,10 @@ function MyTicketsContent() {
   const [tickets, setTickets] = useState<SupportTicketRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNewForm, setShowNewForm] = useState(false);
+  // Unified composer (new) — eventually replaces the legacy showNewForm
+  // step-modal entirely. Kept both during the transition so any deep
+  // link or test still works.
+  const [showComposer, setShowComposer] = useState(false);
   const [selected, setSelected] = useState<SupportTicketRow | null>(null);
   const [replies, setReplies] = useState<Reply[]>([]);
   const [reply, setReply] = useState("");
@@ -196,14 +204,70 @@ function MyTicketsContent() {
 
   const fetchTickets = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/support`, {
-        credentials: "include",
-        headers: getAuthHeaders(),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setTickets(data.tickets || []);
+      // Pull BOTH new support_tickets and legacy account_complaints in
+      // parallel, then merge into the unified view. Adapter pattern —
+      // historical complaints stay readable without forcing a data
+      // migration. New requests all go through /api/support directly
+      // (composer wires that), so the complaints stream shrinks to a
+      // historical tail over time.
+      const [supRes, compRes] = await Promise.all([
+        fetch(`${API_URL}/api/support`, {
+          credentials: "include",
+          headers: getAuthHeaders(),
+        }),
+        fetch(`${API_URL}/api/account-complaints/mine`, {
+          credentials: "include",
+          headers: getAuthHeaders(),
+        }).catch(() => null),
+      ]);
+
+      let merged: SupportTicketRow[] = [];
+
+      if (supRes.ok) {
+        const data = await supRes.json();
+        merged = data.tickets || [];
       }
+
+      if (compRes && compRes.ok) {
+        try {
+          const cdata = await compRes.json();
+          const legacyComplaints = cdata.complaints || cdata.data || [];
+          // Adapt complaint rows into the same shape the UI already
+          // renders. Negative IDs to avoid collisions with real
+          // ticket IDs; the prefix tag lets the detail handler skip
+          // the support-API call (we'll show the complaint inline).
+          const adapted: SupportTicketRow[] = legacyComplaints.map((c: Record<string, unknown>) => ({
+            id: -Number(c.id), // negative = "legacy complaint"
+            ticket_number: `CMP-${c.id}`,
+            subject: (c.subject as string) || "شكوى سابقة",
+            description: (c.details as string) || "",
+            status: (c.status as string) || "new",
+            priority: (c.priority as string) || "medium",
+            category: (c.category as string) || "general",
+            department: ((c.complaint_type as string) === "billing" || (c.complaint_type as string) === "refund")
+              ? "financial"
+              : (c.complaint_type as string) === "technical"
+                ? "technical"
+                : "account",
+            created_at: (c.created_at as string) || new Date().toISOString(),
+            updated_at: (c.updated_at as string) || (c.created_at as string) || new Date().toISOString(),
+            reply_count: 0,
+            source: "complaint_legacy",
+          } as SupportTicketRow));
+          merged = [...merged, ...adapted];
+        } catch { /* legacy complaints unavailable — show tickets only */ }
+      }
+
+      // Sort by updated_at descending so the most-recently-touched
+      // request floats to the top — works for both sources because
+      // updated_at exists on both schemas.
+      merged.sort((a, b) => {
+        const ad = new Date(a.updated_at || a.created_at).getTime();
+        const bd = new Date(b.updated_at || b.created_at).getTime();
+        return bd - ad;
+      });
+
+      setTickets(merged);
     } catch (err) {
       console.error("fetch tickets:", err);
     } finally {
@@ -383,22 +447,20 @@ function MyTicketsContent() {
             <div>
               <h1 className="text-2xl font-bold text-white flex items-center gap-2">
                 <Headset className="w-7 h-7 text-[#D4AF37]" />
-                طلبات الدعم
+                طلباتي وشكاواي
               </h1>
               <p className="text-white/60 text-sm mt-1">
-                محادثتك مع فريق الدعم بعد تذكرة الدعم أو تصعيد الدعم الآلي — منفصلة عن{" "}
-                <span className="text-white/90">الاستفسارات العقارية</span> بين المستخدمين وعن{" "}
-                <span className="text-white/90">شكاواي</span> على الحساب.
+                تابع كل طلباتك وبلاغاتك وردود الإدارة في مكان واحد — مالية، حسابية، تقنية، بلاغات إعلانات، شكاوى.
               </p>
             </div>
           </div>
           <button
             type="button"
-            onClick={() => setShowNewForm(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-[#D4AF37] text-[#002845] rounded-xl font-medium hover:bg-[#c9a432] transition"
+            onClick={() => setShowComposer(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] rounded-xl font-bold shadow-[0_8px_20px_-6px_rgba(212,175,55,0.5)] hover:opacity-90 transition"
           >
             <Plus className="w-4 h-4" />
-            تذكرة جديدة
+            طلب أو شكوى جديدة
           </button>
         </div>
 
@@ -750,6 +812,18 @@ function MyTicketsContent() {
           </div>
         )}
       </div>
+
+      {/* Unified premium composer — replaces the multi-step legacy
+          new-ticket modal. Listed once at page bottom so the portal
+          can render outside this scrolling container. */}
+      <RequestComposer
+        open={showComposer}
+        onClose={() => setShowComposer(false)}
+        onCreated={() => {
+          setShowComposer(false);
+          fetchTickets();
+        }}
+      />
     </div>
   );
 }
