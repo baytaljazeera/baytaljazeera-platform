@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { Suspense, useState, useEffect, useCallback, useRef } from "react";
+import { Suspense, useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Headset,
@@ -138,30 +138,60 @@ function MyTicketsContent() {
   const [creating, setCreating] = useState(false);
   const [step, setStep] = useState(1);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // cardRef goes on the ticket-detail card; messagesContainerRef goes
+  // on the scrollable messages region. We need BOTH:
+  //   - cardRef to measure where the card sits in the viewport so we
+  //     can compute the real available height (78vh blindly went off
+  //     screen because the page has a header + nav + page title +
+  //     promo bar above the card).
+  //   - messagesContainerRef to scroll the messages region by setting
+  //     scrollTop directly. scrollIntoView even with block:'nearest'
+  //     could still bubble up to the page in some browsers (Chrome
+  //     iOS, Safari) and yank the whole page around.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [cardHeight, setCardHeight] = useState<number>(560);
 
-  // Scroll the messages container only — NEVER the page itself.
-  // Before: scrollIntoView() without block:'nearest' walked the
-  // scroll up to the page root and jumped the whole my-tickets
-  // page so the composer drifted way below the messages and the
-  // header disappeared off the top. block:'nearest' confines the
-  // scroll to the inner overflow-y-auto container.
-  const scrollToBottom = (smooth = true) => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: smooth ? "smooth" : "auto",
-      block: "nearest",
-      inline: "nearest",
-    });
+  // Compute the real available height for the ticket card based on
+  // where it actually sits in the viewport. Recompute on resize and
+  // on selection change.
+  useLayoutEffect(() => {
+    if (!selected) return;
+    const compute = () => {
+      if (!cardRef.current || typeof window === "undefined") return;
+      const top = cardRef.current.getBoundingClientRect().top;
+      const avail = window.innerHeight - top - 24; // 24px bottom gutter
+      const h = Math.max(420, Math.min(720, avail));
+      setCardHeight(h);
+    };
+    compute();
+    window.addEventListener("resize", compute);
+    return () => window.removeEventListener("resize", compute);
+  }, [selected?.id]);
+
+  // Scroll ONLY the inner messages container, never the page. Using
+  // scrollTop on the container itself can never bubble up to ancestor
+  // scrollers, unlike scrollIntoView (even with block:'nearest' some
+  // browsers still adjust ancestor scroll positions).
+  const scrollMessagesToBottom = (smooth = true) => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    if (smooth) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   };
 
   // First mount of a ticket: jump (no smooth) so the user lands at
   // the latest message immediately. Subsequent replies: smooth.
   useEffect(() => {
     if (replies.length === 0) return;
-    scrollToBottom(true);
+    scrollMessagesToBottom(true);
   }, [replies]);
   useEffect(() => {
     if (!selected || replies.length === 0) return;
-    scrollToBottom(false);
+    scrollMessagesToBottom(false);
   }, [selected?.id]);
 
   const fetchTickets = useCallback(async () => {
@@ -529,12 +559,19 @@ function MyTicketsContent() {
         )}
 
         {selected ? (
-          // Real chat-thread layout: bounded card height + flex column
-          // so the composer is locked to the bottom of the card and
-          // only the messages region scrolls. min-h-0 on the messages
-          // child is the magic that makes flex-1 + overflow actually
-          // scroll inside a fixed-height flex parent.
-          <div className="bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col h-[min(78vh,720px)]">
+          // Real chat-thread layout: card height is COMPUTED from the
+          // cards top in the viewport (cardRef + getBoundingClientRect)
+          // so the composer is always visible. The previous
+          // h-[min(78vh,720px)] ignored the page chrome above the card
+          // (nav + page title + promo bar) and pushed the composer
+          // below the fold. Clamped to [420,720] so very tall screens
+          // dont produce an awkwardly tall card and very short
+          // screens still show enough conversation to be useful.
+          <div
+            ref={cardRef}
+            className="bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col"
+            style={{ height: `${cardHeight}px` }}
+          >
             <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-start justify-between gap-3 min-w-0 shrink-0">
               <div className="flex items-start gap-3 flex-1 min-w-0">
                 {(() => {
@@ -571,7 +608,10 @@ function MyTicketsContent() {
                 <ArrowRight className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 flex-1 min-h-0 overflow-y-auto space-y-3">
+            <div
+              ref={messagesContainerRef}
+              className="p-4 flex-1 min-h-0 overflow-y-auto space-y-3"
+            >
               <div className="bg-slate-100 rounded-xl p-3">
                 <p className="text-sm text-slate-700">{selected.description}</p>
                 <p className="text-[10px] text-slate-500 mt-2">{new Date(selected.created_at).toLocaleString("ar-SA")}</p>
