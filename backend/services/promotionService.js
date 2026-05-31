@@ -100,9 +100,25 @@ function calculateDiscount(planPrice, promo) {
     };
   }
 
+  // Skip promo on already-free plans — applying a 100% discount to a
+  // plan with price=0 produced "-100% مجاناً" badge on a plan that
+  // was free to begin with, which made the customer think every plan
+  // was promotionally discounted. Return null so the listing falls
+  // back to the base price = 0 path (renders just "مجاناً" with no
+  // discount badge).
+  const _price = parseFloat(planPrice);
+  if (!Number.isFinite(_price) || _price <= 0) {
+    return {
+      discountedPrice: null,
+      discountAmount: 0,
+      discountPercentage: null,
+      skipPayment: false
+    };
+  }
+
   const { isFreePromo, isPercentageDiscount, isFixedDiscount } = getPromotionTypeFlags(promo);
   const discountValue = parseFloat(promo.discount_value) || 0;
-  const price = parseFloat(planPrice);
+  const price = _price;
 
   let discountedPrice = null;
   let discountAmount = 0;

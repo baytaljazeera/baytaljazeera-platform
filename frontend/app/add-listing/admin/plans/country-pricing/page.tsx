@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Globe, Save, RefreshCw, CheckCircle, AlertCircle,
-  DollarSign, Edit2, Loader2, Wand2, Zap
+  DollarSign, Edit2, Loader2, Wand2, Zap, Trash2, RotateCcw
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 
@@ -293,6 +293,64 @@ export default function CountryPricingPage() {
     }
   };
 
+  // ─── Reset handlers ─────────────────────────────────────────────
+  // Two granularities: wipe ONE country (trash icon on each row) or
+  // wipe EVERY country (red button at top). Both call backend
+  // endpoints that DELETE the rows then return rowCount. After
+  // either, fetchData refreshes the matrix and editedPrices is
+  // discarded so the operator starts from a clean slate.
+  const [resetting, setResetting] = useState<string | null>(null);
+  const resetCountry = async (countryCode: string, countryName: string) => {
+    if (!window.confirm(
+      `حذف كل أسعار ${countryName}؟ سيرى عملاء هذه الدولة الأسعار الأساسية بالريال السعودي بدلاً من السعر المحلي.`
+    )) return;
+    setResetting(countryCode);
+    try {
+      const res = await fetch(`${API_URL}/api/plans/admin/country-prices/clear-country`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ country_code: countryCode }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setMessage({ type: "success", text: `تم تصفير ${countryName} (${data.cleared} صف محذوف)` });
+      setEditedPrices((prev) => {
+        const next = { ...prev };
+        plans.forEach((p) => { delete next[`${countryCode}-${p.id}`]; });
+        return next;
+      });
+      fetchData();
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "فشل التصفير" });
+    } finally {
+      setResetting(null);
+    }
+  };
+  const resetAllCountries = async () => {
+    if (!window.confirm(
+      "تصفير كل أسعار الدول (جميع الـ overrides)؟ كل العملاء في كل العالم سيرون الأسعار الأساسية بالريال السعودي. هذا لا يحذف الأسعار الأساسية في الباقات نفسها."
+    )) return;
+    if (!window.confirm("تأكيد ثانٍ — هذي عملية لا يمكن التراجع عنها بضغطة. متابعة؟")) return;
+    setResetting("__ALL__");
+    try {
+      const res = await fetch(`${API_URL}/api/plans/admin/country-prices/clear-all`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setMessage({ type: "success", text: `تم تصفير كل الدول (${data.cleared} صف محذوف)` });
+      setEditedPrices({});
+      fetchData();
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "فشل التصفير الشامل" });
+    } finally {
+      setResetting(null);
+    }
+  };
+
   useEffect(() => {
     if (message) {
       const timer = setTimeout(() => setMessage(null), 4000);
@@ -352,6 +410,21 @@ export default function CountryPricingPage() {
               >
                 <Wand2 className="w-4 h-4" />
                 تعبئة كل الدول من الريال
+              </motion.button>
+
+              {/* Master destructive: clears EVERY country_plan_prices
+                  row. Two-step confirm in the handler. Restores all
+                  customers worldwide to the base SAR price. */}
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={resetAllCountries}
+                disabled={resetting !== null}
+                className="flex items-center gap-2 px-4 py-2 bg-red-500/15 hover:bg-red-500/30 border border-red-500/40 text-red-200 rounded-lg transition-colors disabled:opacity-50"
+                title="حذف كل أسعار الدول — جميع العملاء يرون السعر الأساسي بالريال"
+              >
+                {resetting === "__ALL__" ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                تصفير كل الدول
               </motion.button>
 
               <motion.button
@@ -523,6 +596,20 @@ export default function CountryPricingPage() {
                             <Wand2 className="w-3.5 h-3.5" />
                           </button>
                         )}
+                        {/* Per-country reset: trash icon clears every
+                            stored override for this country. Visible
+                            on every row including SA so the operator
+                            can quickly wipe the leftover SA zeros
+                            without having to find the master button. */}
+                        <button
+                          type="button"
+                          onClick={() => resetCountry(country.code, country.name_ar)}
+                          disabled={resetting === country.code}
+                          className="shrink-0 w-7 h-7 rounded-md bg-red-500/10 hover:bg-red-500/30 border border-red-500/30 text-red-300 flex items-center justify-center transition disabled:opacity-50"
+                          title={`تصفير أسعار ${country.name_ar} — حذف كل الـ overrides لهذه الدولة`}
+                        >
+                          {resetting === country.code ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        </button>
                       </div>
                     </td>
                     {plans.map((plan) => {

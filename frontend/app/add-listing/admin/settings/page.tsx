@@ -73,6 +73,31 @@ export default function SettingsPage() {
   const [siteStatus, setSiteStatus] = useState<'normal' | 'maintenance' | 'coming_soon'>('normal');
   const [changingSiteStatus, setChangingSiteStatus] = useState(false);
 
+  // Pricing/billing connections — pulled from /api/plans/free-pricing-
+  // diagnostic. Surfaces the relationship between this page's invoice
+  // toggle and the live state of plan pricing, so the operator can see
+  // at a glance whether "invoices off but customers see مجاناً" is a
+  // contradiction (it isn't — free plans don't generate invoices).
+  interface BillingDiagnostic {
+    master_switch: { enabled: boolean };
+    free_promotions: Array<{ id: number; name_ar?: string; promotion_type: string; discount_value?: number }>;
+    zero_country_prices: { by_country: Record<string, { country_name_ar: string; zero_count: number }> };
+    any_active: boolean;
+  }
+  const [billingDiag, setBillingDiag] = useState<BillingDiagnostic | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetch(`${API_URL}/api/plans/free-pricing-diagnostic`, {
+      credentials: "include",
+      headers: getAuthHeaders(),
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (alive) setBillingDiag(d); })
+      .catch(() => { /* silent */ });
+    return () => { alive = false; };
+  }, []);
+
   const parseLinks = (jsonString: string): FooterLink[] => {
     try {
       const parsed = JSON.parse(jsonString);
@@ -757,6 +782,86 @@ export default function SettingsPage() {
           </div>
         </div>
 
+      </div>
+
+      {/* ─── Pricing × Billing relationship panel ───────────────────
+          The owner kept finding "invoices off" + "customers see مجاناً"
+          and assumed they contradicted. They don't — invoices are
+          per-payment, free plans never trigger payment. This panel
+          spells out the relationship + lists every active free-
+          pricing source so it's obvious why no invoices are firing
+          even when the toggle is OFF. Links to the deactivation
+          controls on the plans page so the operator doesn't have
+          to navigate manually. */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="p-2 rounded-lg bg-blue-50">
+            <LinkIcon className="w-5 h-5 text-blue-600" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-[#002845]">العلاقة بين الفواتير والأسعار</h3>
+            <p className="text-xs text-slate-500 mt-0.5">كيف يتفاعل مفتاح الفواتير مع حالة الباقات الفعلية</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+          <div className={`rounded-lg p-3 border ${settings.invoiceSystemEnabled ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
+            <div className="text-xs font-bold text-slate-700 mb-1">١) نظام الفواتير</div>
+            <div className={`text-sm font-bold ${settings.invoiceSystemEnabled ? "text-emerald-700" : "text-slate-500"}`}>
+              {settings.invoiceSystemEnabled ? "✓ مفعّل" : "✗ معطّل"}
+            </div>
+            <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+              يُنشئ فاتورة لكل دفعة فعلية. <strong>لا يعمل على الباقات المجانية</strong> لأنه لا توجد دفعة من الأصل.
+            </p>
+          </div>
+          <div className={`rounded-lg p-3 border ${billingDiag?.any_active ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
+            <div className="text-xs font-bold text-slate-700 mb-1">٢) حالة عرض الباقات للعملاء</div>
+            <div className={`text-sm font-bold ${billingDiag?.any_active ? "text-amber-700" : "text-emerald-700"}`}>
+              {billingDiag?.any_active ? "🎁 تُعرض مجاناً" : "💳 تُعرض بأسعارها"}
+            </div>
+            <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+              {billingDiag?.any_active
+                ? <>هذي الحالة تأتي من مصادر منفصلة عن مفتاح الفواتير. الفواتير لا تُولَّد لأن لا توجد دفعة.</>
+                : <>كل باقة مدفوعة تُعرض بسعرها. عند الدفع، يُنشأ {settings.invoiceSystemEnabled ? "فاتورة تلقائياً" : "إيصال بدون فاتورة (لأن المفتاح معطّل)"}.</>}
+            </p>
+          </div>
+        </div>
+
+        {/* List every active free-pricing source */}
+        {billingDiag?.any_active && (
+          <div className="bg-amber-50/60 border border-amber-200 rounded-lg p-3 space-y-2">
+            <div className="text-xs font-bold text-amber-900">
+              لماذا تُعرض الباقات مجاناً الآن؟ (المصادر الفعّالة)
+            </div>
+            <ul className="text-[12px] text-amber-800 space-y-1.5">
+              {billingDiag.master_switch.enabled && (
+                <li>🔑 <strong>المفتاح الرئيسي للإطلاق المجاني</strong> — مفعّل</li>
+              )}
+              {billingDiag.free_promotions.map((p) => (
+                <li key={p.id}>
+                  🎁 <strong>عرض ترويجي:</strong> {p.name_ar || `#${p.id}`}
+                  {p.discount_value ? ` — خصم ${p.discount_value}%` : ""} ({p.promotion_type})
+                </li>
+              ))}
+              {Object.entries(billingDiag.zero_country_prices.by_country).map(([code, info]) => (
+                <li key={code}>
+                  🌍 <strong>أسعار {info.country_name_ar}</strong> — {info.zero_count} باقة بسعر 0
+                </li>
+              ))}
+            </ul>
+            <a
+              href="/add-listing/admin/plans"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-900 underline hover:text-amber-700 mt-1"
+            >
+              ← افتح لوحة إدارة الباقات لإيقاف هذه المصادر
+            </a>
+          </div>
+        )}
+
+        {/* The "no conflict" reassurance the owner needs */}
+        <div className="mt-3 text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-2.5 leading-relaxed">
+          <strong>لا تضارب:</strong> مفتاح الفواتير + حالة عرض الباقات نظامان منفصلان. الفواتير تعتمد على وجود <strong>دفعة فعلية</strong>. لو الباقات مجانية، لن تُنشأ فواتير حتى لو فعّلت المفتاح — وهذا السلوك الصحيح.
+        </div>
       </div>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">

@@ -176,8 +176,26 @@ router.get("/free-pricing-diagnostic", asyncHandler(async (req, res) => {
   res.json(out);
 }));
 
-// Quick-wipe SA country overrides — clears every is_active row for
-// country_code='SA' so SA customers see base SAR prices.
+// Wipe ALL country overrides in one shot — restores every country
+// to the base SAR price. Two-step confirm on the frontend.
+router.post("/admin/country-prices/clear-all", adminAuth, asyncHandler(async (req, res) => {
+  const r = await db.query(`DELETE FROM country_plan_prices RETURNING id, country_code`);
+  auditPlanChange({
+    actor: req.user,
+    action: 'plan_country_price.clear_all',
+    planId: null,
+    countryCode: null,
+    before: { cleared_rows: r.rowCount },
+    after: null,
+  });
+  console.log('[country-prices clear-all]', JSON.stringify({
+    cleared: r.rowCount, by: req.user?.id,
+  }));
+  res.json({ ok: true, cleared: r.rowCount });
+}));
+
+// Quick-wipe per-country overrides — clears every row for one
+// country_code so its customers see base SAR prices.
 router.post("/admin/country-prices/clear-country", adminAuth, asyncHandler(async (req, res) => {
   const code = String(req.body?.country_code || '').toUpperCase();
   if (!/^[A-Z]{2,3}$/.test(code)) {
