@@ -6,9 +6,49 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Globe, Save, RefreshCw, CheckCircle, AlertCircle,
-  DollarSign, Edit2, Loader2
+  DollarSign, Edit2, Loader2, Wand2, Zap
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+
+// ─── Approximate FX → SAR ──────────────────────────────────────────
+// 1 SAR ≈ X (local currency). Used by the quick-fill buttons to
+// pre-populate sensible defaults that the operator can then edit.
+// Numbers match the seed table in backend/init.js (rates rounded to
+// what a customer would actually see, e.g. 49 AED not 49.18). The
+// operator always has the final say — these are just defaults.
+const FX_PER_SAR: Record<string, number> = {
+  SA: 1,        // Saudi Arabia — the reference
+  AE: 0.98,     // UAE Dirham
+  KW: 0.082,    // Kuwaiti Dinar
+  QA: 0.97,     // Qatari Riyal
+  BH: 0.10,     // Bahraini Dinar
+  OM: 0.103,    // Omani Riyal
+  EG: 13.07,    // Egyptian Pound
+  LB: 23867,    // Lebanese Pound
+  JO: 0.19,     // Jordanian Dinar
+  IQ: 349,      // Iraqi Dinar
+  YE: 67,       // Yemeni Rial
+  SY: 3500,     // Syrian Pound
+  MA: 2.66,     // Moroccan Dirham
+  TR: 9.0,      // Turkish Lira (volatile — owner can override)
+  INT: 0.267,   // International / USD fallback
+};
+
+// Round to "natural" customer-facing numbers: under 100 → whole
+// integer; 100–1000 → nearest 5; >1000 → nearest 50. Avoids the
+// awkward "49.18 AED" look.
+function naturalRound(n: number): number {
+  if (n === 0) return 0;
+  if (n < 100) return Math.round(n);
+  if (n < 1000) return Math.round(n / 5) * 5;
+  return Math.round(n / 50) * 50;
+}
+
+function computeDefaultPrice(planPriceSAR: number, countryCode: string): number {
+  const rate = FX_PER_SAR[countryCode];
+  if (rate == null) return planPriceSAR; // fallback: same number
+  return naturalRound(planPriceSAR * rate);
+}
 
 interface Plan {
   id: number;
@@ -110,6 +150,43 @@ export default function CountryPricingPage() {
     setEditedPrices(prev => ({ ...prev, [key]: numValue }));
   };
 
+  // Fill ONE cell with the FX-converted default. The cell goes into
+  // the editedPrices map so the gold "edited" highlight + save flow
+  // pick it up exactly like a manual edit.
+  const fillCell = (countryCode: string, plan: Plan) => {
+    const key = `${countryCode}-${plan.id}`;
+    setEditedPrices((prev) => ({
+      ...prev,
+      [key]: computeDefaultPrice(Number(plan.price), countryCode),
+    }));
+  };
+
+  // Fill an entire ROW (one country, all plans) with FX defaults.
+  const fillRow = (countryCode: string) => {
+    setEditedPrices((prev) => {
+      const next = { ...prev };
+      plans.forEach((plan) => {
+        next[`${countryCode}-${plan.id}`] = computeDefaultPrice(Number(plan.price), countryCode);
+      });
+      return next;
+    });
+  };
+
+  // Master fill — every cell in every country (except SA which is
+  // the reference). Used by the big "fill all" button at the top so
+  // the operator can start from a sensible matrix and tweak from
+  // there instead of typing 70 numbers by hand.
+  const fillAllCountries = () => {
+    const next: Record<string, number> = { ...editedPrices };
+    countries.forEach((c) => {
+      if (c.code === "SA") return; // SA matches base SAR price; no override needed
+      plans.forEach((plan) => {
+        next[`${c.code}-${plan.id}`] = computeDefaultPrice(Number(plan.price), c.code);
+      });
+    });
+    setEditedPrices(next);
+  };
+
   const getCurrentPrice = (countryCode: string, planId: number): number => {
     const key = `${countryCode}-${planId}`;
     if (editedPrices[key] !== undefined) {
@@ -201,6 +278,22 @@ export default function CountryPricingPage() {
                 تحديث
               </motion.button>
 
+              {/* Master quick-fill: populate every country (except SA)
+                  with the FX-converted default. Saves typing 70 cells.
+                  The result lives in editedPrices so nothing is sent
+                  to backend until the operator hits "حفظ التغييرات". */}
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={fillAllCountries}
+                disabled={plans.length === 0 || countries.length === 0}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-200 rounded-lg transition-colors disabled:opacity-50"
+                title="املأ كل الدول بأسعار محوّلة من الريال السعودي (تقديرية، قابلة للتعديل)"
+              >
+                <Wand2 className="w-4 h-4" />
+                تعبئة كل الدول من الريال
+              </motion.button>
+
               <motion.button
                 whileHover={{ scale: hasChanges ? 1.05 : 1 }}
                 whileTap={{ scale: hasChanges ? 0.95 : 1 }}
@@ -286,7 +379,7 @@ export default function CountryPricingPage() {
                     <td className="sticky right-0 bg-[#002845] z-10 px-4 py-4">
                       <div className="flex items-center gap-3">
                         <span className="text-2xl">{COUNTRY_FLAGS[country.code]}</span>
-                        <div>
+                        <div className="flex-1 min-w-0">
                           <div className="font-medium text-white">{country.name_ar}</div>
                           <div className="text-xs text-gray-400">
                             {country.currency_code} ({country.currency_symbol})
@@ -297,6 +390,19 @@ export default function CountryPricingPage() {
                             المرجع
                           </span>
                         )}
+                        {/* Row-level quick-fill: fills every plan cell
+                            in THIS country with its FX default. Hidden
+                            for SA because SA matches base SAR price. */}
+                        {country.code !== "SA" && FX_PER_SAR[country.code] != null && (
+                          <button
+                            type="button"
+                            onClick={() => fillRow(country.code)}
+                            className="shrink-0 w-7 h-7 rounded-md bg-purple-500/15 hover:bg-purple-500/30 border border-purple-500/30 text-purple-200 flex items-center justify-center transition"
+                            title={`املأ كل الباقات لـ ${country.name_ar} بأسعار محوّلة من الريال (×${FX_PER_SAR[country.code]})`}
+                          >
+                            <Wand2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                     {plans.map((plan) => {
@@ -305,6 +411,8 @@ export default function CountryPricingPage() {
                       const currentPrice = getCurrentPrice(country.code, plan.id);
                       const originalPrice = priceMatrix[country.code]?.prices?.[plan.id]?.price;
                       
+                      const suggested = computeDefaultPrice(Number(plan.price), country.code);
+                      const showCellWand = country.code !== "SA" && FX_PER_SAR[country.code] != null;
                       return (
                         <td key={plan.id} className="px-4 py-4 text-center">
                           <div className="relative">
@@ -314,7 +422,7 @@ export default function CountryPricingPage() {
                               min="0"
                               value={currentPrice || ""}
                               onChange={(e) => handlePriceChange(country.code, plan.id, e.target.value)}
-                              placeholder={country.code === "SA" ? String(plan.price) : "0"}
+                              placeholder={country.code === "SA" ? String(plan.price) : String(suggested)}
                               className={`w-full max-w-[100px] mx-auto px-3 py-2 text-center rounded-lg border transition-all focus:outline-none focus:ring-2 focus:ring-[#D4AF37] ${
                                 hasEdit
                                   ? "bg-[#D4AF37]/20 border-[#D4AF37] text-white"
@@ -331,6 +439,19 @@ export default function CountryPricingPage() {
                               >
                                 <Edit2 className="w-3 h-3 text-[#D4AF37]" />
                               </motion.div>
+                            )}
+                            {/* Cell-level quick-fill: bolt icon, sets
+                                THIS cell to the FX default. Shown only
+                                on non-SA cells with a known rate. */}
+                            {showCellWand && (
+                              <button
+                                type="button"
+                                onClick={() => fillCell(country.code, plan)}
+                                className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-purple-500/30 hover:bg-purple-500 border border-purple-400/50 text-white flex items-center justify-center transition opacity-60 hover:opacity-100"
+                                title={`املأ بـ ${suggested} ${country.currency_symbol} (محوّل من ${plan.price} ر.س)`}
+                              >
+                                <Zap className="w-2.5 h-2.5" />
+                              </button>
                             )}
                           </div>
                           <div className="text-xs text-gray-500 mt-1">
