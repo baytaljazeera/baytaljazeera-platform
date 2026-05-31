@@ -53,6 +53,8 @@ interface AccountComplaint {
   submitter_name?: string;
   submitter_email?: string;
   auto_assigned_role?: string | null;
+  complaint_type?: string | null;
+  invoice_id?: number | null;
 }
 
 interface SupportStats {
@@ -845,11 +847,55 @@ export default function CustomerServicePage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredComplaints.map((complaint) => (
+              {filteredComplaints.map((complaint) => {
+                // Triage suggestion: does this complaint look financial?
+                // We detect billing-flavor on EITHER category, complaint_type,
+                // or an invoice attachment. We DON'T auto-transfer — that
+                // would defeat the triage-first design. We just nudge the
+                // agent so they don't accidentally close-out a real money
+                // dispute as "resolved" when it needs Finance.
+                const looksFinancial =
+                  ["billing", "subscription", "refund"].includes(String(complaint.category || "")) ||
+                  ["billing", "refund"].includes(String(complaint.complaint_type || "")) ||
+                  complaint.invoice_id != null;
+                const alreadyWithFinance = complaint.auto_assigned_role === "finance_admin";
+                const suggestTransfer =
+                  looksFinancial &&
+                  !alreadyWithFinance &&
+                  (complaint.status === "new" || complaint.status === "in_review");
+                return (
                 <div
                   key={complaint.id}
-                  className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+                  className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${
+                    suggestTransfer ? "border-[#D4AF37]/60 ring-1 ring-[#D4AF37]/30" : "border-slate-200"
+                  }`}
                 >
+                  {/* Triage hint strip — surfaces ONLY when this looks
+                      financial and hasnt been transferred yet. Nudges
+                      the agent toward the right governance flow
+                      (Support triages → transfers to Finance). */}
+                  {suggestTransfer && (
+                    <div className="bg-gradient-to-l from-[#FFFCEE] via-[#FFF7E0] to-[#FFFCEE] border-b border-[#D4AF37]/30 px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2 text-[12px] text-[#9a7d28] font-bold">
+                        <span className="text-base">🏦</span>
+                        <span>شكوى ذات طابع مالي — يُفضّل تحويلها لقسم المالية بعد التواصل مع العميل</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openTransferModal(complaint)}
+                        className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] rounded-lg text-[11px] font-bold hover:opacity-90 transition active:scale-95 shadow-[0_4px_12px_-2px_rgba(212,175,55,0.4)]"
+                      >
+                        <Building2 className="w-3.5 h-3.5" />
+                        تحويل للمالية الآن
+                      </button>
+                    </div>
+                  )}
+                  {alreadyWithFinance && (
+                    <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center gap-2 text-[11px] text-amber-800 font-medium">
+                      <Building2 className="w-3.5 h-3.5" />
+                      محوّلة حالياً إلى قسم المالية
+                    </div>
+                  )}
                   <div className="p-4 md:p-6">
                     <div className="flex flex-col md:flex-row gap-4">
                       <div className="flex-1">
@@ -862,7 +908,7 @@ export default function CustomerServicePage() {
                           </span>
                           <span className="text-xs text-slate-400">#{complaint.id}</span>
                         </div>
-                        
+
                         <h3 className="text-lg font-bold text-[#002845] mb-2">{complaint.subject}</h3>
                         <p className="text-sm text-slate-600 line-clamp-2 mb-3">{complaint.details}</p>
                         
@@ -979,7 +1025,8 @@ export default function CustomerServicePage() {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
