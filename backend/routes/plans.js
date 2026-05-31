@@ -126,22 +126,37 @@ router.get("/free-pricing-diagnostic", asyncHandler(async (req, res) => {
     out.master_switch.enabled = await isLaunchFreeMode();
   } catch { /* default false */ }
   try {
+    // Fetch ALL active promotions, then filter "free-ish" ones in
+    // JS. Previous version pushed the filter into SQL and silently
+    // returned 0 rows in production even though the promo matched
+    // every condition — couldnt reproduce locally, so we drop the
+    // SQL filter and apply the same logic in JS where its trivial
+    // to debug. Also gives us correct number coercion for the
+    // DECIMAL discount_value column.
     const r = await db.query(
-      `SELECT id, name_ar, name_en, promotion_type, discount_type,
+      `SELECT id, name, name_ar, name_en, promotion_type, discount_type,
               discount_value, skip_payment, applies_to, status,
-              start_at, end_at
+              start_at, end_at, current_usage, usage_limit_total
        FROM promotions
        WHERE status = 'active'
          AND (start_at IS NULL OR start_at <= NOW())
          AND (end_at IS NULL OR end_at >= NOW())
-         AND (
-              promotion_type IN ('free_plan', 'free_trial')
-           OR (discount_type = 'percentage' AND discount_value >= 100)
-           OR skip_payment = true
-         )
+         AND (usage_limit_total IS NULL OR current_usage < usage_limit_total)
        ORDER BY id`
     );
-    out.free_promotions = r.rows;
+    out.free_promotions = r.rows.filter((p) => {
+      const type = String(p.promotion_type || '').toLowerCase();
+      const dtype = String(p.discount_type || '').toLowerCase();
+      const dval = Number(p.discount_value) || 0;
+      const skipPay = p.skip_payment === true || p.skip_payment === 'true';
+      return (
+        type === 'free_plan' ||
+        type === 'free_trial' ||
+        (dtype === 'percentage' && dval >= 100) ||
+        skipPay
+      );
+    });
+    console.log('[diagnostic] active=' + r.rows.length + ' free=' + out.free_promotions.length);
   } catch (e) {
     console.warn('[free-pricing-diagnostic] promo lookup failed:', e.message);
   }
