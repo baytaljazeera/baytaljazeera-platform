@@ -246,7 +246,7 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
         plan_tier, customer_country, customer_timezone, customer_language,
         source)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-               $9, $10, NOW() + ($10::text || ' hours')::interval,
+               $9, $10, NOW() + make_interval(hours => $10),
                $11, $12, $13, $14,
                $15)
        RETURNING *`,
@@ -264,7 +264,7 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
          (user_id, ticket_number, department, subcategory, category, priority, subject, description,
           auto_assigned_role, sla_hours, sla_due_at, source)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-                 $9, $10, NOW() + ($10::text || ' hours')::interval, $11)
+                 $9, $10, NOW() + make_interval(hours => $10), $11)
          RETURNING *`,
         [userId, ticketNumber, department, subcategory || null, categoryValue,
          priority || 'medium', subject, description,
@@ -342,28 +342,34 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
   });
 }));
 
-/** Customer marks ticket as read (clears unread admin-reply count for this ticket in the navbar).
- *  ALSO clears the related notifications rows so the navbar bell
- *  counter actually drops. Before this, user_last_read_at was bumped
- *  but the per-reply notifications row (type='support_reply',
- *  link=/account/my-tickets?open=<id>) stayed unread → bell stuck. */
+/** Mark this ticket as read for the requester. Two things happen:
+ *  1. If the requester is the ticket owner, user_last_read_at bumps.
+ *  2. Regardless of role, every unread notification belonging to the
+ *     REQUESTER that links to this ticket gets cleared. Before, this
+ *     route returned 403 for any role other than "user" — so a
+ *     super_admin (or any staff that ALSO owns notifications about
+ *     their own tickets, e.g. from a chatbot escalation they ran for
+ *     testing) could never decrement their bell. */
 router.patch("/:id/mark-read", authMiddleware, asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (Number.isNaN(id)) {
     return res.status(400).json({ error: "معرف غير صالح" });
   }
-  if (req.user.role !== "user") {
-    return res.status(403).json({ error: "غير مصرح" });
-  }
-  const result = await db.query(
-    `UPDATE support_tickets
-     SET user_last_read_at = NOW()
-     WHERE id = $1 AND user_id = $2
-     RETURNING id`,
-    [id, req.user.id]
-  );
-  if (result.rows.length === 0) {
-    return res.status(404).json({ error: "التذكرة غير موجودة" });
+  // Bump the customer-side marker only if the requester actually owns
+  // the ticket. Doesnt 403 if they dont — staff just wont bump the
+  // marker, but they CAN still clear their own notification rows.
+  let bumpedOwner = false;
+  try {
+    const r = await db.query(
+      `UPDATE support_tickets
+       SET user_last_read_at = NOW()
+       WHERE id = $1 AND user_id = $2
+       RETURNING id`,
+      [id, req.user.id]
+    );
+    bumpedOwner = r.rowCount > 0;
+  } catch (e) {
+    console.warn('[support mark-read] owner bump failed:', e.message);
   }
   let clearedNotifications = 0;
   try {
@@ -380,10 +386,11 @@ router.patch("/:id/mark-read", authMiddleware, asyncHandler(async (req, res) => 
   } catch (e) {
     console.warn('[support mark-read] notifications clear failed:', e.message);
   }
-  console.log('[support mark-read] customer', JSON.stringify({
-    ticketId: id, userId: req.user.id, clearedNotifications,
+  console.log('[support mark-read]', JSON.stringify({
+    ticketId: id, userId: req.user.id, role: req.user.role,
+    bumpedOwner, clearedNotifications,
   }));
-  res.json({ ok: true, clearedNotifications });
+  res.json({ ok: true, bumpedOwner, clearedNotifications });
 }));
 
 /** Staff marks ticket as read on the admin side — counter for admin
@@ -576,27 +583,20 @@ router.get("/:id", authMiddleware, asyncHandler(async (req, res) => {
      ORDER BY r.created_at ASC`;
   const repliesResult = await db.query(repliesSql, [id]);
 
-  if (role === "user") {
-    try {
-      await db.query(
-        `UPDATE support_tickets SET user_last_read_at = NOW() WHERE id = $1 AND user_id = $2`,
-        [id, userId]
-      );
-      // Mirror /mark-read: clear the support_reply notifications for
-      // this ticket so the bell drops the moment the customer opens
-      // the thread (not just when /mark-read is called separately).
-      await db.query(
-        `UPDATE notifications SET read_at = NOW()
-         WHERE user_id = $1 AND read_at IS NULL
-           AND (link = $2 OR link LIKE $3)`,
-        [userId, `/account/my-tickets?open=${id}`, `/account/my-tickets?open=${id}&%`]
-      );
-    } catch (e) {
-      console.warn("[support GET :id] customer read sync:", e.message);
-    }
-  } else {
-    // Staff opening a ticket counts as seeing the latest customer
-    // replies. Bump admin_last_read_at so the admin bell ticks down.
+  // Bump the customer-side marker if the requester owns this ticket
+  // (works for staff too if theyre testing on their own ticket).
+  try {
+    await db.query(
+      `UPDATE support_tickets SET user_last_read_at = NOW() WHERE id = $1 AND user_id = $2`,
+      [id, userId]
+    );
+  } catch (e) {
+    console.warn("[support GET :id] user_last_read_at:", e.message);
+  }
+  // Bump the admin-side marker if the requester is staff. Decoupled
+  // from ownership so a super_admin testing their OWN ticket can
+  // still see both markers fire.
+  if (role !== "user") {
     try {
       await db.query(
         `UPDATE support_tickets SET admin_last_read_at = NOW() WHERE id = $1`,
@@ -605,6 +605,24 @@ router.get("/:id", authMiddleware, asyncHandler(async (req, res) => {
     } catch (e) {
       console.warn("[support GET :id] admin_last_read_at:", e.message);
     }
+  }
+  // ALWAYS clear notification rows that belong to the REQUESTER and
+  // point at this ticket. Bell counter drops the moment the thread
+  // opens for whoever is looking at it — customer or staff.
+  try {
+    const r = await db.query(
+      `UPDATE notifications SET read_at = NOW()
+       WHERE user_id = $1 AND read_at IS NULL
+         AND (link = $2 OR link LIKE $3)`,
+      [userId, `/account/my-tickets?open=${id}`, `/account/my-tickets?open=${id}&%`]
+    );
+    if (r.rowCount > 0) {
+      console.log('[support GET :id] cleared notifications', JSON.stringify({
+        ticketId: id, userId, cleared: r.rowCount,
+      }));
+    }
+  } catch (e) {
+    console.warn("[support GET :id] notif clear:", e.message);
   }
 
   console.log('[support GET :id]', JSON.stringify({
