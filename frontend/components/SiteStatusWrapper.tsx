@@ -14,7 +14,19 @@ export default function SiteStatusWrapper({ children }: { children: React.ReactN
   const [isChecking, setIsChecking] = useState(true);
   const pathname = usePathname();
   
-  const isAdminRoute = pathname?.startsWith("/admin");
+  // Admin pages in this project live under /add-listing/admin/* (not
+  // /admin/*). The old check `startsWith("/admin")` returned false
+  // for the REAL admin URLs, so turning maintenance on locked the
+  // operator out of their own settings page — they couldn't disable
+  // the mode they just enabled. Also exempt /login + /oauth-callback
+  // so the operator can actually authenticate before reaching the
+  // admin shell.
+  const isAdminRoute = !!pathname && (
+    pathname.startsWith("/add-listing/admin") ||
+    pathname.startsWith("/admin") ||
+    pathname === "/login" ||
+    pathname.startsWith("/oauth-callback")
+  );
 
   const checkSiteStatus = useCallback(async () => {
     if (isAdminRoute) return;
