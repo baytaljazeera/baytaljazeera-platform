@@ -242,6 +242,14 @@ export default function PlansManagement() {
     try {
       const res = await fetch(`${API_URL}/api/plans/by-country/SA`);
       const data = await res.json();
+      // Master kill-switch wins. If launch_free_mode is true on the
+      // backend, every plan is forced to 0 in the API response, so
+      // the per-country detection below would be misleading. Show
+      // the master-mode banner instead of the country-pricing one.
+      if (data.launch_free_mode) {
+        setSaLaunchMode({ active: true, overriddenCount: -1, totalPaidPlans: -1 });
+        return;
+      }
       const list: Array<{ price: number | string; local_price: number | string; is_country_pricing: boolean }> = data.plans || [];
       const paid = list.filter((p) => Number(p.price) > 0);
       const overridden = paid.filter((p) => p.is_country_pricing && Number(p.local_price) === 0);
@@ -490,22 +498,48 @@ export default function PlansManagement() {
           without knowing why; this banner spells it out and links
           straight to country-pricing to switch overrides on/off. */}
       {saLaunchMode?.active && (
-        <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 flex items-start gap-3">
-          <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
+        <div className={`rounded-2xl border-2 p-4 flex items-start gap-3 ${
+          saLaunchMode.overriddenCount === -1
+            ? "border-emerald-300 bg-emerald-50"
+            : "border-amber-300 bg-amber-50"
+        }`}>
+          <AlertTriangle className={`w-6 h-6 shrink-0 mt-0.5 ${
+            saLaunchMode.overriddenCount === -1 ? "text-emerald-600" : "text-amber-600"
+          }`} />
           <div className="flex-1">
-            <div className="font-bold text-amber-900">
-              وضع الإطلاق المجاني (السعودية) — مفعّل حالياً
-            </div>
-            <p className="text-sm text-amber-800 mt-1 leading-relaxed">
-              العملاء داخل السعودية يرون <strong>كل الباقات بسعر 0 ريال</strong> لأن هناك تخفيضات قُطرية مفعّلة في "تسعير حسب الدولة" (السعر المحلي = 0 لكل الباقات المدفوعة الـ {saLaunchMode.totalPaidPlans}). الأسعار الأصلية في الجدول أدناه لم تتغيّر — فقط ما يُعرض للعميل السعودي.
-            </p>
-            <Link
-              href="/admin/plans/country-pricing?country=SA"
-              className="inline-flex items-center gap-1.5 mt-2 text-sm font-bold text-amber-900 underline hover:text-amber-700"
-            >
-              <Globe className="w-4 h-4" />
-              افتح تسعير الدولة لإلغاء التخفيض ←
-            </Link>
+            {saLaunchMode.overriddenCount === -1 ? (
+              <>
+                <div className="font-bold text-emerald-900">
+                  وضع الإطلاق المجاني (مفتاح رئيسي) — مفعّل لكل العالم
+                </div>
+                <p className="text-sm text-emerald-800 mt-1 leading-relaxed">
+                  المفتاح الرئيسي مفعّل في <strong>تسعير الباقات حسب الدولة</strong>: كل عميل في أي دولة يرى كل الباقات بسعر 0 الآن. أسعار الجدول أدناه + أسعار الدول محفوظة وستعود لحظة إيقاف الوضع.
+                </p>
+                <Link
+                  href="/admin/plans/country-pricing"
+                  className="inline-flex items-center gap-1.5 mt-2 text-sm font-bold text-emerald-900 underline hover:text-emerald-700"
+                >
+                  <Globe className="w-4 h-4" />
+                  افتح الصفحة لإيقاف وضع المجاني ←
+                </Link>
+              </>
+            ) : (
+              <>
+                <div className="font-bold text-amber-900">
+                  وضع الإطلاق المجاني (السعودية فقط) — مفعّل حالياً
+                </div>
+                <p className="text-sm text-amber-800 mt-1 leading-relaxed">
+                  العملاء داخل السعودية يرون <strong>كل الباقات بسعر 0 ريال</strong> لأن هناك تخفيضات قُطرية مفعّلة في "تسعير حسب الدولة" (السعر المحلي = 0 لكل الباقات المدفوعة الـ {saLaunchMode.totalPaidPlans}). الأسعار الأصلية في الجدول أدناه لم تتغيّر — فقط ما يُعرض للعميل السعودي.
+                </p>
+                <Link
+                  href="/admin/plans/country-pricing?country=SA"
+                  className="inline-flex items-center gap-1.5 mt-2 text-sm font-bold text-amber-900 underline hover:text-amber-700"
+                >
+                  <Globe className="w-4 h-4" />
+                  افتح تسعير الدولة لإلغاء التخفيض ←
+                </Link>
+              </>
+            )}
           </div>
         </div>
       )}

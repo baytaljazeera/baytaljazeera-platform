@@ -107,6 +107,65 @@ export default function CountryPricingPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  // Launch-free-mode master kill-switch. When ON, every plan is forced
+  // to price=0 in the API response regardless of base + country prices.
+  // The country pricing table below is PRESERVED — flipping back to
+  // OFF instantly restores the configured pricing.
+  const [launchFreeMode, setLaunchFreeMode] = useState(false);
+  const [togglingLaunch, setTogglingLaunch] = useState(false);
+
+  const fetchLaunchMode = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/settings/plans-launch-mode`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLaunchFreeMode(Boolean(data.enabled));
+      }
+    } catch {
+      /* silent — defaults to off */
+    }
+  }, []);
+
+  const toggleLaunchMode = async () => {
+    const next = !launchFreeMode;
+    if (
+      !window.confirm(
+        next
+          ? "تفعيل وضع الإطلاق المجاني سيُظهر كل الباقات بسعر 0 لكل العملاء فوراً. أسعار الدول المضبوطة لن تُحذف — ستعود فور إيقاف الوضع. هل تتابع؟"
+          : "إيقاف وضع الإطلاق المجاني سيُعيد عرض الأسعار المضبوطة فوراً لكل العملاء. هل تتابع؟"
+      )
+    ) return;
+    setTogglingLaunch(true);
+    try {
+      const res = await fetch(`${API_URL}/api/settings/plans-launch-mode`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ enabled: next }),
+      });
+      if (!res.ok) {
+        if (res.status === 403) throw new Error("يتطلب صلاحية super_admin أو admin_manager");
+        throw new Error(`فشل التبديل (HTTP ${res.status})`);
+      }
+      setLaunchFreeMode(next);
+      setMessage({
+        type: "success",
+        text: next
+          ? "تم تفعيل وضع الإطلاق المجاني — كل الباقات تظهر للعملاء بسعر 0 الآن"
+          : "تم إيقاف وضع الإطلاق المجاني — عادت الأسعار المضبوطة كما هي",
+      });
+    } catch (err) {
+      setMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : "فشل تبديل وضع الإطلاق",
+      });
+    } finally {
+      setTogglingLaunch(false);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -142,7 +201,8 @@ export default function CountryPricingPage() {
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    fetchLaunchMode();
+  }, [fetchData, fetchLaunchMode]);
 
   const handlePriceChange = (countryCode: string, planId: number, value: string) => {
     const key = `${countryCode}-${planId}`;
@@ -313,6 +373,66 @@ export default function CountryPricingPage() {
                 حفظ التغييرات
               </motion.button>
             </div>
+          </div>
+        </motion.div>
+
+        {/* ─── MASTER KILL-SWITCH: launch-free-mode ─────────────────
+            Single most important control on this page. When ON:
+            EVERY plan shows price=0 to EVERY customer worldwide,
+            regardless of the matrix below. The matrix values are
+            PRESERVED — flipping OFF restores them instantly.
+            Visual state changes dramatically by mode so the
+            operator never wonders if it's on or off. */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`mb-6 rounded-2xl border-2 p-5 transition-colors ${
+            launchFreeMode
+              ? "bg-gradient-to-br from-emerald-500/15 to-emerald-700/10 border-emerald-400"
+              : "bg-white/5 border-white/15"
+          }`}
+        >
+          <div className="flex items-start justify-between flex-wrap gap-4">
+            <div className="flex items-start gap-3 flex-1 min-w-[260px]">
+              <div className={`p-2.5 rounded-xl ${launchFreeMode ? "bg-emerald-500/30" : "bg-white/10"}`}>
+                <Wand2 className={`w-6 h-6 ${launchFreeMode ? "text-emerald-200" : "text-gray-400"}`} />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className={`text-lg font-bold ${launchFreeMode ? "text-emerald-100" : "text-white"}`}>
+                    وضع الإطلاق المجاني — مفتاح رئيسي
+                  </h3>
+                  <span
+                    className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+                      launchFreeMode
+                        ? "bg-emerald-400 text-emerald-950 border-emerald-300"
+                        : "bg-slate-700 text-slate-300 border-slate-500"
+                    }`}
+                  >
+                    {launchFreeMode ? "✓ مفعّل الآن" : "✗ معطّل الآن"}
+                  </span>
+                </div>
+                <p className={`text-sm mt-2 leading-relaxed ${launchFreeMode ? "text-emerald-50" : "text-gray-300"}`}>
+                  {launchFreeMode
+                    ? "كل العملاء يرون كل الباقات بسعر 0 الآن (بغضّ النظر عن الجدول أدناه). الأسعار المضبوطة لم تُحذف — ستعود لحظة إيقاف هذا الوضع."
+                    : "إذا فعّلت هذا الوضع، ستعرض كل الباقات بسعر 0 لكل العملاء فوراً. الأسعار المضبوطة في الجدول أدناه ستظل محفوظة، وستعود فور إيقاف الوضع."}
+                </p>
+              </div>
+            </div>
+            <motion.button
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={toggleLaunchMode}
+              disabled={togglingLaunch}
+              className={`shrink-0 self-center flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm shadow-lg transition-all disabled:opacity-60 ${
+                launchFreeMode
+                  ? "bg-white text-emerald-700 hover:bg-emerald-50"
+                  : "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-400 hover:to-emerald-500"
+              }`}
+            >
+              {togglingLaunch ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+              {launchFreeMode ? "إيقاف وضع المجاني" : "تفعيل وضع المجاني للجميع"}
+            </motion.button>
           </div>
         </motion.div>
 

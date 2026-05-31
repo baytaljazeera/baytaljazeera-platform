@@ -22,7 +22,13 @@ const GENERAL_SETTINGS_KEYS = [
   'auto_approve_listings',
   'max_images_per_listing',
   'listing_duration_days',
-  'invoice_system_enabled'
+  'invoice_system_enabled',
+  // Launch-free-mode master kill-switch (see plans.js). When 'true',
+  // every plan in the API response is forced to price=0 regardless of
+  // the configured base/country prices. Those configured prices are
+  // PRESERVED in the DB — flipping back to 'false' instantly restores
+  // them without re-typing.
+  'plans_launch_free_mode'
 ];
 
 const SITE_STATUS_VALUES = ['normal', 'maintenance', 'coming_soon'];
@@ -53,8 +59,45 @@ const DEFAULT_SETTINGS = {
   auto_approve_listings: 'false',
   max_images_per_listing: '10',
   listing_duration_days: '30',
-  invoice_system_enabled: 'false'
+  invoice_system_enabled: 'false',
+  plans_launch_free_mode: 'false'
 };
+
+// ─── Plans launch-free-mode ────────────────────────────────────────
+// Read: public (the customer-facing checkout needs to know the state
+// so it can show the right copy). Write: super_admin / admin_manager
+// only — same governance bar as plan pricing.
+router.get("/plans-launch-mode", asyncHandler(async (req, res) => {
+  try {
+    const r = await db.query(
+      `SELECT value FROM app_settings WHERE key = 'plans_launch_free_mode'`
+    );
+    const enabled = r.rows[0]?.value === 'true';
+    res.set('Cache-Control', 'no-store, max-age=0');
+    res.json({ enabled });
+  } catch {
+    res.json({ enabled: false });
+  }
+}));
+
+router.post(
+  "/plans-launch-mode",
+  authMiddleware,
+  requireRoles(['super_admin', 'admin_manager']),
+  asyncHandler(async (req, res) => {
+    const enabled = req.body?.enabled === true;
+    await db.query(
+      `INSERT INTO app_settings (key, value, updated_at)
+       VALUES ('plans_launch_free_mode', $1, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+      [enabled ? 'true' : 'false']
+    );
+    console.log('[plans-launch-mode]', JSON.stringify({
+      enabled, actorId: req.user?.id, actorRole: req.user?.role,
+    }));
+    res.json({ ok: true, enabled });
+  })
+);
 
 router.get("/site-status", asyncHandler(async (req, res) => {
   try {

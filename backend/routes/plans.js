@@ -56,14 +56,47 @@ const SUPPORTED_COUNTRIES = [
   { code: 'INT', name_ar: 'دولي', currency_code: 'USD', currency_symbol: '$' }
 ];
 
+// ─── Launch-free-mode helper ──────────────────────────────────────
+// Single source of truth for the master kill-switch. Reads
+// app_settings.plans_launch_free_mode each call (no caching — the
+// operator expects flipping the toggle to take effect immediately).
+// Returns false on any error so we fail open to "show real prices".
+async function isLaunchFreeMode() {
+  try {
+    const r = await db.query(
+      `SELECT value FROM app_settings WHERE key = 'plans_launch_free_mode'`
+    );
+    return r.rows[0]?.value === 'true';
+  } catch {
+    return false;
+  }
+}
+
+// Apply the master kill-switch to a list of plans. Zeroes out every
+// price-bearing field the customer site might read, AND tags the
+// plan so the UI can show a "launch promo" badge instead of just a
+// 0. Country-pricing fields (local_price) get zeroed too because the
+// kill-switch outranks per-country overrides.
+function applyLaunchFreeMode(plans) {
+  return plans.map((p) => ({
+    ...p,
+    price: 0,
+    discountedPrice: 0,
+    local_price: 0,
+    is_launch_free_mode: true,
+  }));
+}
+
 router.get("/", asyncHandler(async (req, res) => {
   const { all } = req.query;
   const includeHidden = all === "true";
-  
+
   const plans = await planService.getAllPlans(includeHidden);
   const plansWithDiscounts = await promotionService.applyPromotionsToPlans(plans, null);
+  const launchFree = await isLaunchFreeMode();
+  const finalPlans = launchFree ? applyLaunchFreeMode(plansWithDiscounts) : plansWithDiscounts;
 
-  res.json({ plans: plansWithDiscounts });
+  res.json({ plans: finalPlans, launch_free_mode: launchFree });
 }));
 
 // Get all supported countries (MUST be before /:id to avoid route conflict)
@@ -106,12 +139,15 @@ router.get("/by-country/:countryCode", asyncHandler(async (req, res) => {
     };
   });
 
-  const plans = await promotionService.applyPromotionsToPlans(plansWithLocalPricing, null);
+  const promotedPlans = await promotionService.applyPromotionsToPlans(plansWithLocalPricing, null);
+  const launchFree = await isLaunchFreeMode();
+  const plans = launchFree ? applyLaunchFreeMode(promotedPlans) : promotedPlans;
 
-  res.json({ 
-    plans, 
+  res.json({
+    plans,
     country,
-    has_country_pricing: Object.keys(priceMap).length > 0
+    has_country_pricing: Object.keys(priceMap).length > 0,
+    launch_free_mode: launchFree
   });
 }));
 
