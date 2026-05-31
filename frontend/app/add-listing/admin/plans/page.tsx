@@ -1,6 +1,7 @@
 "use client";
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { confirmDialog, alertDialog } from "@/components/ui/ConfirmDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -261,7 +262,13 @@ export default function PlansManagement() {
   };
 
   const deactivatePromotion = async (id: number) => {
-    if (!window.confirm("إيقاف هذا العرض سيُعيد الأسعار الأصلية لكل العملاء فوراً. متابعة؟")) return;
+    const ok = await confirmDialog({
+      title: "إيقاف عرض ترويجي",
+      body: "سيتوقف تطبيق هذا العرض على الأسعار التي يراها العملاء، وستظهر الأسعار الأصلية فور إعادة تحميل الصفحة.",
+      confirmText: "أوقف العرض",
+      variant: "warning",
+    });
+    if (!ok) return;
     setActionLoading(`promo-${id}`);
     try {
       const res = await fetch(`${API_URL}/api/promotions/${id}/toggle`, {
@@ -272,14 +279,24 @@ export default function PlansManagement() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await fetchDiagnostic();
     } catch (e) {
-      window.alert(`فشل إيقاف العرض: ${e instanceof Error ? e.message : String(e)}`);
+      await alertDialog({
+        title: "فشل إيقاف العرض",
+        body: e instanceof Error ? e.message : String(e),
+        variant: "danger",
+      });
     } finally {
       setActionLoading(null);
     }
   };
 
   const clearCountryZeros = async (countryCode: string, countryName: string) => {
-    if (!window.confirm(`حذف كل أسعار ${countryName} المضبوطة على 0؟ سيرى عملاء هذه الدولة الأسعار الأصلية بالريال.`)) return;
+    const ok = await confirmDialog({
+      title: `تصفير أسعار ${countryName}`,
+      body: `سيتم حذف كل overrides أسعار ${countryName} المضبوطة في النظام، وسيرى عملاء هذه الدولة الأسعار الأساسية بالريال السعودي.`,
+      confirmText: "صفّر الدولة",
+      variant: "warning",
+    });
+    if (!ok) return;
     setActionLoading(`country-${countryCode}`);
     try {
       const res = await fetch(`${API_URL}/api/plans/admin/country-prices/clear-country`, {
@@ -291,16 +308,25 @@ export default function PlansManagement() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await fetchDiagnostic();
     } catch (e) {
-      window.alert(`فشل المسح: ${e instanceof Error ? e.message : String(e)}`);
+      await alertDialog({
+        title: "فشل المسح",
+        body: e instanceof Error ? e.message : String(e),
+        variant: "danger",
+      });
     } finally {
       setActionLoading(null);
     }
   };
 
   const deactivateAllFreePromos = async () => {
-    if (!window.confirm(
-      "إيقاف كل العروض الترويجية المجانية (free_plan, خصم 100%, skip_payment)؟ سيرى العملاء الأسعار الأصلية فوراً."
-    )) return;
+    const ok = await confirmDialog({
+      title: "إيقاف كل العروض المجانية فوراً",
+      body: "سيتم تعطيل أي عرض ترويجي يجعل الباقات مجانية (free_plan أو خصم 100% أو skip_payment)، وسيرى العملاء الأسعار الأصلية فور إعادة تحميل الصفحة.",
+      hint: "إجراء حوكمة عليا — يطغى على كل العروض النشطة",
+      confirmText: "أوقف الكل الآن",
+      variant: "danger",
+    });
+    if (!ok) return;
     setActionLoading("all-promos");
     try {
       const res = await fetch(`${API_URL}/api/plans/admin/promotions/deactivate-all-free`, {
@@ -310,10 +336,18 @@ export default function PlansManagement() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      window.alert(`تم إيقاف ${data.deactivated} عرض ترويجي`);
+      await alertDialog({
+        title: `تم إيقاف ${data.deactivated} عرض ترويجي`,
+        body: "الأسعار الأصلية ستظهر للعملاء فور تحديث صفحاتهم.",
+        variant: "success",
+      });
       await fetchDiagnostic();
     } catch (e) {
-      window.alert(`فشل: ${e instanceof Error ? e.message : String(e)}`);
+      await alertDialog({
+        title: "فشل إيقاف العروض",
+        body: e instanceof Error ? e.message : String(e),
+        variant: "danger",
+      });
     } finally {
       setActionLoading(null);
     }
@@ -321,10 +355,15 @@ export default function PlansManagement() {
 
   const toggleMasterSwitch = async () => {
     const next = !diagnostic?.master_switch.enabled;
-    if (!window.confirm(next
-      ? "تفعيل وضع الإطلاق المجاني سيُظهر كل الباقات بسعر 0 لكل العملاء فوراً. متابعة؟"
-      : "إيقاف وضع الإطلاق المجاني. متابعة؟"
-    )) return;
+    const ok = await confirmDialog({
+      title: next ? "تفعيل وضع الإطلاق المجاني" : "إيقاف وضع الإطلاق المجاني",
+      body: next
+        ? "سيرى كل العملاء في العالم كل الباقات بسعر 0 فور إعادة تحميل صفحاتهم. الأسعار المضبوطة في قاعدة البيانات لن تُحذف — ستعود فور إيقاف الوضع."
+        : "ستعود الأسعار المضبوطة لتظهر للعملاء فور إعادة تحميل صفحاتهم.",
+      confirmText: next ? "فعّل وضع المجاني" : "أوقف الوضع",
+      variant: next ? "warning" : "info",
+    });
+    if (!ok) return;
     setActionLoading("master");
     try {
       const res = await fetch(`${API_URL}/api/settings/plans-launch-mode`, {
@@ -336,7 +375,11 @@ export default function PlansManagement() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await fetchDiagnostic();
     } catch (e) {
-      window.alert(`فشل التبديل: ${e instanceof Error ? e.message : String(e)}`);
+      await alertDialog({
+        title: "فشل التبديل",
+        body: e instanceof Error ? e.message : String(e),
+        variant: "danger",
+      });
     } finally {
       setActionLoading(null);
     }
@@ -502,7 +545,15 @@ export default function PlansManagement() {
   };
 
   const handleDelete = async (plan: Plan) => {
-    if (!confirm(`هل أنت متأكد من حذف باقة "${plan.name_ar}"؟`)) return;
+    const ok = await confirmDialog({
+      title: `حذف باقة "${plan.name_ar}"`,
+      body: "سيتم حذف هذه الباقة نهائياً. أي مشتركين حاليين على هذه الباقة سيظلون عليها حتى انتهاء اشتراكاتهم، لكن لن يستطيع أحد الاشتراك فيها بعد الآن.",
+      hint: "إجراء حساس لا يمكن التراجع عنه",
+      confirmText: "احذف الباقة",
+      variant: "danger",
+      doubleConfirm: true,
+    });
+    if (!ok) return;
 
     try {
       const res = await fetch(`/api/plans/${plan.id}`, {

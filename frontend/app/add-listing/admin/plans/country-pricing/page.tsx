@@ -9,6 +9,7 @@ import {
   DollarSign, Edit2, Loader2, Wand2, Zap, Trash2, RotateCcw
 } from "lucide-react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { confirmDialog } from "@/components/ui/ConfirmDialog";
 
 // ─── Approximate FX → SAR ──────────────────────────────────────────
 // 1 SAR ≈ X (local currency). Used by the quick-fill buttons to
@@ -131,13 +132,15 @@ export default function CountryPricingPage() {
 
   const toggleLaunchMode = async () => {
     const next = !launchFreeMode;
-    if (
-      !window.confirm(
-        next
-          ? "تفعيل وضع الإطلاق المجاني سيُظهر كل الباقات بسعر 0 لكل العملاء فوراً. أسعار الدول المضبوطة لن تُحذف — ستعود فور إيقاف الوضع. هل تتابع؟"
-          : "إيقاف وضع الإطلاق المجاني سيُعيد عرض الأسعار المضبوطة فوراً لكل العملاء. هل تتابع؟"
-      )
-    ) return;
+    const ok = await confirmDialog({
+      title: next ? "تفعيل وضع الإطلاق المجاني" : "إيقاف وضع الإطلاق المجاني",
+      body: next
+        ? "سيرى كل العملاء في العالم كل الباقات بسعر 0 فور إعادة تحميل صفحاتهم. أسعار الدول المضبوطة في الجدول أدناه لن تُحذف، وستعود لحظة إيقاف الوضع."
+        : "ستعود الأسعار المضبوطة في الجدول أدناه لتظهر لكل العملاء فور إعادة تحميل صفحاتهم.",
+      confirmText: next ? "فعّل وضع المجاني" : "أوقف الوضع",
+      variant: next ? "warning" : "info",
+    });
+    if (!ok) return;
     setTogglingLaunch(true);
     try {
       const res = await fetch(`${API_URL}/api/settings/plans-launch-mode`, {
@@ -301,9 +304,13 @@ export default function CountryPricingPage() {
   // discarded so the operator starts from a clean slate.
   const [resetting, setResetting] = useState<string | null>(null);
   const resetCountry = async (countryCode: string, countryName: string) => {
-    if (!window.confirm(
-      `حذف كل أسعار ${countryName}؟ سيرى عملاء هذه الدولة الأسعار الأساسية بالريال السعودي بدلاً من السعر المحلي.`
-    )) return;
+    const ok = await confirmDialog({
+      title: `تصفير أسعار ${countryName}`,
+      body: `سيتم حذف كل overrides أسعار ${countryName}، وسيرى عملاء هذه الدولة الأسعار الأساسية بالريال السعودي بدلاً من السعر المحلي.`,
+      confirmText: "صفّر الدولة",
+      variant: "warning",
+    });
+    if (!ok) return;
     setResetting(countryCode);
     try {
       const res = await fetch(`${API_URL}/api/plans/admin/country-prices/clear-country`, {
@@ -328,10 +335,16 @@ export default function CountryPricingPage() {
     }
   };
   const resetAllCountries = async () => {
-    if (!window.confirm(
-      "تصفير كل أسعار الدول (جميع الـ overrides)؟ كل العملاء في كل العالم سيرون الأسعار الأساسية بالريال السعودي. هذا لا يحذف الأسعار الأساسية في الباقات نفسها."
-    )) return;
-    if (!window.confirm("تأكيد ثانٍ — هذي عملية لا يمكن التراجع عنها بضغطة. متابعة؟")) return;
+    const ok = await confirmDialog({
+      title: "تصفير كل أسعار الدول",
+      body: "سيتم حذف جميع overrides الأسعار لكل الدول. سيرى عملاء كل العالم الأسعار الأساسية بالريال السعودي. الأسعار الأساسية في الباقات نفسها لن تُحذف.",
+      hint: "إجراء حوكمة عليا — لا يمكن التراجع عنه بضغطة",
+      acknowledgeText: "أنا أفهم أن هذا الإجراء سيمسح كل أسعار الدول للأبد",
+      confirmText: "صفّر كل الدول",
+      variant: "danger",
+      doubleConfirm: true,
+    });
+    if (!ok) return;
     setResetting("__ALL__");
     try {
       const res = await fetch(`${API_URL}/api/plans/admin/country-prices/clear-all`, {

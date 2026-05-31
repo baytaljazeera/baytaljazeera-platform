@@ -1,6 +1,7 @@
 "use client";
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { confirmDialog } from "@/components/ui/ConfirmDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -536,7 +537,14 @@ export default function PromotionsPage() {
   };
 
   const deletePromotion = async (id: number) => {
-    if (!confirm("هل أنت متأكد من حذف هذا العرض؟ هذا الإجراء لا يمكن التراجع عنه.")) return;
+    const ok = await confirmDialog({
+      title: "حذف العرض الترويجي",
+      body: "سيتم حذف هذا العرض نهائياً من النظام. أي إعدادات (الباقات المستهدفة، البانر، حدود الاستخدام) ستضيع.",
+      hint: "هذا الإجراء لا يمكن التراجع عنه",
+      confirmText: "احذف العرض",
+      variant: "danger",
+    });
+    if (!ok) return;
 
     try {
       const res = await fetch(`${API_URL}/api/promotions/${id}`, {
@@ -600,7 +608,14 @@ export default function PromotionsPage() {
           <button
             type="button"
             onClick={async () => {
-              if (!window.confirm("إيقاف كل العروض الترويجية المجانية فوراً (free_plan, 100%, skip_payment)؟ يلغي أي تأثير على أسعار العملاء بدون نقاش.")) return;
+              const ok = await confirmDialog({
+                title: "إيقاف كل العروض المجانية فوراً",
+                body: "سيتم تعطيل أي عرض ترويجي يجعل الباقات مجانية (free_plan أو خصم 100% أو skip_payment)، وسيرى العملاء الأسعار الأصلية فور إعادة تحميل الصفحة.",
+                hint: "الحوكمة العليا — يطغى على كل شيء بدون نقاش",
+                confirmText: "أوقف الكل الآن",
+                variant: "danger",
+              });
+              if (!ok) return;
               try {
                 const res = await fetch(`${API_URL}/api/plans/admin/promotions/deactivate-all-free`, {
                   method: "POST",
