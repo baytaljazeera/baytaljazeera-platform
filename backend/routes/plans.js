@@ -156,6 +156,16 @@ router.get("/free-pricing-diagnostic", asyncHandler(async (req, res) => {
         skipPay
       );
     });
+    // TEMP debug — expose raw counts so we can see why the filter
+    // seems empty in production. Will be removed once we know why.
+    out._debug = {
+      total_active_rows: r.rows.length,
+      raw_sample: r.rows.slice(0, 2).map((p) => ({
+        id: p.id, name_ar: p.name_ar, promotion_type: p.promotion_type,
+        discount_type: p.discount_type, discount_value: p.discount_value,
+        skip_payment: p.skip_payment, status: p.status,
+      })),
+    };
     console.log('[diagnostic] active=' + r.rows.length + ' free=' + out.free_promotions.length);
   } catch (e) {
     console.warn('[free-pricing-diagnostic] promo lookup failed:', e.message);
