@@ -4,10 +4,11 @@ export const dynamic = "force-dynamic";
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
+import {
   Globe, Save, RefreshCw, CheckCircle, AlertCircle,
   DollarSign, Edit2, Loader2
 } from "lucide-react";
+import { API_URL, getAuthHeaders } from "@/lib/api";
 
 interface Plan {
   id: number;
@@ -41,7 +42,10 @@ interface PriceMatrix {
   };
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+// Was: const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+// Switched to the shared API_URL helper so empty NEXT_PUBLIC_API_URL
+// (which would produce "/api/..." relative URLs that 404 against the
+// Vercel host) cant slip through. Same pattern used everywhere else.
 
 const COUNTRY_FLAGS: Record<string, string> = {
   SA: "🇸🇦",
@@ -67,12 +71,21 @@ export default function CountryPricingPage() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/api/plans/admin/country-prices`, {
-        credentials: "include"
+      // Bearer header is mandatory — Safari ITP drops the cross-
+      // origin cookie, so credentials:"include" alone returns 401
+      // and the user just sees "خطأ في جلب البيانات".
+      const res = await fetch(`${API_URL}/api/plans/admin/country-prices`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
       });
-      
-      if (!res.ok) throw new Error("Failed to fetch");
-      
+
+      if (!res.ok) {
+        // Distinguish auth from server errors so the message is useful.
+        if (res.status === 401) throw new Error("غير مصرح — سجّل دخول كـ super_admin أو admin_manager");
+        if (res.status === 403) throw new Error("ليس لديك صلاحية لإدارة الباقات (يتطلب super_admin أو admin_manager)");
+        throw new Error(`فشل الجلب (HTTP ${res.status})`);
+      }
+
       const data = await res.json();
       setPlans(data.plans || []);
       setCountries(data.countries || []);
@@ -80,7 +93,8 @@ export default function CountryPricingPage() {
       setEditedPrices({});
     } catch (err) {
       console.error("Error fetching data:", err);
-      setMessage({ type: "error", text: "خطأ في جلب البيانات" });
+      const text = err instanceof Error ? err.message : "خطأ في جلب البيانات";
+      setMessage({ type: "error", text });
     } finally {
       setLoading(false);
     }
@@ -117,21 +131,26 @@ export default function CountryPricingPage() {
         return { country_code, plan_id: parseInt(plan_id), price };
       });
 
-      const res = await fetch(`${API_BASE}/api/plans/admin/country-prices/bulk`, {
+      const res = await fetch(`${API_URL}/api/plans/admin/country-prices/bulk`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
         body: JSON.stringify({ prices })
       });
 
-      if (!res.ok) throw new Error("Failed to save");
+      if (!res.ok) {
+        if (res.status === 401) throw new Error("غير مصرح — انتهت الجلسة، سجّل دخول مرة أخرى");
+        if (res.status === 403) throw new Error("ليس لديك صلاحية لتعديل الأسعار (يتطلب super_admin أو admin_manager)");
+        throw new Error(`فشل الحفظ (HTTP ${res.status})`);
+      }
 
       const data = await res.json();
       setMessage({ type: "success", text: data.message || "تم حفظ الأسعار بنجاح" });
       fetchData();
     } catch (err) {
       console.error("Error saving:", err);
-      setMessage({ type: "error", text: "خطأ في حفظ الأسعار" });
+      const text = err instanceof Error ? err.message : "خطأ في حفظ الأسعار";
+      setMessage({ type: "error", text });
     } finally {
       setSaving(false);
     }
