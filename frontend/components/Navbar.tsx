@@ -213,6 +213,10 @@ function NavbarContent() {
         // Mark as read in local list (will be filtered out by the display)
         setNotifications(prev => prev.map(n => n.id === id ? {...n, read_at: new Date().toISOString()} : n));
         setUnreadNotifications(prev => Math.max(0, prev - 1));
+        // Keep AdminTopbar (or any other bell on the page) in sync.
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("notificationsUpdated"));
+        }
       }
     } catch (err) {
       console.error("Error marking notification as read:", err);
@@ -224,21 +228,28 @@ function NavbarContent() {
     if (!notification.read_at) {
       markNotificationAsRead(notification.id);
     }
-    
-    // Navigate based on notification type - using correct app routes
-    let href = "/inbox";
-    if (notification.related_type === "message" || notification.type === "message") {
-      href = "/messages"; // Messages page (no dynamic route)
-    } else if (notification.related_type === "listing" && notification.related_id) {
-      href = `/listing/${notification.related_id}`; // Note: /listing not /listings
-    } else if (notification.related_type === "invoice" && notification.related_id) {
-      href = `/invoices/${notification.related_id}`;
-    } else if (notification.type === "upgrade" || notification.type === "subscription") {
-      href = "/account";
-    } else if (notification.type === "refund") {
-      href = "/invoices";
+
+    // Prefer the explicit `link` field — that's what the chatbot
+    // escalation, ticket-reply, and complaint flows set when they
+    // know exactly where the user should land (e.g. /account/my-
+    // tickets?open=14). Fall back to the legacy type/related_type
+    // routing only when no link is present.
+    let href = (notification as Notification & { link?: string }).link || "";
+    if (!href) {
+      href = "/inbox";
+      if (notification.related_type === "message" || notification.type === "message") {
+        href = "/messages";
+      } else if (notification.related_type === "listing" && notification.related_id) {
+        href = `/listing/${notification.related_id}`;
+      } else if (notification.related_type === "invoice" && notification.related_id) {
+        href = `/invoices/${notification.related_id}`;
+      } else if (notification.type === "upgrade" || notification.type === "subscription") {
+        href = "/account";
+      } else if (notification.type === "refund") {
+        href = "/invoices";
+      }
     }
-    
+
     setShowNotificationDropdown(false);
     router.push(href);
   };

@@ -246,7 +246,7 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
         plan_tier, customer_country, customer_timezone, customer_language,
         source)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-               $9, $10, NOW() + ($10 || ' hours')::interval,
+               $9, $10, NOW() + ($10::text || ' hours')::interval,
                $11, $12, $13, $14,
                $15)
        RETURNING *`,
@@ -264,7 +264,7 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
          (user_id, ticket_number, department, subcategory, category, priority, subject, description,
           auto_assigned_role, sla_hours, sla_due_at, source)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-                 $9, $10, NOW() + ($10 || ' hours')::interval, $11)
+                 $9, $10, NOW() + ($10::text || ' hours')::interval, $11)
          RETURNING *`,
         [userId, ticketNumber, department, subcategory || null, categoryValue,
          priority || 'medium', subject, description,

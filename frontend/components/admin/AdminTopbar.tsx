@@ -201,10 +201,16 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
         },
         body: JSON.stringify({ ids: [id] }),
       });
-      setNotifications(notifications.map(n => 
+      setNotifications(notifications.map(n =>
         n.id === id ? { ...n, read_at: new Date().toISOString() } : n
       ));
       setUnreadCount(prev => Math.max(0, prev - 1));
+      // Tell other bell instances (Navbar on the same page, future
+      // mobile drawer, etc.) to refetch their counts so they all show
+      // the same number.
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("notificationsUpdated"));
+      }
     } catch (err) {
       console.error("Error marking as read:", err);
     }
@@ -220,6 +226,9 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
       });
       setNotifications(notifications.map(n => ({ ...n, read_at: new Date().toISOString() })));
       setUnreadCount(0);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("notificationsUpdated"));
+      }
     } catch (err) {
       console.error("Error marking all as read:", err);
     }
@@ -407,7 +416,22 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
                       notifications.map((notification) => (
                         <div
                           key={notification.id}
-                          className={`p-3 border-b border-slate-50 hover:bg-slate-50 transition group ${
+                          onClick={() => {
+                            // Whole-row click = "I read this". Mark as
+                            // read immediately so the counter decrements,
+                            // then navigate to the linked screen if any.
+                            // Previously only a hover-only Check button
+                            // did this — users would open the linked
+                            // page, reply, and still see the same unread
+                            // count because nothing actually flipped
+                            // read_at on the row.
+                            if (!notification.read_at) markAsRead(notification.id);
+                            if (notification.link) {
+                              setShowNotifications(false);
+                              router.push(notification.link);
+                            }
+                          }}
+                          className={`p-3 border-b border-slate-50 hover:bg-slate-50 transition group cursor-pointer ${
                             !notification.read_at ? "bg-blue-50/50" : ""
                           }`}
                         >
@@ -460,7 +484,11 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
                                   {notification.link && (
                                     <Link
                                       href={notification.link}
-                                      onClick={(e) => e.stopPropagation()}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (!notification.read_at) markAsRead(notification.id);
+                                        setShowNotifications(false);
+                                      }}
                                       className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#002845]/10 hover:bg-[#002845]/20 text-[#002845] text-[10px] font-medium transition"
                                     >
                                       <ExternalLink className="w-3 h-3" />
