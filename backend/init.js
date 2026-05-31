@@ -919,6 +919,13 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'user_last_read_at') THEN
           ALTER TABLE support_tickets ADD COLUMN user_last_read_at TIMESTAMPTZ;
         END IF;
+        -- Admin-side read marker: any reply with sender_type='user'
+        -- created AFTER admin_last_read_at is unread on the admin
+        -- bell. Auto-bumped when staff opens the ticket; explicitly
+        -- bumped by the admin mark-read endpoint.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'admin_last_read_at') THEN
+          ALTER TABLE support_tickets ADD COLUMN admin_last_read_at TIMESTAMPTZ;
+        END IF;
       END $$;
     `);
     

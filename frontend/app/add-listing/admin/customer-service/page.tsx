@@ -211,6 +211,11 @@ export default function CustomerServicePage() {
       if (res.ok) {
         const data = await res.json();
         setReplies(data.replies || []);
+        // Backend bumps admin_last_read_at when staff GETs a ticket.
+        // Tell the bell to refetch /admin-unread-count immediately.
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("notificationsUpdated"));
+        }
       }
     } catch (err) {
       console.error("Error fetching ticket details:", err);
@@ -362,6 +367,9 @@ export default function CustomerServicePage() {
         setReply("");
         await fetchTicketDetails(selectedTicket.id);
         await fetchTickets();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("notificationsUpdated"));
+        }
       }
     } catch (err) {
       console.error("Error sending reply:", err);

@@ -342,7 +342,11 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
   });
 }));
 
-/** Customer marks ticket as read (clears unread admin-reply count for this ticket in the navbar). */
+/** Customer marks ticket as read (clears unread admin-reply count for this ticket in the navbar).
+ *  ALSO clears the related notifications rows so the navbar bell
+ *  counter actually drops. Before this, user_last_read_at was bumped
+ *  but the per-reply notifications row (type='support_reply',
+ *  link=/account/my-tickets?open=<id>) stayed unread → bell stuck. */
 router.patch("/:id/mark-read", authMiddleware, asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (Number.isNaN(id)) {
@@ -361,7 +365,76 @@ router.patch("/:id/mark-read", authMiddleware, asyncHandler(async (req, res) => 
   if (result.rows.length === 0) {
     return res.status(404).json({ error: "التذكرة غير موجودة" });
   }
+  let clearedNotifications = 0;
+  try {
+    const r = await db.query(
+      `UPDATE notifications
+       SET read_at = NOW()
+       WHERE user_id = $1
+         AND read_at IS NULL
+         AND (link = $2 OR link LIKE $3)
+       RETURNING id`,
+      [req.user.id, `/account/my-tickets?open=${id}`, `/account/my-tickets?open=${id}&%`]
+    );
+    clearedNotifications = r.rowCount || 0;
+  } catch (e) {
+    console.warn('[support mark-read] notifications clear failed:', e.message);
+  }
+  console.log('[support mark-read] customer', JSON.stringify({
+    ticketId: id, userId: req.user.id, clearedNotifications,
+  }));
+  res.json({ ok: true, clearedNotifications });
+}));
+
+/** Staff marks ticket as read on the admin side — counter for admin
+ *  bell drops to reflect that the customers latest replies have been
+ *  seen. user_last_read_at on the customer side is left untouched. */
+router.patch("/:id/mark-read-admin", authMiddleware, asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) {
+    return res.status(400).json({ error: "معرف غير صالح" });
+  }
+  if (req.user.role === "user") {
+    return res.status(403).json({ error: "غير مصرح" });
+  }
+  const sc = getSupportTicketScope(req.user.role, req.user.id, 2);
+  let q = `UPDATE support_tickets SET admin_last_read_at = NOW() WHERE id = $1`;
+  const params = [id];
+  if (sc.clause) {
+    q += ` AND ${sc.clause}`;
+    params.push(...sc.params);
+  }
+  const r = await db.query(q + ` RETURNING id`, params);
+  if (r.rows.length === 0) {
+    return res.status(404).json({ error: "التذكرة غير موجودة" });
+  }
+  console.log('[support mark-read-admin]', JSON.stringify({
+    ticketId: id, adminId: req.user.id, role: req.user.role,
+  }));
   res.json({ ok: true });
+}));
+
+/** Admin-side unread count: tickets where the latest customer reply
+ *  is newer than admin_last_read_at (or admin_last_read_at IS NULL).
+ *  Scoped by role so finance_admin only sees finance department, etc. */
+router.get("/admin-unread-count", authMiddleware, asyncHandler(async (req, res) => {
+  if (req.user.role === "user") {
+    return res.json({ count: 0 });
+  }
+  const sc = getSupportTicketScope(req.user.role, req.user.id, 1);
+  const scopeWhere = sc.clause ? ` AND ${sc.clause}` : '';
+  const sql = `
+    SELECT COUNT(DISTINCT st.id)::int AS count
+    FROM support_tickets st
+    JOIN support_ticket_replies r
+      ON r.ticket_id = st.id
+     AND r.sender_type = 'user'
+    WHERE (st.admin_last_read_at IS NULL OR r.created_at > st.admin_last_read_at)
+    ${scopeWhere}
+  `;
+  const out = await db.query(sql, sc.params || []);
+  const count = out.rows[0]?.count || 0;
+  res.json({ count });
 }));
 
 /** Manual routing: move ticket to Finance (audit trail as internal reply). */
@@ -482,11 +555,35 @@ router.get("/:id", authMiddleware, asyncHandler(async (req, res) => {
         `UPDATE support_tickets SET user_last_read_at = NOW() WHERE id = $1 AND user_id = $2`,
         [id, userId]
       );
+      // Mirror /mark-read: clear the support_reply notifications for
+      // this ticket so the bell drops the moment the customer opens
+      // the thread (not just when /mark-read is called separately).
+      await db.query(
+        `UPDATE notifications SET read_at = NOW()
+         WHERE user_id = $1 AND read_at IS NULL
+           AND (link = $2 OR link LIKE $3)`,
+        [userId, `/account/my-tickets?open=${id}`, `/account/my-tickets?open=${id}&%`]
+      );
     } catch (e) {
-      console.warn("[support GET :id] user_last_read_at:", e.message);
+      console.warn("[support GET :id] customer read sync:", e.message);
+    }
+  } else {
+    // Staff opening a ticket counts as seeing the latest customer
+    // replies. Bump admin_last_read_at so the admin bell ticks down.
+    try {
+      await db.query(
+        `UPDATE support_tickets SET admin_last_read_at = NOW() WHERE id = $1`,
+        [id]
+      );
+    } catch (e) {
+      console.warn("[support GET :id] admin_last_read_at:", e.message);
     }
   }
-  
+
+  console.log('[support GET :id]', JSON.stringify({
+    ticketId: id, role, viewerId: userId, replies: repliesResult.rows.length,
+  }));
+
   res.json({
     ticket: ticketResult.rows[0],
     replies: repliesResult.rows
@@ -546,14 +643,71 @@ router.post("/:id/reply", authMiddleware, asyncHandler(async (req, res) => {
   );
   
   const ticket = ticketCheck.rows[0];
+  // Notification fan-out — every reply notifies "the OTHER side".
+  // Staff replied: ping the customer. Customer replied: ping the
+  // assigned admin (or every admin in the auto_assigned_role if
+  // theres no specific assignee yet) so the admin bell ticks even
+  // when nobody is staring at the support board.
   if (isStaff && ticket.user_id !== senderId) {
-    await db.query(
-      `INSERT INTO notifications (user_id, title, body, type, link, created_at)
-       VALUES ($1, 'رد جديد على تذكرتك', $2, 'support_reply', $3, NOW())`,
-      [ticket.user_id, `تم الرد على تذكرة "${ticket.subject}"`, `/account/my-tickets?open=${id}`]
-    );
+    try {
+      await db.query(
+        `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+         VALUES ($1, 'رد جديد على تذكرتك', $2, 'support_reply', $3, NOW())`,
+        [ticket.user_id, `تم الرد على تذكرة "${ticket.subject}"`, `/account/my-tickets?open=${id}`]
+      );
+      console.log('[support reply] customer notified', JSON.stringify({
+        ticketId: id, customerId: ticket.user_id, by: senderId,
+      }));
+    } catch (e) {
+      console.warn('[support reply] customer notify failed:', e.message);
+    }
+  } else if (!isStaff) {
+    try {
+      // Pick the recipients:
+      //  1) ticket.assigned_to if set
+      //  2) else every user with role = ticket.auto_assigned_role
+      //  3) else every super_admin/admin/support_admin
+      let recipients = [];
+      if (ticket.assigned_to) {
+        recipients = [ticket.assigned_to];
+      } else if (ticket.auto_assigned_role) {
+        const rs = await db.query(`SELECT id FROM users WHERE role = $1`, [ticket.auto_assigned_role]);
+        recipients = rs.rows.map(r => r.id);
+      }
+      if (recipients.length === 0) {
+        const rs = await db.query(
+          `SELECT id FROM users WHERE role IN ('super_admin','admin','support_admin')`
+        );
+        recipients = rs.rows.map(r => r.id);
+      }
+      // Customer name for the body line.
+      let custName = 'العميل';
+      try {
+        const u = await db.query(`SELECT name FROM users WHERE id = $1`, [ticket.user_id]);
+        if (u.rows[0]?.name) custName = u.rows[0].name;
+      } catch { /* fall back to default */ }
+      const link = `/add-listing/admin/customer-service?ticketId=${id}`;
+      let pinged = 0;
+      for (const uid of recipients) {
+        try {
+          await db.query(
+            `INSERT INTO notifications (user_id, title, body, type, link, created_at)
+             VALUES ($1, 'رد جديد من العميل', $2, 'support_customer_reply', $3, NOW())`,
+            [uid, `${custName} ردّ على تذكرة "${ticket.subject}"`, link]
+          );
+          pinged += 1;
+        } catch (e) {
+          console.warn(`[support reply] admin notify failed uid=${uid}:`, e.message);
+        }
+      }
+      console.log('[support reply] admins notified', JSON.stringify({
+        ticketId: id, recipients: recipients.length, pinged, by: senderId,
+      }));
+    } catch (e) {
+      console.warn('[support reply] admin notify outer failed:', e.message);
+    }
   }
-  
+
   res.status(201).json({ ok: true, reply: replyWithName.rows[0], message: "تم إرسال الرد بنجاح" });
 }));
 

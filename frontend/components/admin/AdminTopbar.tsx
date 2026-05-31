@@ -141,7 +141,13 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
   async function fetchTicketsCount() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`${API_URL}/api/support-tickets/count`, {
+      // Switched from /api/support-tickets/count (count of OPEN
+      // tickets) to /api/support/admin-unread-count which counts
+      // tickets with NEW customer replies the admin hasnt seen
+      // yet. The old endpoint never decreased when an admin opened
+      // a ticket — it only changed when ticket status changed —
+      // so the bell was a "workload" gauge, not an unread counter.
+      const res = await fetch(`${API_URL}/api/support/admin-unread-count`, {
         credentials: "include",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -150,7 +156,7 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
         setTicketsCount(data.count || 0);
       }
     } catch (err) {
-      // Silently fail - mock data or user may not have permission
+      // Silently fail - user may not have permission
     }
   }
 

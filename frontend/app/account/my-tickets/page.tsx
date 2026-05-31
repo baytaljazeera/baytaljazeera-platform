@@ -139,13 +139,30 @@ function MyTicketsContent() {
   const [step, setStep] = useState(1);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  // Scroll the messages container only — NEVER the page itself.
+  // Before: scrollIntoView() without block:'nearest' walked the
+  // scroll up to the page root and jumped the whole my-tickets
+  // page so the composer drifted way below the messages and the
+  // header disappeared off the top. block:'nearest' confines the
+  // scroll to the inner overflow-y-auto container.
+  const scrollToBottom = (smooth = true) => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: smooth ? "smooth" : "auto",
+      block: "nearest",
+      inline: "nearest",
+    });
   };
 
+  // First mount of a ticket: jump (no smooth) so the user lands at
+  // the latest message immediately. Subsequent replies: smooth.
   useEffect(() => {
-    if (replies.length > 0) scrollToBottom();
+    if (replies.length === 0) return;
+    scrollToBottom(true);
   }, [replies]);
+  useEffect(() => {
+    if (!selected || replies.length === 0) return;
+    scrollToBottom(false);
+  }, [selected?.id]);
 
   const fetchTickets = useCallback(async () => {
     try {
@@ -286,6 +303,9 @@ function MyTicketsContent() {
           setReplies((prev) => [...prev, data.reply]);
         }
         setReply("");
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("notificationsUpdated"));
+        }
       }
     } catch (err) {
       console.error("send reply:", err);
@@ -509,8 +529,13 @@ function MyTicketsContent() {
         )}
 
         {selected ? (
-          <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-start justify-between gap-3 min-w-0">
+          // Real chat-thread layout: bounded card height + flex column
+          // so the composer is locked to the bottom of the card and
+          // only the messages region scrolls. min-h-0 on the messages
+          // child is the magic that makes flex-1 + overflow actually
+          // scroll inside a fixed-height flex parent.
+          <div className="bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col h-[min(78vh,720px)]">
+            <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-start justify-between gap-3 min-w-0 shrink-0">
               <div className="flex items-start gap-3 flex-1 min-w-0">
                 {(() => {
                   const dept = selected.department || selected.complaint_type || "technical";
@@ -546,7 +571,7 @@ function MyTicketsContent() {
                 <ArrowRight className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 max-h-[400px] overflow-y-auto space-y-3">
+            <div className="p-4 flex-1 min-h-0 overflow-y-auto space-y-3">
               <div className="bg-slate-100 rounded-xl p-3">
                 <p className="text-sm text-slate-700">{selected.description}</p>
                 <p className="text-[10px] text-slate-500 mt-2">{new Date(selected.created_at).toLocaleString("ar-SA")}</p>
@@ -576,7 +601,7 @@ function MyTicketsContent() {
             </div>
             {isTicketClosedStatus(selected.status) ? (
               <div
-                className="p-4 border-t border-slate-200 bg-gradient-to-l from-slate-50 to-slate-100 flex items-center justify-center gap-2 text-slate-700"
+                className="shrink-0 p-4 border-t border-slate-200 bg-gradient-to-l from-slate-50 to-slate-100 flex items-center justify-center gap-2 text-slate-700"
                 role="status"
               >
                 <span className="text-lg leading-none shrink-0" aria-hidden>
@@ -587,7 +612,7 @@ function MyTicketsContent() {
                 </p>
               </div>
             ) : (
-              <div className="p-4 border-t border-slate-100 flex gap-2 min-w-0">
+              <div className="shrink-0 p-4 border-t border-slate-100 bg-white flex gap-2 min-w-0">
                 <input
                   type="text"
                   value={reply}
