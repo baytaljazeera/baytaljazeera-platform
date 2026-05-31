@@ -212,7 +212,7 @@ router.post("/", complaintLimiter, asyncHandler(async (req, res) => {
          status, created_at
        )
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-               $11, $12, NOW() + ($12 || ' hours')::interval,
+               $11, $12, NOW() + ($12::text || ' hours')::interval,
                $13, $14, $15, $16,
                'new', NOW())
        RETURNING *`,
@@ -232,7 +232,7 @@ router.post("/", complaintLimiter, asyncHandler(async (req, res) => {
            status, created_at
          )
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                 $11, $12, NOW() + ($12 || ' hours')::interval,
+                 $11, $12, NOW() + ($12::text || ' hours')::interval,
                  'new', NOW())
          RETURNING *`,
         [userId, userName, userEmail, userPhone, category, subject, details,

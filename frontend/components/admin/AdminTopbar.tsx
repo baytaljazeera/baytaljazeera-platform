@@ -80,7 +80,20 @@ export default function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
       fetchTicketsCount();
       fetchPendingBankCount();
     }, 30000);
-    return () => clearInterval(interval);
+    // Listen for the same window event Navbar.tsx uses so any flow
+    // that inserts a notification (chatbot escalation, complaint
+    // submit, ticket reply, etc.) ticks the bell immediately instead
+    // of waiting up to 30s for the next poll.
+    const onNotificationsUpdated = () => {
+      fetchUnreadCount();
+      fetchComplaintsCount();
+      fetchTicketsCount();
+    };
+    window.addEventListener("notificationsUpdated", onNotificationsUpdated);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("notificationsUpdated", onNotificationsUpdated);
+    };
   }, []);
 
   useEffect(() => {

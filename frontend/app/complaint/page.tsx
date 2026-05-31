@@ -174,6 +174,13 @@ function ComplaintPageContent() {
       if (res.ok) {
         setSent(true);
         toast.success("تم إرسال شكواك — يمكنك متابعتها من صفحة شكاواي");
+        // Tick the bell on both Navbar and AdminTopbar without
+        // waiting for the 30s poll. Backend notifier.notifyRoles
+        // wrote a notifications row for the assigned admin role —
+        // and for super_admin (the owner) thats their own bell.
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("notificationsUpdated"));
+        }
       } else {
         const data = await res.json().catch(() => ({}));
         toast.error((data as { errorAr?: string; error?: string }).errorAr || (data as { error?: string }).error || "حدث خطأ في إرسال الشكوى");
