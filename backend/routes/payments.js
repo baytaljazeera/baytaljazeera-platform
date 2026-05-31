@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { authMiddleware, authMiddlewareWithEmailCheck } = require('../middleware/auth');
+const { authMiddleware, authMiddlewareWithEmailCheck, requireRoles } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { paymentLimiter } = require('../config/security');
 const pricingService = require('../services/pricingService');
@@ -533,9 +533,24 @@ router.post('/process-payment', paymentLimiter, authMiddlewareWithEmailCheck, as
     );
     const invoiceEnabled = invoiceSettingResult.rows[0]?.value === 'true';
 
+    // Log every decision so the operator can grep Render and see
+    // exactly WHY an invoice was or wasn't created. Owner spent an
+    // afternoon testing and saw no invoice — turned out total was 0
+    // because of a leftover free promo. Without logs this is
+    // invisible.
+    console.log('[invoice-gate]', JSON.stringify({
+      userId,
+      paymentId,
+      planId,
+      total,
+      invoiceEnabled,
+      willCreate: invoiceEnabled && total > 0,
+      currency: effectiveCurrency.currency_code,
+    }));
+
     if (invoiceEnabled && total > 0) {
       invoiceNumber = await generateInvoiceNumber(client);
-      
+
       const invoiceResult = await client.query(`
         INSERT INTO invoices (invoice_number, user_id, payment_id, plan_id, subtotal, vat_rate, vat_amount, total, currency, status)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'issued')
@@ -543,6 +558,11 @@ router.post('/process-payment', paymentLimiter, authMiddlewareWithEmailCheck, as
       `, [invoiceNumber, userId, paymentId, planId, total, 0, 0, total, effectiveCurrency.currency_code]);
 
       invoice = invoiceResult.rows[0];
+      console.log('[invoice-gate] created invoice', invoice.id, invoiceNumber);
+    } else if (!invoiceEnabled) {
+      console.log('[invoice-gate] SKIPPED — invoice_system_enabled is false');
+    } else if (total <= 0) {
+      console.log('[invoice-gate] SKIPPED — total is 0 (free plan or 100% promo)');
     }
 
     await client.query(`
@@ -648,16 +668,37 @@ router.post('/process-payment', paymentLimiter, authMiddlewareWithEmailCheck, as
       sentAt: new Date().toISOString()
     };
 
-    const emailLogPath = path.join(__dirname, '../../public/emails');
-    if (!fs.existsSync(emailLogPath)) {
-      fs.mkdirSync(emailLogPath, { recursive: true });
+    // ─── Post-commit cosmetic ops (must NEVER throw past COMMIT) ──
+    // Before: the file-write below + the email_sent_at UPDATE both
+    // ran without try/catch. If `invoice` was null (no invoice
+    // created because invoiceEnabled=false or total=0), the UPDATE
+    // hit invoice.id → TypeError → response failed with 500. But
+    // the payment + user_plan + (sometimes) invoice were ALREADY
+    // committed at line 628 — so the user saw "error" and assumed
+    // nothing worked, when in fact the upgrade succeeded silently.
+    // Wrap both in try/catch with explicit log.
+    if (invoice) {
+      try {
+        const emailLogPath = path.join(__dirname, '../../public/emails');
+        if (!fs.existsSync(emailLogPath)) {
+          fs.mkdirSync(emailLogPath, { recursive: true });
+        }
+        fs.writeFileSync(
+          path.join(emailLogPath, `${invoiceNumber}.json`),
+          JSON.stringify(emailLog, null, 2)
+        );
+      } catch (fsErr) {
+        // Render filesystem is ephemeral; some plans don't allow
+        // writes outside /tmp. Not fatal — the invoice itself is
+        // already in the DB.
+        console.warn('[payment] could not write email log file:', fsErr.message);
+      }
+      try {
+        await db.query(`UPDATE invoices SET email_sent_at = NOW() WHERE id = $1`, [invoice.id]);
+      } catch (updErr) {
+        console.warn('[payment] email_sent_at update failed:', updErr.message);
+      }
     }
-    fs.writeFileSync(
-      path.join(emailLogPath, `${invoiceNumber}.json`),
-      JSON.stringify(emailLog, null, 2)
-    );
-
-    await db.query(`UPDATE invoices SET email_sent_at = NOW() WHERE id = $1`, [invoice.id]);
 
     client.release();
     res.json(responseData);
@@ -752,6 +793,148 @@ router.get('/refund-invoices/:id', authMiddleware, asyncHandler(async (req, res)
   }
   
   res.json({ refund: result.rows[0] });
+}));
+
+// ─── Invoice diagnostic + backfill (super_admin only) ─────────────
+// Built after a real incident where the operator enabled
+// invoice_system_enabled, did a paid test purchase, and saw no
+// invoice. Without these endpoints, the only way to debug was to
+// grep Render logs. Now:
+//   GET  /api/payments/admin/invoice-diagnostic   inspect state
+//   POST /api/payments/admin/backfill-invoice/:paymentId  retro-create
+
+router.get('/admin/invoice-diagnostic', authMiddleware, requireRoles('super_admin', 'admin_manager'), asyncHandler(async (req, res) => {
+  res.set('Cache-Control', 'no-store, max-age=0');
+
+  // 1) Current setting
+  const settingRow = await db.query(
+    `SELECT value FROM app_settings WHERE key = 'invoice_system_enabled'`
+  );
+  const enabled = settingRow.rows[0]?.value === 'true';
+
+  // 2) Recent payments (last 50) and whether each has an invoice
+  const recent = await db.query(`
+    SELECT
+      p.id AS payment_id, p.user_id, p.plan_id, p.amount, p.currency,
+      p.status, p.transaction_id, p.created_at, p.description,
+      i.id AS invoice_id, i.invoice_number, i.total AS invoice_total,
+      u.name AS user_name, u.email AS user_email,
+      pl.name_ar AS plan_name
+    FROM payments p
+    LEFT JOIN invoices i ON i.payment_id = p.id
+    LEFT JOIN users u ON u.id = p.user_id
+    LEFT JOIN plans pl ON pl.id = p.plan_id
+    ORDER BY p.created_at DESC
+    LIMIT 50
+  `);
+
+  // 3) Counts
+  const stats = await db.query(`
+    SELECT
+      COUNT(*)::int AS total_payments,
+      COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+      COUNT(*) FILTER (WHERE status = 'completed' AND amount > 0)::int AS completed_paid,
+      (SELECT COUNT(*)::int FROM invoices) AS total_invoices
+    FROM payments
+  `);
+
+  // 4) Pinpoint orphans (completed payment > 0 with no invoice)
+  const orphans = recent.rows.filter((row) =>
+    row.status === 'completed' &&
+    Number(row.amount) > 0 &&
+    !row.invoice_id
+  );
+
+  res.json({
+    invoice_system_enabled: enabled,
+    stats: stats.rows[0],
+    orphans_in_recent: orphans.length,
+    recent_payments: recent.rows.map((r) => ({
+      payment_id: r.payment_id,
+      created_at: r.created_at,
+      user: { id: r.user_id, name: r.user_name, email: r.user_email },
+      plan: r.plan_name,
+      amount: r.amount,
+      currency: r.currency,
+      status: r.status,
+      transaction_id: r.transaction_id,
+      invoice: r.invoice_id
+        ? { id: r.invoice_id, number: r.invoice_number, total: r.invoice_total }
+        : null,
+      reason_no_invoice: r.invoice_id
+        ? null
+        : (r.status !== 'completed'
+            ? `الدفعة لم تكتمل (status=${r.status})`
+            : Number(r.amount) <= 0
+              ? 'مبلغ الدفعة = 0 (باقة مجانية أو خصم 100%)'
+              : !enabled
+                ? 'نظام الفواتير كان معطّلاً وقت إنشاء الدفعة'
+                : 'دفعة مدفوعة بدون فاتورة — قابلة للـ backfill'),
+    })),
+  });
+}));
+
+// Retro-create an invoice for a payment that should have one but
+// doesnt. Common scenarios: invoice_system_enabled was off at the
+// time, OR a post-commit crash dropped the invoice. Uses the same
+// generateInvoiceNumber helper to keep numbering consistent.
+router.post('/admin/backfill-invoice/:paymentId', authMiddleware, requireRoles('super_admin', 'admin_manager'), asyncHandler(async (req, res) => {
+  const paymentId = parseInt(req.params.paymentId, 10);
+  if (Number.isNaN(paymentId)) {
+    return res.status(400).json({ error: 'معرف الدفعة غير صالح' });
+  }
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const payRes = await client.query(
+      `SELECT p.*, u.name AS user_name FROM payments p LEFT JOIN users u ON u.id = p.user_id WHERE p.id = $1 FOR UPDATE`,
+      [paymentId]
+    );
+    if (payRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'الدفعة غير موجودة' });
+    }
+    const payment = payRes.rows[0];
+
+    if (payment.status !== 'completed') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: `الدفعة بحالة ${payment.status} — لا يمكن إنشاء فاتورة` });
+    }
+    if (Number(payment.amount) <= 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'المبلغ صفر — لا يُنشأ فاتورة لباقة مجانية' });
+    }
+
+    const existing = await client.query(`SELECT id, invoice_number FROM invoices WHERE payment_id = $1`, [paymentId]);
+    if (existing.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'يوجد فاتورة مسبقاً لهذه الدفعة',
+        invoice: existing.rows[0],
+      });
+    }
+
+    const invoiceNumber = await generateInvoiceNumber(client);
+    const insRes = await client.query(
+      `INSERT INTO invoices (invoice_number, user_id, payment_id, plan_id, subtotal, vat_rate, vat_amount, total, currency, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, 0, 0, $6, $7, 'issued', NOW())
+       RETURNING *`,
+      [invoiceNumber, payment.user_id, payment.id, payment.plan_id, payment.amount, payment.amount, payment.currency || 'SAR']
+    );
+
+    await client.query('COMMIT');
+    console.log('[invoice-backfill]', JSON.stringify({
+      paymentId, invoiceNumber, by: req.user?.id,
+    }));
+
+    res.json({ ok: true, invoice: insRes.rows[0], message: `تم إنشاء فاتورة ${invoiceNumber} للدفعة #${paymentId}` });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 }));
 
 module.exports = router;

@@ -86,6 +86,61 @@ export default function SettingsPage() {
   }
   const [billingDiag, setBillingDiag] = useState<BillingDiagnostic | null>(null);
 
+  // Invoice diagnostic — what the new /admin/invoice-diagnostic
+  // endpoint returns. Surfaces orphan payments (completed > 0 with
+  // no invoice) so the owner can one-click backfill instead of
+  // hunting through Render logs.
+  interface InvoiceRecentRow {
+    payment_id: number;
+    created_at: string;
+    user: { id: string; name: string; email: string };
+    plan: string | null;
+    amount: string;
+    currency: string;
+    status: string;
+    transaction_id: string;
+    invoice: { id: number; number: string; total: string } | null;
+    reason_no_invoice: string | null;
+  }
+  interface InvoiceDiagnostic {
+    invoice_system_enabled: boolean;
+    stats: { total_payments: number; completed: number; completed_paid: number; total_invoices: number };
+    orphans_in_recent: number;
+    recent_payments: InvoiceRecentRow[];
+  }
+  const [invDiag, setInvDiag] = useState<InvoiceDiagnostic | null>(null);
+  const [invDiagLoading, setInvDiagLoading] = useState(false);
+  const [backfillingId, setBackfillingId] = useState<number | null>(null);
+
+  const fetchInvoiceDiagnostic = async () => {
+    setInvDiagLoading(true);
+    try {
+      const r = await fetch(`${API_URL}/api/payments/admin/invoice-diagnostic`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (r.ok) setInvDiag(await r.json());
+    } catch { /* silent */ }
+    finally { setInvDiagLoading(false); }
+  };
+
+  const backfillInvoice = async (paymentId: number) => {
+    setBackfillingId(paymentId);
+    try {
+      const r = await fetch(`${API_URL}/api/payments/admin/backfill-invoice/${paymentId}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      setMessage({ type: "success", text: data.message || "تم إنشاء الفاتورة" });
+      await fetchInvoiceDiagnostic();
+    } catch (e) {
+      setMessage({ type: "error", text: e instanceof Error ? e.message : "فشل" });
+    } finally { setBackfillingId(null); }
+  };
+
   useEffect(() => {
     let alive = true;
     fetch(`${API_URL}/api/plans/free-pricing-diagnostic`, {
@@ -95,6 +150,7 @@ export default function SettingsPage() {
       .then((r) => r.ok ? r.json() : null)
       .then((d) => { if (alive) setBillingDiag(d); })
       .catch(() => { /* silent */ });
+    if (alive) fetchInvoiceDiagnostic();
     return () => { alive = false; };
   }, []);
 
@@ -862,6 +918,135 @@ export default function SettingsPage() {
         <div className="mt-3 text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-2.5 leading-relaxed">
           <strong>لا تضارب:</strong> مفتاح الفواتير + حالة عرض الباقات نظامان منفصلان. الفواتير تعتمد على وجود <strong>دفعة فعلية</strong>. لو الباقات مجانية، لن تُنشأ فواتير حتى لو فعّلت المفتاح — وهذا السلوك الصحيح.
         </div>
+      </div>
+
+      {/* ─── Invoice diagnostic panel ──────────────────────────────
+          Shows recent payments and which ones have/dont have invoices.
+          Orphans (completed paid payment with no invoice) get a
+          one-click "إنشاء فاتورة" button. Built after the operator
+          ran a paid test and saw no invoice — without this panel
+          they had no way to know if the issue was data, gating,
+          or a silent error. */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5">
+        <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-emerald-50">
+              <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-[#002845]">تشخيص الفواتير</h3>
+              <p className="text-xs text-slate-500 mt-0.5">آخر 50 دفعة + قابلية إنشاء فواتير متأخرة</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={fetchInvoiceDiagnostic}
+            disabled={invDiagLoading}
+            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition disabled:opacity-60"
+          >
+            {invDiagLoading ? "..." : "تحديث"}
+          </button>
+        </div>
+
+        {invDiag && (
+          <>
+            {/* KPIs */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5">
+                <div className="text-[10px] text-slate-500">المفتاح</div>
+                <div className={`text-sm font-bold ${invDiag.invoice_system_enabled ? "text-emerald-700" : "text-slate-500"}`}>
+                  {invDiag.invoice_system_enabled ? "✓ مفعّل" : "✗ معطّل"}
+                </div>
+              </div>
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5">
+                <div className="text-[10px] text-slate-500">دفعات ناجحة (مدفوعة)</div>
+                <div className="text-sm font-bold text-[#002845]">{invDiag.stats.completed_paid}</div>
+              </div>
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5">
+                <div className="text-[10px] text-slate-500">إجمالي الفواتير</div>
+                <div className="text-sm font-bold text-[#002845]">{invDiag.stats.total_invoices}</div>
+              </div>
+              <div className={`rounded-lg border p-2.5 ${invDiag.orphans_in_recent > 0 ? "bg-amber-50 border-amber-200" : "bg-emerald-50 border-emerald-200"}`}>
+                <div className="text-[10px] text-slate-600">يتيمة بلا فاتورة (آخر 50)</div>
+                <div className={`text-sm font-bold ${invDiag.orphans_in_recent > 0 ? "text-amber-700" : "text-emerald-700"}`}>
+                  {invDiag.orphans_in_recent}
+                </div>
+              </div>
+            </div>
+
+            {/* Recent payments table */}
+            {invDiag.recent_payments.length === 0 ? (
+              <div className="text-center text-sm text-slate-500 py-6 bg-slate-50 rounded-lg">
+                لا توجد أي دفعات بعد. عند أول دفعة حقيقية، ستظهر هنا.
+              </div>
+            ) : (
+              <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-600 text-[11px]">
+                    <tr>
+                      <th className="px-2 py-2 text-right">#</th>
+                      <th className="px-2 py-2 text-right">العميل</th>
+                      <th className="px-2 py-2 text-right">الباقة</th>
+                      <th className="px-2 py-2 text-right">المبلغ</th>
+                      <th className="px-2 py-2 text-right">الحالة</th>
+                      <th className="px-2 py-2 text-right">الفاتورة</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invDiag.recent_payments.slice(0, 15).map((row) => {
+                      const isOrphan = row.status === "completed" && Number(row.amount) > 0 && !row.invoice;
+                      return (
+                        <tr key={row.payment_id} className={`border-t border-slate-100 ${isOrphan ? "bg-amber-50" : ""}`}>
+                          <td className="px-2 py-2 text-[11px] text-slate-500">{row.payment_id}</td>
+                          <td className="px-2 py-2 text-[12px]">
+                            <div className="font-medium text-[#002845]">{row.user.name || "—"}</div>
+                            <div className="text-[10px] text-slate-500">{row.user.email}</div>
+                          </td>
+                          <td className="px-2 py-2 text-[12px] text-slate-700">{row.plan || "—"}</td>
+                          <td className="px-2 py-2 text-[12px] font-bold whitespace-nowrap">
+                            {row.amount} {row.currency}
+                          </td>
+                          <td className="px-2 py-2 text-[11px]">
+                            <span className={`px-1.5 py-0.5 rounded-full font-bold ${
+                              row.status === "completed" ? "bg-emerald-100 text-emerald-700" :
+                              row.status === "pending" ? "bg-amber-100 text-amber-700" :
+                              "bg-slate-100 text-slate-700"
+                            }`}>{row.status}</span>
+                          </td>
+                          <td className="px-2 py-2 text-[11px]">
+                            {row.invoice ? (
+                              <span className="text-emerald-700 font-bold">✓ {row.invoice.number}</span>
+                            ) : (
+                              <div className="flex items-start gap-2">
+                                <div className="text-amber-700">{row.reason_no_invoice}</div>
+                                {isOrphan && (
+                                  <button
+                                    type="button"
+                                    onClick={() => backfillInvoice(row.payment_id)}
+                                    disabled={backfillingId === row.payment_id}
+                                    className="shrink-0 px-2 py-1 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded disabled:opacity-60"
+                                  >
+                                    {backfillingId === row.payment_id ? "..." : "إنشاء فاتورة"}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="mt-3 text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-2.5 leading-relaxed">
+              <strong>أسباب شائعة لعدم إنشاء فاتورة:</strong> ١) المفتاح كان معطّلاً وقت الدفع — يمكن إنشاؤها لاحقاً بزر "إنشاء فاتورة". ٢) مبلغ الدفعة = 0 (باقة مجانية أو عرض 100%) — السلوك الصحيح، لا فاتورة تُنشأ. ٣) الدفعة لم تكتمل بعد.
+            </div>
+          </>
+        )}
       </div>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
