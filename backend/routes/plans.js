@@ -126,25 +126,13 @@ router.get("/free-pricing-diagnostic", asyncHandler(async (req, res) => {
     out.master_switch.enabled = await isLaunchFreeMode();
   } catch { /* default false */ }
   try {
-    // Fetch ALL active promotions, then filter "free-ish" ones in
-    // JS. Previous version pushed the filter into SQL and silently
-    // returned 0 rows in production even though the promo matched
-    // every condition — couldnt reproduce locally, so we drop the
-    // SQL filter and apply the same logic in JS where its trivial
-    // to debug. Also gives us correct number coercion for the
-    // DECIMAL discount_value column.
-    const r = await db.query(
-      `SELECT id, name, name_ar, name_en, promotion_type, discount_type,
-              discount_value, skip_payment, applies_to, status,
-              start_at, end_at, current_usage, usage_limit_total
-       FROM promotions
-       WHERE status = 'active'
-         AND (start_at IS NULL OR start_at <= NOW())
-         AND (end_at IS NULL OR end_at >= NOW())
-         AND (usage_limit_total IS NULL OR current_usage < usage_limit_total)
-       ORDER BY id`
-    );
-    out.free_promotions = r.rows.filter((p) => {
+    // Use the SAME service that applies discounts to /api/plans.
+    // If a promo is making customers see "مجاناً" right now, this
+    // service has it cached in memory. Bypassing the direct SQL
+    // entirely sidesteps whatever was making my custom query
+    // silently return 0 rows on Render.
+    const allActive = await promotionService.getActivePromotions(true);
+    out.free_promotions = (allActive || []).filter((p) => {
       const type = String(p.promotion_type || '').toLowerCase();
       const dtype = String(p.discount_type || '').toLowerCase();
       const dval = Number(p.discount_value) || 0;
@@ -156,25 +144,11 @@ router.get("/free-pricing-diagnostic", asyncHandler(async (req, res) => {
         skipPay
       );
     });
-    // TEMP debug — expose raw counts so we can see why the filter
-    // seems empty in production. Will be removed once we know why.
-    out._debug = {
-      total_active_rows: r.rows.length,
-      raw_sample: r.rows.slice(0, 2).map((p) => ({
-        id: p.id, name_ar: p.name_ar, promotion_type: p.promotion_type,
-        discount_type: p.discount_type, discount_value: p.discount_value,
-        skip_payment: p.skip_payment, status: p.status,
-      })),
-    };
-    console.log('[diagnostic] active=' + r.rows.length + ' free=' + out.free_promotions.length);
+    console.log('[diagnostic] via-service active=' + (allActive?.length || 0) + ' free=' + out.free_promotions.length);
   } catch (e) {
-    // TEMP — surface the actual error so we can see what's throwing
     out._debug_promo_error = {
       message: e?.message,
       code: e?.code,
-      detail: e?.detail,
-      hint: e?.hint,
-      position: e?.position,
     };
     console.warn('[free-pricing-diagnostic] promo lookup failed:', e.message, e.code);
   }
@@ -207,6 +181,43 @@ router.get("/free-pricing-diagnostic", asyncHandler(async (req, res) => {
     countries: Object.keys(out.zero_country_prices.by_country).length,
   }));
   res.json(out);
+}));
+
+// Hard-stop every active free-ish promotion — flip status to
+// 'inactive' for any promo that produces 100%-off / free_plan /
+// skip_payment. Owner can fix the customer page in one click
+// instead of finding each promo individually.
+router.post("/admin/promotions/deactivate-all-free", adminAuth, asyncHandler(async (req, res) => {
+  let deactivated = 0;
+  let errors = [];
+  try {
+    const r = await db.query(`SELECT id, promotion_type, discount_type, discount_value, skip_payment FROM promotions WHERE status = 'active'`);
+    for (const p of r.rows) {
+      const type = String(p.promotion_type || '').toLowerCase();
+      const dtype = String(p.discount_type || '').toLowerCase();
+      const dval = Number(p.discount_value) || 0;
+      const skipPay = p.skip_payment === true;
+      const isFree =
+        type === 'free_plan' ||
+        type === 'free_trial' ||
+        (dtype === 'percentage' && dval >= 100) ||
+        skipPay;
+      if (!isFree) continue;
+      try {
+        await db.query(`UPDATE promotions SET status = 'inactive', updated_at = NOW() WHERE id = $1`, [p.id]);
+        deactivated += 1;
+        console.log('[deactivate-all-free] promo', p.id, 'deactivated by', req.user?.id);
+      } catch (e) {
+        errors.push({ id: p.id, error: e.message });
+      }
+    }
+    // Bust the promotion service cache so the next /api/plans call
+    // doesn't keep applying the now-deactivated promo for ~60s.
+    try { await promotionService.getActivePromotions(true); } catch { /* ok */ }
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+  res.json({ ok: true, deactivated, errors: errors.length ? errors : undefined });
 }));
 
 // Wipe ALL country overrides in one shot — restores every country

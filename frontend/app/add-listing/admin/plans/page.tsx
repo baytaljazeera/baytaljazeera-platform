@@ -297,6 +297,28 @@ export default function PlansManagement() {
     }
   };
 
+  const deactivateAllFreePromos = async () => {
+    if (!window.confirm(
+      "إيقاف كل العروض الترويجية المجانية (free_plan, خصم 100%, skip_payment)؟ سيرى العملاء الأسعار الأصلية فوراً."
+    )) return;
+    setActionLoading("all-promos");
+    try {
+      const res = await fetch(`${API_URL}/api/plans/admin/promotions/deactivate-all-free`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      window.alert(`تم إيقاف ${data.deactivated} عرض ترويجي`);
+      await fetchDiagnostic();
+    } catch (e) {
+      window.alert(`فشل: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const toggleMasterSwitch = async () => {
     const next = !diagnostic?.master_switch.enabled;
     if (!window.confirm(next
@@ -565,16 +587,30 @@ export default function PlansManagement() {
           three separate pages. */}
       {diagnostic?.any_active && (
         <div className="rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 p-5 space-y-4">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <div className="font-bold text-amber-900 text-lg">
-                الباقات تظهر مجاناً للعملاء — مصادر فعّالة الآن
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="flex items-start gap-3 flex-1 min-w-[260px]">
+              <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="font-bold text-amber-900 text-lg">
+                  الباقات تظهر مجاناً للعملاء — مصادر فعّالة الآن
+                </div>
+                <p className="text-sm text-amber-800 mt-1">
+                  هذي كل الطبقات اللي تجعل العميل يرى "مجاناً". أوقف الكل لإظهار الأسعار الأصلية.
+                </p>
               </div>
-              <p className="text-sm text-amber-800 mt-1">
-                هذي كل الطبقات اللي تجعل العميل يرى "مجاناً". أوقف الكل لإظهار الأسعار الأصلية.
-              </p>
             </div>
+            {/* Big red one-click — wipes every active free promo at
+                once. Use this when the per-row deactivate buttons
+                fail to surface a promo for any reason. */}
+            <button
+              type="button"
+              onClick={deactivateAllFreePromos}
+              disabled={actionLoading === "all-promos"}
+              className="shrink-0 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl shadow disabled:opacity-60"
+              title="إيقاف فوري لكل العروض الترويجية المجانية (حتى لو لم تظهر في القائمة أدناه)"
+            >
+              {actionLoading === "all-promos" ? "..." : "🛑 إيقاف كل العروض المجانية فوراً"}
+            </button>
           </div>
 
           <div className="space-y-2.5">
