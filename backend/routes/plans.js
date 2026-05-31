@@ -168,7 +168,15 @@ router.get("/free-pricing-diagnostic", asyncHandler(async (req, res) => {
     };
     console.log('[diagnostic] active=' + r.rows.length + ' free=' + out.free_promotions.length);
   } catch (e) {
-    console.warn('[free-pricing-diagnostic] promo lookup failed:', e.message);
+    // TEMP — surface the actual error so we can see what's throwing
+    out._debug_promo_error = {
+      message: e?.message,
+      code: e?.code,
+      detail: e?.detail,
+      hint: e?.hint,
+      position: e?.position,
+    };
+    console.warn('[free-pricing-diagnostic] promo lookup failed:', e.message, e.code);
   }
   try {
     const r = await db.query(
