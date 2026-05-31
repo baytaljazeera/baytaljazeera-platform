@@ -657,13 +657,30 @@ async function subscribeToPlan(userId, planId, countryCode = 'SA') {
     const { isFreePromo } = bestPromo ? promotionService.getPromotionTypeFlags(bestPromo) : { isFreePromo: false };
     const skipPayment = isFreePromo || (bestPromo?.skip_payment) || discountedPrice === 0;
 
-    if (discountedPrice > 0 && !skipPayment) {
+    // CRITICAL FIX — old check was: `if (discountedPrice > 0 && !skipPayment)`
+    // When NO promo exists, calculateDiscount returns discountedPrice=null.
+    // `null > 0` is false → the payment gate was BYPASSED and every paid
+    // plan (25/65/150/450 SAR) handed out for free. The actual amount
+    // owed is finalPrice (discountedPrice if a promo applied, else
+    // localPrice). Gate on THAT instead.
+    const finalPrice = discountedPrice !== null && discountedPrice !== undefined
+      ? discountedPrice
+      : localPrice;
+
+    console.log('[subscribeToPlan gate]', JSON.stringify({
+      userId, planId, planName: plan.name_ar,
+      localPrice, discountedPrice, finalPrice,
+      skipPayment, promoId: bestPromo?.id || null,
+      willChargePayment: finalPrice > 0 && !skipPayment,
+    }));
+
+    if (finalPrice > 0 && !skipPayment) {
       await client.query('ROLLBACK');
       return {
         success: false,
         requiresPayment: true,
         originalPrice: localPrice,
-        finalPrice: discountedPrice,
+        finalPrice,
         discount: discountAmount,
         currencyCode,
         currencySymbol,
@@ -705,7 +722,7 @@ async function subscribeToPlan(userId, planId, countryCode = 'SA') {
       plan,
       expiresAt,
       originalPrice: localPrice,
-      finalPrice: discountedPrice || 0,
+      finalPrice,
       promotion: bestPromo ? {
         id: bestPromo.id,
         name: bestPromo.name_ar,
