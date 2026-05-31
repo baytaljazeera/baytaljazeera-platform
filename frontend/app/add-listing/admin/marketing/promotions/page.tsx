@@ -209,6 +209,14 @@ export default function PromotionsPage() {
   const [editingPromo, setEditingPromo] = useState<Promotion | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
+
+  // Auto-clear the toast after 4s so the operator doesnt see stale
+  // "saved" messages from earlier edits when they come back later.
+  useEffect(() => {
+    if (!message.text) return;
+    const t = setTimeout(() => setMessage({ type: "", text: "" }), 4000);
+    return () => clearTimeout(t);
+  }, [message]);
   const [aiIdea, setAiIdea] = useState("");
   const [aiGenerating, setAiGenerating] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -442,15 +450,18 @@ export default function PromotionsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    
+
     try {
-      const url = editingPromo 
-        ? `/api/promotions/${editingPromo.id}` 
-        : "/api/promotions";
-      
+      // Bug fix: was using relative `/api/promotions` (→ hits Vercel
+      // instead of Render) AND no Bearer header (→ 401 in Safari ITP).
+      // Now both: absolute API_URL + getAuthHeaders().
+      const url = editingPromo
+        ? `${API_URL}/api/promotions/${editingPromo.id}`
+        : `${API_URL}/api/promotions`;
+
       const res = await fetch(url, {
         method: editingPromo ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
         body: JSON.stringify({
           ...form,
@@ -460,19 +471,40 @@ export default function PromotionsPage() {
           seasonal_tag: form.seasonal_tag || null
         })
       });
-      
+
+      // Surface the real reason: 401 vs 403 vs validation vs server
+      // error. Old code showed "حدث خطأ في الاتصال" for everything.
+      if (!res.ok) {
+        let errMsg = `فشل الحفظ (HTTP ${res.status})`;
+        try {
+          const body = await res.json();
+          if (body?.error) errMsg = body.error;
+        } catch { /* non-JSON body */ }
+        if (res.status === 401) errMsg = "انتهت الجلسة — سجّل دخول مرة أخرى";
+        if (res.status === 403) errMsg = "ليس لديك صلاحية (يتطلب super_admin أو admin أو marketing_admin)";
+        setMessage({ type: "error", text: errMsg });
+        return;
+      }
+
       const data = await res.json();
-      
       if (data.ok) {
-        setMessage({ type: "success", text: data.message });
+        setMessage({
+          type: "success",
+          text: editingPromo
+            ? `✓ تم حفظ التعديلات على "${form.name_ar || form.name}"`
+            : `✓ تم إنشاء العرض "${form.name_ar || form.name}" بنجاح`,
+        });
         setShowModal(false);
         resetForm();
         fetchData();
       } else {
-        setMessage({ type: "error", text: data.error });
+        setMessage({ type: "error", text: data.error || "فشل غير معروف" });
       }
     } catch (error) {
-      setMessage({ type: "error", text: "حدث خطأ في الاتصال" });
+      setMessage({
+        type: "error",
+        text: error instanceof Error ? error.message : "حدث خطأ في الاتصال",
+      });
     } finally {
       setSaving(false);
     }
@@ -480,35 +512,53 @@ export default function PromotionsPage() {
 
   const toggleStatus = async (id: number) => {
     try {
-      const res = await fetch(`/api/promotions/${id}/toggle`, {
+      const res = await fetch(`${API_URL}/api/promotions/${id}/toggle`, {
         method: "POST",
+        headers: getAuthHeaders(),
         credentials: "include"
       });
+      if (!res.ok) {
+        let errMsg = `فشل التبديل (HTTP ${res.status})`;
+        try { const b = await res.json(); if (b?.error) errMsg = b.error; } catch { /* */ }
+        if (res.status === 401) errMsg = "انتهت الجلسة — سجّل دخول مرة أخرى";
+        if (res.status === 403) errMsg = "ليس لديك صلاحية للتبديل";
+        setMessage({ type: "error", text: errMsg });
+        return;
+      }
       const data = await res.json();
       if (data.ok) {
-        setMessage({ type: "success", text: data.message });
+        setMessage({ type: "success", text: data.message || "تم تحديث الحالة" });
         fetchData();
       }
     } catch (error) {
-      setMessage({ type: "error", text: "حدث خطأ" });
+      setMessage({ type: "error", text: error instanceof Error ? error.message : "حدث خطأ" });
     }
   };
 
   const deletePromotion = async (id: number) => {
-    if (!confirm("هل أنت متأكد من حذف هذا العرض؟")) return;
-    
+    if (!confirm("هل أنت متأكد من حذف هذا العرض؟ هذا الإجراء لا يمكن التراجع عنه.")) return;
+
     try {
-      const res = await fetch(`/api/promotions/${id}`, {
+      const res = await fetch(`${API_URL}/api/promotions/${id}`, {
         method: "DELETE",
+        headers: getAuthHeaders(),
         credentials: "include"
       });
+      if (!res.ok) {
+        let errMsg = `فشل الحذف (HTTP ${res.status})`;
+        try { const b = await res.json(); if (b?.error) errMsg = b.error; } catch { /* */ }
+        if (res.status === 401) errMsg = "انتهت الجلسة — سجّل دخول مرة أخرى";
+        if (res.status === 403) errMsg = "الحذف يتطلب super_admin أو admin فقط";
+        setMessage({ type: "error", text: errMsg });
+        return;
+      }
       const data = await res.json();
       if (data.ok) {
-        setMessage({ type: "success", text: data.message });
+        setMessage({ type: "success", text: data.message || "تم حذف العرض" });
         fetchData();
       }
     } catch (error) {
-      setMessage({ type: "error", text: "حدث خطأ" });
+      setMessage({ type: "error", text: error instanceof Error ? error.message : "حدث خطأ" });
     }
   };
 
@@ -542,30 +592,113 @@ export default function PromotionsPage() {
           </div>
         </div>
         
-        <button
-          onClick={() => { resetForm(); setShowModal(true); }}
-          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-lg hover:from-amber-600 hover:to-amber-700 transition-all shadow-lg"
-        >
-          <Plus className="w-5 h-5" />
-          عرض جديد
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Governance master kill — destructive button always visible,
+              always works regardless of which promos exist. Sets all
+              free-ish promos to status=inactive and busts the cache.
+              Same endpoint as the red button on /admin/plans. */}
+          <button
+            type="button"
+            onClick={async () => {
+              if (!window.confirm("إيقاف كل العروض الترويجية المجانية فوراً (free_plan, 100%, skip_payment)؟ يلغي أي تأثير على أسعار العملاء بدون نقاش.")) return;
+              try {
+                const res = await fetch(`${API_URL}/api/plans/admin/promotions/deactivate-all-free`, {
+                  method: "POST",
+                  credentials: "include",
+                  headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+                });
+                if (!res.ok) {
+                  const txt = res.status === 401 ? "انتهت الجلسة" : res.status === 403 ? "صلاحية غير كافية" : `HTTP ${res.status}`;
+                  setMessage({ type: "error", text: `فشل: ${txt}` });
+                  return;
+                }
+                const data = await res.json();
+                setMessage({ type: "success", text: `✓ تم إيقاف ${data.deactivated} عرض ترويجي مجاني` });
+                fetchData();
+              } catch (e) {
+                setMessage({ type: "error", text: e instanceof Error ? e.message : "فشل" });
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg shadow-lg transition"
+            title="إيقاف فوري لكل العروض المجانية (الحوكمة العليا) — يطغى على أي شيء"
+          >
+            🛑 إيقاف كل العروض المجانية فوراً
+          </button>
+
+          <button
+            onClick={() => { resetForm(); setShowModal(true); }}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-lg hover:from-amber-600 hover:to-amber-700 transition-all shadow-lg"
+          >
+            <Plus className="w-5 h-5" />
+            عرض جديد
+          </button>
+        </div>
       </div>
 
-      {message.text && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={`p-4 rounded-lg flex items-center gap-2 ${
-            message.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
-          }`}
-        >
-          {message.type === "success" ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
-          {message.text}
-          <button onClick={() => setMessage({ type: "", text: "" })} className="mr-auto">
-            <XCircle className="w-4 h-4" />
-          </button>
-        </motion.div>
-      )}
+      {/* Prominent fixed toast — center-top, scales in, can't miss it.
+          Auto-clears after 4s (see useEffect below). Old version was
+          a pale inline div that the operator missed under the scroll. */}
+      <AnimatePresence>
+        {message.text && (
+          <motion.div
+            initial={{ opacity: 0, y: -40, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 380, damping: 28 }}
+            className={`fixed top-6 left-1/2 -translate-x-1/2 z-[10000] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 min-w-[320px] max-w-[90vw] border-2 ${
+              message.type === "success"
+                ? "bg-emerald-500 text-white border-emerald-300"
+                : "bg-red-500 text-white border-red-300"
+            }`}
+            role="status"
+            aria-live="polite"
+          >
+            {message.type === "success" ? <CheckCircle className="w-6 h-6 shrink-0" /> : <XCircle className="w-6 h-6 shrink-0" />}
+            <span className="font-bold flex-1">{message.text}</span>
+            <button onClick={() => setMessage({ type: "", text: "" })} className="shrink-0 opacity-80 hover:opacity-100">
+              <XCircle className="w-5 h-5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* Spacer to keep layout stable when toast pops in */}
+      {!message.text && <div className="h-0" />}
+
+      {/* ─── Governance danger banner ──────────────────────────────
+          Surfaces any active promo that matches the "permanent 100%
+          off all plans" pattern — the exact combo that produced the
+          accidental "بيت الجزيرة" situation. Lets the operator see
+          at a glance what's painting "مجاناً" on the customer site
+          without scrolling through every card. */}
+      {(() => {
+        const dangerous = promotions.filter((p) => {
+          const type = String(p.promotion_type || "").toLowerCase();
+          const dval = Number(p.discount_value) || 0;
+          const isFreeBehavior = type === "free_plan" || type === "free_trial" || p.skip_payment === true || dval >= 100;
+          return p.status === "active" && isFreeBehavior && p.applies_to === "all_plans" && !p.end_at;
+        });
+        if (dangerous.length === 0) return null;
+        return (
+          <div className="mb-4 rounded-2xl border-2 border-red-300 bg-red-50 p-4">
+            <div className="flex items-start gap-3">
+              <div className="text-2xl">⚠️</div>
+              <div className="flex-1">
+                <div className="font-bold text-red-900">
+                  تحذير حوكمة: {dangerous.length} عرض دائم بنسبة 100% لكل الباقات نشط الآن
+                </div>
+                <p className="text-sm text-red-800 mt-1">
+                  هذا التركيب (مجاني + كل الباقات + بلا تاريخ انتهاء + نشط) يجعل كل العملاء يرون "مجاناً" بدلاً من الأسعار الحقيقية. استخدم زر "🛑 إيقاف كل العروض المجانية فوراً" أعلاه، أو عطّل العروض التالية يدوياً:
+                </p>
+                <ul className="mt-2 text-sm text-red-900 font-bold space-y-1">
+                  {dangerous.map((p) => (
+                    <li key={p.id}>• {p.name_ar || p.name} (ID: {p.id}, نوع: {p.promotion_type})</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {promotions.map((promo) => (
