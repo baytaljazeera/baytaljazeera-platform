@@ -416,25 +416,52 @@ router.patch("/:id/mark-read-admin", authMiddleware, asyncHandler(async (req, re
 
 /** Admin-side unread count: tickets where the latest customer reply
  *  is newer than admin_last_read_at (or admin_last_read_at IS NULL).
- *  Scoped by role so finance_admin only sees finance department, etc. */
+ *  Scoped by role so finance_admin only sees finance department, etc.
+ *
+ *  Resilient: if the admin_last_read_at column hasnt landed yet
+ *  (Postgres 42703 = undefined_column on a fresh deploy where init.js
+ *  hasnt finished), fall back to "tickets that have ANY customer
+ *  reply" so the bell still shows a meaningful number instead of a
+ *  500. The fallback gets replaced as soon as init.js finishes. */
 router.get("/admin-unread-count", authMiddleware, asyncHandler(async (req, res) => {
+  res.set('Cache-Control', 'no-store, max-age=0');
   if (req.user.role === "user") {
     return res.json({ count: 0 });
   }
   const sc = getSupportTicketScope(req.user.role, req.user.id, 1);
   const scopeWhere = sc.clause ? ` AND ${sc.clause}` : '';
-  const sql = `
-    SELECT COUNT(DISTINCT st.id)::int AS count
-    FROM support_tickets st
-    JOIN support_ticket_replies r
-      ON r.ticket_id = st.id
-     AND r.sender_type = 'user'
-    WHERE (st.admin_last_read_at IS NULL OR r.created_at > st.admin_last_read_at)
-    ${scopeWhere}
-  `;
-  const out = await db.query(sql, sc.params || []);
-  const count = out.rows[0]?.count || 0;
-  res.json({ count });
+  try {
+    const out = await db.query(
+      `SELECT COUNT(DISTINCT st.id)::int AS count
+       FROM support_tickets st
+       JOIN support_ticket_replies r
+         ON r.ticket_id = st.id
+        AND r.sender_type = 'user'
+       WHERE (st.admin_last_read_at IS NULL OR r.created_at > st.admin_last_read_at)
+       ${scopeWhere}`,
+      sc.params || []
+    );
+    const count = out.rows[0]?.count || 0;
+    console.log('[admin-unread-count]', JSON.stringify({
+      role: req.user.role, userId: req.user.id, count,
+    }));
+    return res.json({ count });
+  } catch (e) {
+    if (e && e.code === '42703') {
+      console.warn('[admin-unread-count] admin_last_read_at column missing — running migration-less fallback');
+      const out = await db.query(
+        `SELECT COUNT(DISTINCT st.id)::int AS count
+         FROM support_tickets st
+         JOIN support_ticket_replies r
+           ON r.ticket_id = st.id
+          AND r.sender_type = 'user'
+         ${sc.clause ? `WHERE ${sc.clause}` : ''}`,
+        sc.params || []
+      );
+      return res.json({ count: out.rows[0]?.count || 0, _fallback: true });
+    }
+    throw e;
+  }
 }));
 
 /** Manual routing: move ticket to Finance (audit trail as internal reply). */
