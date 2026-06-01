@@ -234,9 +234,6 @@ function createApp() {
   app.use("/api/plans", plansRoutes);
   /* Mount specific /api/admin/* sub-routers BEFORE /api/admin so paths like
    * DELETE /api/admin/finance/reset-invoices are not swallowed by the admin router. */
-  // TEMPORARY validation endpoint — remove after end-to-end signoff.
-  // See backend/routes/_dev_validate_refund_sm.js (REMOVE-MARKER).
-  app.use("/api/_dev", require("./routes/_dev_validate_refund_sm"));
   app.use("/api/admin/finance", financeRoutes);
   app.use("/api/admin/messages", adminMessagesRoutes);
   app.use("/api/admin", adminRoutes);
