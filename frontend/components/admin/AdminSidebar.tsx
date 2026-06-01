@@ -343,7 +343,12 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
         // is the exact bug the owner reported (سوبر أدمن can't see
         // صندوق الإدارة العليا despite all permission gates passing).
         if (link.href === "/admin/executive-inbox") return isExecutive;
-        if (link.href === "/admin/finance-inbox") {
+        // The legacy /admin/finance-inbox slug has been retired but the
+        // sidebar entry now points at /admin/finance?tab=messages. Match
+        // by prefix so the same visibility rule still applies to the new
+        // href.
+        if (link.href.startsWith("/admin/finance?tab=messages")
+            || link.href === "/admin/finance-inbox") {
           return isSuperAdmin
             || userRole === "admin"
             || userRole === "finance_admin"
@@ -381,7 +386,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     if (href === '/admin/messages' || href === '/admin/omni-inbox') return { newCount: pendingCounts.messagesNew, inProgressCount: 0 };
     if (href === '/admin/customer-service') return { newCount: pendingCounts.complaintsNew + pendingCounts.supportNew, inProgressCount: pendingCounts.complaintsInProgress + pendingCounts.supportInProgress };
     if (href === '/admin/finance') return { newCount: pendingCounts.refundsNew + pendingCounts.ambassadorWithdrawals, inProgressCount: pendingCounts.refundsInProgress };
-    if (href === '/admin/finance-inbox') return { newCount: pendingCounts.financeInboxNew, inProgressCount: 0 };
+    if (href === '/admin/finance-inbox' || href.startsWith('/admin/finance?tab=messages')) return { newCount: pendingCounts.financeInboxNew, inProgressCount: 0 };
     if (href === '/admin/executive-inbox') return { newCount: pendingCounts.executiveInboxNew, inProgressCount: 0 };
     if (href === '/admin/ambassador') return { newCount: pendingCounts.ambassadorPending + pendingCounts.ambassadorWithdrawals, inProgressCount: 0 };
     if (href === '/admin/feedback/responses') return { newCount: pendingCounts.feedbackNew, inProgressCount: 0 };

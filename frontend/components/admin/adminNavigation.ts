@@ -179,7 +179,11 @@ export const adminSections: AdminSection[] = [
     colorClass: "text-green-400",
     links: [
       {
-        href: "/admin/finance-inbox",
+        // Was: /admin/finance-inbox — that page used to mix support
+        // tickets with refunds. Retired. Sidebar now points straight
+        // to the new dashboard's "Refund Requests" tab, which never
+        // exposes ticket data to finance.
+        href: "/admin/finance?tab=messages",
         label: "صندوق الوصول المالي",
         icon: Inbox,
         permissionKey: "finance",
