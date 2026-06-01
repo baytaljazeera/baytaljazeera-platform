@@ -79,11 +79,14 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
       UNION ALL SELECT 'support_in_progress', COUNT(*)::int FROM support_tickets WHERE status = 'in_progress'
       UNION ALL SELECT 'ambassador_pending', COUNT(*)::int FROM ambassador_requests WHERE status IN ('pending', 'under_review')
       UNION ALL SELECT 'ambassador_withdrawals', COUNT(*)::int FROM ambassador_withdrawal_requests WHERE status IN ('pending', 'finance_review', 'in_progress')
-      -- Finance Inbox: complaints transferred to finance + open finance-dept tickets + pending refunds.
+      -- Finance Inbox counter — refund requests in pending_review ONLY.
+      -- Owner rule reset: finance never sees support tickets or account
+      -- complaints. The badge MUST NOT count customer support traffic.
+      -- The old formula summed support_tickets WHERE department='financial'
+      -- which was the leak surface that made customer messages appear
+      -- as "finance work" before support had forwarded anything.
       UNION ALL SELECT 'finance_inbox_new',
-        (SELECT COUNT(*)::int FROM account_complaints WHERE auto_assigned_role = 'finance_admin' AND status IN ('new','in_review','pending','in_progress'))
-        + (SELECT COUNT(*)::int FROM support_tickets WHERE department = 'financial' AND status IN ('new','open','in_progress'))
-        + (SELECT COUNT(*)::int FROM refunds WHERE status = 'pending')
+        (SELECT COUNT(*)::int FROM refunds WHERE status = 'pending_review')
       -- Executive Inbox: complaints escalated to admin / super_admin via the transfer modal.
       UNION ALL SELECT 'executive_inbox_new',
         (SELECT COUNT(*)::int FROM account_complaints WHERE auto_assigned_role IN ('admin','super_admin') AND status IN ('new','in_review','pending','in_progress'))
