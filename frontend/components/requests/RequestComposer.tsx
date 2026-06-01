@@ -63,6 +63,19 @@ interface ListingLookupRow {
   cover_url: string | null;
 }
 
+// Customer's own invoice — surfaced as a picker for financial /
+// billing_complaint / refund_claim types so the finance accountant
+// later sees exactly which invoice the dispute is about.
+interface InvoiceRow {
+  id: number;
+  invoice_number: string;
+  total: number | string;
+  currency: string;
+  status: string;
+  created_at: string;
+  plan_name?: string | null;
+}
+
 interface Subcategory {
   code: string;
   label: string;
@@ -196,7 +209,7 @@ export default function RequestComposer({
   const [portalReady, setPortalReady] = useState(false);
   useEffect(() => { setPortalReady(true); }, []);
 
-  const [step, setStep] = useState<"type" | "pick-property" | "details">("type");
+  const [step, setStep] = useState<"type" | "pick-property" | "pick-invoice" | "details">("type");
   const [selectedType, setSelectedType] = useState<TypeConfig | null>(null);
   const [selectedSubcat, setSelectedSubcat] = useState<Subcategory | null>(null);
   const [priority, setPriority] = useState<"low" | "medium" | "high" | "urgent">("medium");
@@ -214,6 +227,13 @@ export default function RequestComposer({
   const [pickerLoading, setPickerLoading] = useState(false);
   const [pickedProperty, setPickedProperty] = useState<{ id: string; title: string } | null>(null);
 
+  // ─── Invoice picker state (only used when ticket_type=financial /
+  // billing_complaint / refund_claim and no preselected invoice) ─
+  const [invoiceList, setInvoiceList] = useState<InvoiceRow[]>([]);
+  const [invoiceListLoading, setInvoiceListLoading] = useState(false);
+  const [pickedInvoice, setPickedInvoice] = useState<{ id: number; label: string } | null>(null);
+  const [skipInvoiceLink, setSkipInvoiceLink] = useState(false); // "ليس عن فاتورة محددة"
+
   // Reset on open + apply initial type if provided.
   useEffect(() => {
     if (!open) return;
@@ -223,6 +243,9 @@ export default function RequestComposer({
     setPickerQuery("");
     setPickerResults([]);
     setPickedProperty(null);
+    setInvoiceList([]);
+    setPickedInvoice(null);
+    setSkipInvoiceLink(false);
 
     if (initialTicketType) {
       const t = TYPES.find((x) => x.key === initialTicketType) || null;
@@ -302,6 +325,14 @@ export default function RequestComposer({
       setStep("pick-property");
       return;
     }
+    // Financial-flavored tickets benefit from being tied to a
+    // specific invoice (the accountant later uses it to compute
+    // the smart refund suggestion). If the user already has at
+    // least one invoice we offer the picker; otherwise skip.
+    if (t.key === "financial" && !initialContext?.invoiceId && !pickedInvoice) {
+      setStep("pick-invoice");
+      return;
+    }
     setStep("details");
   };
 
@@ -311,6 +342,30 @@ export default function RequestComposer({
     if (!subject) setSubject(`بلاغ على إعلان: ${row.title}`);
     setStep("details");
   };
+
+  const confirmPickedInvoice = (row: InvoiceRow) => {
+    setPickedInvoice({
+      id: row.id,
+      label: `${row.invoice_number} — ${row.total} ${row.currency || ""}`.trim(),
+    });
+    setSkipInvoiceLink(false);
+    setStep("details");
+  };
+
+  // Fetch the customer's invoices once the invoice picker step opens.
+  useEffect(() => {
+    if (step !== "pick-invoice") return;
+    if (invoiceList.length > 0) return;
+    setInvoiceListLoading(true);
+    fetch(`${API_URL}/api/payments/invoices`, {
+      credentials: "include",
+      headers: getAuthHeaders(),
+    })
+      .then((r) => (r.ok ? r.json() : { invoices: [] }))
+      .then((d) => setInvoiceList(d.invoices || []))
+      .catch(() => setInvoiceList([]))
+      .finally(() => setInvoiceListLoading(false));
+  }, [step, invoiceList.length]);
 
   const pickSubcat = (s: Subcategory) => {
     setSelectedSubcat(s);
@@ -349,8 +404,11 @@ export default function RequestComposer({
       if (propertyId) {
         body.related_property_id = propertyId;
       }
-      if (initialContext?.invoiceId) {
-        body.invoice_id = initialContext.invoiceId;
+      // Invoice link: user-picked invoice wins; falls back to
+       // initialContext (e.g. came from /invoices/:id "تقديم استرداد").
+      const invoiceLinkId = pickedInvoice?.id || initialContext?.invoiceId;
+      if (invoiceLinkId) {
+        body.invoice_id = invoiceLinkId;
       }
       // Hard guard: property_report MUST have a listing anchor.
       if (selectedType.key === "property_report" && !propertyId) {
@@ -420,18 +478,20 @@ export default function RequestComposer({
           {/* Header */}
           <div className="px-6 pt-5 pb-3 flex items-start justify-between gap-3 border-b border-slate-100">
             <div className="flex items-center gap-3 min-w-0">
-              {(step === "details" || step === "pick-property") && selectedType && !initialTicketType && (
+              {(step === "details" || step === "pick-property" || step === "pick-invoice") && selectedType && !initialTicketType && (
                 <button
                   type="button"
                   onClick={() => {
                     if (step === "details" && selectedType.key === "property_report" && !initialContext?.relatedPropertyId) {
-                      // From details back into picker if we routed
-                      // through it
                       setStep("pick-property");
+                    } else if (step === "details" && selectedType.key === "financial" && !initialContext?.invoiceId) {
+                      setStep("pick-invoice");
                     } else {
                       setStep("type");
                       setSelectedType(null);
                       setPickedProperty(null);
+                      setPickedInvoice(null);
+                      setSkipInvoiceLink(false);
                     }
                   }}
                   className="shrink-0 w-9 h-9 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-500"
@@ -448,7 +508,9 @@ export default function RequestComposer({
                       ? "طلب أو شكوى جديدة"
                       : step === "pick-property"
                         ? "اختر الإعلان المُبلَّغ عنه"
-                        : selectedType?.label}
+                        : step === "pick-invoice"
+                          ? "اختر الفاتورة المتعلّقة"
+                          : selectedType?.label}
                 </h2>
                 {!success && (
                   <p className="text-[12px] text-slate-500 mt-0.5">
@@ -456,7 +518,9 @@ export default function RequestComposer({
                       ? "اختر نوع الطلب — كل المتابعة تتم في صفحة واحدة"
                       : step === "pick-property"
                         ? "اكتب رقم الإعلان أو جزء من عنوانه — اخترنا له ٨ نتائج"
-                        : "اختر الموضوع وأضف التفاصيل، وسنوجّه طلبك للقسم المختص فوراً"}
+                        : step === "pick-invoice"
+                          ? "اختر الفاتورة لتسريع معالجة الاسترداد، أو تابع بدون فاتورة محددة"
+                          : "اختر الموضوع وأضف التفاصيل، وسنوجّه طلبك للقسم المختص فوراً"}
                   </p>
                 )}
               </div>
@@ -570,6 +634,74 @@ export default function RequestComposer({
                   )}
                 </div>
               </div>
+            ) : step === "pick-invoice" ? (
+              <div className="space-y-3">
+                <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-[12px] text-emerald-800 leading-relaxed">
+                  <strong>💳 طلب مالي</strong> — ربط الفاتورة يساعد المحاسب على حساب المبلغ المستحق بدقّة (تناسبياً مع مدة الاشتراك المستخدمة). يمكنك المتابعة بدون فاتورة لو لا ينطبق.
+                </div>
+                {invoiceListLoading ? (
+                  <div className="flex items-center justify-center py-8 text-slate-500">
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  </div>
+                ) : invoiceList.length === 0 ? (
+                  <div className="text-center text-[12px] text-slate-500 py-6 bg-slate-50 rounded-xl border border-slate-200">
+                    لا توجد لديك فواتير بعد. تابع بدون ربط فاتورة.
+                  </div>
+                ) : (
+                  <ul className="space-y-2 max-h-[260px] overflow-y-auto">
+                    {invoiceList.map((inv) => (
+                      <li key={inv.id}>
+                        <button
+                          type="button"
+                          onClick={() => confirmPickedInvoice(inv)}
+                          className="w-full text-right flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:border-[#D4AF37] hover:bg-[#FFFCEE] transition group"
+                        >
+                          <div className="shrink-0 w-10 h-10 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
+                            🧾
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-[13px] text-[#002845] truncate">
+                              فاتورة {inv.invoice_number}
+                              {inv.plan_name && (
+                                <span className="font-normal text-slate-500 ms-1.5">— {inv.plan_name}</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                              <span className="font-bold text-[#9A7D28]">
+                                {Number(inv.total).toLocaleString()} {inv.currency || "ر.س"}
+                              </span>
+                              <span>•</span>
+                              <span>{new Date(inv.created_at).toLocaleDateString("ar-SA")}</span>
+                              {inv.status && (
+                                <>
+                                  <span>•</span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                                    inv.status === "paid" || inv.status === "issued"
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-slate-100 text-slate-600"
+                                  }`}>
+                                    {inv.status}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <span className="self-center text-[#9A7D28] opacity-0 group-hover:opacity-100 transition text-[12px] font-bold">
+                            اختر ←
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setSkipInvoiceLink(true); setStep("details"); }}
+                  className="w-full px-4 py-2.5 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 hover:border-slate-400 hover:bg-slate-50 text-[12px] font-bold transition"
+                >
+                  متابعة بدون ربط فاتورة
+                </button>
+              </div>
             ) : step === "type" ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {TYPES.map((t) => {
@@ -597,6 +729,33 @@ export default function RequestComposer({
             ) : (
               selectedType && (
                 <div className="space-y-5">
+                  {/* Invoice link context — surfaces for financial
+                      types when an invoice was picked. */}
+                  {selectedType.key === "financial" && pickedInvoice && (
+                    <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-[12px] text-emerald-800 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <strong>🧾 الفاتورة المرتبطة:</strong>{" "}
+                        <span className="truncate inline-block max-w-full align-middle">
+                          {pickedInvoice.label}
+                        </span>
+                      </div>
+                      {!initialContext?.invoiceId && (
+                        <button
+                          type="button"
+                          onClick={() => { setPickedInvoice(null); setStep("pick-invoice"); }}
+                          className="shrink-0 text-emerald-700 underline text-[11px] font-bold hover:text-emerald-900"
+                        >
+                          غيّر
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {selectedType.key === "financial" && skipInvoiceLink && !pickedInvoice && (
+                    <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-[12px] text-slate-600">
+                      لم يتم ربط فاتورة. <button type="button" className="font-bold underline text-[#9A7D28]" onClick={() => setStep("pick-invoice")}>اربط فاتورة الآن</button>
+                    </div>
+                  )}
+
                   {/* Property-report context — title from picker OR
                       from initialContext (came from listing page) */}
                   {selectedType.key === "property_report" && (pickedProperty?.title || initialContext?.propertyTitle) && (

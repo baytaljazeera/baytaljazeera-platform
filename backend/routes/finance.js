@@ -877,6 +877,147 @@ router.get("/refunds", authMiddleware, requireRoles('finance_admin'), asyncHandl
   res.json({ refunds: result.rows });
 }));
 
+// ─── Smart refund suggestion ──────────────────────────────────────
+// Owner asked: "the accountant needs to see how much is left on
+// the subscription — if the customer used 25 of 30 days, refund
+// should be pro-rated." This endpoint takes an invoice or a
+// ticket and returns a suggested refund breakdown:
+//   - days_used / days_remaining / days_total
+//   - amount_paid (from invoice)
+//   - suggested_full_refund   (if usage < 7 days → goodwill full)
+//   - suggested_prorated      (days_remaining / days_total * paid)
+//   - suggested_zero_refund   (if fully consumed → 0)
+//   - recommended_amount      (the smart pick of the three)
+// The accountant uses these as suggestions, NOT auto-applied.
+router.get("/refunds/suggestion", authMiddleware, requireRoles('finance_admin', 'super_admin', 'admin_manager'), asyncHandler(async (req, res) => {
+  const invoiceId = parseInt(req.query.invoice_id, 10);
+  const ticketId = req.query.ticket_id ? parseInt(req.query.ticket_id, 10) : null;
+  if (!invoiceId && !ticketId) {
+    return res.status(400).json({ error: "يجب تمرير invoice_id أو ticket_id" });
+  }
+
+  // Resolve invoice via ticket if needed (the unified support_tickets
+  // table carries invoice_id when the customer picked one at submit).
+  let resolvedInvoiceId = invoiceId;
+  if (!resolvedInvoiceId && ticketId) {
+    try {
+      const t = await db.query(`SELECT invoice_id FROM support_tickets WHERE id = $1`, [ticketId]);
+      resolvedInvoiceId = t.rows[0]?.invoice_id || null;
+    } catch { /* table or column missing — skip */ }
+  }
+  if (!resolvedInvoiceId) {
+    return res.status(404).json({ error: "لا توجد فاتورة مرتبطة بالطلب" });
+  }
+
+  // Pull invoice + linked subscription + plan duration
+  const invQ = await db.query(`
+    SELECT i.*, p.duration_days, p.name_ar AS plan_name,
+           up.id AS user_plan_id, up.started_at, up.expires_at, up.status AS plan_status
+    FROM invoices i
+    LEFT JOIN payments pay ON pay.id = i.payment_id
+    LEFT JOIN user_plans up ON up.id = pay.user_plan_id
+    LEFT JOIN plans p ON p.id = i.plan_id
+    WHERE i.id = $1
+  `, [resolvedInvoiceId]);
+  if (invQ.rows.length === 0) {
+    return res.status(404).json({ error: "الفاتورة غير موجودة" });
+  }
+  const inv = invQ.rows[0];
+
+  const amountPaid = Number(inv.total) || 0;
+  const durationDays = Number(inv.duration_days) || 30;
+
+  // Compute days used + remaining from started_at + duration. If we
+  // don't have started_at, fall back to invoice.created_at — the
+  // subscription almost always begins at payment time.
+  const startMs = inv.started_at ? new Date(inv.started_at).getTime() : new Date(inv.created_at).getTime();
+  const now = Date.now();
+  const elapsedMs = Math.max(0, now - startMs);
+  const daysUsed = Math.min(durationDays, Math.floor(elapsedMs / (24 * 60 * 60 * 1000)));
+  const daysRemaining = Math.max(0, durationDays - daysUsed);
+
+  // Three suggestion strategies
+  const fullRefund = amountPaid;
+  const proRatedRefund = Math.round((daysRemaining / durationDays) * amountPaid * 100) / 100;
+  const zeroRefund = 0;
+
+  // Recommendation policy:
+  //   < 3 days used   → full refund (cooling-off period)
+  //   3 ≤ used < 7    → 90% of paid (small admin fee)
+  //   plan expired (days_remaining == 0) → zero
+  //   otherwise       → strict pro-rated
+  let recommendation, recommendedAmount, rationale;
+  if (daysRemaining === 0) {
+    recommendation = "no_refund";
+    recommendedAmount = zeroRefund;
+    rationale = "انتهت مدة الاشتراك بالكامل — لا يستحق استرداد";
+  } else if (daysUsed < 3) {
+    recommendation = "full";
+    recommendedAmount = fullRefund;
+    rationale = "فترة سماح 72 ساعة — يُسترد كامل المبلغ";
+  } else if (daysUsed < 7) {
+    recommendation = "near_full";
+    recommendedAmount = Math.round(amountPaid * 0.9 * 100) / 100;
+    rationale = "خلال أول أسبوع — يُسترد 90% (10% رسوم إدارية اختيارية)";
+  } else {
+    recommendation = "prorated";
+    recommendedAmount = proRatedRefund;
+    rationale = `استرداد تناسبي على المتبقّي (${daysRemaining}/${durationDays} يوم)`;
+  }
+
+  res.json({
+    invoice: {
+      id: inv.id,
+      invoice_number: inv.invoice_number,
+      total: amountPaid,
+      currency: inv.currency,
+      plan_name: inv.plan_name,
+      created_at: inv.created_at,
+    },
+    subscription: {
+      user_plan_id: inv.user_plan_id,
+      started_at: inv.started_at || inv.created_at,
+      expires_at: inv.expires_at,
+      status: inv.plan_status,
+      duration_days: durationDays,
+      days_used: daysUsed,
+      days_remaining: daysRemaining,
+      usage_percent: Math.round((daysUsed / durationDays) * 100),
+    },
+    options: {
+      full_refund: { amount: fullRefund, label: "استرداد كامل", rationale: "ردّ كل المبلغ المدفوع" },
+      prorated:    { amount: proRatedRefund, label: "استرداد تناسبي", rationale: `${daysRemaining} يوم متبقي من ${durationDays}` },
+      no_refund:   { amount: zeroRefund, label: "بدون استرداد", rationale: "اعتبار الاشتراك مستهلَكاً" },
+    },
+    recommendation: {
+      strategy: recommendation,
+      amount: recommendedAmount,
+      rationale,
+    },
+  });
+}));
+
+// Quick list: refunds that have been APPROVED but not yet
+// confirmed as paid — the accountant's "don't forget" list.
+router.get("/refunds/pending-payout", authMiddleware, requireRoles('finance_admin', 'super_admin', 'admin_manager'), asyncHandler(async (req, res) => {
+  const r = await db.query(`
+    SELECT r.*, u.name AS user_name, u.email AS user_email
+    FROM refunds r
+    LEFT JOIN users u ON u.id = r.user_id
+    WHERE r.status = 'approved' AND r.payout_confirmed_at IS NULL
+    ORDER BY r.processed_at ASC NULLS LAST
+  `);
+  // Add an "age" hint so urgent reminders surface clearly
+  const now = Date.now();
+  const out = r.rows.map((row) => ({
+    ...row,
+    days_since_approval: row.processed_at
+      ? Math.floor((now - new Date(row.processed_at).getTime()) / (24 * 60 * 60 * 1000))
+      : null,
+  }));
+  res.json({ refunds: out, count: out.length });
+}));
+
 router.post("/refunds", authMiddleware, requireRoles('finance_admin'), asyncHandler(async (req, res) => {
   const { userId, user_id, userPlanId, user_plan_id, invoice_id, amount, reason } = req.body;
   const actualUserId = userId || user_id;

@@ -699,8 +699,41 @@ export default function FinancePage() {
     }
   }
 
+  // Smart refund suggestion — fetched from backend when an approve
+  // modal opens for a refund that has an invoice_id. Returns
+  // pro-rated calculation: days used vs remaining + 3 strategy
+  // options + a recommended amount. The accountant clicks to apply
+  // one to the amount field; the workflow stays manual.
+  interface RefundSuggestion {
+    invoice: { id: number; invoice_number: string; total: number; currency: string; plan_name?: string };
+    subscription: {
+      duration_days: number; days_used: number; days_remaining: number; usage_percent: number;
+      started_at: string | null; expires_at: string | null;
+    };
+    options: {
+      full_refund: { amount: number; label: string; rationale: string };
+      prorated:    { amount: number; label: string; rationale: string };
+      no_refund:   { amount: number; label: string; rationale: string };
+    };
+    recommendation: { strategy: string; amount: number; rationale: string };
+  }
+  const [suggestion, setSuggestion] = useState<RefundSuggestion | null>(null);
+  const [suggestionLoading, setSuggestionLoading] = useState(false);
+
   function openReviewModal(refund: Refund, action: "approve" | "reject") {
     setReviewModal({ isOpen: true, refund, action, note: "", loading: false, subscriptionAction: "none", cancelQuota: false });
+    setSuggestion(null);
+    if (action === "approve" && refund.invoice_id) {
+      setSuggestionLoading(true);
+      fetch(`${API_URL}/api/finance/refunds/suggestion?invoice_id=${refund.invoice_id}`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (d) setSuggestion(d); })
+        .catch(() => { /* silent — suggestion is optional */ })
+        .finally(() => setSuggestionLoading(false));
+    }
   }
 
   async function submitReview() {
@@ -2199,7 +2232,7 @@ export default function FinancePage() {
               
               <div className="bg-white rounded-xl p-3 mb-4">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">المبلغ:</span>
+                  <span className="text-gray-600">المبلغ المطلوب من العميل:</span>
                   <span className="font-bold text-[#D4AF37]">{formatCurrency(reviewModal.refund.amount)}</span>
                 </div>
                 {reviewModal.refund.reason && (
@@ -2209,7 +2242,86 @@ export default function FinancePage() {
                   </div>
                 )}
               </div>
-              
+
+              {/* Smart refund suggestion — appears only on approve flow
+                  when the refund has an invoice link. Shows the 3
+                  strategies + a clear recommendation based on days
+                  used vs remaining on the subscription. */}
+              {reviewModal.action === "approve" && (suggestionLoading || suggestion) && (
+                <div className="mb-4 rounded-2xl border-2 border-[#D4AF37]/40 bg-gradient-to-br from-[#FFFCEE] to-white p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#D4AF37] to-[#B8860B] flex items-center justify-center text-[#002845]">
+                      🧮
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-[13px] font-extrabold text-[#002845]">اقتراح ذكي للاسترداد</div>
+                      <div className="text-[11px] text-slate-500">محسوب من بيانات الفاتورة + استخدام الاشتراك</div>
+                    </div>
+                  </div>
+                  {suggestionLoading || !suggestion ? (
+                    <div className="text-center text-slate-400 py-3 text-sm">جاري الحساب…</div>
+                  ) : (
+                    <>
+                      {/* Subscription usage bar */}
+                      <div className="mb-3">
+                        <div className="flex items-center justify-between text-[11px] text-slate-600 mb-1">
+                          <span>{suggestion.subscription.days_used} من {suggestion.subscription.duration_days} يوم مُستخدمة</span>
+                          <span className="font-bold text-[#9A7D28]">{suggestion.subscription.days_remaining} يوم متبقي</span>
+                        </div>
+                        <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-l from-[#D4AF37] to-[#B8860B] transition-all"
+                            style={{ width: `${suggestion.subscription.usage_percent}%` }}
+                          />
+                        </div>
+                      </div>
+                      {/* Recommendation banner */}
+                      <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 mb-3 flex items-center justify-between gap-3 flex-wrap">
+                        <div className="text-[12px] text-emerald-900">
+                          <strong>التوصية:</strong> {suggestion.recommendation.rationale}
+                        </div>
+                        <div className="text-base font-extrabold text-emerald-700">
+                          {formatCurrency(suggestion.recommendation.amount)}
+                        </div>
+                      </div>
+                      {/* Three options as clickable chips */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {([
+                          ["full_refund", suggestion.options.full_refund],
+                          ["prorated",    suggestion.options.prorated],
+                          ["no_refund",   suggestion.options.no_refund],
+                        ] as const).map(([key, opt]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => {
+                              if (!reviewModal.refund) return;
+                              // Mutate the refund.amount locally so the
+                              // accountant SEES what they're approving.
+                              // (We don't have a separate "amount" field
+                              // in the modal — we patch the refund obj.)
+                              setReviewModal((prev) => prev.refund
+                                ? { ...prev, refund: { ...prev.refund, amount: opt.amount } }
+                                : prev);
+                            }}
+                            className="p-2.5 rounded-xl border border-slate-200 hover:border-[#D4AF37] hover:bg-[#FFFCEE] transition text-right group"
+                          >
+                            <div className="text-[10px] text-slate-500">{opt.label}</div>
+                            <div className="text-base font-extrabold text-[#002845] mt-0.5">
+                              {formatCurrency(opt.amount)}
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-1 line-clamp-2">{opt.rationale}</div>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-3 text-center">
+                        💡 اضغط أي خيار لاستخدامه — تقدر تعدّل المبلغ يدوياً بعدها لو أردت.
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
+
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   ملاحظة للعميل {reviewModal.action === "reject" ? "(مطلوب)" : "(اختياري)"}
