@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { MapPin, Search, Loader2, Target, MousePointerClick, Hand } from "lucide-react";
+import MapStyleToggle from "@/components/maps/MapStyleToggle";
+import { MAP_STYLES, loadMapStylePreference, saveMapStylePreference, type MapStyleKey } from "@/lib/mapStyles";
 
 interface Location {
   lat: number;
@@ -83,6 +85,13 @@ export default function LeafletLocationPicker({
   const leafletRef = useRef<any>(null);
   const onLocationSelectRef = useRef(onLocationSelect);
   const isInitializedRef = useRef(false);
+  // Track the base tile layer (+ optional overlay) so we can swap
+  // them when the user toggles streets ↔ satellite ↔ hybrid without
+  // recreating the whole map.
+  const baseTileRef = useRef<any>(null);
+  const overlayTileRef = useRef<any>(null);
+  const [mapStyle, setMapStyle] = useState<MapStyleKey>("streets");
+  useEffect(() => { setMapStyle(loadMapStylePreference("streets")); }, []);
 
   const [isLoading, setIsLoading] = useState(true);
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
@@ -220,10 +229,22 @@ export default function LeafletLocationPicker({
           zoomAnimation: true,
         });
 
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-          maxZoom: 19,
+        // Build the initial base layer from the persisted style
+        // preference. Stored in ref so the toggle effect below can
+        // swap it without re-initializing the whole map.
+        const initialCfg = MAP_STYLES[loadMapStylePreference("streets")];
+        baseTileRef.current = L.tileLayer(initialCfg.url, {
+          attribution: initialCfg.attribution,
+          maxZoom: initialCfg.maxZoom,
+          subdomains: initialCfg.subdomains || "",
         }).addTo(map);
+        if (initialCfg.overlayUrl) {
+          overlayTileRef.current = L.tileLayer(initialCfg.overlayUrl, {
+            maxZoom: initialCfg.maxZoom,
+            subdomains: initialCfg.subdomains || "",
+            opacity: 0.85,
+          }).addTo(map);
+        }
 
         const marker = L.marker([defaultCenter.lat, defaultCenter.lng], {
           icon: customIcon,
@@ -334,6 +355,36 @@ export default function LeafletLocationPicker({
       isMounted = false;
     };
   }, []);
+
+  // Swap the base + overlay tile layers when the user toggles style.
+  // We REMOVE the previous layer and ADD the new one so Leaflet stays
+  // happy with attribution control + opacity. The map itself stays.
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const L = leafletRef.current;
+    if (!map || !L) return;
+    const cfg = MAP_STYLES[mapStyle];
+    if (baseTileRef.current) {
+      try { map.removeLayer(baseTileRef.current); } catch { /* ignore */ }
+      baseTileRef.current = null;
+    }
+    if (overlayTileRef.current) {
+      try { map.removeLayer(overlayTileRef.current); } catch { /* ignore */ }
+      overlayTileRef.current = null;
+    }
+    baseTileRef.current = L.tileLayer(cfg.url, {
+      attribution: cfg.attribution,
+      maxZoom: cfg.maxZoom,
+      subdomains: cfg.subdomains || "",
+    }).addTo(map);
+    if (cfg.overlayUrl) {
+      overlayTileRef.current = L.tileLayer(cfg.overlayUrl, {
+        maxZoom: cfg.maxZoom,
+        subdomains: cfg.subdomains || "",
+        opacity: 0.85,
+      }).addTo(map);
+    }
+  }, [mapStyle]);
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -485,7 +536,13 @@ export default function LeafletLocationPicker({
           </div>
         )}
         
-        <div ref={mapRef} className="w-full h-[50vh] sm:h-[400px] min-h-[300px]" />
+        <div className="relative w-full h-[50vh] sm:h-[400px] min-h-[300px]">
+          <MapStyleToggle
+            current={mapStyle}
+            onChange={(s) => { setMapStyle(s); saveMapStylePreference(s); }}
+          />
+          <div ref={mapRef} className="w-full h-full" />
+        </div>
       </div>
 
       {currentLocation && (

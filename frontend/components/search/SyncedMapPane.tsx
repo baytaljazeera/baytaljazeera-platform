@@ -4,6 +4,8 @@ import dynamic from "next/dynamic";
 import { useEffect, useState, useRef, memo, useCallback } from "react";
 import { MapPin, Navigation, X, Bed, Bath, Maximize2, Key, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSearchMapStore } from "@/lib/stores/searchMapStore";
+import MapStyleToggle from "@/components/maps/MapStyleToggle";
+import { MAP_STYLES, loadMapStylePreference, saveMapStylePreference, type MapStyleKey } from "@/lib/mapStyles";
 
 export type PropertyMarker = {
   id: string;
@@ -279,6 +281,11 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
   const [isLocating,      setIsLocating]      = useState(false);
   const [locationEnabled, setLocationEnabled] = useState(false);
 
+  /* shared map style — streets / satellite / hybrid */
+  const [mapStyle, setMapStyle] = useState<MapStyleKey>("streets");
+  useEffect(() => { setMapStyle(loadMapStylePreference("streets")); }, []);
+  const tileCfg = MAP_STYLES[mapStyle];
+
   /* sidebar + hover */
   const [selectedMarker, setSelectedMarker] = useState<PropertyMarker | null>(null);
   const [hoveredMarker,  setHoveredMarker]  = useState<PropertyMarker | null>(null);
@@ -479,6 +486,10 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
 
   return (
     <div ref={wrapperRef} className="relative w-full h-full">
+      <MapStyleToggle
+        current={mapStyle}
+        onChange={(s) => { setMapStyle(s); saveMapStylePreference(s); }}
+      />
       {/* location button */}
       <button
         onClick={handleLocationToggle}
@@ -513,9 +524,21 @@ function SyncedMapPaneInner({ markers = [], onMarkerClick }: SyncedMapPaneProps)
         doubleClickZoom={false}
       >
         <TileLayer
-          attribution="&copy; OpenStreetMap"
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          key={tileCfg.key}
+          attribution={tileCfg.attribution}
+          url={tileCfg.url}
+          maxZoom={tileCfg.maxZoom}
+          subdomains={tileCfg.subdomains || ""}
         />
+        {tileCfg.overlayUrl && (
+          <TileLayer
+            key={tileCfg.key + "-overlay"}
+            url={tileCfg.overlayUrl}
+            maxZoom={tileCfg.maxZoom}
+            subdomains={tileCfg.subdomains || ""}
+            opacity={0.85}
+          />
+        )}
         <MapController
           useMapHook={useMap}
           mapCenter={safeCenter}

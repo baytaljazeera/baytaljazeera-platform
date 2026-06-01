@@ -30,6 +30,8 @@ import {
 import { useSearchMapStore } from "@/lib/stores/searchMapStore";
 import { getImageUrl } from "@/lib/imageUrl";
 import { getCurrencySymbol, getCurrencyCodeByCountry } from "@/lib/stores/currencyStore";
+import MapStyleToggle from "@/components/maps/MapStyleToggle";
+import { MAP_STYLES, loadMapStylePreference, saveMapStylePreference, type MapStyleKey } from "@/lib/mapStyles";
 
 export type MapListing = {
   id: string;
@@ -1321,6 +1323,10 @@ export default function MapClient({
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [locationEnabled, setLocationEnabled] = useState(false);
+  // Map style toggle — shared across all platform maps via localStorage
+  const [mapStyle, setMapStyle] = useState<MapStyleKey>("streets");
+  useEffect(() => { setMapStyle(loadMapStylePreference("streets")); }, []);
+  const tileCfg = MAP_STYLES[mapStyle];
 
   useEffect(() => {
     setIsMounted(true);
@@ -1403,6 +1409,11 @@ export default function MapClient({
         <Navigation className={`w-5 h-5 ${locationEnabled ? 'fill-current rotate-45' : ''}`} />
       </button>
 
+      <MapStyleToggle
+        current={mapStyle}
+        onChange={(s) => { setMapStyle(s); saveMapStylePreference(s); }}
+      />
+
       <MapContainer
         key={mapId.current}
         center={DEFAULT_CENTER}
@@ -1414,9 +1425,21 @@ export default function MapClient({
         ref={mapRef}
       >
         <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          key={tileCfg.key}
+          url={tileCfg.url}
+          attribution={tileCfg.attribution}
+          maxZoom={tileCfg.maxZoom}
+          subdomains={tileCfg.subdomains || ""}
         />
+        {tileCfg.overlayUrl && (
+          <TileLayer
+            key={tileCfg.key + "-overlay"}
+            url={tileCfg.overlayUrl}
+            maxZoom={tileCfg.maxZoom}
+            subdomains={tileCfg.subdomains || ""}
+            opacity={0.85}
+          />
+        )}
 
         <FitToView
           listings={validListings}

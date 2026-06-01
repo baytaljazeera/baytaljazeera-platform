@@ -3,6 +3,8 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { MapPin, Heart } from "lucide-react";
+import MapStyleToggle from "@/components/maps/MapStyleToggle";
+import { MAP_STYLES, loadMapStylePreference, saveMapStylePreference, type MapStyleKey } from "@/lib/mapStyles";
 
 export type PropertyMarker = {
   id: string;
@@ -44,6 +46,11 @@ function MapComponentInner({
   const [TileLayer, setTileLayer] = useState<any>(null);
   const [Marker, setMarker] = useState<any>(null);
   const [Popup, setPopup] = useState<any>(null);
+  // Map style (streets/satellite/hybrid). Persisted across sessions
+  // + shared across all maps via localStorage.
+  const [mapStyle, setMapStyle] = useState<MapStyleKey>("streets");
+  useEffect(() => { setMapStyle(loadMapStylePreference("streets")); }, []);
+  const tileCfg = MAP_STYLES[mapStyle];
 
   useEffect(() => {
     const loadLeaflet = async () => {
@@ -97,16 +104,33 @@ function MapComponentInner({
   });
 
   return (
-    <MapContainer
-      center={center as [number, number]}
-      zoom={zoom}
-      className="w-full h-full rounded-2xl z-0"
-      style={{ minHeight: "500px" }}
-    >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+    <div className="w-full h-full relative" style={{ minHeight: "500px" }}>
+      <MapStyleToggle
+        current={mapStyle}
+        onChange={(s) => { setMapStyle(s); saveMapStylePreference(s); }}
       />
+      <MapContainer
+        center={center as [number, number]}
+        zoom={zoom}
+        className="w-full h-full rounded-2xl z-0"
+        style={{ minHeight: "500px" }}
+      >
+        <TileLayer
+          key={tileCfg.key}
+          attribution={tileCfg.attribution}
+          url={tileCfg.url}
+          maxZoom={tileCfg.maxZoom}
+          subdomains={tileCfg.subdomains || ""}
+        />
+        {tileCfg.overlayUrl && (
+          <TileLayer
+            key={tileCfg.key + "-overlay"}
+            url={tileCfg.overlayUrl}
+            maxZoom={tileCfg.maxZoom}
+            subdomains={tileCfg.subdomains || ""}
+            opacity={0.85}
+          />
+        )}
       {markers && markers.length > 0 ? (
         markers.map((marker) => (
           <Marker
@@ -182,7 +206,8 @@ function MapComponentInner({
           <p className="text-gray-500">لا توجد عقارات في هذا الموقع</p>
         </div>
       )}
-    </MapContainer>
+      </MapContainer>
+    </div>
   );
 }
 
