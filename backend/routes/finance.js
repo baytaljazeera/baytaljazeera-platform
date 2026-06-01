@@ -2848,13 +2848,14 @@ router.post(
         payload: { ticket_id: ticketId, amount, case_number: caseNumber },
       });
       await client.query(
-        `INSERT INTO notifications (user_id, type, title, body, channel, status, payload, scheduled_at)
+        `INSERT INTO notifications (user_id, type, title, body, link, channel, status, payload, scheduled_at)
          VALUES ($1, 'refund_needs_confirmation',
                  'لديك معاملة استرداد بانتظار تأكيدك',
-                 $2, 'app', 'pending', $3::jsonb, NOW())`,
+                 $2, $3, 'app', 'pending', $4::jsonb, NOW())`,
         [
           ticket.user_id,
           `معاملة الاسترداد ${caseNumber} بمبلغ ${amount} ر.س جاهزة. افتحها لتختار طريقة الإرجاع وتأكيد طلبك خلال 4 أيام.`,
+          `/account/refunds/${refund.id}/confirm`,
           JSON.stringify({ refund_id: refund.id, ticket_id: ticketId, case_number: caseNumber }),
         ]
       );
