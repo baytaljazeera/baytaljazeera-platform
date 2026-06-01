@@ -13,7 +13,12 @@
 //                        so the satellite isn't unreadable in cities
 // ─────────────────────────────────────────────────────────────────
 
-export type MapStyleKey = "streets" | "satellite" | "hybrid" | "voyager";
+export type MapStyleKey =
+  | "streets"      // OSM standard (busy, detailed, all labels)
+  | "voyager"      // CARTO clean — easier on the eyes, premium feel
+  | "satellite"    // Esri aerial — pure photo, no labels
+  | "hybrid"       // Satellite + street labels overlay
+  | "terrain";     // OpenTopoMap — elevation contours, good for rural / mountain plots
 
 export interface MapStyleConfig {
   key: MapStyleKey;
@@ -38,12 +43,21 @@ export const MAP_STYLES: Record<MapStyleKey, MapStyleConfig> = {
   },
   voyager: {
     key: "voyager",
-    label: "خريطة (هادئة)",
-    hint: "تصميم أنظف وأخف ألواناً — مناسب لإبراز العقارات",
+    label: "خريطة هادئة",
+    hint: "تصميم أنظف وأخف ألواناً — مناسب لإبراز موقع العقار",
     url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
     attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a> · © <a href="https://carto.com/attributions">CARTO</a>',
     maxZoom: 20,
     subdomains: "abcd",
+  },
+  terrain: {
+    key: "terrain",
+    label: "تضاريس",
+    hint: "صور طبيعية مع خطوط الارتفاع — مفيدة للأراضي والمزارع",
+    url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+    attribution: '© <a href="https://opentopomap.org">OpenTopoMap</a> · © <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+    maxZoom: 17,
+    subdomains: "abc",
   },
   satellite: {
     key: "satellite",
@@ -65,8 +79,14 @@ export const MAP_STYLES: Record<MapStyleKey, MapStyleConfig> = {
   },
 };
 
-/** Order the toggle pills render in. */
-export const MAP_STYLE_ORDER: MapStyleKey[] = ["streets", "satellite", "hybrid"];
+/** Order the toggle pills render in (full set — used in the
+ *  location picker when adding a listing so the operator has every
+ *  option). */
+export const MAP_STYLE_ORDER: MapStyleKey[] = ["streets", "voyager", "satellite", "hybrid", "terrain"];
+
+/** Compact set — used in customer-facing browse maps where we don't
+ *  want to overwhelm with too many choices. Just the essentials. */
+export const MAP_STYLE_ORDER_COMPACT: MapStyleKey[] = ["streets", "satellite", "hybrid"];
 
 /** Persist + restore the user's choice across maps + sessions. */
 const STORAGE_KEY = "bj.map.style.v1";

@@ -537,9 +537,16 @@ export default function LeafletLocationPicker({
         )}
         
         <div className="relative w-full h-[50vh] sm:h-[400px] min-h-[300px]">
+          {/* fullSet=true so the operator adding a listing gets ALL
+              5 view options — streets / clean voyager / satellite /
+              hybrid (sat + labels) / terrain (elevation contours,
+              useful for rural plots). Browse maps stay on the
+              3-option compact set so casual customers aren't
+              overwhelmed. */}
           <MapStyleToggle
             current={mapStyle}
             onChange={(s) => { setMapStyle(s); saveMapStylePreference(s); }}
+            fullSet
           />
           <div ref={mapRef} className="w-full h-full" />
         </div>
