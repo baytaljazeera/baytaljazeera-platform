@@ -1804,6 +1804,17 @@ export default function FinancePage() {
           <button
             key={tab.id}
             type="button"
+            // On mobile the tab bar scrolls horizontally; the active
+            // tab can disappear off-screen and leave the operator
+            // unable to see which view they're on. After click, pull
+            // the tab back into the centre. Inline-only nudge so we
+            // don't yank the page.
+            ref={(el) => {
+              if (el && activeTab === tab.id && typeof window !== "undefined" && window.innerWidth < 768) {
+                try { el.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" }); }
+                catch { /* older browsers */ }
+              }
+            }}
             onClick={() => setActiveTab(tab.id as typeof activeTab)}
             className={`group flex items-center gap-2 px-4 py-3 border-b-2 transition-all duration-300 ease-out shrink-0 rounded-t-lg ${
               activeTab === tab.id
@@ -1813,6 +1824,16 @@ export default function FinancePage() {
           >
             <tab.icon className="w-4 h-4 transition-transform duration-300 ease-out group-hover:scale-110" />
             {tab.label}
+            {tab.id === "cases" && tab.casesAwaitingBank > 0 && (
+              <span className="unread-badge-breathe bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full min-w-[20px] text-center shadow-md mr-1" title="قضايا بانتظار تحويل بنكي">
+                {tab.casesAwaitingBank}
+              </span>
+            )}
+            {tab.id === "messages" && tab.inboxCount > 0 && (
+              <span className="bg-[#D4AF37] text-[#002845] text-[10px] font-black px-2 py-0.5 rounded-full min-w-[20px] text-center mr-1">
+                {tab.inboxCount}
+              </span>
+            )}
             {tab.id === "refunds" &&
               (tab.pendingCount > 0 || tab.awaitingPayoutCount > 0) && (
                 <span className="flex items-center gap-1 mr-1">
@@ -3030,7 +3051,7 @@ export default function FinancePage() {
 
       {financeTicketModal.open && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4" dir="rtl">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90dvh] flex flex-col overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-2 bg-slate-50">
               <div className="min-w-0">
                 <h4 className="font-black text-[#002845] truncate">
@@ -3496,7 +3517,7 @@ export default function FinancePage() {
 
       {payoutModal.isOpen && payoutModal.refund && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" dir="rtl">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden max-h-[92vh] flex flex-col">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden max-h-[92dvh] flex flex-col">
             <div className="p-6 bg-blue-50 overflow-y-auto">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
@@ -4081,7 +4102,7 @@ export default function FinancePage() {
       {/* ───────────────── Inbox item modal ───────────────── */}
       {inboxItemModal.open && (
         <div className="fixed inset-0 bg-black/55 flex items-center justify-center z-[60] p-4" dir="rtl">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90dvh] flex flex-col">
             <div className="px-5 py-4 border-b border-gray-100 bg-slate-50 flex items-center justify-between">
               <div>
                 <h4 className="font-black text-[#002845]">
@@ -4179,7 +4200,7 @@ export default function FinancePage() {
       {/* ───────────────── Convert-to-Case modal ───────────────── */}
       {convertModal.open && convertModal.ticket && (
         <div className="fixed inset-0 bg-black/55 flex items-center justify-center z-[65] p-4" dir="rtl">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] flex flex-col">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92dvh] flex flex-col">
             <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-l from-[#FFFCEE] via-white to-white">
               <h4 className="font-black text-[#002845]">تحويل إلى قضية استرداد</h4>
               <p className="text-xs text-gray-500 mt-1">
@@ -4295,7 +4316,7 @@ function CaseDetailModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70] p-4" dir="rtl">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[92dvh] flex flex-col overflow-hidden">
         <div className="bg-gradient-to-l from-[#002845] to-[#003d66] text-white px-6 py-5 flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <p className="text-[10px] font-mono text-[#D4AF37]">{c?.case_number || (c ? `#${c.id}` : "")}</p>

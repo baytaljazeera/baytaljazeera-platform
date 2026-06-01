@@ -169,7 +169,15 @@ function MyTicketsContent() {
       if (!cardRef.current || typeof window === "undefined") return;
       const top = cardRef.current.getBoundingClientRect().top;
       const avail = window.innerHeight - top - 24; // 24px bottom gutter
-      const h = Math.max(420, Math.min(720, avail));
+      // Owner-facing bug: on a 375px iPhone with Safari's address bar
+      // visible, `top` is often ~250px, leaving `avail` ≈ 380px.
+      // The previous floor of 420px forced the card taller than the
+      // viewport, pushing the reply input below the fold. Lower the
+      // floor to 320px so small phones get a card that fits, while
+      // desktop browsers (where avail is always >> 720) still hit the
+      // 720px cap.
+      const minH = window.innerWidth < 640 ? 320 : 420;
+      const h = Math.max(minH, Math.min(720, avail));
       setCardHeight(h);
     };
     compute();
