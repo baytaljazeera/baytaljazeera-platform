@@ -42,6 +42,11 @@ interface SupportTicket {
   report_reason_code?: string | null;
   source?: string | null;
   department?: string | null;
+  // Set by /api/support/:id/transfer. Drives the "Transfer to
+  // Finance" button: only visible when null and refund_id is null.
+  finance_inbox_state?: string | null;
+  refund_id?: number | null;
+  refund_case_number?: string | null;
 }
 
 // Unified taxonomy labels — surfaces ticket_type as a colored chip on
@@ -423,6 +428,37 @@ export default function CustomerServicePage() {
     }
   };
 
+  // Round 3: transfer a ticket to finance. Sets finance_inbox_state
+  // to 'in_inbox' on the ticket — finance team sees it in their
+  // /admin/finance-inbox surface and the ticket STAYS here too
+  // (co-owned). Doesn't create a refund row.
+  const [transferringToFinance, setTransferringToFinance] = useState<number | null>(null);
+  const handleTransferToFinance = async (ticket: SupportTicket) => {
+    if (!window.confirm(`تحويل تذكرة ${ticket.ticket_number} للمالية؟\nالمالية ستراها وتراسل العميل، وتبقى هنا أيضاً.`)) return;
+    setTransferringToFinance(ticket.id);
+    try {
+      const res = await fetch(`${API_URL}/api/support/${ticket.id}/transfer`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ target: "financial" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        await fetchTickets();
+        if (selectedTicket?.id === ticket.id) {
+          await fetchTicketDetails(ticket.id);
+        }
+      } else {
+        alert(data?.error || "فشل التحويل");
+      }
+    } catch {
+      alert("خطأ في الاتصال");
+    } finally {
+      setTransferringToFinance(null);
+    }
+  };
+
   const openActionModal = (complaint: AccountComplaint, action: string) => {
     setSelectedComplaint(complaint);
     setActionType(action);
@@ -765,6 +801,30 @@ export default function CustomerServicePage() {
                             </button>
                           )}
                         </div>
+                        {/* Transfer to Finance — only when:
+                            - not already with finance (finance_inbox_state != 'in_inbox')
+                            - not already linked to a refund transaction
+                            Visible for any ticket, but mainly used on financial tickets. */}
+                        {(!ticket.finance_inbox_state || ticket.finance_inbox_state !== 'in_inbox') && !ticket.refund_id && (
+                          <button
+                            onClick={() => void handleTransferToFinance(ticket)}
+                            disabled={transferringToFinance === ticket.id}
+                            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-100 text-emerald-800 rounded-xl hover:bg-emerald-200 transition text-sm font-bold disabled:opacity-50"
+                          >
+                            {transferringToFinance === ticket.id ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                            💰 تحويل للمالية
+                          </button>
+                        )}
+                        {ticket.finance_inbox_state === 'in_inbox' && !ticket.refund_id && (
+                          <span className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold">
+                            ✓ مع المالية
+                          </span>
+                        )}
+                        {ticket.refund_id && (
+                          <span className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-2.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs font-bold">
+                            ↪ {ticket.refund_case_number || `معاملة #${ticket.refund_id}`}
+                          </span>
+                        )}
                         {ticket.status === "new" && (
                           <button
                             onClick={() => {

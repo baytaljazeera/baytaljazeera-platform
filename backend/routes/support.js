@@ -134,16 +134,19 @@ router.get("/", authMiddleware, denyFinanceFromSupport, asyncHandler(async (req,
 
   const result = await db.query(
     `
-      SELECT 
+      SELECT
         st.*,
         u.name as user_name,
         u.email as user_email,
         u.phone as user_phone,
         a.name as assigned_name,
+        r.case_number as refund_case_number,
+        r.status as refund_status,
         (SELECT COUNT(*) FROM support_ticket_replies WHERE ticket_id = st.id) as reply_count
       FROM support_tickets st
       LEFT JOIN users u ON st.user_id = u.id
       LEFT JOIN users a ON st.assigned_to = a.id
+      LEFT JOIN refunds r ON r.id = st.refund_id
       ${whereSql}
       ORDER BY 
         CASE st.status 
