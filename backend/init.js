@@ -2284,6 +2284,176 @@ async function initializeDatabase() {
     `);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_refunds_ticket ON refunds(ticket_id) WHERE ticket_id IS NOT NULL;`);
 
+    // ──────────────────────────────────────────────────────────────
+    // Refund Case state machine (Phase 1).
+    //
+    // The refunds table becomes the source of truth for the finance
+    // workflow. We expand status to a 7-state enum, add case-level
+    // metadata (case number, bank info, due date, audit fingerprints),
+    // and create a dedicated events table for the case timeline.
+    //
+    // States (enforced in code via services/refundStateMachine.js,
+    // not via a DB CHECK constraint — we want the room to evolve):
+    //   pending_review · waiting_customer_info · approved ·
+    //   awaiting_bank_transfer · proof_uploaded · completed · rejected
+    //
+    // Migration of legacy values:
+    //   pending → pending_review (one-shot UPDATE below, idempotent)
+    //   approved, rejected, completed → unchanged
+    // ──────────────────────────────────────────────────────────────
+    await db.query(`
+      DO $$
+      BEGIN
+        -- RFC-2026-NNNNNN human-readable case identifier, distinct from
+        -- the RFD-...-NNNNNN refund-invoice number which only mints at
+        -- the completed transition.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'case_number') THEN
+          ALTER TABLE refunds ADD COLUMN case_number VARCHAR(50) UNIQUE;
+        END IF;
+        -- Snapshot of the customer's bank info at the moment the case is
+        -- opened. We snapshot rather than join so a profile edit can't
+        -- silently re-route a refund that's already mid-flight.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'bank_name') THEN
+          ALTER TABLE refunds ADD COLUMN bank_name VARCHAR(100);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'bank_account_iban') THEN
+          ALTER TABLE refunds ADD COLUMN bank_account_iban VARCHAR(50);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'account_holder_name') THEN
+          ALTER TABLE refunds ADD COLUMN account_holder_name VARCHAR(150);
+        END IF;
+        -- When the case is supposed to close by (used to colour the
+        -- board: green if comfortable, amber if approaching, red if past).
+        -- Seeded as NOW() + 6 business days at approved transition.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'due_at') THEN
+          ALTER TABLE refunds ADD COLUMN due_at TIMESTAMPTZ;
+        END IF;
+        -- Audit fingerprints for the last state change. Cheap to read
+        -- on the board without joining the events table.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'state_changed_at') THEN
+          ALTER TABLE refunds ADD COLUMN state_changed_at TIMESTAMPTZ DEFAULT NOW();
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'state_changed_by') THEN
+          ALTER TABLE refunds ADD COLUMN state_changed_by UUID REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+        -- waiting_customer_info bookkeeping: when we asked, when they
+        -- replied, and which state to return to when the info arrives.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'waiting_info_requested_at') THEN
+          ALTER TABLE refunds ADD COLUMN waiting_info_requested_at TIMESTAMPTZ;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'waiting_info_received_at') THEN
+          ALTER TABLE refunds ADD COLUMN waiting_info_received_at TIMESTAMPTZ;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'pre_wait_status') THEN
+          ALTER TABLE refunds ADD COLUMN pre_wait_status VARCHAR(40);
+        END IF;
+        -- Priority is set when the case opens (normal by default;
+        -- escalates to high after 48h sitting in awaiting_bank_transfer).
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'priority') THEN
+          ALTER TABLE refunds ADD COLUMN priority VARCHAR(10) DEFAULT 'normal';
+        END IF;
+
+        -- One-shot migration of legacy 'pending' rows to the new
+        -- explicit 'pending_review' value. Safe to re-run: matches zero
+        -- rows on subsequent inits.
+        UPDATE refunds SET status = 'pending_review' WHERE status = 'pending';
+      END $$;
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_refunds_status_state ON refunds(status, state_changed_at DESC);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_refunds_due_at ON refunds(due_at) WHERE due_at IS NOT NULL AND status NOT IN ('completed', 'rejected');`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_refunds_case_number ON refunds(case_number) WHERE case_number IS NOT NULL;`);
+
+    // Finance Inbox lives ON the ticket. A ticket is in the Finance
+    // Inbox when transferred_to_finance_at IS NOT NULL AND
+    // finance_inbox_state = 'in_inbox'. From there finance resolves it
+    // (inbox_resolved), bounces it (returned_to_support), or converts
+    // it to a Refund Case (converted_to_refund). The Inbox view filters
+    // by finance_inbox_state = 'in_inbox' so all other transitions
+    // remove it automatically.
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'finance_inbox_state') THEN
+          ALTER TABLE support_tickets ADD COLUMN finance_inbox_state VARCHAR(40);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'finance_inbox_resolved_at') THEN
+          ALTER TABLE support_tickets ADD COLUMN finance_inbox_resolved_at TIMESTAMPTZ;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'finance_inbox_resolved_by') THEN
+          ALTER TABLE support_tickets ADD COLUMN finance_inbox_resolved_by UUID REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+        -- 7-day reopen window after finance_inbox_resolved. Beyond this
+        -- the customer can no longer reopen; they have to file fresh.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'customer_reopen_deadline') THEN
+          ALTER TABLE support_tickets ADD COLUMN customer_reopen_deadline TIMESTAMPTZ;
+        END IF;
+        -- Bank-info snapshot the customer optionally provides via the
+        -- Composer when filing a refund request. Finance reads this
+        -- before deciding waiting_customer_info vs pending_review at
+        -- case creation.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'refund_bank_details_snapshot') THEN
+          ALTER TABLE support_tickets ADD COLUMN refund_bank_details_snapshot JSONB;
+        END IF;
+        -- Backfill: any ticket that's transferred to finance but has no
+        -- finance_inbox_state yet is set to 'in_inbox' so the new view
+        -- shows pre-existing transfers on day one. Idempotent.
+        UPDATE support_tickets
+          SET finance_inbox_state = 'in_inbox'
+          WHERE transferred_to_finance_at IS NOT NULL
+            AND finance_inbox_state IS NULL
+            AND refund_id IS NULL;
+        UPDATE support_tickets
+          SET finance_inbox_state = 'converted_to_refund'
+          WHERE transferred_to_finance_at IS NOT NULL
+            AND finance_inbox_state IS NULL
+            AND refund_id IS NOT NULL;
+      END $$;
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_tickets_finance_inbox ON support_tickets(finance_inbox_state) WHERE finance_inbox_state IS NOT NULL;`);
+
+    // Customer bank profile — used by the Composer flow to skip the
+    // bank-info prompt when the customer's profile already has it.
+    // Optional everywhere; refunds always SNAPSHOT into refunds.bank_*
+    // so a profile edit doesn't retroactively change in-flight refunds.
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'bank_name') THEN
+          ALTER TABLE users ADD COLUMN bank_name VARCHAR(100);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'bank_account_iban') THEN
+          ALTER TABLE users ADD COLUMN bank_account_iban VARCHAR(50);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'account_holder_name') THEN
+          ALTER TABLE users ADD COLUMN account_holder_name VARCHAR(150);
+        END IF;
+      END $$;
+    `);
+
+    // Dedicated event log for Refund Cases — the case timeline reads
+    // from here. Distinct from billing_audit_log (admin trail) and
+    // support_ticket_audit_log (ticket trail) because the case is its
+    // own object and deserves its own audit surface.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS refund_case_events (
+        id SERIAL PRIMARY KEY,
+        refund_id INTEGER NOT NULL REFERENCES refunds(id) ON DELETE CASCADE,
+        event_type VARCHAR(50) NOT NULL,
+        from_state VARCHAR(40),
+        to_state VARCHAR(40),
+        actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        actor_name_snapshot VARCHAR(255),
+        actor_role_snapshot VARCHAR(50),
+        note TEXT,
+        payload JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_refund_events_case_at ON refund_case_events(refund_id, created_at DESC);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_refund_events_type ON refund_case_events(event_type);`);
+
+    console.log("✅ Refund Case state machine schema ready");
+
     // Mark when a support ticket was handed off to Finance. The Finance
     // Correspondence inbox is filtered by transferred_to_finance_at IS NOT NULL
     // so it only shows messages Support has actually escalated — not every

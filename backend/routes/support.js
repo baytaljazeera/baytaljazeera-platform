@@ -639,9 +639,15 @@ router.patch(
 
     const routing = getSmartRouting("financial", ticket.priority || "medium");
 
-    // Resilient UPDATE — try with the new transferred_to_finance_* columns
-    // first, fall back to the legacy shape if a rolling deploy hasn't
-    // migrated yet (42703 = column does not exist).
+    // Resilient UPDATE — try with the new transferred_to_finance_* +
+    // finance_inbox_state columns first, fall back as columns get
+    // missed on a rolling deploy (42703 = column does not exist).
+    //
+    // Contract change (Phase 1): /transfer no longer creates a refund
+    // case. It only moves the ticket into the Finance Inbox
+    // (finance_inbox_state='in_inbox'). Finance decides later whether
+    // to convert it to a Refund Case via /finance/inbox/:id/convert-to-case
+    // or to resolve it in place.
     let updated;
     try {
       updated = await db.query(
@@ -652,6 +658,7 @@ router.patch(
              sla_hours = $2,
              transferred_to_finance_at = NOW(),
              transferred_to_finance_by = $3,
+             finance_inbox_state = 'in_inbox',
              updated_at = NOW()
          WHERE st.id = $4
          RETURNING *`,
@@ -659,17 +666,34 @@ router.patch(
       );
     } catch (err) {
       if (!(err && err.code === '42703')) throw err;
-      updated = await db.query(
-        `UPDATE support_tickets st
-         SET department = 'financial',
-             category = COALESCE(NULLIF(TRIM(category), ''), 'financial'),
-             auto_assigned_role = $1,
-             sla_hours = $2,
-             updated_at = NOW()
-         WHERE st.id = $3
-         RETURNING *`,
-        [routing.role, routing.sla_hours, id]
-      );
+      try {
+        updated = await db.query(
+          `UPDATE support_tickets st
+           SET department = 'financial',
+               category = COALESCE(NULLIF(TRIM(category), ''), 'financial'),
+               auto_assigned_role = $1,
+               sla_hours = $2,
+               transferred_to_finance_at = NOW(),
+               transferred_to_finance_by = $3,
+               updated_at = NOW()
+           WHERE st.id = $4
+           RETURNING *`,
+          [routing.role, routing.sla_hours, req.user.id, id]
+        );
+      } catch (err2) {
+        if (!(err2 && err2.code === '42703')) throw err2;
+        updated = await db.query(
+          `UPDATE support_tickets st
+           SET department = 'financial',
+               category = COALESCE(NULLIF(TRIM(category), ''), 'financial'),
+               auto_assigned_role = $1,
+               sla_hours = $2,
+               updated_at = NOW()
+           WHERE st.id = $3
+           RETURNING *`,
+          [routing.role, routing.sla_hours, id]
+        );
+      }
     }
 
     const transferNote = typeof req.body?.note === "string" ? req.body.note.trim() : "";
@@ -1052,6 +1076,127 @@ router.delete("/:id", authMiddleware, requireRoles("super_admin", "admin"), asyn
   }
 
   res.json({ ok: true, deleted: id, message: "تم حذف التذكرة نهائياً" });
+}));
+
+// ────────────────────────────────────────────────────────────────────
+// Customer-facing: bank info update + reopen window.
+// Used when the refund case is in waiting_customer_info and we asked
+// the customer for their IBAN, or when a finance_inbox_resolved
+// ticket is within its 7-day reopen window.
+// ────────────────────────────────────────────────────────────────────
+
+router.patch("/:id/bank-info", authMiddleware, asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) return res.status(400).json({ error: "معرف غير صالح" });
+
+  const bankName = typeof req.body?.bank_name === 'string' ? req.body.bank_name.trim() : '';
+  const iban = typeof req.body?.bank_account_iban === 'string' ? req.body.bank_account_iban.trim() : '';
+  const holder = typeof req.body?.account_holder_name === 'string' ? req.body.account_holder_name.trim() : '';
+  const saveToProfile = req.body?.save_to_profile === true;
+
+  if (!bankName || !iban || !holder) {
+    return res.status(400).json({ error: "اسم البنك و IBAN واسم صاحب الحساب مطلوبة" });
+  }
+
+  const t = await db.query(
+    `SELECT id, user_id, refund_id FROM support_tickets WHERE id = $1`,
+    [id]
+  );
+  if (t.rows.length === 0) return res.status(404).json({ error: "التذكرة غير موجودة" });
+  // Owner-only: a customer can only update bank info on their own ticket.
+  if (req.user.role === 'user' && t.rows[0].user_id !== req.user.id) {
+    return res.status(403).json({ error: "غير مصرح" });
+  }
+
+  // Persist the snapshot on the ticket for audit + immediate finance use.
+  await db.query(
+    `UPDATE support_tickets
+     SET refund_bank_details_snapshot = $1::jsonb, updated_at = NOW()
+     WHERE id = $2`,
+    [JSON.stringify({ bank_name: bankName, bank_account_iban: iban, account_holder_name: holder }), id]
+  );
+
+  // If a refund case is already linked and waiting on this info,
+  // funnel through the finance route via direct DB ops here to avoid
+  // a cross-router call (kept idempotent — finance UI can also push
+  // the case back to pending_review with the new info).
+  if (t.rows[0].refund_id) {
+    try {
+      await db.query(
+        `UPDATE refunds
+         SET bank_name = $1, bank_account_iban = $2, account_holder_name = $3,
+             status = CASE WHEN status = 'waiting_customer_info'
+                           THEN COALESCE(pre_wait_status, 'pending_review')
+                           ELSE status END,
+             waiting_info_received_at = CASE WHEN status = 'waiting_customer_info' THEN NOW() ELSE waiting_info_received_at END,
+             state_changed_at = CASE WHEN status = 'waiting_customer_info' THEN NOW() ELSE state_changed_at END,
+             updated_at = NOW()
+         WHERE id = $4`,
+        [bankName, iban, holder, t.rows[0].refund_id]
+      );
+      await db.query(
+        `INSERT INTO refund_case_events
+           (refund_id, event_type, from_state, to_state,
+            actor_user_id, actor_name_snapshot, actor_role_snapshot, payload)
+         VALUES ($1, 'customer_info_received', 'waiting_customer_info', 'pending_review',
+                 $2, $3, $4, $5::jsonb)`,
+        [
+          t.rows[0].refund_id, req.user.id, req.user?.name || null, req.user?.role || 'user',
+          JSON.stringify({ via: 'customer_ticket', bank_name: bankName, account_holder_name: holder }),
+        ]
+      );
+    } catch (e) {
+      if (e && e.code !== '42703' && e.code !== '42P01') {
+        console.warn('[support bank-info] case update:', e.message);
+      }
+    }
+  }
+
+  if (saveToProfile) {
+    try {
+      await db.query(
+        `UPDATE users SET bank_name = $1, bank_account_iban = $2, account_holder_name = $3 WHERE id = $4`,
+        [bankName, iban, holder, req.user.id]
+      );
+    } catch (e) {
+      if (e && e.code !== '42703') console.warn('[support bank-info] profile save:', e.message);
+    }
+  }
+
+  res.json({ ok: true });
+}));
+
+router.patch("/:id/reopen", authMiddleware, asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) return res.status(400).json({ error: "معرف غير صالح" });
+
+  const t = await db.query(
+    `SELECT id, user_id, finance_inbox_state, customer_reopen_deadline, status
+     FROM support_tickets WHERE id = $1`,
+    [id]
+  );
+  if (t.rows.length === 0) return res.status(404).json({ error: "التذكرة غير موجودة" });
+  const tk = t.rows[0];
+  if (req.user.role === 'user' && tk.user_id !== req.user.id) {
+    return res.status(403).json({ error: "غير مصرح" });
+  }
+  if (tk.finance_inbox_state !== 'inbox_resolved') {
+    return res.status(400).json({ error: "هذه التذكرة غير قابلة لإعادة الفتح" });
+  }
+  if (tk.customer_reopen_deadline && new Date(tk.customer_reopen_deadline) < new Date()) {
+    return res.status(400).json({ error: "انتهت مهلة 7 أيام لإعادة الفتح" });
+  }
+
+  await db.query(
+    `UPDATE support_tickets
+     SET finance_inbox_state = 'in_inbox',
+         status = 'in_progress',
+         updated_at = NOW()
+     WHERE id = $1`,
+    [id]
+  );
+
+  res.json({ ok: true });
 }));
 
 module.exports = router;
