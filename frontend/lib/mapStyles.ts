@@ -72,9 +72,13 @@ export const MAP_STYLES: Record<MapStyleKey, MapStyleConfig> = {
     label: "هجين",
     hint: "صور القمر الصناعي + أسماء الشوارع فوقها",
     url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    overlayUrl: "https://stamen-tiles-{s}.a.ssl.fastly.net/toner-labels/{z}/{x}/{y}.png",
-    attribution: "Imagery © Esri · Labels © Stamen Design",
-    maxZoom: 18,
+    // Was stamen-tiles-...; Stamen migrated to Stadia in 2023 and the
+    // old URL silently 404s, leaving the satellite layer naked. CARTO
+    // voyager_only_labels is free, reliable, and renders crisp Arabic
+    // place names worldwide.
+    overlayUrl: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png",
+    attribution: "Imagery © Esri · Labels © CARTO / OpenStreetMap",
+    maxZoom: 19,
     subdomains: "abcd",
   },
 };

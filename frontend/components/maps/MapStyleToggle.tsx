@@ -46,7 +46,7 @@ export default function MapStyleToggle({
   return (
     <div
       dir="rtl"
-      className={`absolute top-3 left-3 z-[400] flex items-center gap-1 p-1 rounded-2xl bg-white/95 backdrop-blur shadow-[0_8px_24px_-8px_rgba(0,40,69,0.35)] border border-white/60 flex-wrap max-w-[calc(100vw-1.5rem)] ${className}`}
+      className={`absolute top-3 left-3 z-[1000] flex items-center gap-1 p-1 rounded-2xl bg-white/95 backdrop-blur shadow-[0_8px_24px_-8px_rgba(0,40,69,0.35)] border border-white/60 flex-wrap max-w-[calc(100vw-1.5rem)] ${className}`}
       role="group"
       aria-label="نمط الخريطة"
     >
