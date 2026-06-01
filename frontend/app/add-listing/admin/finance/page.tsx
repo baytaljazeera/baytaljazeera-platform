@@ -2,8 +2,7 @@
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { normalizeConfirmationPhrase } from "@/lib/utils";
-import { resolveAdminHref } from "@/components/admin/adminNavigation";
-import Link from "next/link";
+import { alertDialog, promptDialog } from "@/components/ui/ConfirmDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -101,6 +100,14 @@ interface FinanceQueueTicket {
   created_at: string;
   updated_at: string;
   reply_count?: number;
+  // populated once support hands the ticket to finance — this is the
+  // signal the Correspondence inbox uses to filter, so messages don't
+  // mix with raw financial requests sitting in Support's queue.
+  transferred_to_finance_at?: string | null;
+  auto_assigned_role?: string | null;
+  invoice_id?: number | null;
+  refund_id?: number | null;
+  amount?: number | null;
 }
 
 interface Refund {
@@ -120,6 +127,19 @@ interface Refund {
   bank_reference?: string;
   refund_invoice_number?: string;
   refund_invoice_issued_at?: string;
+  payout_proof_url?: string | null;
+  ticket_id?: number | null;
+}
+
+// Finance Correspondence inbox shows only tickets Support has actually
+// handed off — either with the new transferred_to_finance_at stamp, or
+// (legacy fallback) tickets whose owning role is now finance_admin.
+// Anything still owned by support_admin stays on the Support side.
+function isFinanceInboxTicket(t: FinanceQueueTicket): boolean {
+  return (
+    t.department === "financial" &&
+    (Boolean(t.transferred_to_finance_at) || t.auto_assigned_role === "finance_admin")
+  );
 }
 
 export default function FinancePage() {
@@ -165,8 +185,10 @@ export default function FinancePage() {
     isOpen: boolean;
     refund: Refund | null;
     bankReference: string;
+    payoutProofUrl: string;
+    uploadingProof: boolean;
     loading: boolean;
-  }>({ isOpen: false, refund: null, bankReference: "", loading: false });
+  }>({ isOpen: false, refund: null, bankReference: "", payoutProofUrl: "", uploadingProof: false, loading: false });
 
   const [suspendModal, setSuspendModal] = useState<{
     isOpen: boolean;
@@ -239,9 +261,7 @@ export default function FinancePage() {
         });
         if (!res.ok || cancelled) return;
         const data = await res.json();
-        const list = (data.tickets || []).filter(
-          (t: FinanceQueueTicket) => t.department === "financial"
-        );
+        const list = (data.tickets || []).filter(isFinanceInboxTicket);
         if (!cancelled) setFinanceQueueTickets(list);
       } catch {
         if (!cancelled) setFinanceQueueTickets([]);
@@ -356,11 +376,7 @@ export default function FinancePage() {
         });
         if (listRes.ok) {
           const listData = await listRes.json();
-          setFinanceQueueTickets(
-            (listData.tickets || []).filter(
-              (ticket: FinanceQueueTicket) => ticket.department === "financial"
-            )
-          );
+          setFinanceQueueTickets((listData.tickets || []).filter(isFinanceInboxTicket));
         }
       } else {
         setFinanceTicketModal((prev) => ({ ...prev, statusUpdating: false }));
@@ -396,11 +412,7 @@ export default function FinancePage() {
         });
         if (listRes.ok) {
           const listData = await listRes.json();
-          setFinanceQueueTickets(
-            (listData.tickets || []).filter(
-              (t: FinanceQueueTicket) => t.department === "financial"
-            )
-          );
+          setFinanceQueueTickets((listData.tickets || []).filter(isFinanceInboxTicket));
         }
       } else {
         setFinanceTicketModal((prev) => ({ ...prev, sending: false }));
@@ -420,6 +432,90 @@ export default function FinancePage() {
     fetchPaymentStats();
     fetchWithdrawalRequests();
   }, []);
+
+  // Convert a Support-transferred ticket into a refund operation. The
+  // accountant lands on the inbox, picks a ticket, and we hand it off
+  // to the from-ticket endpoint. Optional amount prompt lets them
+  // override the invoice total if it's partial; empty = use invoice.
+  async function convertTicketToRefund(ticket: FinanceQueueTicket) {
+    if (ticket.refund_id) {
+      await alertDialog({
+        title: "هذه التذكرة مرتبطة بطلب استرداد",
+        message: `سبق تحويلها إلى عملية استرداد رقم #${ticket.refund_id}. افتح تبويب "الاستردادات" لمتابعتها.`,
+        variant: "info",
+      });
+      return;
+    }
+
+    const promptedAmount = await promptDialog({
+      title: "تحويل المراسلة إلى عملية استرداد",
+      message: `سيتم إنشاء طلب استرداد بحالة "تحت العمليات" مرتبط بالتذكرة ${ticket.ticket_number || ("#" + ticket.id)}. يمكنك ترك المبلغ فارغاً لاستخدام قيمة الفاتورة المرتبطة، أو إدخال مبلغ جزئي.`,
+      label: "المبلغ بالريال (اختياري)",
+      placeholder: "مثال: 199.00",
+      confirmText: "تحويل إلى عملية استرداد",
+      cancelText: "تراجع",
+      variant: "warning",
+    });
+
+    if (promptedAmount === null) return; // user cancelled
+
+    const trimmed = promptedAmount.trim();
+    let amount: number | null = null;
+    if (trimmed) {
+      const parsed = parseFloat(trimmed);
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        await alertDialog({
+          title: "مبلغ غير صالح",
+          message: "أدخل مبلغاً رقمياً أكبر من صفر، أو اتركه فارغاً للاستخدام التلقائي.",
+          variant: "error",
+        });
+        return;
+      }
+      amount = parsed;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/api/finance/refunds/from-ticket/${ticket.id}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(amount != null ? { amount } : {}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog({
+          title: "تعذّر التحويل إلى استرداد",
+          message: data?.error || "حدث خطأ غير متوقع. حاول مجدداً.",
+          variant: "error",
+        });
+        return;
+      }
+      await alertDialog({
+        title: "تم تحويل المراسلة إلى عملية استرداد",
+        message: `الطلب رقم #${data?.refund?.id ?? "—"} يظهر الآن في تبويب "الاستردادات" تحت "تحت العمليات". لن ينتقل إلى "تم الاسترداد" حتى يتم رفع إثبات التحويل البنكي.`,
+        variant: "success",
+      });
+      setActiveTab("refunds");
+      setRefundFilter("approved");
+      try {
+        const listRes = await fetch(`${API_URL}/api/support`, {
+          credentials: "include",
+          headers: getAuthHeaders(),
+        });
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          setFinanceQueueTickets((listData.tickets || []).filter(isFinanceInboxTicket));
+        }
+      } catch { /* ignore */ }
+      await fetchRefunds("approved");
+    } catch (err) {
+      await alertDialog({
+        title: "فشل الاتصال بالخادم",
+        message: "تحقق من اتصال الإنترنت ثم حاول مرة أخرى.",
+        variant: "error",
+      });
+    }
+  }
 
   async function fetchWithdrawalRequests() {
     try {
@@ -791,26 +887,92 @@ export default function FinancePage() {
   }
 
   function openPayoutModal(refund: Refund) {
-    setPayoutModal({ isOpen: true, refund, bankReference: "", loading: false });
+    setPayoutModal({
+      isOpen: true, refund,
+      bankReference: "", payoutProofUrl: "",
+      uploadingProof: false, loading: false,
+    });
+  }
+
+  // Upload the bank transfer screenshot. Uses the platform's generic
+  // upload route (/api/uploads or /api/payments/uploads/payout-proof
+  // depending on env); we try the dedicated endpoint first and fall
+  // back to the generic one so this works even if backend deploy lags.
+  async function uploadPayoutProof(file: File) {
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      await alertDialog({
+        title: "حجم الملف كبير",
+        message: "يجب ألا يتجاوز حجم صورة الإثبات 8 ميجابايت.",
+        variant: "error",
+      });
+      return;
+    }
+    setPayoutModal(prev => ({ ...prev, uploadingProof: true }));
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      let url = "";
+      let res = await fetch(`${API_URL}/api/uploads`, {
+        method: "POST",
+        credentials: "include",
+        headers: getAuthHeaders(),
+        body: fd,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        url = data?.url || data?.fileUrl || data?.path || "";
+      }
+      if (!url) {
+        // Last-ditch fallback: convert to a data URL so the proof at least
+        // gets persisted alongside the refund. Backend accepts any string.
+        url = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("read failed"));
+          reader.readAsDataURL(file);
+        });
+      }
+      setPayoutModal(prev => ({ ...prev, payoutProofUrl: url, uploadingProof: false }));
+    } catch (err) {
+      setPayoutModal(prev => ({ ...prev, uploadingProof: false }));
+      await alertDialog({
+        title: "فشل رفع الصورة",
+        message: "تعذّر رفع صورة إثبات التحويل. حاول مرة أخرى.",
+        variant: "error",
+      });
+    }
   }
 
   async function confirmPayout() {
     if (!payoutModal.refund) return;
-    
+
+    if (!payoutModal.payoutProofUrl.trim()) {
+      await alertDialog({
+        title: "إثبات التحويل البنكي مطلوب",
+        message: "ارفع صورة لإيصال التحويل البنكي أولاً. لن ينتقل الطلب إلى \"تم الاسترداد\" قبل ذلك.",
+        variant: "warning",
+      });
+      return;
+    }
+
     setPayoutModal(prev => ({ ...prev, loading: true }));
-    
+
     try {
       const res = await fetch(`/api/finance/refunds/${payoutModal.refund.id}/confirm-payout`, {
         method: "PATCH",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bank_reference: payoutModal.bankReference }),
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({
+          bank_reference: payoutModal.bankReference,
+          payout_proof_url: payoutModal.payoutProofUrl,
+        }),
       });
-      
-      setPayoutModal({ isOpen: false, refund: null, bankReference: "", loading: false });
-      
+
+      setPayoutModal({ isOpen: false, refund: null, bankReference: "", payoutProofUrl: "", uploadingProof: false, loading: false });
+
       if (res.ok) {
-        setSuccessModal({ isOpen: true, message: "تم تأكيد التحويل البنكي بنجاح", type: "success" });
+        setSuccessModal({ isOpen: true, message: "تم تأكيد التحويل البنكي ونقل الطلب إلى \"تم الاسترداد\"", type: "success" });
         fetchRefunds(refundFilter);
         fetchAllRefunds();
         fetchStats();
@@ -820,7 +982,7 @@ export default function FinancePage() {
       }
     } catch (err) {
       console.error("Error confirming payout:", err);
-      setPayoutModal({ isOpen: false, refund: null, bankReference: "", loading: false });
+      setPayoutModal({ isOpen: false, refund: null, bankReference: "", payoutProofUrl: "", uploadingProof: false, loading: false });
       setSuccessModal({ isOpen: true, message: "حدث خطأ في الاتصال", type: "error" });
     }
   }
@@ -1835,15 +1997,24 @@ export default function FinancePage() {
 
       {activeTab === "messages" && (
         <div className="space-y-4">
+          <div className="rounded-2xl border border-[#D4AF37]/30 bg-gradient-to-l from-[#FFFCEE] via-white to-white p-5 shadow-[0_8px_24px_-12px_rgba(212,175,55,0.35)]">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-[#D4AF37]/15 text-[#9A7D28]">
+                <Headset className="w-5 h-5" />
+              </span>
+              <div className="flex-1">
+                <h3 className="text-lg font-black text-[#002845]">
+                  صندوق وصول المالية
+                </h3>
+                <p className="text-sm text-[#002845]/70 mt-1 leading-relaxed">
+                  هذه ليست نسخة من البريد الموحد — هنا فقط تظهر المراسلات التي أرسلها فريق الدعم إلى المالية بعد فحصها مع العميل. اضغط <span className="font-bold text-[#9A7D28]">«تحويل إلى عملية استرداد»</span> لإنشاء طلب استرداد يبقى تحت العمليات حتى يُرفع إثبات التحويل البنكي.
+                </p>
+              </div>
+            </div>
+          </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-bold text-[#002845] flex items-center gap-2">
-                <Headset className="w-5 h-5 text-[#D4AF37]" />
-                تذاكر قسم المالية
-              </h3>
-              <p className="text-sm text-gray-500 mt-1">
-                التذاكر المحوّلة إلى المالية أو المُنشأة كمالية — الرد يصل العميل عبر صفحة تذاكره.
-              </p>
+            <div className="text-xs text-gray-500">
+              يعرض المراسلات المُحوَّلة من الدعم فقط — رد الفريق على العميل يُرسل من خلال هذا الصندوق ويصل العميل في صفحة تذاكره.
             </div>
             <button
               type="button"
@@ -1857,11 +2028,7 @@ export default function FinancePage() {
                     });
                     if (res.ok) {
                       const data = await res.json();
-                      setFinanceQueueTickets(
-                        (data.tickets || []).filter(
-                          (t: FinanceQueueTicket) => t.department === "financial"
-                        )
-                      );
+                      setFinanceQueueTickets((data.tickets || []).filter(isFinanceInboxTicket));
                     }
                   } finally {
                     setLoadingFinanceQueue(false);
@@ -1883,16 +2050,10 @@ export default function FinancePage() {
             ) : financeQueueTickets.length === 0 ? (
               <div className="p-12 text-center">
                 <MessageSquare className="w-14 h-14 text-gray-200 mx-auto mb-3" />
-                <p className="font-bold text-[#002845]">لا توجد تذاكر في قائمة المالية حالياً</p>
+                <p className="font-bold text-[#002845]">صندوق المالية فارغ حالياً</p>
                 <p className="text-sm text-gray-500 mt-2 max-w-md mx-auto">
-                  عند تحويل تذكرة من البريد الموحد إلى المالية، أو عند إنشاء تذكرة بقسم مالي، ستظهر هنا.
+                  لا توجد مراسلات محوّلة من الدعم بانتظار المالية. سيظهر هنا فقط ما يحوّله فريق الدعم بعد فحص شكوى أو طلب استرداد مع العميل.
                 </p>
-                <Link
-                  href={resolveAdminHref("/admin/omni-inbox")}
-                  className="inline-block mt-4 text-sm font-bold text-[#D4AF37] hover:underline"
-                >
-                  فتح البريد الموحد
-                </Link>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -1903,7 +2064,7 @@ export default function FinancePage() {
                       <th className="px-4 py-3 font-bold text-[#002845]">العميل</th>
                       <th className="px-4 py-3 font-bold text-[#002845]">الحالة</th>
                       <th className="px-4 py-3 font-bold text-[#002845]">آخر تحديث</th>
-                      <th className="px-4 py-3 font-bold text-[#002845] w-40">إجراء</th>
+                      <th className="px-4 py-3 font-bold text-[#002845] w-72">إجراء</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1913,7 +2074,20 @@ export default function FinancePage() {
                         className="border-b border-gray-50 hover:bg-slate-50/80 transition-colors"
                       >
                         <td className="px-4 py-3">
-                          <span className="font-mono text-xs text-gray-500 block">{t.ticket_number}</span>
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <span className="font-mono text-xs text-gray-500">{t.ticket_number}</span>
+                            {t.transferred_to_finance_at && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-[#D4AF37]/15 text-[#9A7D28] px-2 py-0.5 text-[10px] font-bold">
+                                <Headset className="w-3 h-3" />
+                                محوّل من الدعم
+                              </span>
+                            )}
+                            {t.refund_id && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-800 px-2 py-0.5 text-[10px] font-bold">
+                                استرداد #{t.refund_id}
+                              </span>
+                            )}
+                          </div>
                           <span className="font-medium text-[#002845]">{t.subject}</span>
                         </td>
                         <td className="px-4 py-3 text-gray-700">
@@ -1939,14 +2113,39 @@ export default function FinancePage() {
                             : "—"}
                         </td>
                         <td className="px-4 py-3">
-                          <button
-                            type="button"
-                            onClick={() => void openFinanceTicketModal(t.id)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#002845] text-white text-xs font-bold hover:bg-[#003d5c] transition-all duration-300"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            عرض / رد
-                          </button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void openFinanceTicketModal(t.id)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#002845] text-white text-xs font-bold hover:bg-[#003d5c] transition-all duration-300"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              عرض / رد
+                            </button>
+                            {!t.refund_id ? (
+                              <button
+                                type="button"
+                                onClick={() => void convertTicketToRefund(t)}
+                                title="إنشاء طلب استرداد مرتبط بهذه التذكرة"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] text-xs font-black hover:shadow-md transition-all duration-300"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                تحويل إلى عملية استرداد
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab("refunds");
+                                  setRefundFilter("approved");
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 text-xs font-bold hover:bg-emerald-100 transition-all duration-300"
+                              >
+                                <CreditCard className="w-3.5 h-3.5" />
+                                فتح الاسترداد #{t.refund_id}
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -2425,9 +2624,9 @@ export default function FinancePage() {
       )}
 
       {payoutModal.isOpen && payoutModal.refund && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="p-6 bg-blue-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" dir="rtl">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="p-6 bg-blue-50 overflow-y-auto">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
                   <CreditCard className="w-6 h-6 text-blue-600" />
@@ -2437,7 +2636,7 @@ export default function FinancePage() {
                   <p className="text-sm text-gray-500">{payoutModal.refund.user_name}</p>
                 </div>
               </div>
-              
+
               <div className="bg-white rounded-xl p-3 mb-4">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">المبلغ المحول:</span>
@@ -2448,7 +2647,74 @@ export default function FinancePage() {
                   <span className="text-gray-800">{payoutModal.refund.user_email}</span>
                 </div>
               </div>
-              
+
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-[#002845] mb-2">
+                  إثبات التحويل البنكي
+                  <span className="text-red-500 mr-1">*</span>
+                </label>
+                <div className="text-[11px] text-gray-500 mb-2">
+                  ارفع صورة (PNG / JPG) من إيصال التحويل من بنكك. لن يكتمل الاسترداد بدونها.
+                </div>
+                {!payoutModal.payoutProofUrl ? (
+                  <label
+                    className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-xl px-4 py-6 cursor-pointer transition ${
+                      payoutModal.uploadingProof
+                        ? "border-gray-200 bg-gray-50 cursor-wait"
+                        : "border-[#D4AF37]/40 bg-[#FFFCEE] hover:bg-[#FFF7D6]"
+                    }`}
+                  >
+                    {payoutModal.uploadingProof ? (
+                      <>
+                        <RefreshCw className="w-6 h-6 animate-spin text-[#D4AF37]" />
+                        <span className="text-xs font-bold text-[#9A7D28]">جاري رفع الصورة…</span>
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="w-6 h-6 text-[#9A7D28]" />
+                        <span className="text-xs font-bold text-[#9A7D28]">اضغط لاختيار صورة إثبات التحويل</span>
+                        <span className="text-[10px] text-gray-500">حتى 8 ميجابايت</span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void uploadPayoutProof(f);
+                      }}
+                      disabled={payoutModal.uploadingProof}
+                    />
+                  </label>
+                ) : (
+                  <div className="flex items-center gap-3 border-2 border-emerald-200 bg-emerald-50 rounded-xl p-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-emerald-800">تم رفع صورة الإثبات</p>
+                      <a
+                        href={payoutModal.payoutProofUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] text-emerald-700 underline truncate block"
+                      >
+                        فتح الصورة في تبويب جديد
+                      </a>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPayoutModal(prev => ({ ...prev, payoutProofUrl: "" }))
+                      }
+                      className="text-emerald-700 hover:text-emerald-900 p-1"
+                      aria-label="إزالة"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">رقم المرجع البنكي (اختياري)</label>
                 <input
@@ -2459,25 +2725,28 @@ export default function FinancePage() {
                   className="w-full border-2 border-gray-200 focus:border-[#D4AF37] rounded-xl px-4 py-3 text-sm transition outline-none"
                 />
               </div>
-              
+
               <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3">
                 <p className="text-xs text-yellow-700 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4" />
-                  تأكد من أنك قمت بتحويل المبلغ فعلياً عبر النظام البنكي قبل التأكيد
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  يجب تنفيذ التحويل البنكي فعلياً قبل التأكيد. عند الضغط، يُبلَّغ العميل بإتمام الاسترداد (يصل خلال 4-6 أيام عمل بنكية).
                 </p>
               </div>
             </div>
-            
-            <div className="p-4 flex gap-3">
+
+            <div className="p-4 flex gap-3 border-t border-gray-100 bg-white">
               <button
                 onClick={confirmPayout}
-                disabled={payoutModal.loading}
-                className="flex-1 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold transition disabled:opacity-50"
+                disabled={payoutModal.loading || !payoutModal.payoutProofUrl}
+                title={!payoutModal.payoutProofUrl ? "ارفع صورة إثبات التحويل أولاً" : ""}
+                className="flex-1 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {payoutModal.loading ? "جاري التأكيد..." : "تأكيد التحويل"}
+                {payoutModal.loading ? "جاري التأكيد..." : "تأكيد التحويل وإتمام الاسترداد"}
               </button>
               <button
-                onClick={() => setPayoutModal({ isOpen: false, refund: null, bankReference: "", loading: false })}
+                onClick={() =>
+                  setPayoutModal({ isOpen: false, refund: null, bankReference: "", payoutProofUrl: "", uploadingProof: false, loading: false })
+                }
                 className="flex-1 py-3 border-2 border-gray-200 text-gray-600 rounded-xl font-medium hover:bg-gray-50 transition"
                 disabled={payoutModal.loading}
               >

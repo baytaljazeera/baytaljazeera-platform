@@ -2268,8 +2268,38 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'original_amount') THEN
           ALTER TABLE refunds ADD COLUMN original_amount DECIMAL(10, 2);
         END IF;
+        -- Link a refund row back to the support ticket it was born from, so the
+        -- Finance Correspondence inbox can show "this conversation is now a refund
+        -- in progress" and the accountant can jump from message → refund cleanly.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'ticket_id') THEN
+          ALTER TABLE refunds ADD COLUMN ticket_id INTEGER REFERENCES support_tickets(id) ON DELETE SET NULL;
+        END IF;
+        -- Bank transfer proof (screenshot URL). The owner's rule: a refund only
+        -- moves to "تم الاسترداد" after the accountant uploads a receipt of the
+        -- actual bank transfer. confirm-payout rejects without this.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'payout_proof_url') THEN
+          ALTER TABLE refunds ADD COLUMN payout_proof_url TEXT;
+        END IF;
       END $$;
     `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_refunds_ticket ON refunds(ticket_id) WHERE ticket_id IS NOT NULL;`);
+
+    // Mark when a support ticket was handed off to Finance. The Finance
+    // Correspondence inbox is filtered by transferred_to_finance_at IS NOT NULL
+    // so it only shows messages Support has actually escalated — not every
+    // financial-flavoured request that came in the front door.
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'transferred_to_finance_at') THEN
+          ALTER TABLE support_tickets ADD COLUMN transferred_to_finance_at TIMESTAMPTZ;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'transferred_to_finance_by') THEN
+          ALTER TABLE support_tickets ADD COLUMN transferred_to_finance_by UUID REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_tickets_transferred_finance ON support_tickets(transferred_to_finance_at DESC) WHERE transferred_to_finance_at IS NOT NULL;`);
 
     // Add invoice_id column to account_complaints for linking complaints to invoices
     await db.query(`

@@ -287,6 +287,22 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
   const routing = getSmartRouting(department, priority || 'medium', planTier);
   const deptConfig = DEPARTMENT_CONFIG[department];
 
+  // Owner rule: customers never land directly in Finance. Even an explicit
+  // refund request enters through Support first — Support clarifies, tries
+  // to resolve, and only escalates to Finance if money actually needs to
+  // move. So when a customer (role='user') opens a financial ticket, we
+  // re-route to support_admin and keep the financial department/category
+  // tag so the eventual transfer pre-fills the right context. Internal
+  // admins (manual creates from finance) keep the original routing.
+  if (
+    department === 'financial' &&
+    req.user?.role === 'user' &&
+    routing.role === 'finance_admin'
+  ) {
+    routing.role = 'support_admin';
+    routing.sla_hours = Math.max(routing.sla_hours, 24);
+  }
+
   // Resilient INSERT ladder — try richest shape first, drop snapshot then
   // sla_due_at on 42703 so deploys can land before the migration finishes.
   let result;
@@ -610,30 +626,98 @@ router.patch(
     }
 
     const ticket = existing.rows[0];
-    if (ticket.department === "financial") {
-      return res.status(400).json({ error: "التذكرة مسجّلة بالفعل في القسم المالي" });
+    // Idempotency rule: a ticket can be "in" the financial department and
+    // still need transferring — customer-originated refund requests now
+    // land in support_admin with department='financial' on purpose, so we
+    // gate on auto_assigned_role / transferred_to_finance_at, not department.
+    if (
+      ticket.auto_assigned_role === "finance_admin" ||
+      ticket.transferred_to_finance_at
+    ) {
+      return res.status(400).json({ error: "التذكرة محوّلة بالفعل إلى المالية" });
     }
 
     const routing = getSmartRouting("financial", ticket.priority || "medium");
 
-    const updated = await db.query(
-      `UPDATE support_tickets st
-       SET department = 'financial',
-           category = COALESCE(NULLIF(TRIM(category), ''), 'financial'),
-           auto_assigned_role = $1,
-           sla_hours = $2,
-           updated_at = NOW()
-       WHERE st.id = $3
-       RETURNING *`,
-      [routing.role, routing.sla_hours, id]
-    );
+    // Resilient UPDATE — try with the new transferred_to_finance_* columns
+    // first, fall back to the legacy shape if a rolling deploy hasn't
+    // migrated yet (42703 = column does not exist).
+    let updated;
+    try {
+      updated = await db.query(
+        `UPDATE support_tickets st
+         SET department = 'financial',
+             category = COALESCE(NULLIF(TRIM(category), ''), 'financial'),
+             auto_assigned_role = $1,
+             sla_hours = $2,
+             transferred_to_finance_at = NOW(),
+             transferred_to_finance_by = $3,
+             updated_at = NOW()
+         WHERE st.id = $4
+         RETURNING *`,
+        [routing.role, routing.sla_hours, req.user.id, id]
+      );
+    } catch (err) {
+      if (!(err && err.code === '42703')) throw err;
+      updated = await db.query(
+        `UPDATE support_tickets st
+         SET department = 'financial',
+             category = COALESCE(NULLIF(TRIM(category), ''), 'financial'),
+             auto_assigned_role = $1,
+             sla_hours = $2,
+             updated_at = NOW()
+         WHERE st.id = $3
+         RETURNING *`,
+        [routing.role, routing.sla_hours, id]
+      );
+    }
 
-    const auditMessage = "تم تحويل التذكرة إلى قسم المالية";
+    const transferNote = typeof req.body?.note === "string" ? req.body.note.trim() : "";
+    const auditMessage = transferNote
+      ? `تم تحويل التذكرة إلى قسم المالية — ${transferNote}`
+      : "تم تحويل التذكرة إلى قسم المالية";
+
     await db.query(
       `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
        VALUES ($1, $2, 'internal', $3)`,
       [id, req.user.id, auditMessage]
     );
+
+    // Audit log entry (best-effort).
+    try {
+      await db.query(
+        `INSERT INTO support_ticket_audit_log
+           (ticket_id, event_type, actor_user_id, actor_name_snapshot,
+            actor_email_snapshot, actor_role_snapshot, from_role, to_role, payload)
+         VALUES ($1, 'transferred_to_finance', $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+        [
+          id, req.user.id, req.user?.name || null, req.user?.email || null,
+          req.user?.role || null, ticket.auto_assigned_role || null,
+          routing.role, JSON.stringify({ note: transferNote || null }),
+        ]
+      );
+    } catch (e) {
+      if (e && e.code !== '42P01') console.warn('[support transfer] audit:', e.message);
+    }
+
+    // Wake up finance_admin inboxes — best effort, never blocks transfer.
+    try {
+      const fin = await db.query(`SELECT id FROM users WHERE role = 'finance_admin'`);
+      for (const row of fin.rows) {
+        await db.query(
+          `INSERT INTO notifications (user_id, type, title, message, link, created_at)
+           VALUES ($1, 'finance_transfer', $2, $3, $4, NOW())`,
+          [
+            row.id,
+            'مراسلة محوّلة من الدعم',
+            `تذكرة ${ticket.ticket_number || ('#' + ticket.id)} بانتظار مراجعة المالية`,
+            '/add-listing/admin/finance?tab=messages',
+          ]
+        );
+      }
+    } catch (e) {
+      if (e && e.code !== '42P01') console.warn('[support transfer] notify:', e.message);
+    }
 
     res.json({ ok: true, ticket: updated.rows[0], message: auditMessage });
   })

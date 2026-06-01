@@ -1018,10 +1018,186 @@ router.get("/refunds/pending-payout", authMiddleware, requireRoles('finance_admi
   res.json({ refunds: out, count: out.length });
 }));
 
+// ──────────────────────────────────────────────────────────────
+// Convert a Support-transferred ticket into an in-progress refund.
+//
+// Flow:
+//   1. customer submits refund request via composer → support_tickets row
+//      lands with auto_assigned_role='support_admin', department='financial'
+//   2. Support agent clarifies / tries to resolve → if money still has to
+//      move, hits "تحويل إلى المالية" → PATCH /support/:id/transfer
+//      stamps transferred_to_finance_at + reroutes to finance_admin
+//   3. Finance opens the Correspondence inbox, picks this ticket, clicks
+//      "تحويل إلى عملية استرداد" → this route fires.
+//
+// Behaviour:
+//   - Body accepts {amount, reason} optionally — if missing, the route
+//     pulls the smart-suggestion recommendation for this invoice and
+//     uses that as the seed amount.
+//   - The new refund row is inserted with status='approved' directly
+//     (skips pending) because the conversation IS the approval — the
+//     accountant has already weighed it. It then sits in تحت العمليات
+//     until confirm-payout fires with a bank screenshot.
+//   - Returns {ok, refund, ticket} so the UI can navigate straight
+//     into the refund detail view.
+// ──────────────────────────────────────────────────────────────
+router.post(
+  "/refunds/from-ticket/:ticketId",
+  authMiddleware,
+  requireRoles('finance_admin', 'super_admin', 'admin_manager'),
+  asyncHandler(async (req, res) => {
+    const ticketId = parseInt(req.params.ticketId, 10);
+    if (Number.isNaN(ticketId)) {
+      return res.status(400).json({ error: "معرف التذكرة غير صالح" });
+    }
+
+    const ticketRes = await db.query(
+      `SELECT * FROM support_tickets WHERE id = $1`,
+      [ticketId]
+    );
+    if (ticketRes.rows.length === 0) {
+      return res.status(404).json({ error: "التذكرة غير موجودة" });
+    }
+    const ticket = ticketRes.rows[0];
+
+    if (!ticket.transferred_to_finance_at && ticket.auto_assigned_role !== 'finance_admin') {
+      return res.status(400).json({ error: "هذه التذكرة لم تُحوَّل من الدعم بعد" });
+    }
+    if (ticket.refund_id) {
+      return res.status(409).json({
+        error: "هذه التذكرة مرتبطة بطلب استرداد قائم بالفعل",
+        refund_id: ticket.refund_id,
+      });
+    }
+
+    let amount = req.body?.amount != null ? parseFloat(req.body.amount) : null;
+    let reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+    let originalAmount = null;
+    let refundType = 'full';
+
+    if (ticket.invoice_id) {
+      const inv = await db.query(
+        `SELECT total FROM invoices WHERE id = $1`,
+        [ticket.invoice_id]
+      );
+      if (inv.rows[0]) {
+        originalAmount = parseFloat(inv.rows[0].total);
+        if (amount == null) amount = originalAmount;
+        refundType = amount < originalAmount ? 'partial' : 'full';
+        if (amount > originalAmount) {
+          return res.status(400).json({
+            error: `مبلغ الاسترداد (${amount} ر.س) يتجاوز قيمة الفاتورة (${originalAmount} ر.س)`,
+          });
+        }
+      }
+    }
+
+    if (amount == null || isNaN(amount) || amount <= 0) {
+      return res.status(400).json({
+        error: "يجب تحديد مبلغ الاسترداد — لم يتم العثور على مبلغ مرجعي من الفاتورة",
+      });
+    }
+    const roundedAmount = Math.round(amount * 100) / 100;
+    if (!reason) reason = `مُحوَّل من تذكرة ${ticket.ticket_number || ('#' + ticket.id)}`;
+
+    const client = await db.getClient();
+    let didCommit = false;
+    try {
+      await client.query('BEGIN');
+
+      // status='approved' so it immediately appears in "تحت العمليات".
+      // processed_by = the finance admin doing the conversion — the
+      // conversation review IS the approval step.
+      let insert;
+      try {
+        insert = await client.query(`
+          INSERT INTO refunds
+            (user_id, invoice_id, ticket_id, amount, original_amount,
+             refund_type, reason, status, processed_by, processed_at,
+             created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, 'approved', $8, NOW(), NOW(), NOW())
+          RETURNING *
+        `, [
+          ticket.user_id, ticket.invoice_id || null, ticketId,
+          roundedAmount, originalAmount, refundType, reason, req.user.id,
+        ]);
+      } catch (errCol) {
+        if (!(errCol && errCol.code === '42703')) throw errCol;
+        insert = await client.query(`
+          INSERT INTO refunds
+            (user_id, invoice_id, amount, original_amount,
+             refund_type, reason, status, processed_by, processed_at,
+             created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, 'approved', $7, NOW(), NOW(), NOW())
+          RETURNING *
+        `, [
+          ticket.user_id, ticket.invoice_id || null,
+          roundedAmount, originalAmount, refundType, reason, req.user.id,
+        ]);
+      }
+      const refund = insert.rows[0];
+
+      // Back-reference on the ticket so future views show "→ refund #N in progress".
+      try {
+        await client.query(
+          `UPDATE support_tickets SET refund_id = $1, updated_at = NOW() WHERE id = $2`,
+          [refund.id, ticketId]
+        );
+      } catch (e) {
+        if (e && e.code !== '42703') console.warn('[from-ticket] stamp ticket.refund_id:', e.message);
+      }
+
+      // Internal-only reply so the conversation audit trail captures the conversion.
+      try {
+        await client.query(
+          `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
+           VALUES ($1, $2, 'internal', $3)`,
+          [
+            ticketId, req.user.id,
+            `تم تحويل المراسلة إلى عملية استرداد رقم #${refund.id} بمبلغ ${roundedAmount} ر.س. الحالة الآن: تحت العمليات.`,
+          ]
+        );
+      } catch (e) { /* never block the conversion */ }
+
+      await client.query(
+        `INSERT INTO billing_audit_log (action, user_id, admin_id, details)
+         VALUES ('REFUND_CREATED_FROM_TICKET', $1, $2, $3)`,
+        [ticket.user_id, req.user.id, JSON.stringify({
+          ticket_id: ticketId, refund_id: refund.id, amount: roundedAmount,
+        })]
+      );
+
+      // Customer-facing notification — sets the 4–6 day expectation up front.
+      await client.query(`
+        INSERT INTO notifications (user_id, type, title, body, channel, status, payload, scheduled_at)
+        VALUES ($1, 'refund_in_progress', 'تم تحويل طلبك إلى عملية استرداد',
+                $2, 'app', 'pending', $3, NOW())
+      `, [
+        ticket.user_id,
+        `جاري تنفيذ استرداد بمبلغ ${roundedAmount} ر.س إلى حسابك البنكي. عملية التحويل تستغرق عادة 4-6 أيام عمل.`,
+        JSON.stringify({ refund_id: refund.id, ticket_id: ticketId, amount: roundedAmount }),
+      ]);
+
+      await client.query('COMMIT');
+      didCommit = true;
+      client.release();
+
+      res.json({ ok: true, refund, ticket_id: ticketId });
+    } catch (err) {
+      if (!didCommit) {
+        try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+      }
+      try { client.release(); } catch { /* ignore */ }
+      throw err;
+    }
+  })
+);
+
 router.post("/refunds", authMiddleware, requireRoles('finance_admin'), asyncHandler(async (req, res) => {
-  const { userId, user_id, userPlanId, user_plan_id, invoice_id, amount, reason } = req.body;
+  const { userId, user_id, userPlanId, user_plan_id, invoice_id, amount, reason, ticket_id } = req.body;
   const actualUserId = userId || user_id;
   const actualUserPlanId = userPlanId || user_plan_id;
+  const linkedTicketId = ticket_id ? parseInt(ticket_id, 10) : null;
   
   if (!actualUserId || !amount) {
     return res.status(400).json({ error: "المستخدم والمبلغ مطلوبان" });
@@ -1101,11 +1277,36 @@ router.post("/refunds", authMiddleware, requireRoles('finance_admin'), asyncHand
       }
     }
     
-    const result = await client.query(`
-      INSERT INTO refunds (user_id, user_plan_id, invoice_id, amount, original_amount, refund_type, reason, status, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW(), NOW())
-      RETURNING *
-    `, [actualUserId, actualUserPlanId || null, invoice_id || null, roundedAmount, originalAmount, refundType, reason || null]);
+    // ticket_id is best-effort: if the column doesn't exist on this env yet
+    // (rolling migration) we drop back to the legacy insert.
+    let result;
+    try {
+      result = await client.query(`
+        INSERT INTO refunds (user_id, user_plan_id, invoice_id, ticket_id, amount, original_amount, refund_type, reason, status, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', NOW(), NOW())
+        RETURNING *
+      `, [actualUserId, actualUserPlanId || null, invoice_id || null, linkedTicketId, roundedAmount, originalAmount, refundType, reason || null]);
+    } catch (errCol) {
+      if (!(errCol && errCol.code === '42703')) throw errCol;
+      result = await client.query(`
+        INSERT INTO refunds (user_id, user_plan_id, invoice_id, amount, original_amount, refund_type, reason, status, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW(), NOW())
+        RETURNING *
+      `, [actualUserId, actualUserPlanId || null, invoice_id || null, roundedAmount, originalAmount, refundType, reason || null]);
+    }
+
+    // Stamp refund_id back on the ticket so the Finance Correspondence
+    // inbox can show "this conversation already has a refund in progress".
+    if (linkedTicketId && result.rows[0]) {
+      try {
+        await client.query(
+          `UPDATE support_tickets SET refund_id = $1, updated_at = NOW() WHERE id = $2 AND refund_id IS NULL`,
+          [result.rows[0].id, linkedTicketId]
+        );
+      } catch (e) {
+        if (e && e.code !== '42703') console.warn('[POST refunds] stamp ticket.refund_id:', e.message);
+      }
+    }
 
     await client.query(`
       INSERT INTO billing_audit_log (action, user_id, admin_id, details)
@@ -1208,7 +1409,10 @@ router.patch("/refunds/:id/approve", authMiddleware, requireRoles('finance_admin
       }
     }
     
-    let notificationBody = `تمت الموافقة على طلب استرداد بمبلغ ${refund.amount} ر.س. سيتم تحويل المبلغ إلى حسابك خلال 3-5 أيام عمل.`;
+    // Owner's standing rule: communicate 4–6 business days, never less.
+    // That window covers the accountant's bank trip + the inter-bank
+    // settlement, so we don't promise a number we can't keep.
+    let notificationBody = `تمت الموافقة على طلب استرداد بمبلغ ${refund.amount} ر.س. سيتم تحويل المبلغ إلى حسابك خلال 4-6 أيام عمل.`;
     if (subscription_action === 'suspend') {
       notificationBody += ' تم إيقاف اشتراكك مؤقتاً.';
     } else if (subscription_action === 'cancel') {
@@ -1267,23 +1471,54 @@ router.patch("/refunds/:id/confirm-payout", authMiddleware, requireRoles('financ
   
   try {
     const { id } = req.params;
-    const { bank_reference } = req.body;
+    const { bank_reference, payout_proof_url } = req.body;
 
     if (isNaN(parseInt(id))) {
       client.release();
       return res.status(400).json({ error: "معرف الاسترداد غير صالح" });
     }
-    
+
+    // Owner's rule: a refund cannot move to "تم الاسترداد" until the
+    // accountant has actually transferred the money AND uploaded a
+    // screenshot of the bank transfer. Without proof we keep the row in
+    // "تحت العمليات" so it stays visible on the pending list.
+    const proofUrl = typeof payout_proof_url === "string" ? payout_proof_url.trim() : "";
+    if (!proofUrl) {
+      client.release();
+      return res.status(400).json({
+        error: "يجب رفع صورة إثبات التحويل البنكي قبل تأكيد الاسترداد",
+      });
+    }
+
     await client.query('BEGIN');
-    
-    const result = await client.query(`
-      UPDATE refunds 
-      SET status = 'completed', payout_confirmed_at = NOW(), bank_reference = $1, updated_at = NOW()
-      WHERE id = $2 AND status = 'approved'
-      RETURNING *,
-        (SELECT email FROM users WHERE id = user_id) as user_email,
-        (SELECT name FROM users WHERE id = user_id) as user_name
-    `, [bank_reference || null, id]);
+
+    // Resilient UPDATE — try with payout_proof_url first, fall back to
+    // legacy shape if a rolling deploy hasn't migrated the column.
+    let result;
+    try {
+      result = await client.query(`
+        UPDATE refunds
+        SET status = 'completed',
+            payout_confirmed_at = NOW(),
+            bank_reference = $1,
+            payout_proof_url = $2,
+            updated_at = NOW()
+        WHERE id = $3 AND status = 'approved'
+        RETURNING *,
+          (SELECT email FROM users WHERE id = user_id) as user_email,
+          (SELECT name FROM users WHERE id = user_id) as user_name
+      `, [bank_reference || null, proofUrl, id]);
+    } catch (errCol) {
+      if (!(errCol && errCol.code === '42703')) throw errCol;
+      result = await client.query(`
+        UPDATE refunds
+        SET status = 'completed', payout_confirmed_at = NOW(), bank_reference = $1, updated_at = NOW()
+        WHERE id = $2 AND status = 'approved'
+        RETURNING *,
+          (SELECT email FROM users WHERE id = user_id) as user_email,
+          (SELECT name FROM users WHERE id = user_id) as user_name
+      `, [bank_reference || null, id]);
+    }
     
     if (result.rows.length === 0) {
       await client.query('ROLLBACK');
