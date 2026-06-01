@@ -2529,22 +2529,28 @@ router.post(
 
       const caseNumber = await refundSM.mintCaseNumber(client);
 
+      // estimated_refund_amount seeds at conversion (= rounded, which
+      // came from invoice total or body override). approved_refund_amount
+      // stays NULL until pending_review → approved fills it.
       const insert = await client.query(
         `INSERT INTO refunds
            (user_id, invoice_id, ticket_id, amount, original_amount,
+            estimated_refund_amount,
             refund_type, reason, status, case_number,
             bank_name, bank_account_iban, account_holder_name,
+            assigned_finance_user_id,
             state_changed_at, state_changed_by,
             waiting_info_requested_at,
             processed_by, processed_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
-                 $10, $11, $12, NOW(), $13, $14, $15, NOW(), NOW(), NOW())
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                 $11, $12, $13, $14, NOW(), $15, $16, $17, NOW(), NOW(), NOW())
          RETURNING *`,
         [
           ticket.user_id, ticket.invoice_id || null, ticketId,
-          rounded, originalAmount, refundType, reason, initialState, caseNumber,
+          rounded, originalAmount, rounded, refundType, reason, initialState, caseNumber,
           bankName, iban, holder,
-          req.user.id,
+          req.user.id,           // auto-claim by the finance user opening the case
+          req.user.id,           // state_changed_by
           hasBankInfo ? null : new Date(),
           req.user.id,
         ]
@@ -2776,9 +2782,32 @@ router.patch(
       const values = [toState, req.user.id];
       let nextIdx = 3;
 
-      if (toState === refundSM.STATES.APPROVED && !refund.due_at) {
-        updates.push(`due_at = $${nextIdx++}`);
-        values.push(refundSM.computeDueAt(6));
+      // Auto-claim: any finance user transitioning an unassigned case
+      // takes ownership of it. Stops the "everybody can edit, nobody is
+      // responsible" failure mode without forcing an extra click.
+      if (!refund.assigned_finance_user_id) {
+        updates.push(`assigned_finance_user_id = $${nextIdx++}`);
+        values.push(req.user.id);
+      }
+
+      if (toState === refundSM.STATES.APPROVED) {
+        // Commit the approved figure to its own column AND mirror it
+        // onto amount so downstream invoicing/notifications use the
+        // exact number finance signed off on.
+        const approvedAmt = payloadIn.approved_refund_amount != null
+          ? Math.round(Number(payloadIn.approved_refund_amount) * 100) / 100
+          : (refund.approved_refund_amount != null ? Number(refund.approved_refund_amount) : null);
+        updates.push(`approved_refund_amount = $${nextIdx++}`);
+        values.push(approvedAmt);
+        updates.push(`amount = $${nextIdx++}`);
+        values.push(approvedAmt);
+        if (!refund.due_at) {
+          updates.push(`due_at = $${nextIdx++}`);
+          values.push(refundSM.computeDueAt(6));
+        }
+        updates.push(`processed_by = COALESCE(processed_by, $${nextIdx++})`);
+        values.push(req.user.id);
+        updates.push(`processed_at = COALESCE(processed_at, NOW())`);
       }
       if (toState === refundSM.STATES.WAITING_CUSTOMER_INFO) {
         updates.push(`waiting_info_requested_at = NOW()`);
@@ -2913,6 +2942,67 @@ router.post(
       try { client.release(); } catch { /* ignore */ }
       throw err;
     }
+  })
+);
+
+// Assign / re-assign / unassign the case to a finance user. Use:
+//   PATCH /api/finance/cases/:id/assign  { assignee_id: <uuid|null> }
+// Passing null or omitting assignee_id un-assigns the case (it goes
+// back to the "free" pool that any finance user can claim by acting).
+router.patch(
+  "/cases/:id/assign",
+  authMiddleware,
+  requireRoles(...financeRoles),
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "معرف غير صالح" });
+    const assigneeRaw = req.body?.assignee_id;
+    const assignee = (typeof assigneeRaw === "string" && assigneeRaw.trim()) ? assigneeRaw.trim() : null;
+
+    // Validate assignee is actually a finance user (or super_admin).
+    if (assignee) {
+      const u = await db.query(
+        `SELECT id, role FROM users WHERE id = $1`,
+        [assignee]
+      );
+      if (u.rows.length === 0) {
+        return res.status(400).json({ error: "المستخدم غير موجود" });
+      }
+      const okRoles = new Set(["finance_admin", "super_admin", "admin_manager"]);
+      if (!okRoles.has(u.rows[0].role)) {
+        return res.status(400).json({ error: "لا يمكن تعيين القضية إلى مستخدم خارج فريق المالية" });
+      }
+    }
+
+    const r = await db.query(`SELECT id, assigned_finance_user_id, status FROM refunds WHERE id = $1`, [id]);
+    if (r.rows.length === 0) return res.status(404).json({ error: "القضية غير موجودة" });
+    const fromAssignee = r.rows[0].assigned_finance_user_id;
+
+    const upd = await db.query(
+      `UPDATE refunds
+       SET assigned_finance_user_id = $1, updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      [assignee, id]
+    );
+
+    // Best-effort event log so the case timeline shows who got it.
+    try {
+      await db.query(
+        `INSERT INTO refund_case_events
+           (refund_id, event_type, actor_user_id, actor_name_snapshot,
+            actor_role_snapshot, payload)
+         VALUES ($1, 'assignment_changed', $2, $3, $4, $5::jsonb)`,
+        [
+          id, req.user.id, req.user?.name || null, req.user?.role || null,
+          JSON.stringify({ from: fromAssignee, to: assignee }),
+        ]
+      );
+    } catch (e) {
+      if (e && e.code !== '42P01') console.warn('[assign] event log:', e.message);
+    }
+
+    res.json({ ok: true, case: upd.rows[0] });
   })
 );
 

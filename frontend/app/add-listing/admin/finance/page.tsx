@@ -131,6 +131,150 @@ interface Refund {
   ticket_id?: number | null;
 }
 
+// ── Refund Case (new state machine) ───────────────────────────────
+type CaseState =
+  | "pending_review"
+  | "waiting_customer_info"
+  | "approved"
+  | "awaiting_bank_transfer"
+  | "proof_uploaded"
+  | "completed"
+  | "rejected";
+
+interface RefundCase {
+  id: number;
+  case_number?: string | null;
+  status: CaseState;
+  amount: number;
+  original_amount?: number | null;
+  estimated_refund_amount?: number | null;
+  approved_refund_amount?: number | null;
+  refund_type?: string;
+  reason?: string | null;
+  created_at: string;
+  updated_at: string;
+  state_changed_at?: string | null;
+  due_at?: string | null;
+  priority?: string | null;
+  payout_proof_url?: string | null;
+  payout_confirmed_at?: string | null;
+  bank_reference?: string | null;
+  refund_invoice_number?: string | null;
+  bank_name?: string | null;
+  bank_account_iban?: string | null;
+  account_holder_name?: string | null;
+  ticket_id?: number | null;
+  invoice_id?: number | null;
+  user_id?: string;
+  user_name?: string;
+  user_email?: string;
+  ticket_number?: string | null;
+  original_invoice_number?: string | null;
+  assigned_finance_user_id?: string | null;
+  pre_wait_status?: string | null;
+  decision_note?: string | null;
+}
+
+interface CaseCounters {
+  finance_inbox: number;
+  pending_review: number;
+  waiting_customer_info: number;
+  approved: number;
+  awaiting_bank_transfer: number;
+  proof_uploaded: number;
+  cases_active_total: number;
+  completed: number;
+  rejected: number;
+}
+
+interface FinanceInboxTicket {
+  id: number;
+  ticket_number: string;
+  subject: string;
+  description?: string;
+  status: string;
+  category?: string | null;
+  subcategory?: string | null;
+  user_id?: string;
+  user_name?: string;
+  user_email?: string;
+  invoice_id?: number | null;
+  reply_count?: number;
+  created_at: string;
+  updated_at: string;
+  transferred_to_finance_at?: string | null;
+  refund_bank_details_snapshot?: {
+    bank_name?: string;
+    bank_account_iban?: string;
+    account_holder_name?: string;
+  } | null;
+  user_bank_name?: string | null;
+  user_bank_iban?: string | null;
+  user_account_holder?: string | null;
+}
+
+interface RefundCaseEvent {
+  id: number;
+  event_type: string;
+  from_state?: string | null;
+  to_state?: string | null;
+  actor_name?: string | null;
+  actor_role?: string | null;
+  note?: string | null;
+  payload?: any;
+  created_at: string;
+}
+
+const EMPTY_CASE_COUNTERS: CaseCounters = {
+  finance_inbox: 0,
+  pending_review: 0,
+  waiting_customer_info: 0,
+  approved: 0,
+  awaiting_bank_transfer: 0,
+  proof_uploaded: 0,
+  cases_active_total: 0,
+  completed: 0,
+  rejected: 0,
+};
+
+const CASE_STATE_LABEL: Record<CaseState, string> = {
+  pending_review: "قيد المراجعة",
+  waiting_customer_info: "بانتظار بيانات العميل",
+  approved: "معتمد",
+  awaiting_bank_transfer: "بانتظار التحويل البنكي",
+  proof_uploaded: "إيصال مرفوع",
+  completed: "مكتمل",
+  rejected: "مرفوض",
+};
+
+const CASE_STATE_TONE: Record<CaseState, string> = {
+  pending_review: "bg-slate-50 text-slate-800 border-slate-200",
+  waiting_customer_info: "bg-amber-50 text-amber-900 border-amber-200",
+  approved: "bg-sky-50 text-sky-900 border-sky-200",
+  awaiting_bank_transfer: "bg-rose-50 text-rose-900 border-rose-300",
+  proof_uploaded: "bg-violet-50 text-violet-900 border-violet-200",
+  completed: "bg-emerald-50 text-emerald-900 border-emerald-200",
+  rejected: "bg-gray-100 text-gray-700 border-gray-200",
+};
+
+const ACTIVE_BOARD_COLUMNS: CaseState[] = [
+  "pending_review",
+  "waiting_customer_info",
+  "approved",
+  "awaiting_bank_transfer",
+  "proof_uploaded",
+];
+
+// Module-level so CaseDetailModal can use it without prop-drilling.
+function fmtSAR(amount: number): string {
+  if (amount == null || Number.isNaN(amount)) return "—";
+  return new Intl.NumberFormat("ar-SA", {
+    style: "currency",
+    currency: "SAR",
+    minimumFractionDigits: 0,
+  }).format(amount);
+}
+
 // Finance Correspondence inbox shows only tickets Support has actually
 // handed off — either with the new transferred_to_finance_at stamp, or
 // (legacy fallback) tickets whose owning role is now finance_admin.
@@ -148,7 +292,7 @@ export default function FinancePage() {
   const [refunds, setRefunds] = useState<Refund[]>([]);
   const [allRefunds, setAllRefunds] = useState<Refund[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "subscribers" | "refunds" | "payments" | "invoices" | "messages" | "withdrawals">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "cases" | "subscribers" | "refunds" | "payments" | "invoices" | "messages" | "withdrawals">("cases");
   const [payments, setPayments] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [paymentStats, setPaymentStats] = useState<any>(null);
@@ -223,6 +367,41 @@ export default function FinancePage() {
   const [resetLoading, setResetLoading] = useState(false);
   const RESET_INVOICES_PHRASE = "تصفير الفواتير التجريبية";
 
+  // ── Refund Case state machine: board + detail + inbox ────────────
+  const [caseCounters, setCaseCounters] = useState<CaseCounters>(EMPTY_CASE_COUNTERS);
+  const [cases, setCases] = useState<RefundCase[]>([]);
+  const [loadingCases, setLoadingCases] = useState(false);
+  const [caseBoardFilter, setCaseBoardFilter] = useState<"active" | "completed" | "rejected" | "all">("active");
+  const [caseDetail, setCaseDetail] = useState<{
+    open: boolean;
+    loading: boolean;
+    case: RefundCase | null;
+    events: RefundCaseEvent[];
+    ticketReplies: Array<{ id: number; message: string; sender_type: string; created_at: string }>;
+    actionLoading: boolean;
+  }>({ open: false, loading: false, case: null, events: [], ticketReplies: [], actionLoading: false });
+
+  // New independent finance inbox
+  const [financeInbox, setFinanceInbox] = useState<FinanceInboxTicket[]>([]);
+  const [loadingFinanceInbox, setLoadingFinanceInbox] = useState(false);
+  const [inboxItemModal, setInboxItemModal] = useState<{
+    open: boolean;
+    loading: boolean;
+    ticket: FinanceInboxTicket | null;
+    replies: Array<{ id: number; message: string; sender_type: string; created_at: string }>;
+    replyBody: string;
+    sending: boolean;
+  }>({ open: false, loading: false, ticket: null, replies: [], replyBody: "", sending: false });
+  const [convertModal, setConvertModal] = useState<{
+    open: boolean;
+    ticket: FinanceInboxTicket | null;
+    amount: string;
+    bankName: string;
+    iban: string;
+    holder: string;
+    loading: boolean;
+  }>({ open: false, ticket: null, amount: "", bankName: "", iban: "", holder: "", loading: false });
+
   const [financeQueueTickets, setFinanceQueueTickets] = useState<FinanceQueueTicket[]>([]);
   const [loadingFinanceQueue, setLoadingFinanceQueue] = useState(false);
   const [financeTicketModal, setFinanceTicketModal] = useState<{
@@ -248,6 +427,22 @@ export default function FinancePage() {
   useEffect(() => {
     fetchPlans();
   }, []);
+
+  // ── Refund Case state machine: keep counters fresh always ──────
+  // (used by tabs nav badges + the cases board banner). Polls
+  // gently every 30s while the dashboard is mounted.
+  useEffect(() => {
+    void fetchCaseCounters();
+    const t = setInterval(() => { void fetchCaseCounters(); }, 30000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "cases") void fetchCases(caseBoardFilter);
+    if (activeTab === "messages") void fetchFinanceInbox();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, caseBoardFilter]);
 
   useEffect(() => {
     if (activeTab !== "messages") return;
@@ -514,6 +709,354 @@ export default function FinancePage() {
         message: "تحقق من اتصال الإنترنت ثم حاول مرة أخرى.",
         variant: "error",
       });
+    }
+  }
+
+  // ── Refund Case state machine: API helpers ─────────────────────
+  async function fetchCaseCounters() {
+    try {
+      const res = await fetch(`${API_URL}/api/finance/counters`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCaseCounters({ ...EMPTY_CASE_COUNTERS, ...(data.counters || {}) });
+      }
+    } catch { /* leave previous values */ }
+  }
+
+  async function fetchCases(filter: "active" | "completed" | "rejected" | "all" = caseBoardFilter) {
+    setLoadingCases(true);
+    try {
+      const res = await fetch(`${API_URL}/api/finance/cases?state=${filter}`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCases((data.cases || []) as RefundCase[]);
+      }
+    } finally {
+      setLoadingCases(false);
+    }
+  }
+
+  async function fetchFinanceInbox() {
+    setLoadingFinanceInbox(true);
+    try {
+      const res = await fetch(`${API_URL}/api/finance/inbox`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setFinanceInbox((data.tickets || []) as FinanceInboxTicket[]);
+      }
+    } finally {
+      setLoadingFinanceInbox(false);
+    }
+  }
+
+  async function openCaseDetail(id: number) {
+    setCaseDetail({ open: true, loading: true, case: null, events: [], ticketReplies: [], actionLoading: false });
+    try {
+      const res = await fetch(`${API_URL}/api/finance/cases/${id}`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCaseDetail({
+          open: true,
+          loading: false,
+          case: data.case as RefundCase,
+          events: (data.events || []) as RefundCaseEvent[],
+          ticketReplies: (data.ticket_replies || []) as any[],
+          actionLoading: false,
+        });
+      } else {
+        setCaseDetail((p) => ({ ...p, loading: false }));
+      }
+    } catch {
+      setCaseDetail((p) => ({ ...p, loading: false }));
+    }
+  }
+
+  async function caseTransition(toState: CaseState, opts: { note?: string; payload?: any } = {}) {
+    if (!caseDetail.case) return;
+    setCaseDetail((p) => ({ ...p, actionLoading: true }));
+    try {
+      const res = await fetch(`${API_URL}/api/finance/cases/${caseDetail.case.id}/transition`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ to: toState, note: opts.note || "", payload: opts.payload || {} }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog({
+          title: "تعذّر تغيير الحالة",
+          message: data?.error || "غير متاح",
+          variant: "error",
+        });
+        setCaseDetail((p) => ({ ...p, actionLoading: false }));
+        return;
+      }
+      // Refresh detail + board + counters in parallel
+      await Promise.all([
+        openCaseDetail(caseDetail.case.id),
+        fetchCases(),
+        fetchCaseCounters(),
+      ]);
+    } catch {
+      setCaseDetail((p) => ({ ...p, actionLoading: false }));
+    }
+  }
+
+  async function uploadCaseProof(file: File): Promise<string | null> {
+    if (file.size > 8 * 1024 * 1024) {
+      await alertDialog({
+        title: "حجم الملف كبير",
+        message: "يجب ألا يتجاوز حجم الإيصال 8 ميجابايت.",
+        variant: "error",
+      });
+      return null;
+    }
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      let url = "";
+      const res = await fetch(`${API_URL}/api/uploads`, {
+        method: "POST",
+        credentials: "include",
+        headers: getAuthHeaders(),
+        body: fd,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        url = data?.url || data?.fileUrl || data?.path || "";
+      }
+      if (!url) {
+        url = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("read failed"));
+          reader.readAsDataURL(file);
+        });
+      }
+      return url;
+    } catch {
+      await alertDialog({
+        title: "فشل رفع الصورة",
+        message: "تعذّر رفع صورة إثبات التحويل. حاول مرة أخرى.",
+        variant: "error",
+      });
+      return null;
+    }
+  }
+
+  async function attachProofToCase(file: File, bankReference: string) {
+    if (!caseDetail.case) return;
+    setCaseDetail((p) => ({ ...p, actionLoading: true }));
+    const url = await uploadCaseProof(file);
+    if (!url) {
+      setCaseDetail((p) => ({ ...p, actionLoading: false }));
+      return;
+    }
+    try {
+      const res = await fetch(`${API_URL}/api/finance/cases/${caseDetail.case.id}/attach-proof`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ payout_proof_url: url, bank_reference: bankReference || "" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog({
+          title: "تعذّر رفع الإثبات",
+          message: data?.error || "غير متاح",
+          variant: "error",
+        });
+        setCaseDetail((p) => ({ ...p, actionLoading: false }));
+        return;
+      }
+      await Promise.all([
+        openCaseDetail(caseDetail.case.id),
+        fetchCases(),
+        fetchCaseCounters(),
+      ]);
+    } catch {
+      setCaseDetail((p) => ({ ...p, actionLoading: false }));
+    }
+  }
+
+  // Inbox actions
+  async function openInboxItem(id: number) {
+    setInboxItemModal({ open: true, loading: true, ticket: null, replies: [], replyBody: "", sending: false });
+    try {
+      const res = await fetch(`${API_URL}/api/finance/inbox/${id}`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setInboxItemModal({
+          open: true,
+          loading: false,
+          ticket: data.ticket as FinanceInboxTicket,
+          replies: (data.replies || []) as any[],
+          replyBody: "",
+          sending: false,
+        });
+      } else {
+        setInboxItemModal((p) => ({ ...p, loading: false }));
+      }
+    } catch {
+      setInboxItemModal((p) => ({ ...p, loading: false }));
+    }
+  }
+
+  async function sendInboxReply() {
+    const t = inboxItemModal.ticket;
+    if (!t || !inboxItemModal.replyBody.trim()) return;
+    setInboxItemModal((p) => ({ ...p, sending: true }));
+    try {
+      const res = await fetch(`${API_URL}/api/finance/inbox/${t.id}/reply`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ message: inboxItemModal.replyBody.trim() }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setInboxItemModal((p) => ({
+          ...p,
+          replies: data.reply ? [...p.replies, data.reply] : p.replies,
+          replyBody: "",
+          sending: false,
+        }));
+      } else {
+        setInboxItemModal((p) => ({ ...p, sending: false }));
+      }
+    } catch {
+      setInboxItemModal((p) => ({ ...p, sending: false }));
+    }
+  }
+
+  async function resolveInboxItem() {
+    const t = inboxItemModal.ticket;
+    if (!t) return;
+    const note = await promptDialog({
+      title: "إغلاق الاستفسار في صندوق المالية",
+      message: `سيُغلق ${t.ticket_number} بحالة "تم الرد"، ويُسمح للعميل بإعادة فتحه خلال 7 أيام فقط.`,
+      label: "ملاحظة داخلية (اختياري)",
+      placeholder: "مثال: تم الرد على استفسار الفاتورة.",
+      confirmText: "تأكيد الإغلاق",
+      cancelText: "تراجع",
+      variant: "info",
+    });
+    if (note === null) return;
+    const res = await fetch(`${API_URL}/api/finance/inbox/${t.id}/resolve`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ note: (note || "").trim() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      await alertDialog({ title: "تعذّر الإغلاق", message: data?.error || "—", variant: "error" });
+      return;
+    }
+    await alertDialog({
+      title: "تم الإغلاق",
+      message: "تم الرد على العميل وأُغلقت التذكرة. مهلة إعادة الفتح: 7 أيام.",
+      variant: "success",
+    });
+    setInboxItemModal({ open: false, loading: false, ticket: null, replies: [], replyBody: "", sending: false });
+    await Promise.all([fetchFinanceInbox(), fetchCaseCounters()]);
+  }
+
+  async function returnInboxItemToSupport() {
+    const t = inboxItemModal.ticket;
+    if (!t) return;
+    const note = await promptDialog({
+      title: "إعادة التذكرة إلى الدعم",
+      message: "هذا الإجراء يُعيد التذكرة لقائمة الدعم. اكتب سبباً مختصراً.",
+      label: "السبب",
+      placeholder: "مثال: هذه ليست مالية — يجب أن يعالجها الدعم.",
+      confirmText: "إعادة للدعم",
+      cancelText: "تراجع",
+      variant: "warning",
+    });
+    if (note === null) return;
+    const res = await fetch(`${API_URL}/api/finance/inbox/${t.id}/return-to-support`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ note: (note || "").trim() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      await alertDialog({ title: "تعذّر الإرجاع", message: data?.error || "—", variant: "error" });
+      return;
+    }
+    setInboxItemModal({ open: false, loading: false, ticket: null, replies: [], replyBody: "", sending: false });
+    await Promise.all([fetchFinanceInbox(), fetchCaseCounters()]);
+  }
+
+  function openConvertModal(t: FinanceInboxTicket) {
+    const snap = t.refund_bank_details_snapshot || {};
+    setConvertModal({
+      open: true,
+      ticket: t,
+      amount: "",
+      bankName: (snap.bank_name || t.user_bank_name || "").toString(),
+      iban: (snap.bank_account_iban || t.user_bank_iban || "").toString(),
+      holder: (snap.account_holder_name || t.user_account_holder || "").toString(),
+      loading: false,
+    });
+  }
+
+  async function submitConvertToCase() {
+    const t = convertModal.ticket;
+    if (!t) return;
+    setConvertModal((p) => ({ ...p, loading: true }));
+    const body: any = {};
+    if (convertModal.amount.trim()) body.amount = parseFloat(convertModal.amount.trim());
+    if (convertModal.bankName || convertModal.iban || convertModal.holder) {
+      body.bank = {
+        bank_name: convertModal.bankName.trim(),
+        bank_account_iban: convertModal.iban.trim(),
+        account_holder_name: convertModal.holder.trim(),
+      };
+    }
+    try {
+      const res = await fetch(`${API_URL}/api/finance/inbox/${t.id}/convert-to-case`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog({
+          title: "تعذّر التحويل لقضية استرداد",
+          message: data?.error || "—",
+          variant: "error",
+        });
+        setConvertModal((p) => ({ ...p, loading: false }));
+        return;
+      }
+      setConvertModal({ open: false, ticket: null, amount: "", bankName: "", iban: "", holder: "", loading: false });
+      setInboxItemModal({ open: false, loading: false, ticket: null, replies: [], replyBody: "", sending: false });
+      await Promise.all([fetchFinanceInbox(), fetchCases(), fetchCaseCounters()]);
+      setActiveTab("cases");
+      if (data?.refund?.id) {
+        void openCaseDetail(data.refund.id);
+      }
+    } catch {
+      setConvertModal((p) => ({ ...p, loading: false }));
     }
   }
 
@@ -1155,13 +1698,24 @@ export default function FinancePage() {
     ).length;
     const withdrawalPendingCount = stats?.revenue?.pendingWithdrawalRequestsCount || 0;
     return [
+      // Cases Board is the new primary workspace. Listed first so the
+      // accountant lands here by default; legacy "الاستردادات" tab
+      // stays as a compatibility layer (banner inside warns it's legacy).
+      {
+        id: "cases" as const,
+        label: "قضايا الاسترداد",
+        icon: Wallet,
+        casesAwaitingBank: caseCounters.awaiting_bank_transfer,
+        casesActive: caseCounters.cases_active_total,
+      },
+      { id: "messages" as const, label: "صندوق المالية", icon: MessageSquare, inboxCount: caseCounters.finance_inbox },
       { id: "overview" as const, label: "نظرة عامة", icon: TrendingUp },
       { id: "payments" as const, label: "المدفوعات", icon: CreditCard },
       { id: "invoices" as const, label: "الفواتير", icon: PiggyBank },
       { id: "subscribers" as const, label: "المشتركون", icon: Users },
       {
         id: "refunds" as const,
-        label: "الاستردادات",
+        label: "الاستردادات (قديم)",
         icon: Wallet,
         pendingCount,
         awaitingPayoutCount,
@@ -1172,9 +1726,8 @@ export default function FinancePage() {
         icon: DollarSign,
         withdrawalPending: withdrawalPendingCount,
       },
-      { id: "messages" as const, label: "مراسلات المالية", icon: MessageSquare },
     ];
-  }, [allRefunds, stats?.revenue?.pendingWithdrawalRequestsCount]);
+  }, [allRefunds, stats?.revenue?.pendingWithdrawalRequestsCount, caseCounters]);
 
   if (loading) {
     return (
@@ -1521,8 +2074,248 @@ export default function FinancePage() {
         </div>
       )}
 
+      {activeTab === "cases" && (
+        <div className="space-y-4" dir="rtl">
+          {/* Bank action banner: appears when any case is awaiting the
+              accountant's physical trip to the bank. Pulses when there's
+              a case older than 24h. */}
+          {caseCounters.awaiting_bank_transfer > 0 && (() => {
+            const oldest = cases.find(c => c.status === "awaiting_bank_transfer");
+            const hoursOld = oldest?.state_changed_at
+              ? Math.floor((Date.now() - new Date(oldest.state_changed_at).getTime()) / 3600000)
+              : 0;
+            const urgent = hoursOld >= 24;
+            return (
+              <div className={`relative overflow-hidden rounded-2xl border-2 p-5 shadow-lg ${
+                urgent
+                  ? "border-rose-300 bg-gradient-to-l from-rose-50 via-white to-white"
+                  : "border-[#D4AF37]/40 bg-gradient-to-l from-[#FFFCEE] via-white to-white"
+              }`}>
+                <div className={`absolute inset-y-0 right-0 w-1.5 ${urgent ? "bg-rose-500 animate-pulse" : "bg-[#D4AF37] animate-pulse"}`} />
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${
+                    urgent ? "bg-rose-100 text-rose-700" : "bg-[#D4AF37]/20 text-[#9A7D28]"
+                  }`}>
+                    <CreditCard className="w-7 h-7" />
+                  </div>
+                  <div className="flex-1 min-w-[200px]">
+                    <h3 className={`text-lg font-black ${urgent ? "text-rose-900" : "text-[#002845]"}`}>
+                      🏦 {caseCounters.awaiting_bank_transfer} قضية بانتظار ذهابك للبنك
+                    </h3>
+                    <p className={`text-sm mt-0.5 ${urgent ? "text-rose-800" : "text-[#002845]/70"}`}>
+                      {oldest && hoursOld > 0
+                        ? `أقدم قضية: ${oldest.case_number || "#" + oldest.id} منذ ${hoursOld} ساعة`
+                        : "اذهب إلى البنك ونفّذ التحويل، ثم ارفع الإيصال هنا."}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const el = document.getElementById("col-awaiting_bank_transfer");
+                      if (el) el.scrollIntoView({ behavior: "smooth", block: "start", inline: "center" });
+                    }}
+                    className="px-4 py-2 rounded-xl bg-[#002845] text-white text-sm font-bold hover:bg-[#003d5c] transition"
+                  >
+                    افتح القائمة
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Header + filter */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-xl font-black text-[#002845] flex items-center gap-2">
+                <Wallet className="w-6 h-6 text-[#D4AF37]" />
+                لوحة قضايا الاسترداد
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">
+                مساحة العمل الأساسية للمالية. كل قضية لها حالة واضحة، مبلغ معتمد، وخط زمني.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {(["active", "completed", "rejected", "all"] as const).map(f => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setCaseBoardFilter(f)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                    caseBoardFilter === f
+                      ? "bg-[#002845] text-white shadow"
+                      : "bg-white text-[#002845]/70 border border-gray-200 hover:bg-slate-50"
+                  }`}
+                >
+                  {f === "active" ? "نشطة" : f === "completed" ? "مكتملة" : f === "rejected" ? "مرفوضة" : "الكل"}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => { void fetchCases(caseBoardFilter); void fetchCaseCounters(); }}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 bg-white text-[#002845] hover:bg-slate-50 inline-flex items-center gap-1.5"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingCases ? "animate-spin" : ""}`} />
+                تحديث
+              </button>
+            </div>
+          </div>
+
+          {/* Counters strip */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            {[
+              { k: "pending_review", label: "قيد المراجعة", v: caseCounters.pending_review, tone: "bg-slate-50 text-slate-800" },
+              { k: "waiting_customer_info", label: "بانتظار العميل", v: caseCounters.waiting_customer_info, tone: "bg-amber-50 text-amber-900" },
+              { k: "approved", label: "معتمد", v: caseCounters.approved, tone: "bg-sky-50 text-sky-900" },
+              { k: "awaiting_bank_transfer", label: "بانتظار البنك", v: caseCounters.awaiting_bank_transfer, tone: "bg-rose-50 text-rose-900" },
+              { k: "proof_uploaded", label: "إيصال مرفوع", v: caseCounters.proof_uploaded, tone: "bg-violet-50 text-violet-900" },
+              { k: "completed", label: "مكتمل", v: caseCounters.completed, tone: "bg-emerald-50 text-emerald-900" },
+            ].map(s => (
+              <div key={s.k} className={`rounded-xl p-3 border border-white shadow-sm ${s.tone}`}>
+                <div className="text-[10px] font-bold opacity-70">{s.label}</div>
+                <div className="text-2xl font-black mt-0.5">{s.v}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Board */}
+          {caseBoardFilter === "active" ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+              {ACTIVE_BOARD_COLUMNS.map((colState) => {
+                const colCases = cases.filter(c => c.status === colState);
+                return (
+                  <div
+                    key={colState}
+                    id={`col-${colState}`}
+                    className={`rounded-2xl border-2 p-3 min-h-[200px] ${CASE_STATE_TONE[colState]}`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-xs font-black">{CASE_STATE_LABEL[colState]}</h4>
+                      <span className="text-xs font-bold bg-white/80 px-2 py-0.5 rounded-full">
+                        {colCases.length}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {colCases.length === 0 ? (
+                        <p className="text-xs opacity-60 text-center py-4">لا توجد قضايا هنا</p>
+                      ) : colCases.map(c => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => void openCaseDetail(c.id)}
+                          className="w-full text-right bg-white rounded-xl p-3 hover:shadow-md transition border border-white/60"
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-mono text-[10px] text-gray-500">{c.case_number || `#${c.id}`}</span>
+                            {c.due_at && colState === "awaiting_bank_transfer" && (() => {
+                              const days = Math.ceil((new Date(c.due_at).getTime() - Date.now()) / 86400000);
+                              return (
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                  days < 0 ? "bg-rose-100 text-rose-900"
+                                  : days <= 1 ? "bg-amber-100 text-amber-900"
+                                  : "bg-emerald-100 text-emerald-900"
+                                }`}>
+                                  {days < 0 ? `متأخر ${Math.abs(days)}ي` : `${days}ي متبقي`}
+                                </span>
+                              );
+                            })()}
+                          </div>
+                          <p className="text-sm font-bold text-[#002845] truncate">{c.user_name || "—"}</p>
+                          <p className="text-[11px] text-gray-500 truncate">{c.user_email || ""}</p>
+                          <div className="mt-2 flex items-center justify-between">
+                            <span className="text-base font-black text-[#D4AF37]">
+                              {formatCurrency(Number(c.approved_refund_amount ?? c.estimated_refund_amount ?? c.amount))}
+                            </span>
+                            {colState === "awaiting_bank_transfer" && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-black text-rose-700">
+                                <CreditCard className="w-3 h-3" /> اذهب للبنك
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              {loadingCases ? (
+                <div className="p-12 flex justify-center">
+                  <RefreshCw className="w-10 h-10 animate-spin text-[#D4AF37]" />
+                </div>
+              ) : cases.length === 0 ? (
+                <div className="p-12 text-center text-gray-500">لا توجد قضايا</div>
+              ) : (
+                <table className="w-full text-sm text-right">
+                  <thead className="bg-slate-50 border-b border-gray-100">
+                    <tr>
+                      <th className="px-4 py-3 font-bold text-[#002845]">القضية</th>
+                      <th className="px-4 py-3 font-bold text-[#002845]">العميل</th>
+                      <th className="px-4 py-3 font-bold text-[#002845]">المبلغ</th>
+                      <th className="px-4 py-3 font-bold text-[#002845]">الحالة</th>
+                      <th className="px-4 py-3 font-bold text-[#002845]">آخر تغيير</th>
+                      <th className="px-4 py-3 font-bold text-[#002845] w-32">إجراء</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cases.map(c => (
+                      <tr key={c.id} className="border-b border-gray-50 hover:bg-slate-50/80">
+                        <td className="px-4 py-3 font-mono text-xs">{c.case_number || `#${c.id}`}</td>
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-[#002845]">{c.user_name || "—"}</p>
+                          <p className="text-[10px] text-gray-500">{c.user_email || ""}</p>
+                        </td>
+                        <td className="px-4 py-3 font-bold text-[#D4AF37]">
+                          {formatCurrency(Number(c.approved_refund_amount ?? c.estimated_refund_amount ?? c.amount))}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold border ${CASE_STATE_TONE[c.status]}`}>
+                            {CASE_STATE_LABEL[c.status]}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-[10px] text-gray-500">
+                          {c.state_changed_at ? new Date(c.state_changed_at).toLocaleString("ar-SA") : "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            type="button"
+                            onClick={() => void openCaseDetail(c.id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#002845] text-white text-xs font-bold hover:bg-[#003d5c]"
+                          >
+                            <Eye className="w-3 h-3" />
+                            عرض
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {activeTab === "refunds" && (
         <div className="space-y-4">
+          {/* Legacy compatibility banner */}
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="font-black text-amber-900 text-sm">واجهة قديمة — للحفظ فقط</p>
+              <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+                هذا التبويب هو نسخة قديمة من الاستردادات. استخدم تبويب <span className="font-bold">قضايا الاسترداد</span> كمسار رئيسي. هنا تبقى البيانات قابلة للقراءة فقط حتى نقل كل الاستردادات للنظام الجديد.
+              </p>
+              <button
+                type="button"
+                onClick={() => setActiveTab("cases")}
+                className="mt-2 text-xs font-black text-amber-900 underline"
+              >
+                ← فتح لوحة قضايا الاسترداد
+              </button>
+            </div>
+          </div>
           <div className="flex gap-2">
             {(() => {
               const pendingCount = allRefunds.filter(r => r.status === 'pending').length;
@@ -1996,7 +2789,7 @@ export default function FinancePage() {
       )}
 
       {activeTab === "messages" && (
-        <div className="space-y-4">
+        <div className="space-y-4" dir="rtl">
           <div className="rounded-2xl border border-[#D4AF37]/30 bg-gradient-to-l from-[#FFFCEE] via-white to-white p-5 shadow-[0_8px_24px_-12px_rgba(212,175,55,0.35)]">
             <div className="flex items-start gap-3">
               <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-[#D4AF37]/15 text-[#9A7D28]">
@@ -2004,11 +2797,89 @@ export default function FinancePage() {
               </span>
               <div className="flex-1">
                 <h3 className="text-lg font-black text-[#002845]">
-                  صندوق وصول المالية
+                  صندوق المالية المستقل
                 </h3>
                 <p className="text-sm text-[#002845]/70 mt-1 leading-relaxed">
-                  هذه ليست نسخة من البريد الموحد — هنا فقط تظهر المراسلات التي أرسلها فريق الدعم إلى المالية بعد فحصها مع العميل. اضغط <span className="font-bold text-[#9A7D28]">«تحويل إلى عملية استرداد»</span> لإنشاء طلب استرداد يبقى تحت العمليات حتى يُرفع إثبات التحويل البنكي.
+                  مراسلات حوّلها الدعم. القرار هنا: أرد كاستفسار وأُغلقه، أعيده للدعم، أو حوّله إلى <span className="font-bold text-[#9A7D28]">قضية استرداد</span> في لوحة القضايا.
                 </p>
+              </div>
+              <div className="text-xs font-black text-[#9A7D28] bg-white border border-[#D4AF37]/30 rounded-xl px-3 py-2">
+                {caseCounters.finance_inbox} مراسلة
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            {loadingFinanceInbox && financeInbox.length === 0 ? (
+              <div className="p-12 flex justify-center">
+                <RefreshCw className="w-10 h-10 animate-spin text-[#D4AF37]" />
+              </div>
+            ) : financeInbox.length === 0 ? (
+              <div className="p-12 text-center">
+                <MessageSquare className="w-14 h-14 text-gray-200 mx-auto mb-3" />
+                <p className="font-bold text-[#002845]">صندوق المالية فارغ</p>
+                <p className="text-sm text-gray-500 mt-2 max-w-md mx-auto">
+                  لا توجد مراسلات محوّلة من الدعم. سيظهر هنا فقط ما يحوّله الدعم بعد فحص أوّلي مع العميل.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-right">
+                  <thead className="bg-slate-50 border-b border-gray-100">
+                    <tr>
+                      <th className="px-4 py-3 font-bold text-[#002845]">التذكرة</th>
+                      <th className="px-4 py-3 font-bold text-[#002845]">العميل</th>
+                      <th className="px-4 py-3 font-bold text-[#002845]">حُوّلت</th>
+                      <th className="px-4 py-3 font-bold text-[#002845] w-40">إجراء</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {financeInbox.map((t) => (
+                      <tr key={t.id} className="border-b border-gray-50 hover:bg-slate-50/80">
+                        <td className="px-4 py-3">
+                          <span className="font-mono text-xs text-gray-500 block">{t.ticket_number}</span>
+                          <span className="font-medium text-[#002845]">{t.subject}</span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-700">
+                          <span className="block">{t.user_name || "—"}</span>
+                          <span className="text-xs text-gray-400">{t.user_email || ""}</span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                          {t.transferred_to_finance_at
+                            ? new Date(t.transferred_to_finance_at).toLocaleString("ar-SA")
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            type="button"
+                            onClick={() => void openInboxItem(t.id)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#002845] text-white text-xs font-bold hover:bg-[#003d5c]"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            فتح
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Legacy queue tab — keep as compatibility-only block under
+          the messages tab; reachable only if explicit older URL.
+          Hidden so it doesn't render twice. */}
+      {false && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-[#D4AF37]/30 bg-gradient-to-l from-[#FFFCEE] via-white to-white p-5">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-[#D4AF37]/15 text-[#9A7D28]">
+                <Headset className="w-5 h-5" />
+              </span>
+              <div className="flex-1">
+                <h3 className="text-lg font-black text-[#002845]">صندوق وصول المالية (قديم)</h3>
               </div>
             </div>
           </div>
@@ -3175,6 +4046,583 @@ export default function FinancePage() {
           </div>
         </div>
       )}
+
+      {/* ───────────────── Case Detail modal ───────────────── */}
+      {caseDetail.open && (
+        <CaseDetailModal
+          state={caseDetail}
+          onClose={() =>
+            setCaseDetail({ open: false, loading: false, case: null, events: [], ticketReplies: [], actionLoading: false })
+          }
+          onTransition={(to, opts) => caseTransition(to, opts)}
+          onAttachProof={(file, ref) => attachProofToCase(file, ref)}
+          onUpdateBankInfo={async (bank) => {
+            if (!caseDetail.case) return;
+            const res = await fetch(`${API_URL}/api/finance/cases/${caseDetail.case.id}/customer-info`, {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+              body: JSON.stringify(bank),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              await alertDialog({
+                title: "تعذّر حفظ بيانات البنك",
+                message: data?.error || "—",
+                variant: "error",
+              });
+              return;
+            }
+            await Promise.all([openCaseDetail(caseDetail.case.id), fetchCases(), fetchCaseCounters()]);
+          }}
+        />
+      )}
+
+      {/* ───────────────── Inbox item modal ───────────────── */}
+      {inboxItemModal.open && (
+        <div className="fixed inset-0 bg-black/55 flex items-center justify-center z-[60] p-4" dir="rtl">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="px-5 py-4 border-b border-gray-100 bg-slate-50 flex items-center justify-between">
+              <div>
+                <h4 className="font-black text-[#002845]">
+                  {inboxItemModal.ticket?.subject || "تذكرة"}
+                </h4>
+                <p className="text-xs font-mono text-gray-500 mt-0.5">
+                  {inboxItemModal.ticket?.ticket_number}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInboxItemModal({ open: false, loading: false, ticket: null, replies: [], replyBody: "", sending: false })}
+                className="p-2 rounded-lg hover:bg-gray-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {inboxItemModal.loading ? (
+                <div className="flex justify-center py-12">
+                  <RefreshCw className="w-8 h-8 animate-spin text-[#D4AF37]" />
+                </div>
+              ) : (
+                <>
+                  {inboxItemModal.ticket?.description && (
+                    <div className="bg-slate-50 rounded-xl p-3 text-sm text-[#002845] whitespace-pre-line">
+                      {inboxItemModal.ticket.description}
+                    </div>
+                  )}
+                  {inboxItemModal.replies.map((r) => (
+                    <div
+                      key={r.id}
+                      className={`rounded-xl p-3 text-sm ${
+                        r.sender_type === "admin"
+                          ? "bg-[#FFFCEE] border border-[#D4AF37]/40 mr-6"
+                          : r.sender_type === "internal"
+                            ? "bg-amber-50 border border-amber-200 text-amber-900 text-xs italic"
+                            : "bg-slate-50 border border-slate-200 ml-6"
+                      }`}
+                    >
+                      <p className="whitespace-pre-line">{r.message}</p>
+                      <p className="text-[10px] text-gray-500 mt-1">
+                        {new Date(r.created_at).toLocaleString("ar-SA")}
+                      </p>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+            <div className="border-t border-gray-100 p-3 space-y-2">
+              <textarea
+                value={inboxItemModal.replyBody}
+                onChange={(e) => setInboxItemModal((p) => ({ ...p, replyBody: e.target.value }))}
+                placeholder="اكتب ردك للعميل..."
+                rows={3}
+                className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:border-[#D4AF37] focus:outline-none resize-none"
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={sendInboxReply}
+                  disabled={!inboxItemModal.replyBody.trim() || inboxItemModal.sending}
+                  className="flex-1 px-4 py-2 rounded-xl bg-[#002845] text-white text-sm font-bold hover:bg-[#003d5c] disabled:opacity-40"
+                >
+                  <Send className="w-4 h-4 inline" /> إرسال الرد
+                </button>
+                <button
+                  type="button"
+                  onClick={() => inboxItemModal.ticket && openConvertModal(inboxItemModal.ticket)}
+                  disabled={!inboxItemModal.ticket}
+                  className="px-3 py-2 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] text-xs font-black hover:shadow disabled:opacity-40"
+                >
+                  تحويل لقضية استرداد
+                </button>
+                <button
+                  type="button"
+                  onClick={resolveInboxItem}
+                  className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700"
+                >
+                  إغلاق كاستفسار
+                </button>
+                <button
+                  type="button"
+                  onClick={returnInboxItemToSupport}
+                  className="px-3 py-2 rounded-xl bg-white border border-gray-200 text-[#002845] text-xs font-bold hover:bg-slate-50"
+                >
+                  إعادة للدعم
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ───────────────── Convert-to-Case modal ───────────────── */}
+      {convertModal.open && convertModal.ticket && (
+        <div className="fixed inset-0 bg-black/55 flex items-center justify-center z-[65] p-4" dir="rtl">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] flex flex-col">
+            <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-l from-[#FFFCEE] via-white to-white">
+              <h4 className="font-black text-[#002845]">تحويل إلى قضية استرداد</h4>
+              <p className="text-xs text-gray-500 mt-1">
+                {convertModal.ticket.ticket_number} · {convertModal.ticket.user_name}
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-3">
+              <div>
+                <label className="text-xs font-bold text-[#002845]">المبلغ المقدّر (اختياري)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={convertModal.amount}
+                  onChange={(e) => setConvertModal((p) => ({ ...p, amount: e.target.value }))}
+                  placeholder="اتركه فارغاً لاستخدام قيمة الفاتورة"
+                  className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#D4AF37] focus:outline-none"
+                />
+              </div>
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-xs font-bold text-[#002845] mb-2">بيانات البنك (اختياري — إن كانت متوفرة)</p>
+                <input
+                  type="text"
+                  value={convertModal.bankName}
+                  onChange={(e) => setConvertModal((p) => ({ ...p, bankName: e.target.value }))}
+                  placeholder="اسم البنك"
+                  className="w-full mb-2 border border-gray-200 rounded-xl px-3 py-2 text-sm"
+                />
+                <input
+                  type="text"
+                  value={convertModal.iban}
+                  onChange={(e) => setConvertModal((p) => ({ ...p, iban: e.target.value }))}
+                  placeholder="رقم IBAN"
+                  className="w-full mb-2 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono"
+                />
+                <input
+                  type="text"
+                  value={convertModal.holder}
+                  onChange={(e) => setConvertModal((p) => ({ ...p, holder: e.target.value }))}
+                  placeholder="اسم صاحب الحساب"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+                />
+                <p className="text-[11px] text-gray-500 mt-2">
+                  إذا تركت الحقول فارغة وما عثرنا على بيانات بنك في ملف العميل، تُفتح القضية بحالة <span className="font-bold">«بانتظار بيانات العميل»</span>.
+                </p>
+              </div>
+            </div>
+            <div className="border-t border-gray-100 p-4 flex gap-2">
+              <button
+                type="button"
+                onClick={submitConvertToCase}
+                disabled={convertModal.loading}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] font-black disabled:opacity-50"
+              >
+                {convertModal.loading ? "جاري التحويل..." : "تأكيد"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConvertModal({ open: false, ticket: null, amount: "", bankName: "", iban: "", holder: "", loading: false })}
+                className="px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-slate-50"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Case Detail modal — full case workspace. Extracted so the main
+// FinancePage stays readable. State-driven action buttons appear
+// only when the matching transition is legal.
+// ─────────────────────────────────────────────────────────────────
+function CaseDetailModal({
+  state, onClose, onTransition, onAttachProof, onUpdateBankInfo,
+}: {
+  state: {
+    loading: boolean;
+    case: RefundCase | null;
+    events: RefundCaseEvent[];
+    ticketReplies: Array<{ id: number; message: string; sender_type: string; created_at: string }>;
+    actionLoading: boolean;
+  };
+  onClose: () => void;
+  onTransition: (to: CaseState, opts?: { note?: string; payload?: any }) => Promise<void>;
+  onAttachProof: (file: File, bankRef: string) => Promise<void>;
+  onUpdateBankInfo: (bank: { bank_name: string; bank_account_iban: string; account_holder_name: string }) => Promise<void>;
+}) {
+  const c = state.case;
+  const [approveAmount, setApproveAmount] = useState("");
+  const [approveNote, setApproveNote] = useState("");
+  const [rejectNote, setRejectNote] = useState("");
+  const [bankRef, setBankRef] = useState("");
+  const [bankEdit, setBankEdit] = useState({ bank_name: "", bank_account_iban: "", account_holder_name: "" });
+  const [bankEditOpen, setBankEditOpen] = useState(false);
+
+  useEffect(() => {
+    if (!c) return;
+    setApproveAmount(String(c.approved_refund_amount ?? c.estimated_refund_amount ?? c.amount ?? ""));
+    setApproveNote("");
+    setRejectNote("");
+    setBankRef(c.bank_reference || "");
+    setBankEdit({
+      bank_name: c.bank_name || "",
+      bank_account_iban: c.bank_account_iban || "",
+      account_holder_name: c.account_holder_name || "",
+    });
+  }, [c?.id, c?.status]);
+
+  if (!c && !state.loading) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70] p-4" dir="rtl">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
+        <div className="bg-gradient-to-l from-[#002845] to-[#003d66] text-white px-6 py-5 flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-mono text-[#D4AF37]">{c?.case_number || (c ? `#${c.id}` : "")}</p>
+            <h3 className="text-2xl font-black mt-1 flex items-center gap-3 flex-wrap">
+              {c ? fmtSAR(Number(c.approved_refund_amount ?? c.estimated_refund_amount ?? c.amount)) : "—"}
+              {c && (
+                <span className={`text-xs font-bold px-3 py-1 rounded-full border ${CASE_STATE_TONE[c.status]}`}>
+                  {CASE_STATE_LABEL[c.status]}
+                </span>
+              )}
+            </h3>
+            <p className="text-sm text-white/80 mt-1">{c?.user_name} · {c?.user_email}</p>
+            {c?.due_at && (
+              <p className="text-xs text-[#D4AF37] mt-1">
+                الموعد المستهدف: {new Date(c.due_at).toLocaleDateString("ar-SA")}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {state.loading || !c ? (
+            <div className="flex justify-center py-12">
+              <RefreshCw className="w-10 h-10 animate-spin text-[#D4AF37]" />
+            </div>
+          ) : (
+            <>
+              {/* Tasks panel — state-driven instructions */}
+              <div className="rounded-2xl border-2 border-[#D4AF37]/30 bg-[#FFFCEE] p-4">
+                <h4 className="font-black text-[#002845] text-sm mb-2">المهام الآن</h4>
+                {c.status === "pending_review" && (
+                  <ol className="text-sm text-[#002845] space-y-1 list-decimal pr-5">
+                    <li>راجع المراسلة وبيانات الفاتورة في الأسفل</li>
+                    <li>حدّد المبلغ المعتمد، ثم اضغط «اعتمد»</li>
+                    <li>أو ارفض مع كتابة السبب</li>
+                  </ol>
+                )}
+                {c.status === "waiting_customer_info" && (
+                  <p className="text-sm text-[#002845]">
+                    بانتظار العميل لتزويدنا ببيانات البنك. عند وصولها، اضغط «استلمت البيانات».
+                  </p>
+                )}
+                {c.status === "approved" && (
+                  <ol className="text-sm text-[#002845] space-y-1 list-decimal pr-5">
+                    <li>تأكد من اكتمال بيانات البنك</li>
+                    <li>اضغط «ابدأ التحويل البنكي» لإدراج القضية في قائمة عمل المحاسب</li>
+                  </ol>
+                )}
+                {c.status === "awaiting_bank_transfer" && (
+                  <ol className="text-sm text-[#002845] space-y-1 list-decimal pr-5">
+                    <li>اذهب إلى <span className="font-black">{c.bank_name || "—"}</span></li>
+                    <li>حوّل <span className="font-black text-[#D4AF37]">{fmtSAR(Number(c.approved_refund_amount ?? c.amount))}</span> إلى IBAN: <span className="font-mono">{c.bank_account_iban}</span></li>
+                    <li>صوّر الإيصال، وارفعه أدناه</li>
+                  </ol>
+                )}
+                {c.status === "proof_uploaded" && (
+                  <p className="text-sm text-[#002845]">
+                    تم رفع الإيصال. اضغط «تأكيد الاكتمال» لإبلاغ العميل ولإصدار فاتورة الاسترداد.
+                  </p>
+                )}
+                {(c.status === "completed" || c.status === "rejected") && (
+                  <p className="text-sm text-[#002845]">القضية مغلقة. {c.decision_note ? `الملاحظة: ${c.decision_note}` : ""}</p>
+                )}
+              </div>
+
+              {/* Action region per state */}
+              {c.status === "pending_review" && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-[#002845]">المبلغ المعتمد (ر.س)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={approveAmount}
+                    onChange={(e) => setApproveAmount(e.target.value)}
+                    className="w-full border-2 border-gray-200 focus:border-[#D4AF37] rounded-xl px-3 py-2 text-sm outline-none"
+                  />
+                  <textarea
+                    value={approveNote}
+                    onChange={(e) => setApproveNote(e.target.value)}
+                    placeholder="ملاحظة الاعتماد (اختياري)"
+                    rows={2}
+                    className="w-full border-2 border-gray-200 focus:border-[#D4AF37] rounded-xl px-3 py-2 text-sm resize-none outline-none"
+                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      disabled={state.actionLoading || !approveAmount}
+                      onClick={() => onTransition("approved", { note: approveNote, payload: { approved_refund_amount: parseFloat(approveAmount) } })}
+                      className="py-2.5 rounded-xl bg-sky-600 text-white text-sm font-black hover:bg-sky-700 disabled:opacity-40"
+                    >
+                      <CheckCircle2 className="w-4 h-4 inline" /> اعتماد
+                    </button>
+                    <button
+                      type="button"
+                      disabled={state.actionLoading}
+                      onClick={() => onTransition("waiting_customer_info", { note: approveNote })}
+                      className="py-2.5 rounded-xl bg-amber-500 text-white text-sm font-black hover:bg-amber-600 disabled:opacity-40"
+                    >
+                      <Clock className="w-4 h-4 inline" /> طلب بيانات البنك
+                    </button>
+                    <button
+                      type="button"
+                      disabled={state.actionLoading || !rejectNote.trim()}
+                      onClick={() => onTransition("rejected", { note: rejectNote })}
+                      className="py-2.5 rounded-xl bg-rose-600 text-white text-sm font-black hover:bg-rose-700 disabled:opacity-40"
+                    >
+                      <XCircle className="w-4 h-4 inline" /> رفض
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={rejectNote}
+                    onChange={(e) => setRejectNote(e.target.value)}
+                    placeholder="سبب الرفض (مطلوب للرفض)"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+              )}
+
+              {c.status === "approved" && (
+                <button
+                  type="button"
+                  disabled={state.actionLoading}
+                  onClick={() => onTransition("awaiting_bank_transfer")}
+                  className="w-full py-3 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] font-black"
+                >
+                  ابدأ التحويل البنكي →
+                </button>
+              )}
+
+              {c.status === "awaiting_bank_transfer" && (
+                <div className="space-y-2 border-2 border-rose-200 bg-rose-50 rounded-2xl p-4">
+                  <label className="text-sm font-black text-rose-900">رفع إيصال التحويل البنكي</label>
+                  <input
+                    type="text"
+                    value={bankRef}
+                    onChange={(e) => setBankRef(e.target.value)}
+                    placeholder="رقم المرجع البنكي (اختياري)"
+                    className="w-full border border-rose-200 rounded-xl px-3 py-2 text-sm"
+                  />
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      if (f) await onAttachProof(f, bankRef);
+                      e.target.value = "";
+                    }}
+                    disabled={state.actionLoading}
+                    className="w-full text-xs"
+                  />
+                  <p className="text-[10px] text-rose-700">القضية لن تنتقل إلى «إيصال مرفوع» قبل رفع الصورة.</p>
+                </div>
+              )}
+
+              {c.status === "proof_uploaded" && (
+                <div className="space-y-2">
+                  {c.payout_proof_url && (
+                    <a
+                      href={c.payout_proof_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block text-xs text-sky-700 underline"
+                    >
+                      عرض إيصال التحويل المرفوع
+                    </a>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      disabled={state.actionLoading}
+                      onClick={() => onTransition("completed")}
+                      className="py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-black hover:bg-emerald-700 disabled:opacity-40"
+                    >
+                      تأكيد الاكتمال وإبلاغ العميل
+                    </button>
+                    <button
+                      type="button"
+                      disabled={state.actionLoading}
+                      onClick={() => onTransition("awaiting_bank_transfer", { note: "إعادة للمراجعة — إيصال غير مكتمل" })}
+                      className="py-2.5 rounded-xl bg-white border border-rose-200 text-rose-700 text-sm font-bold hover:bg-rose-50 disabled:opacity-40"
+                    >
+                      إعادة الإيصال
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {c.status === "waiting_customer_info" && (
+                <button
+                  type="button"
+                  onClick={() => setBankEditOpen(true)}
+                  className="w-full py-3 rounded-xl bg-emerald-600 text-white font-black hover:bg-emerald-700"
+                >
+                  استلمت البيانات — افتح نموذج الإدخال
+                </button>
+              )}
+
+              {/* Bank info panel */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-black text-[#002845] text-sm">بيانات التحويل البنكي</h4>
+                  {!bankEditOpen && (
+                    <button
+                      type="button"
+                      onClick={() => setBankEditOpen(true)}
+                      className="text-xs text-sky-700 underline"
+                    >
+                      تعديل
+                    </button>
+                  )}
+                </div>
+                {bankEditOpen ? (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={bankEdit.bank_name}
+                      onChange={(e) => setBankEdit((p) => ({ ...p, bank_name: e.target.value }))}
+                      placeholder="اسم البنك"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+                    />
+                    <input
+                      type="text"
+                      value={bankEdit.bank_account_iban}
+                      onChange={(e) => setBankEdit((p) => ({ ...p, bank_account_iban: e.target.value }))}
+                      placeholder="رقم IBAN"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono"
+                    />
+                    <input
+                      type="text"
+                      value={bankEdit.account_holder_name}
+                      onChange={(e) => setBankEdit((p) => ({ ...p, account_holder_name: e.target.value }))}
+                      placeholder="اسم صاحب الحساب"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={!bankEdit.bank_name || !bankEdit.bank_account_iban || !bankEdit.account_holder_name}
+                        onClick={async () => {
+                          await onUpdateBankInfo(bankEdit);
+                          setBankEditOpen(false);
+                        }}
+                        className="flex-1 py-2 rounded-lg bg-[#002845] text-white text-xs font-bold disabled:opacity-40"
+                      >
+                        حفظ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBankEditOpen(false)}
+                        className="px-3 py-2 rounded-lg border border-gray-200 text-xs"
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <dl className="text-xs space-y-1">
+                    <div className="flex justify-between"><dt className="text-gray-500">البنك:</dt><dd className="font-bold">{c.bank_name || "—"}</dd></div>
+                    <div className="flex justify-between"><dt className="text-gray-500">IBAN:</dt><dd className="font-mono">{c.bank_account_iban || "—"}</dd></div>
+                    <div className="flex justify-between"><dt className="text-gray-500">صاحب الحساب:</dt><dd className="font-bold">{c.account_holder_name || "—"}</dd></div>
+                  </dl>
+                )}
+              </div>
+
+              {/* Timeline */}
+              <div className="rounded-2xl border border-gray-100 p-4">
+                <h4 className="font-black text-[#002845] text-sm mb-3">خط الزمن</h4>
+                <ol className="relative border-r-2 border-[#D4AF37]/30 pr-4 space-y-3">
+                  {state.events.length === 0 && (
+                    <li className="text-xs text-gray-500">لا توجد أحداث بعد.</li>
+                  )}
+                  {state.events.map((e) => (
+                    <li key={e.id} className="relative">
+                      <span className="absolute right-[-22px] top-1 w-3 h-3 rounded-full bg-[#D4AF37]" />
+                      <p className="text-xs font-bold text-[#002845]">
+                        {e.event_type === "state_changed"
+                          ? `${e.from_state ? CASE_STATE_LABEL[e.from_state as CaseState] || e.from_state : "—"} → ${CASE_STATE_LABEL[e.to_state as CaseState] || e.to_state}`
+                          : e.event_type}
+                      </p>
+                      {e.note && <p className="text-xs text-gray-700 mt-0.5">{e.note}</p>}
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {e.actor_name || "—"} · {new Date(e.created_at).toLocaleString("ar-SA")}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+              {/* Evidence: linked ticket conversation */}
+              {state.ticketReplies.length > 0 && (
+                <details className="rounded-2xl border border-gray-100">
+                  <summary className="cursor-pointer px-4 py-3 font-bold text-[#002845] text-sm flex items-center gap-2">
+                    📎 الدليل المساند: محادثة الدعم ({state.ticketReplies.length} رسالة)
+                  </summary>
+                  <div className="p-3 space-y-2 max-h-72 overflow-y-auto bg-slate-50">
+                    {state.ticketReplies.map((r) => (
+                      <div
+                        key={r.id}
+                        className={`rounded-lg p-2 text-xs ${
+                          r.sender_type === "admin"
+                            ? "bg-[#FFFCEE] border border-[#D4AF37]/30"
+                            : r.sender_type === "internal"
+                              ? "bg-amber-50 border border-amber-200 italic"
+                              : "bg-white border border-gray-200"
+                        }`}
+                      >
+                        <p className="whitespace-pre-line">{r.message}</p>
+                        <p className="text-[10px] text-gray-400 mt-1">
+                          {new Date(r.created_at).toLocaleString("ar-SA")}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

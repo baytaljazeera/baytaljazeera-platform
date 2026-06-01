@@ -2352,6 +2352,41 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'priority') THEN
           ALTER TABLE refunds ADD COLUMN priority VARCHAR(10) DEFAULT 'normal';
         END IF;
+        -- Case ownership: which finance user is responsible for this
+        -- case. Settable via PATCH .../assign or auto-claimed when a
+        -- finance user takes an action on an unassigned case. Soft FK
+        -- to users with SET NULL so a deactivated user doesn't lock
+        -- the case (the case stays — it just becomes unassigned).
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'assigned_finance_user_id') THEN
+          ALTER TABLE refunds ADD COLUMN assigned_finance_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+        -- Three amount fields, distinct on purpose:
+        --   estimated_refund_amount → what we initially expect to
+        --     refund (auto-seeded from invoice total at convert-to-case
+        --     time, or from a customer's "ask" in the Composer).
+        --   approved_refund_amount  → the EXACT figure finance signs
+        --     off on at the pending_review → approved transition.
+        --     Guard requires this to be set before approval.
+        --   amount (existing)       → the working/current figure used
+        --     by downstream invoicing & notifications. Mirrors
+        --     approved_refund_amount once approved; before approval
+        --     it tracks the estimate.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'estimated_refund_amount') THEN
+          ALTER TABLE refunds ADD COLUMN estimated_refund_amount DECIMAL(10, 2);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'approved_refund_amount') THEN
+          ALTER TABLE refunds ADD COLUMN approved_refund_amount DECIMAL(10, 2);
+        END IF;
+        -- Backfill: where estimated is null but we have a row, seed it
+        -- from amount so existing cases show a value on the new UI.
+        UPDATE refunds SET estimated_refund_amount = amount
+          WHERE estimated_refund_amount IS NULL AND amount IS NOT NULL;
+        -- approved_refund_amount only backfills for rows ALREADY past
+        -- approval (approved/awaiting/proof/completed) — otherwise we'd
+        -- be claiming finance had approved a figure they hadn't.
+        UPDATE refunds SET approved_refund_amount = amount
+          WHERE approved_refund_amount IS NULL AND amount IS NOT NULL
+            AND status IN ('approved','awaiting_bank_transfer','proof_uploaded','completed');
 
         -- One-shot migration of legacy 'pending' rows to the new
         -- explicit 'pending_review' value. Safe to re-run: matches zero
@@ -2359,6 +2394,7 @@ async function initializeDatabase() {
         UPDATE refunds SET status = 'pending_review' WHERE status = 'pending';
       END $$;
     `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_refunds_assigned ON refunds(assigned_finance_user_id) WHERE assigned_finance_user_id IS NOT NULL;`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_refunds_status_state ON refunds(status, state_changed_at DESC);`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_refunds_due_at ON refunds(due_at) WHERE due_at IS NOT NULL AND status NOT IN ('completed', 'rejected');`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_refunds_case_number ON refunds(case_number) WHERE case_number IS NOT NULL;`);

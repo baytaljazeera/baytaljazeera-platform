@@ -84,13 +84,31 @@ function isTerminal(state) {
 
 // Guards: return null if OK, else an Arabic error string.
 function guardTransition(toState, refund, payload = {}) {
+  if (toState === STATES.APPROVED) {
+    // Approval is the moment finance commits to a figure. We won't let
+    // it happen without an explicit approved_refund_amount in the
+    // payload (or already on the row from a previous approve cycle).
+    const candidate = payload.approved_refund_amount != null
+      ? Number(payload.approved_refund_amount)
+      : (refund.approved_refund_amount != null ? Number(refund.approved_refund_amount) : null);
+    if (candidate == null || !Number.isFinite(candidate) || candidate <= 0) {
+      return "يجب تحديد المبلغ المعتمد للاسترداد قبل الموافقة.";
+    }
+    // Don't let finance approve more than the original transaction.
+    if (refund.original_amount != null && candidate > Number(refund.original_amount)) {
+      return `المبلغ المعتمد (${candidate} ر.س) يتجاوز قيمة المعاملة الأصلية (${refund.original_amount} ر.س).`;
+    }
+  }
   if (toState === STATES.AWAITING_BANK_TRANSFER) {
     if (!refund.bank_name || !refund.bank_account_iban || !refund.account_holder_name) {
       return "بيانات البنك ناقصة. حوّل القضية أولاً إلى \"بانتظار بيانات العميل\".";
     }
+    if (refund.approved_refund_amount == null) {
+      return "لا توجد قيمة معتمدة للاسترداد — يجب الاعتماد قبل بدء التحويل البنكي.";
+    }
   }
   if (toState === STATES.PROOF_UPLOADED) {
-    if (!payload.payout_proof_url) {
+    if (!payload.payout_proof_url && !refund.payout_proof_url) {
       return "يجب رفع صورة إثبات التحويل البنكي قبل الانتقال لهذه الحالة.";
     }
   }
