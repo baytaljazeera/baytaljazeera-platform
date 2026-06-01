@@ -530,8 +530,9 @@ export default function AccountPage() {
                 { href: "/favorites", label: "المفضلة", icon: Heart, color: "bg-red-50 text-red-600 hover:bg-red-100", badge: 0 },
                 { href: "/my-listings", label: "إعلاناتي", icon: FileText, color: "bg-blue-50 text-blue-600 hover:bg-blue-100", badge: 0 },
                 { href: "/invoices", label: "فواتيري", icon: Receipt, color: "bg-emerald-50 text-emerald-600 hover:bg-emerald-100", badge: 0 },
-                { href: "/account/my-tickets", label: "طلبات الدعم", icon: Ticket, color: "bg-teal-50 text-teal-700 hover:bg-teal-100", badge: 0 },
-                { href: "/my-complaints", label: "شكاواي", icon: AlertTriangle, color: "bg-orange-50 text-orange-700 hover:bg-orange-100", badge: 0 },
+                // Unified entry — replaces the old pair (طلبات الدعم +
+                // شكاواي). Both flows now live behind the same link.
+                { href: "/account/my-tickets", label: "طلباتي وشكاواي", icon: Ticket, color: "bg-teal-50 text-teal-700 hover:bg-teal-100", badge: 0 },
                 { href: "/inbox", label: "الإشعارات", icon: Bell, color: "bg-amber-50 text-amber-600 hover:bg-amber-100", badge: 0 },
                 { href: "/account-alerts", label: "تنبيهات الحساب", icon: AlertCircle, color: alertsCount > 0 ? "bg-red-100 text-red-700 hover:bg-red-200 ring-2 ring-red-400" : "bg-orange-50 text-orange-600 hover:bg-orange-100", badge: alertsCount },
                 { href: "/ambassador", label: "🌟 سفراء البيت", icon: Gift, color: "bg-gradient-to-r from-yellow-50 to-amber-50 text-amber-600 hover:from-yellow-100 hover:to-amber-100 ring-2 ring-amber-300 shadow-lg", badge: 0 },

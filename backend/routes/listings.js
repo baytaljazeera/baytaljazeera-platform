@@ -223,6 +223,41 @@ router.post("/:id/toggle-featured", authMiddlewareWithEmailCheck, asyncHandler(a
   }
 }));
 
+// Lightweight search for the unified request composer (property-
+// report flow). Returns up to 8 matches by listing id (exact) or
+// title (ILIKE). Public — listings are already public and we only
+// expose id/title/city/price/cover so the customer can pick the
+// right ad to file a report against.
+router.get("/lookup", asyncHandler(async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json({ results: [] });
+  const numeric = /^\d+$/.test(q);
+  let rows;
+  if (numeric) {
+    rows = await db.query(
+      `SELECT p.id, p.title, p.city, p.price, p.status,
+         (SELECT url FROM listing_media WHERE listing_id = p.id AND is_cover = true LIMIT 1) AS cover_url
+       FROM properties p
+       WHERE p.status = 'approved'
+         AND (p.id::text = $2 OR p.title ILIKE $1)
+       ORDER BY (p.id::text = $2) DESC, p.created_at DESC
+       LIMIT 8`,
+      [`%${q}%`, q]
+    );
+  } else {
+    rows = await db.query(
+      `SELECT p.id, p.title, p.city, p.price, p.status,
+         (SELECT url FROM listing_media WHERE listing_id = p.id AND is_cover = true LIMIT 1) AS cover_url
+       FROM properties p
+       WHERE p.status = 'approved' AND p.title ILIKE $1
+       ORDER BY p.created_at DESC
+       LIMIT 8`,
+      [`%${q}%`]
+    );
+  }
+  res.json({ results: rows.rows });
+}));
+
 router.get("/", asyncHandler(async (req, res) => {
   const { city, page = 1, limit = 20 } = req.query;
   const pageNum = Math.max(1, parseInt(page) || 1);

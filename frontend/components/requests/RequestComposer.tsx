@@ -52,6 +52,17 @@ interface RequestComposerProps {
   };
 }
 
+// Listing lookup result shape returned by GET /api/listings/lookup —
+// used by the property-report picker when the composer is opened
+// without a preselected listing context.
+interface ListingLookupRow {
+  id: number;
+  title: string;
+  city: string | null;
+  price: number | string | null;
+  cover_url: string | null;
+}
+
 interface Subcategory {
   code: string;
   label: string;
@@ -185,7 +196,7 @@ export default function RequestComposer({
   const [portalReady, setPortalReady] = useState(false);
   useEffect(() => { setPortalReady(true); }, []);
 
-  const [step, setStep] = useState<"type" | "details">("type");
+  const [step, setStep] = useState<"type" | "pick-property" | "details">("type");
   const [selectedType, setSelectedType] = useState<TypeConfig | null>(null);
   const [selectedSubcat, setSelectedSubcat] = useState<Subcategory | null>(null);
   const [priority, setPriority] = useState<"low" | "medium" | "high" | "urgent">("medium");
@@ -196,18 +207,40 @@ export default function RequestComposer({
   const [success, setSuccess] = useState<{ id: number; ticketNumber?: string } | null>(null);
   const subjectRef = useRef<HTMLInputElement | null>(null);
 
+  // ─── Property picker state (only used when ticket_type=property_report
+  // and no preselected listing) ───────────────────────────────────────
+  const [pickerQuery, setPickerQuery] = useState("");
+  const [pickerResults, setPickerResults] = useState<ListingLookupRow[]>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickedProperty, setPickedProperty] = useState<{ id: string; title: string } | null>(null);
+
   // Reset on open + apply initial type if provided.
   useEffect(() => {
     if (!open) return;
     setError(null);
     setSuccess(null);
     setSubmitting(false);
+    setPickerQuery("");
+    setPickerResults([]);
+    setPickedProperty(null);
+
     if (initialTicketType) {
       const t = TYPES.find((x) => x.key === initialTicketType) || null;
       setSelectedType(t);
-      setStep(t ? "details" : "type");
+      // property_report without a pre-selected listing → picker step
+      if (t && t.key === "property_report" && !initialContext?.relatedPropertyId) {
+        setStep("pick-property");
+      } else {
+        setStep(t ? "details" : "type");
+      }
       if (t && initialContext?.propertyTitle) {
         setSubject(`بلاغ على إعلان: ${initialContext.propertyTitle}`);
+      }
+      if (initialContext?.relatedPropertyId && initialContext?.propertyTitle) {
+        setPickedProperty({
+          id: initialContext.relatedPropertyId,
+          title: initialContext.propertyTitle,
+        });
       }
     } else {
       setStep("type");
@@ -217,7 +250,34 @@ export default function RequestComposer({
     }
     setSelectedSubcat(null);
     setPriority("medium");
-  }, [open, initialTicketType, initialContext?.propertyTitle]);
+  }, [open, initialTicketType, initialContext?.propertyTitle, initialContext?.relatedPropertyId]);
+
+  // Debounced lookup against /api/listings/lookup. Fires when the
+  // user types ≥ 2 chars; cancelled if a newer keystroke arrives
+  // within 250ms.
+  useEffect(() => {
+    if (step !== "pick-property") return;
+    const q = pickerQuery.trim();
+    if (q.length < 2) {
+      setPickerResults([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      setPickerLoading(true);
+      try {
+        const r = await fetch(`${API_URL}/api/listings/lookup?q=${encodeURIComponent(q)}`);
+        if (r.ok) {
+          const d = await r.json();
+          setPickerResults(d.results || []);
+        }
+      } catch {
+        /* silent — keep last results */
+      } finally {
+        setPickerLoading(false);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [pickerQuery, step]);
 
   // Auto-focus subject when entering details step
   useEffect(() => {
@@ -236,6 +296,19 @@ export default function RequestComposer({
 
   const goToDetails = (t: TypeConfig) => {
     setSelectedType(t);
+    // Property reports without preselected listing must pick the
+    // target ad first — without it the report has no anchor.
+    if (t.key === "property_report" && !pickedProperty) {
+      setStep("pick-property");
+      return;
+    }
+    setStep("details");
+  };
+
+  const confirmPickedProperty = (row: ListingLookupRow) => {
+    setPickedProperty({ id: String(row.id), title: row.title });
+    // Pre-fill the subject as a courtesy; user can edit.
+    if (!subject) setSubject(`بلاغ على إعلان: ${row.title}`);
     setStep("details");
   };
 
@@ -269,11 +342,22 @@ export default function RequestComposer({
         source: initialTicketType === "property_report" ? "property_report" : "unified_composer",
         report_reason_code: selectedType.key === "property_report" ? selectedSubcat?.code : null,
       };
-      if (initialContext?.relatedPropertyId) {
-        body.related_property_id = initialContext.relatedPropertyId;
+      // Prefer the explicitly picked property (user picked it from
+      // the search step); fall back to initialContext (came from a
+      // listing page that pre-set it).
+      const propertyId = pickedProperty?.id || initialContext?.relatedPropertyId;
+      if (propertyId) {
+        body.related_property_id = propertyId;
       }
       if (initialContext?.invoiceId) {
         body.invoice_id = initialContext.invoiceId;
+      }
+      // Hard guard: property_report MUST have a listing anchor.
+      if (selectedType.key === "property_report" && !propertyId) {
+        setError("يجب اختيار الإعلان أولاً");
+        setSubmitting(false);
+        setStep("pick-property");
+        return;
       }
 
       const res = await fetch(`${API_URL}/api/support`, {
@@ -336,10 +420,20 @@ export default function RequestComposer({
           {/* Header */}
           <div className="px-6 pt-5 pb-3 flex items-start justify-between gap-3 border-b border-slate-100">
             <div className="flex items-center gap-3 min-w-0">
-              {step === "details" && selectedType && !initialTicketType && (
+              {(step === "details" || step === "pick-property") && selectedType && !initialTicketType && (
                 <button
                   type="button"
-                  onClick={() => { setStep("type"); setSelectedType(null); }}
+                  onClick={() => {
+                    if (step === "details" && selectedType.key === "property_report" && !initialContext?.relatedPropertyId) {
+                      // From details back into picker if we routed
+                      // through it
+                      setStep("pick-property");
+                    } else {
+                      setStep("type");
+                      setSelectedType(null);
+                      setPickedProperty(null);
+                    }
+                  }}
                   className="shrink-0 w-9 h-9 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-500"
                   aria-label="رجوع"
                 >
@@ -348,13 +442,21 @@ export default function RequestComposer({
               )}
               <div className="min-w-0">
                 <h2 className="text-lg md:text-xl font-extrabold text-[#002845] truncate">
-                  {success ? "تم إرسال الطلب" : step === "type" ? "طلب أو شكوى جديدة" : selectedType?.label}
+                  {success
+                    ? "تم إرسال الطلب"
+                    : step === "type"
+                      ? "طلب أو شكوى جديدة"
+                      : step === "pick-property"
+                        ? "اختر الإعلان المُبلَّغ عنه"
+                        : selectedType?.label}
                 </h2>
                 {!success && (
                   <p className="text-[12px] text-slate-500 mt-0.5">
                     {step === "type"
                       ? "اختر نوع الطلب — كل المتابعة تتم في صفحة واحدة"
-                      : "اختر الموضوع وأضف التفاصيل، وسنوجّه طلبك للقسم المختص فوراً"}
+                      : step === "pick-property"
+                        ? "اكتب رقم الإعلان أو جزء من عنوانه — اخترنا له ٨ نتائج"
+                        : "اختر الموضوع وأضف التفاصيل، وسنوجّه طلبك للقسم المختص فوراً"}
                   </p>
                 )}
               </div>
@@ -399,6 +501,75 @@ export default function RequestComposer({
                   </button>
                 </div>
               </div>
+            ) : step === "pick-property" ? (
+              <div className="space-y-3">
+                <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-[12px] text-rose-800 leading-relaxed">
+                  <strong>🚩 بلاغ ضد إعلان</strong> — حدد الإعلان المُبلَّغ عنه. ابحث برقم الإعلان (مثل <span dir="ltr" className="font-mono">12345</span>) أو بجزء من العنوان.
+                </div>
+                <input
+                  type="text"
+                  value={pickerQuery}
+                  onChange={(e) => setPickerQuery(e.target.value)}
+                  placeholder="رقم الإعلان أو كلمة من العنوان…"
+                  autoFocus
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 focus:border-[#D4AF37]"
+                />
+                <div className="min-h-[180px]">
+                  {pickerQuery.trim().length < 2 ? (
+                    <div className="text-center text-[12px] text-slate-400 py-8">
+                      ابدأ بكتابة حرفين على الأقل…
+                    </div>
+                  ) : pickerLoading ? (
+                    <div className="flex items-center justify-center py-8 text-slate-500">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    </div>
+                  ) : pickerResults.length === 0 ? (
+                    <div className="text-center text-[12px] text-slate-500 py-8">
+                      لا توجد نتائج مطابقة. جرّب رقم الإعلان مباشرة، أو افتح صفحة الإعلان من{" "}
+                      <a href="/search" className="font-bold text-[#9A7D28] underline" target="_blank" rel="noreferrer">
+                        البحث
+                      </a>
+                      {" "}واضغط "الإبلاغ عن الإعلان" من داخل الصفحة.
+                    </div>
+                  ) : (
+                    <ul className="space-y-2">
+                      {pickerResults.map((row) => (
+                        <li key={row.id}>
+                          <button
+                            type="button"
+                            onClick={() => confirmPickedProperty(row)}
+                            className="w-full text-right flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:border-[#D4AF37] hover:bg-[#FFFCEE] transition group"
+                          >
+                            <div className="shrink-0 w-14 h-14 rounded-lg bg-slate-100 overflow-hidden flex items-center justify-center">
+                              {row.cover_url ? (
+                                /* eslint-disable-next-line @next/next/no-img-element */
+                                <img src={row.cover_url} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-slate-400 text-xs">لا صورة</span>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-[13px] text-[#002845] truncate group-hover:text-[#9A7D28]">
+                                {row.title}
+                              </div>
+                              <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">
+                                <span className="font-mono text-slate-400">#{row.id}</span>
+                                {row.city && <span>• {row.city}</span>}
+                                {row.price != null && (
+                                  <span>• {Number(row.price).toLocaleString()} ر.س</span>
+                                )}
+                              </div>
+                            </div>
+                            <span className="self-center text-[#9A7D28] opacity-0 group-hover:opacity-100 transition text-[12px] font-bold">
+                              اختر ←
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
             ) : step === "type" ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {TYPES.map((t) => {
@@ -426,10 +597,28 @@ export default function RequestComposer({
             ) : (
               selectedType && (
                 <div className="space-y-5">
-                  {/* Optional context badge — property report shows the listing title */}
-                  {selectedType.key === "property_report" && initialContext?.propertyTitle && (
-                    <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-[12px] text-rose-800">
-                      <strong>🚩 الإعلان المُبلَّغ عنه:</strong> {initialContext.propertyTitle}
+                  {/* Property-report context — title from picker OR
+                      from initialContext (came from listing page) */}
+                  {selectedType.key === "property_report" && (pickedProperty?.title || initialContext?.propertyTitle) && (
+                    <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-[12px] text-rose-800 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <strong>🚩 الإعلان المُبلَّغ عنه:</strong>{" "}
+                        <span className="truncate inline-block max-w-full align-middle">
+                          {pickedProperty?.title || initialContext?.propertyTitle}
+                        </span>
+                        {pickedProperty?.id && (
+                          <span className="text-rose-600 font-mono text-[10px] ms-1">#{pickedProperty.id}</span>
+                        )}
+                      </div>
+                      {!initialContext?.relatedPropertyId && (
+                        <button
+                          type="button"
+                          onClick={() => { setPickedProperty(null); setStep("pick-property"); }}
+                          className="shrink-0 text-rose-700 underline text-[11px] font-bold hover:text-rose-900"
+                        >
+                          غيّر
+                        </button>
+                      )}
                     </div>
                   )}
 

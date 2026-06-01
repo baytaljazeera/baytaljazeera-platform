@@ -339,8 +339,22 @@ function NavbarContent() {
       title: "الدعم والإشعارات",
       items: [
         { href: "/messages", label: "الاستفسارات العقارية", icon: MessageCircle, badge: unreadMessages },
-        { href: "/account/my-tickets", label: "طلبات الدعم", icon: Ticket, badge: Number(userBadges.ticketsNew) || 0 },
-        { href: "/my-complaints", label: "شكاواي", icon: AlertTriangle, badgeNew: userBadges.complaintsNew, badgePending: userBadges.complaintsPending },
+        // ─── Unified request center (June 2026) ────────────────
+        // Was two separate links — "طلبات الدعم" + "شكاواي" —
+        // which forced the customer to guess which side their
+        // issue belonged to. Now ONE entry, with a merged badge
+        // that sums every unread item across tickets + complaints
+        // + property reports so the customer never wonders which
+        // tab has news.
+        {
+          href: "/account/my-tickets",
+          label: "طلباتي وشكاواي",
+          icon: Ticket,
+          badge:
+            (Number(userBadges.ticketsNew) || 0) +
+            (Number(userBadges.complaintsNew) || 0) +
+            (Number(userBadges.complaintsPending) || 0),
+        },
         // Bell in the navbar already shows the unread count; we hide the
         // duplicate badge here to reduce noise (the link itself stays).
         { href: "/inbox", label: "الإشعارات", icon: Bell },
