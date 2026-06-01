@@ -782,7 +782,7 @@ router.post(
 // trail of what support said and when.
 //
 // Format appended to support_note:
-//   \n\n--- تحديث الدعم #N · YYYY-MM-DD HH:MM · <employee name> ---\n<note>
+//   \n\n--- تحديث الدعم رقمN · YYYY-MM-DD HH:MM · <employee name> ---\n<note>
 //
 // Side effects:
 //   - refunds.support_followup_required = FALSE (clears the flag)
@@ -834,9 +834,11 @@ router.post(
     }
 
     // Count existing updates to assign the next sequence number.
-    // We look for the pattern "تحديث الدعم #N" in the existing note.
+    // We look for the pattern "تحديث الدعم رقم N" in the existing
+    // note. The space between "رقم" and the digits is intentional —
+    // matches the human-readable format the owner specified.
     const existing = row.support_note || "";
-    const matches = existing.match(/تحديث الدعم #(\d+)/g) || [];
+    const matches = existing.match(/تحديث الدعم رقم\s+\d+/g) || [];
     const nextNum = matches.length + 1;
 
     const stamp = new Date().toLocaleString("ar-SA", {
@@ -845,7 +847,7 @@ router.post(
     });
     const employeeName = req.user?.name || req.user?.email || "موظف الدعم";
     const appendBlock =
-      `\n\n--- تحديث الدعم #${nextNum} · ${stamp} · ${employeeName} ---\n${noteText}`;
+      `\n\n--- تحديث الدعم رقم ${nextNum} · ${stamp} · ${employeeName} ---\n${noteText}`;
     const newSupportNote = existing + appendBlock;
 
     const client = await db.getClient();
@@ -877,7 +879,7 @@ router.post(
         actor_user_id: req.user.id,
         actor_name: req.user.name,
         actor_role: req.user.role,
-        note: `تحديث الدعم #${nextNum}`,
+        note: `تحديث الدعم رقم${nextNum}`,
         payload: { update_number: nextNum, amount_override: amountOverride },
       });
 
@@ -886,7 +888,7 @@ router.post(
          VALUES ($1, $2, 'internal', $3)`,
         [
           id, req.user.id,
-          `أُرسل تحديث #${nextNum} للمالية على القضية ${row.case_number || row.refund_id}: ${noteText.slice(0, 200)}${noteText.length > 200 ? "…" : ""}`,
+          `أُرسل تحديث رقم ${nextNum} للمالية على القضية ${row.case_number || row.refund_id}: ${noteText.slice(0, 200)}${noteText.length > 200 ? "…" : ""}`,
         ]
       );
 

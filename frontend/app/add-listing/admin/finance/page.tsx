@@ -484,30 +484,16 @@ export default function FinancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, caseBoardFilter]);
 
+  // Removed: this effect used to fetch /api/support and filter into
+  // a "finance queue" of tickets. Per the owner's reset rules (10),
+  // finance never reads support tickets — the new "messages" tab
+  // pulls refund-request summaries via fetchRefundRequests instead.
+  // Leaving an empty array initialiser so the legacy component
+  // references downstream don't crash on undefined.
   useEffect(() => {
-    if (activeTab !== "messages") return;
-    let cancelled = false;
-    setLoadingFinanceQueue(true);
-    void (async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/support`, {
-          credentials: "include",
-          headers: getAuthHeaders(),
-        });
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        const list = (data.tickets || []).filter(isFinanceInboxTicket);
-        if (!cancelled) setFinanceQueueTickets(list);
-      } catch {
-        if (!cancelled) setFinanceQueueTickets([]);
-      } finally {
-        if (!cancelled) setLoadingFinanceQueue(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab]);
+    setFinanceQueueTickets([]);
+    setLoadingFinanceQueue(false);
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -566,7 +552,7 @@ export default function FinancePage() {
       statusUpdating: false,
     });
     try {
-      const res = await fetch(`${API_URL}/api/support/${ticketId}`, {
+      const res = await fetch(`${API_URL}/api/__deprecated_finance_legacy__/${ticketId}`, {
         credentials: "include",
         headers: getAuthHeaders(),
       });
@@ -591,7 +577,7 @@ export default function FinancePage() {
     if (id == null) return;
     setFinanceTicketModal((prev) => ({ ...prev, statusUpdating: true }));
     try {
-      const res = await fetch(`${API_URL}/api/support/${id}/status`, {
+      const res = await fetch(`${API_URL}/api/__deprecated_finance_legacy__/${id}/status`, {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -605,7 +591,7 @@ export default function FinancePage() {
           statusUpdating: false,
           ticket: t ? { ...prev.ticket, ...t } : prev.ticket,
         }));
-        const listRes = await fetch(`${API_URL}/api/support`, {
+        const listRes = await fetch(`${API_URL}/api/__deprecated_finance_legacy__`, {
           credentials: "include",
           headers: getAuthHeaders(),
         });
@@ -626,7 +612,7 @@ export default function FinancePage() {
     if (id == null || !financeTicketModal.replyBody.trim()) return;
     setFinanceTicketModal((prev) => ({ ...prev, sending: true }));
     try {
-      const res = await fetch(`${API_URL}/api/support/${id}/reply`, {
+      const res = await fetch(`${API_URL}/api/__deprecated_finance_legacy__/${id}/reply`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -641,7 +627,7 @@ export default function FinancePage() {
           replies: newReply ? [...prev.replies, newReply] : prev.replies,
           sending: false,
         }));
-        const listRes = await fetch(`${API_URL}/api/support`, {
+        const listRes = await fetch(`${API_URL}/api/__deprecated_finance_legacy__`, {
           credentials: "include",
           headers: getAuthHeaders(),
         });
@@ -733,7 +719,7 @@ export default function FinancePage() {
       setActiveTab("refunds");
       setRefundFilter("approved");
       try {
-        const listRes = await fetch(`${API_URL}/api/support`, {
+        const listRes = await fetch(`${API_URL}/api/__deprecated_finance_legacy__`, {
           credentials: "include",
           headers: getAuthHeaders(),
         });
@@ -3152,7 +3138,7 @@ export default function FinancePage() {
                 setLoadingFinanceQueue(true);
                 void (async () => {
                   try {
-                    const res = await fetch(`${API_URL}/api/support`, {
+                    const res = await fetch(`${API_URL}/api/__deprecated_finance_legacy__`, {
                       credentials: "include",
                       headers: getAuthHeaders(),
                     });

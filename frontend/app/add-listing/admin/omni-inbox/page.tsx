@@ -425,7 +425,7 @@ export default function OmniInboxPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((data as { error?: string }).error || "فشل إرسال التحديث");
-      toast.success(`أُرسل تحديث الدعم #${data?.update_number ?? ""} إلى المالية`);
+      toast.success(`أُرسل تحديث الدعم رقم ${data?.update_number ?? ""} إلى المالية`);
       setRefundFollowupOpen(false);
       setRefundFollowupNote("");
       if (selected && omniId) {
@@ -935,7 +935,7 @@ export default function OmniInboxPage() {
                 قضية {ticketMeta.refund_case_number || ("#" + ticketMeta.refund_id)} — المالية تطلب معلومات إضافية
               </p>
               <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-2 leading-relaxed">
-                هذا التحديث يُضاف كـ "تحديث الدعم #N" أسفل الملخص الأصلي. الملخص القديم محفوظ كما هو.
+                هذا التحديث يُضاف كـ "تحديث الدعم رقم N" أسفل الملخص الأصلي. الملخص القديم محفوظ كما هو.
               </p>
             </div>
             <div className="flex-1 overflow-y-auto p-6">
