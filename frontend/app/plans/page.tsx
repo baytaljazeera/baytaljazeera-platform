@@ -133,10 +133,16 @@ function SubscriptionModal({ plan, onClose, onConfirm, isLoading }: Subscription
           </div>
         </div>
 
-        {plan.price > 0 && (
+        {plan.price > 0 && !plan.isAutoConverted && (
           <p className="mb-4 text-center text-sm text-slate-500">
             سيتم تحويلك لصفحة الدفع الآمنة لإتمام عملية الاشتراك
           </p>
+        )}
+
+        {plan.isAutoConverted && plan.price > 0 && (
+          <div className="mb-4 rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50 p-3 text-center text-xs font-bold leading-relaxed text-amber-900">
+            ⏳ أسعار هذه الدولة قيد المراجعة من قبل الإدارة. سيتم تفعيل الشراء فور اعتماد السعر النهائي.
+          </div>
         )}
 
         <div className="flex gap-3">
@@ -149,15 +155,16 @@ function SubscriptionModal({ plan, onClose, onConfirm, isLoading }: Subscription
           </button>
           <button
             onClick={onConfirm}
-            disabled={isLoading}
-            className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] px-4 py-3 font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+            disabled={isLoading || (plan.isAutoConverted && plan.price > 0)}
+            title={plan.isAutoConverted && plan.price > 0 ? "أسعار هذه الدولة قيد المراجعة" : ""}
+            className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] px-4 py-3 font-semibold text-white transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
               <>
                 <CheckCircle2 className="h-5 w-5" />
-                تأكيد الاشتراك
+                {plan.isAutoConverted && plan.price > 0 ? "غير متاحة حالياً" : "تأكيد الاشتراك"}
               </>
             )}
           </button>
@@ -249,7 +256,7 @@ export default function PlansPage() {
         setLoading(true);
         const plansRes = await fetch(`/api/plans/by-country/${detectedCountry.code}`);
         const plansData = await plansRes.json();
-        
+
         const currencySymbol = plansData.country?.currency_symbol || detectedCountry.currency_symbol || "ريال";
         if (plansData.country) {
           setCurrentCurrency({
@@ -257,17 +264,25 @@ export default function PlansPage() {
             symbol: currencySymbol
           });
         }
-        
-        const dbPlans: DBPlan[] = (plansData.plans || []).map((p: any) => ({
+
+        // Carry through per-plan local_price, local_currency_symbol, and
+        // is_auto_converted. Setting dbPlan.price = local_price lets the
+        // headline / modal display the country-specific figure (the bug
+        // we just fixed: /plans showed SAR base while /upgrade showed
+        // auto-converted USD).
+        const dbPlans: any[] = (plansData.plans || []).map((p: any) => ({
           ...p,
-          price: p.local_price ?? p.price
+          price: p.local_price ?? p.price,
+          is_auto_converted: p.is_auto_converted === true,
         }));
 
         const visibleSorted = dbPlans
           .filter((p) => p.visible)
           .sort((a, b) => a.sort_order - b.sort_order);
 
-        setPlans(visibleSorted.map((p) => mapDbPlanToPlanCopy(p, currencySymbol)));
+        setPlans(visibleSorted.map((p) =>
+          mapDbPlanToPlanCopy(p as DBPlan, p.local_currency_symbol || currencySymbol)
+        ));
       } catch (err) {
         console.error("Error fetching data:", err);
       } finally {

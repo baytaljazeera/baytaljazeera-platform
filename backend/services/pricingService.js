@@ -233,6 +233,71 @@ function getClientIP(req) {
          req.ip;
 }
 
+// ──────────────────────────────────────────────────────────────────
+// Single source of truth for "what price does plan X cost in country Y?"
+//
+// Mirrors the contract that payments.js uses (was duplicated there as
+// getCountryPricing). Centralising here so /api/plans/by-country,
+// /api/payments/*, and any future surface that needs country pricing
+// all stay in lockstep — the owner's #1 rule is invoice accuracy,
+// and the bug we just hit (450 on /plans → 120 on /upgrade) was born
+// from two endpoints computing the same number two different ways.
+//
+// Contract:
+//   { hasCustomPrice, localPrice, currency, currencySymbol, isAutoConverted }
+//
+// hasCustomPrice  — admin set an explicit row in country_plan_prices
+// isAutoConverted — fell back to SAR→target conversion (no admin review).
+//                   UIs SHOULD treat this as "not safe to bill yet" and
+//                   block checkout; the payment endpoint already blocks
+//                   server-side with PRICE_PENDING_REVIEW.
+// ──────────────────────────────────────────────────────────────────
+async function getPlanPricingForCountry(planId, countryCode, basePriceSAR = null, queryFn = db) {
+  const upper = (countryCode || 'SA').toUpperCase();
+  const country = getCountryInfo(upper); // returns INTERNATIONAL for unknown codes
+
+  const priceResult = await queryFn.query(
+    `SELECT price FROM country_plan_prices
+     WHERE plan_id = $1 AND country_code = $2 AND is_active = true`,
+    [planId, upper]
+  );
+
+  const hasCustomPrice = priceResult.rows.length > 0;
+  let localPrice = hasCustomPrice ? parseFloat(priceResult.rows[0].price) : null;
+  let effectiveCurrency = country.currency_code;
+  let isAutoConverted = false;
+
+  if (!hasCustomPrice && basePriceSAR !== null) {
+    const basePriceNum = parseFloat(basePriceSAR);
+    if (upper === 'SA' || !upper) {
+      // SAR base price, no conversion needed.
+      localPrice = basePriceNum;
+      effectiveCurrency = 'SAR';
+    } else {
+      const converted = await convertPrice(basePriceNum, country.currency_code);
+      localPrice = roundPrice(converted, country.currency_code);
+      effectiveCurrency = country.currency_code;
+      isAutoConverted = true;
+    }
+  }
+
+  // Currency symbol resolution: payments.js's older implementation forced
+  // 'ر.س' when the row fell back to SAR. We mirror that so the funnel
+  // stays consistent — SAR shows as 'ر.س' everywhere, foreign currencies
+  // use whatever symbol the country dictionary holds.
+  const symbol = effectiveCurrency === 'SAR'
+    ? 'ر.س'
+    : (country.symbol || country.currency_symbol || effectiveCurrency);
+
+  return {
+    hasCustomPrice,
+    localPrice: localPrice !== null ? parseFloat(localPrice) : null,
+    currency: effectiveCurrency,
+    currencySymbol: symbol,
+    isAutoConverted,
+  };
+}
+
 module.exports = {
   SUPPORTED_COUNTRIES,
   INTERNATIONAL,
@@ -245,6 +310,7 @@ module.exports = {
   formatPrice,
   calculatePlanPricing,
   calculateEliteSlotPricing,
+  getPlanPricingForCountry,
   getClientCountryFromIP,
   getClientIP
 };

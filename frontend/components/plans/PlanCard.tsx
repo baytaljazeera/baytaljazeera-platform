@@ -46,6 +46,12 @@ export type PlanCopy = {
   discountedPrice?: number | null;
   discountPercentage?: number | null;
   appliedPromotion?: AppliedPromotion | null;
+  // Set when the backend fell back to SAR→target currency conversion
+  // because admin hasn't set a custom country_plan_prices row yet.
+  // Treated as "not safe to bill" — UI disables the buy button and
+  // shows "أسعار هذه الدولة قيد المراجعة" so the customer doesn't
+  // reach a checkout that the payment endpoint will reject.
+  isAutoConverted?: boolean;
 };
 
 export type AppliedPromotion = {
@@ -473,6 +479,7 @@ export function mapDbPlanToPlanCopy(dbPlan: DBPlan, currencySymbol: string = "ر
     headerTextColor: dbPlan.header_text_color,
     bodyBgColor: dbPlan.body_bg_color,
     bodyTextColor: dbPlan.body_text_color,
+    isAutoConverted: (dbPlan as any).is_auto_converted === true,
   };
 
   if (dbPlan.badge_enabled && dbPlan.badge_text) {
@@ -602,7 +609,28 @@ export function PlanCard({ plan, onSelect }: { plan: PlanCopy; onSelect?: (plan:
           </ul>
 
           <div className="mt-4">
-            {onSelect ? (
+            {plan.isAutoConverted && !isFree ? (
+              // Country pricing not yet set by admin. Auto-converted figures
+              // would mismatch what /api/payments/process-payment is willing
+              // to charge — server-side throws PRICE_PENDING_REVIEW. So we
+              // block the action here too and tell the customer plainly.
+              <div className="space-y-1.5">
+                <div
+                  className="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-center text-[11px] font-bold leading-tight text-amber-900"
+                  title="لم يتم اعتماد سعر هذه الدولة بعد"
+                >
+                  ⏳ أسعار هذه الدولة قيد المراجعة
+                </div>
+                <button
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl py-2.5 text-sm font-bold opacity-60 cursor-not-allowed bg-slate-300 text-slate-600"
+                >
+                  غير متاحة حالياً
+                </button>
+              </div>
+            ) : onSelect ? (
               <button
                 onClick={() => onSelect(plan)}
                 className="flex w-full items-center justify-center gap-2 rounded-2xl py-2.5 text-sm font-bold shadow-md transition-all hover:shadow-lg active:scale-[0.98]"

@@ -291,29 +291,32 @@ router.get("/by-country/:countryCode", asyncHandler(async (req, res) => {
   }
 
   const basePlans = await planService.getAllPlans(false);
-  
-  const pricesResult = await db.query(
-    `SELECT * FROM country_plan_prices WHERE country_code = $1 AND is_active = true`,
-    [upperCode]
-  );
-  
-  const priceMap = {};
-  pricesResult.rows.forEach(p => {
-    priceMap[p.plan_id] = p;
-  });
 
-  const plansWithLocalPricing = basePlans.map(plan => {
-    const countryPrice = priceMap[plan.id];
+  // Owner rule: the price the customer sees on /plans MUST equal the
+  // price they're charged. Previously this endpoint returned the raw
+  // SAR base price labelled with the country's currency symbol when no
+  // custom row existed (e.g. 450 SAR shown as "$450" for INT), while
+  // /api/payments/* auto-converted to USD ($120) and then blocked
+  // checkout. We now funnel through getPlanPricingForCountry so both
+  // surfaces always agree, and pass through is_auto_converted so the
+  // UI can disable the buy button on uncosted countries instead of
+  // letting the customer reach a failing checkout.
+  const plansWithLocalPricing = await Promise.all(basePlans.map(async (plan) => {
+    const basePriceSAR = plan.price != null ? parseFloat(plan.price) : null;
+    const pricing = await pricingService.getPlanPricingForCountry(
+      plan.id, upperCode, basePriceSAR
+    );
     return {
       ...plan,
-      local_price: countryPrice ? parseFloat(countryPrice.price) : parseFloat(plan.price),
-      local_currency_code: countryPrice ? country.currency_code : 'SAR',
-      local_currency_symbol: countryPrice ? country.currency_symbol : 'ر.س',
-      country_code: countryPrice ? upperCode : 'SA',
-      country_name_ar: countryPrice ? country.name_ar : 'السعودية',
-      is_country_pricing: !!countryPrice
+      local_price: pricing.localPrice != null ? pricing.localPrice : basePriceSAR,
+      local_currency_code: pricing.currency,
+      local_currency_symbol: pricing.currencySymbol,
+      country_code: upperCode,
+      country_name_ar: country.name_ar,
+      is_country_pricing: pricing.hasCustomPrice,
+      is_auto_converted: pricing.isAutoConverted,
     };
-  });
+  }));
 
   const promotedPlans = await promotionService.applyPromotionsToPlans(plansWithLocalPricing, null);
   const launchFree = await isLaunchFreeMode();
