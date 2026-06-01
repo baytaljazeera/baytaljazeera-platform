@@ -2243,6 +2243,113 @@ router.delete("/reset-invoices", authMiddleware, requireRoles("super_admin"), re
 
 const financeRoles = ['finance_admin', 'super_admin', 'admin_manager'];
 
+// ════════════════════════════════════════════════════════════════════
+// Refund Request "request more info" → bounces case back to support.
+//
+// Owner rule #9: when finance needs more detail to decide, they DO
+// NOT ask the customer. They flip the case into a "needs support
+// follow-up" state, support sees it in their inbox, support
+// contacts the customer, support consolidates a new support_note,
+// then support presses "re-forward to finance".
+// ════════════════════════════════════════════════════════════════════
+router.patch(
+  "/refund-requests/:id/request-info",
+  authMiddleware,
+  requireRoles(...financeRoles),
+  asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const note = typeof req.body?.note === "string" ? req.body.note.trim() : "";
+    if (Number.isNaN(id)) return res.status(400).json({ error: "معرف غير صالح" });
+    if (note.length < 5) {
+      return res.status(400).json({ error: "اكتب الملاحظة التي تريد من الدعم متابعتها مع العميل" });
+    }
+
+    const r = await db.query(
+      `SELECT id, status, ticket_id, user_id, case_number FROM refunds WHERE id = $1`,
+      [id]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: "الطلب غير موجود" });
+    const refund = r.rows[0];
+
+    // Allowed only from pending_review or approved (before money moves).
+    if (!["pending_review", "approved"].includes(refund.status)) {
+      return res.status(409).json({
+        error: `لا يمكن طلب معلومات إضافية من الحالة "${refund.status}"`,
+      });
+    }
+
+    const client = await db.getClient();
+    let didCommit = false;
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `UPDATE refunds
+         SET support_followup_required = TRUE,
+             state_changed_at = NOW(), state_changed_by = $1,
+             updated_at = NOW()
+         WHERE id = $2`,
+        [req.user.id, id]
+      );
+      await refundSM.recordEvent(client, {
+        refund_id: id,
+        event_type: "info_requested_from_support",
+        from_state: refund.status,
+        to_state: refund.status,
+        actor_user_id: req.user.id,
+        actor_name: req.user.name,
+        actor_role: req.user.role,
+        note,
+        payload: {},
+      });
+      // Internal reply on the support ticket so the support team sees
+      // the question. Finance never authors customer-facing messages —
+      // this entry is sender_type='internal'.
+      if (refund.ticket_id) {
+        await client.query(
+          `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
+           VALUES ($1, $2, 'internal', $3)`,
+          [refund.ticket_id, req.user.id, `[طلب من المالية على القضية ${refund.case_number}] ${note}`]
+        );
+        await client.query(
+          `UPDATE support_tickets SET status = 'in_progress', updated_at = NOW() WHERE id = $1`,
+          [refund.ticket_id]
+        );
+      }
+      await client.query("COMMIT");
+      didCommit = true;
+      client.release();
+      res.json({ ok: true });
+    } catch (err) {
+      if (!didCommit) { try { await client.query("ROLLBACK"); } catch { /* ignore */ } }
+      try { client.release(); } catch { /* ignore */ }
+      throw err;
+    }
+  })
+);
+
+// Refund Request endpoints are aliases of /cases for clarity — the
+// finance UI calls these by name to make the boundary explicit:
+// finance never asks for /cases (which sounds like an internal data
+// model), they ask for /refund-requests (the business object).
+router.get("/refund-requests", authMiddleware, requireRoles(...financeRoles), (req, res, next) => {
+  req.url = "/cases" + (req.url.slice("/refund-requests".length) || "");
+  next();
+});
+router.get("/refund-requests/:id", authMiddleware, requireRoles(...financeRoles), (req, res, next) => {
+  req.url = `/cases/${req.params.id}`;
+  next();
+});
+router.patch("/refund-requests/:id/approve", authMiddleware, requireRoles(...financeRoles), (req, res, next) => {
+  req.body = { ...(req.body || {}), to: "approved" };
+  req.url = `/cases/${req.params.id}/transition`;
+  next();
+});
+router.patch("/refund-requests/:id/reject", authMiddleware, requireRoles(...financeRoles), (req, res, next) => {
+  req.body = { ...(req.body || {}), to: "rejected" };
+  req.url = `/cases/${req.params.id}/transition`;
+  next();
+});
+
 // ── Counters (one call, all badges) ────────────────────────────────
 router.get(
   "/counters",
@@ -2255,376 +2362,68 @@ router.get(
 );
 
 // ════════════════════════════════════════════════════════════════════
-// FINANCE INBOX — tickets that Support has transferred. Each item is
-// a ticket awaiting Finance triage: resolve in-place, return to
-// Support, or convert to a Refund Case.
+// LEGACY /api/finance/inbox/* — DEPRECATED.
+//
+// The original design treated the finance inbox as "support tickets
+// support transferred to us". That violated the owner's rule that
+// finance never sees support conversations. The whole subfamily is
+// now hard-removed and replaced with /api/finance/refund-requests/*
+// — finance only sees the refund object, never a ticket.
+//
+// We keep GET /inbox as an alias for /refund-requests so the old
+// frontend code paths continue to work briefly while the UI
+// transitions to the new endpoint names. Every other legacy verb
+// returns 410 Gone with a pointer to the correct route.
 // ════════════════════════════════════════════════════════════════════
 
+// GET /inbox is the only legacy route we keep alive — but now it
+// returns refund-request rows, NOT support tickets. The list shape
+// changed deliberately: the old shape leaked ticket internals.
 router.get(
   "/inbox",
   authMiddleware,
   requireRoles(...financeRoles),
   asyncHandler(async (req, res) => {
-    const result = await db.query(
-      `SELECT st.id, st.ticket_number, st.subject, st.description,
-              st.priority, st.status, st.category, st.subcategory,
-              st.created_at, st.updated_at, st.transferred_to_finance_at,
-              st.transferred_to_finance_by, st.refund_bank_details_snapshot,
-              st.invoice_id, st.user_id,
+    const rows = await db.query(
+      `SELECT r.id, r.case_number, r.status, r.amount, r.original_amount,
+              r.estimated_refund_amount, r.approved_refund_amount,
+              r.refund_type, r.reason, r.support_note,
+              r.support_followup_required,
+              r.created_at, r.updated_at,
+              r.state_changed_at, r.due_at, r.priority,
+              r.user_id, r.invoice_id,
               u.name AS user_name, u.email AS user_email,
-              u.bank_name AS user_bank_name,
-              u.bank_account_iban AS user_bank_iban,
-              u.account_holder_name AS user_account_holder,
-              (SELECT COUNT(*)::int FROM support_ticket_replies r WHERE r.ticket_id = st.id) AS reply_count
-       FROM support_tickets st
-       LEFT JOIN users u ON u.id = st.user_id
-       WHERE st.finance_inbox_state = 'in_inbox'
-       ORDER BY st.transferred_to_finance_at DESC NULLS LAST, st.id DESC`
+              i.invoice_number AS original_invoice_number
+       FROM refunds r
+       LEFT JOIN users u ON u.id = r.user_id
+       LEFT JOIN invoices i ON i.id = r.invoice_id
+       WHERE r.status = 'pending_review'
+       ORDER BY r.created_at DESC`
     );
-    res.json({ tickets: result.rows });
+    res.json({
+      refund_requests: rows.rows,
+      // Legacy compat field for any UI that still expects "tickets" —
+      // an empty array signals "nothing to do here, move along".
+      tickets: [],
+      _note: "Endpoint behaviour changed. Use /api/finance/refund-requests.",
+    });
   })
 );
 
-router.get(
-  "/inbox/:ticketId",
-  authMiddleware,
-  requireRoles(...financeRoles),
-  asyncHandler(async (req, res) => {
-    const id = parseInt(req.params.ticketId, 10);
-    if (Number.isNaN(id)) return res.status(400).json({ error: "معرف غير صالح" });
+function gone(routeHint) {
+  return (req, res) => res.status(410).json({
+    error: "هذا المسار لم يعد متاحاً. المالية ترى طلبات الاسترداد، ليس تذاكر الدعم.",
+    errorEn: "Endpoint removed. Finance no longer sees support tickets.",
+    use_instead: routeHint,
+  });
+}
 
-    const t = await db.query(
-      `SELECT st.*, u.name AS user_name, u.email AS user_email,
-              u.bank_name AS user_bank_name,
-              u.bank_account_iban AS user_bank_iban,
-              u.account_holder_name AS user_account_holder
-       FROM support_tickets st
-       LEFT JOIN users u ON u.id = st.user_id
-       WHERE st.id = $1`,
-      [id]
-    );
-    if (t.rows.length === 0) return res.status(404).json({ error: "غير موجود" });
-    if (t.rows[0].finance_inbox_state !== 'in_inbox' && t.rows[0].finance_inbox_state !== 'inbox_resolved') {
-      return res.status(403).json({ error: "هذه التذكرة ليست ضمن صندوق المالية" });
-    }
+router.get("/inbox/:ticketId",                       authMiddleware, requireRoles(...financeRoles), gone("GET /api/finance/refund-requests/:id"));
+router.post("/inbox/:ticketId/reply",                authMiddleware, requireRoles(...financeRoles), gone("Finance cannot reply to customers. Use PATCH /api/finance/refund-requests/:id/request-info to send a follow-up question to support."));
+router.post("/inbox/:ticketId/resolve",              authMiddleware, requireRoles(...financeRoles), gone("Finance cannot resolve inquiries. Use PATCH /api/finance/refund-requests/:id/reject if the refund is denied."));
+router.post("/inbox/:ticketId/return-to-support",    authMiddleware, requireRoles(...financeRoles), gone("PATCH /api/finance/refund-requests/:id/request-info"));
+router.post("/inbox/:ticketId/convert-to-case",      authMiddleware, requireRoles(...financeRoles), gone("Finance no longer creates refund cases. Support creates them via POST /api/support/:id/forward-to-finance."));
 
-    const replies = await db.query(
-      `SELECT r.id, r.sender_id, r.sender_type, r.message, r.created_at,
-              u.name AS sender_name, u.role AS sender_role
-       FROM support_ticket_replies r
-       LEFT JOIN users u ON u.id = r.sender_id
-       WHERE r.ticket_id = $1
-       ORDER BY r.created_at ASC`,
-      [id]
-    );
-
-    res.json({ ticket: t.rows[0], replies: replies.rows });
-  })
-);
-
-router.post(
-  "/inbox/:ticketId/reply",
-  authMiddleware,
-  requireRoles(...financeRoles),
-  asyncHandler(async (req, res) => {
-    const id = parseInt(req.params.ticketId, 10);
-    const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
-    if (Number.isNaN(id) || !message) {
-      return res.status(400).json({ error: "الرسالة مطلوبة" });
-    }
-    const t = await db.query(
-      `SELECT id, finance_inbox_state FROM support_tickets WHERE id = $1`,
-      [id]
-    );
-    if (t.rows.length === 0) return res.status(404).json({ error: "غير موجود" });
-    if (t.rows[0].finance_inbox_state !== 'in_inbox') {
-      return res.status(400).json({ error: "هذه التذكرة ليست مفتوحة في صندوق المالية" });
-    }
-
-    const reply = await db.query(
-      `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
-       VALUES ($1, $2, 'admin', $3)
-       RETURNING *`,
-      [id, req.user.id, message]
-    );
-    await db.query(
-      `UPDATE support_tickets SET updated_at = NOW() WHERE id = $1`,
-      [id]
-    );
-    res.json({ ok: true, reply: reply.rows[0] });
-  })
-);
-
-router.post(
-  "/inbox/:ticketId/resolve",
-  authMiddleware,
-  requireRoles(...financeRoles),
-  asyncHandler(async (req, res) => {
-    const id = parseInt(req.params.ticketId, 10);
-    const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
-    if (Number.isNaN(id)) return res.status(400).json({ error: "معرف غير صالح" });
-
-    const t = await db.query(
-      `SELECT id, ticket_number, user_id, finance_inbox_state
-       FROM support_tickets WHERE id = $1`,
-      [id]
-    );
-    if (t.rows.length === 0) return res.status(404).json({ error: "غير موجود" });
-    if (t.rows[0].finance_inbox_state !== 'in_inbox') {
-      return res.status(400).json({ error: "غير قابلة للإغلاق من هنا" });
-    }
-
-    // 7-day reopen window for the customer.
-    const reopenDeadline = new Date();
-    reopenDeadline.setDate(reopenDeadline.getDate() + 7);
-
-    await db.query(
-      `UPDATE support_tickets
-       SET finance_inbox_state = 'inbox_resolved',
-           finance_inbox_resolved_at = NOW(),
-           finance_inbox_resolved_by = $1,
-           customer_reopen_deadline = $2,
-           status = 'resolved',
-           updated_at = NOW()
-       WHERE id = $3`,
-      [req.user.id, reopenDeadline, id]
-    );
-
-    if (note) {
-      await db.query(
-        `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
-         VALUES ($1, $2, 'internal', $3)`,
-        [id, req.user.id, `إغلاق المالية: ${note}`]
-      );
-    }
-
-    // Customer notification — there's a reply, ticket is resolved, but
-    // you can reopen within 7 days.
-    await db.query(
-      `INSERT INTO notifications (user_id, type, title, body, channel, status, payload, scheduled_at)
-       VALUES ($1, 'finance_inbox_resolved', 'تم الرد على استفسارك المالي',
-               $2, 'app', 'pending', $3, NOW())`,
-      [
-        t.rows[0].user_id,
-        `ردّت المالية على تذكرتك ${t.rows[0].ticket_number}. تستطيع إعادة فتحها خلال 7 أيام إذا لزم.`,
-        JSON.stringify({ ticket_id: id, reopen_deadline: reopenDeadline.toISOString() }),
-      ]
-    );
-
-    res.json({ ok: true, reopen_deadline: reopenDeadline.toISOString() });
-  })
-);
-
-router.post(
-  "/inbox/:ticketId/return-to-support",
-  authMiddleware,
-  requireRoles(...financeRoles),
-  asyncHandler(async (req, res) => {
-    const id = parseInt(req.params.ticketId, 10);
-    const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
-    if (Number.isNaN(id)) return res.status(400).json({ error: "معرف غير صالح" });
-
-    const t = await db.query(
-      `SELECT id, finance_inbox_state FROM support_tickets WHERE id = $1`,
-      [id]
-    );
-    if (t.rows.length === 0) return res.status(404).json({ error: "غير موجود" });
-    if (t.rows[0].finance_inbox_state !== 'in_inbox') {
-      return res.status(400).json({ error: "غير قابلة للإرجاع من هنا" });
-    }
-
-    await db.query(
-      `UPDATE support_tickets
-       SET finance_inbox_state = 'returned_to_support',
-           auto_assigned_role = 'support_admin',
-           department = COALESCE(NULLIF(department, 'financial'), 'financial'),
-           updated_at = NOW()
-       WHERE id = $1`,
-      [id]
-    );
-
-    await db.query(
-      `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
-       VALUES ($1, $2, 'internal', $3)`,
-      [id, req.user.id, note
-        ? `أعادت المالية التذكرة للدعم: ${note}`
-        : "أعادت المالية التذكرة للدعم"]
-    );
-
-    res.json({ ok: true });
-  })
-);
-
-// ════════════════════════════════════════════════════════════════════
-// CONVERT INBOX → REFUND CASE. The only door from the Inbox into the
-// Refund Cases board. Picks bank info from request body → ticket
-// snapshot → user profile, in that order. If all three are empty,
-// creates the case directly in waiting_customer_info.
-// ════════════════════════════════════════════════════════════════════
-
-router.post(
-  "/inbox/:ticketId/convert-to-case",
-  authMiddleware,
-  requireRoles(...financeRoles),
-  asyncHandler(async (req, res) => {
-    const ticketId = parseInt(req.params.ticketId, 10);
-    if (Number.isNaN(ticketId)) return res.status(400).json({ error: "معرف غير صالح" });
-
-    const tRes = await db.query(
-      `SELECT st.*, u.bank_name AS u_bank_name, u.bank_account_iban AS u_iban,
-              u.account_holder_name AS u_holder
-       FROM support_tickets st
-       LEFT JOIN users u ON u.id = st.user_id
-       WHERE st.id = $1`,
-      [ticketId]
-    );
-    if (tRes.rows.length === 0) return res.status(404).json({ error: "التذكرة غير موجودة" });
-    const ticket = tRes.rows[0];
-    if (ticket.finance_inbox_state !== 'in_inbox') {
-      return res.status(400).json({ error: "هذه التذكرة لا تصلح للتحويل لقضية استرداد" });
-    }
-    if (ticket.refund_id) {
-      return res.status(409).json({ error: "هذه التذكرة مرتبطة بقضية قائمة", refund_id: ticket.refund_id });
-    }
-
-    // Resolve refund amount: explicit body → invoice total → reject.
-    let amount = req.body?.amount != null ? parseFloat(req.body.amount) : null;
-    let originalAmount = null;
-    let refundType = 'full';
-    if (ticket.invoice_id) {
-      const inv = await db.query(`SELECT total FROM invoices WHERE id = $1`, [ticket.invoice_id]);
-      if (inv.rows[0]) {
-        originalAmount = parseFloat(inv.rows[0].total);
-        if (amount == null) amount = originalAmount;
-        if (amount > originalAmount) {
-          return res.status(400).json({ error: `المبلغ يتجاوز قيمة الفاتورة (${originalAmount} ر.س)` });
-        }
-        refundType = amount < originalAmount ? 'partial' : 'full';
-      }
-    }
-    if (amount == null || isNaN(amount) || amount <= 0) {
-      return res.status(400).json({ error: "يجب تحديد مبلغ الاسترداد" });
-    }
-    const rounded = Math.round(amount * 100) / 100;
-
-    // Resolve bank info via the precedence ladder.
-    const bodyBank = req.body?.bank || {};
-    const snap = ticket.refund_bank_details_snapshot || {};
-    const bankName = (bodyBank.bank_name || snap.bank_name || ticket.u_bank_name || '').trim() || null;
-    const iban = (bodyBank.bank_account_iban || snap.bank_account_iban || ticket.u_iban || '').trim() || null;
-    const holder = (bodyBank.account_holder_name || snap.account_holder_name || ticket.u_holder || '').trim() || null;
-    const hasBankInfo = Boolean(bankName && iban && holder);
-
-    const initialState = hasBankInfo
-      ? refundSM.STATES.PENDING_REVIEW
-      : refundSM.STATES.WAITING_CUSTOMER_INFO;
-
-    const reason = (typeof req.body?.reason === 'string' && req.body.reason.trim())
-      || `قضية محوّلة من تذكرة ${ticket.ticket_number || ('#' + ticket.id)}`;
-
-    const client = await db.getClient();
-    let didCommit = false;
-    try {
-      await client.query('BEGIN');
-
-      const caseNumber = await refundSM.mintCaseNumber(client);
-
-      // estimated_refund_amount seeds at conversion (= rounded, which
-      // came from invoice total or body override). approved_refund_amount
-      // stays NULL until pending_review → approved fills it.
-      const insert = await client.query(
-        `INSERT INTO refunds
-           (user_id, invoice_id, ticket_id, amount, original_amount,
-            estimated_refund_amount,
-            refund_type, reason, status, case_number,
-            bank_name, bank_account_iban, account_holder_name,
-            assigned_finance_user_id,
-            state_changed_at, state_changed_by,
-            waiting_info_requested_at,
-            processed_by, processed_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                 $11, $12, $13, $14, NOW(), $15, $16, $17, NOW(), NOW(), NOW())
-         RETURNING *`,
-        [
-          ticket.user_id, ticket.invoice_id || null, ticketId,
-          rounded, originalAmount, rounded, refundType, reason, initialState, caseNumber,
-          bankName, iban, holder,
-          req.user.id,           // auto-claim by the finance user opening the case
-          req.user.id,           // state_changed_by
-          hasBankInfo ? null : new Date(),
-          req.user.id,
-        ]
-      );
-      const refund = insert.rows[0];
-
-      // Stamp the ticket so it falls out of the inbox view.
-      await client.query(
-        `UPDATE support_tickets
-         SET finance_inbox_state = 'converted_to_refund',
-             refund_id = $1,
-             updated_at = NOW()
-         WHERE id = $2`,
-        [refund.id, ticketId]
-      );
-
-      // Audit reply on the ticket so the conversation thread mirrors the move.
-      await client.query(
-        `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
-         VALUES ($1, $2, 'internal', $3)`,
-        [
-          ticketId, req.user.id,
-          `تم تحويل التذكرة إلى قضية استرداد ${caseNumber}. الحالة الابتدائية: ${initialState}.`,
-        ]
-      );
-
-      await refundSM.recordEvent(client, {
-        refund_id: refund.id,
-        event_type: 'case_created',
-        from_state: null,
-        to_state: initialState,
-        actor_user_id: req.user.id,
-        actor_name: req.user.name,
-        actor_role: req.user.role,
-        note: hasBankInfo ? null : 'بيانات البنك ناقصة — القضية فُتحت بانتظار العميل',
-        payload: { ticket_id: ticketId, amount: rounded, case_number: caseNumber, has_bank_info: hasBankInfo },
-      });
-
-      // Customer notification varies by initial state.
-      if (initialState === refundSM.STATES.WAITING_CUSTOMER_INFO) {
-        await client.query(
-          `INSERT INTO notifications (user_id, type, title, body, channel, status, payload, scheduled_at)
-           VALUES ($1, 'refund_needs_bank_info', 'نحتاج بيانات حسابك البنكي',
-                   $2, 'app', 'pending', $3, NOW())`,
-          [
-            ticket.user_id,
-            `لإتمام استرداد قضية ${caseNumber} نحتاج: اسم البنك، رقم IBAN، اسم صاحب الحساب.`,
-            JSON.stringify({ refund_id: refund.id, ticket_id: ticketId, case_number: caseNumber }),
-          ]
-        );
-      } else {
-        await client.query(
-          `INSERT INTO notifications (user_id, type, title, body, channel, status, payload, scheduled_at)
-           VALUES ($1, 'refund_case_opened', 'تم فتح قضية استرداد',
-                   $2, 'app', 'pending', $3, NOW())`,
-          [
-            ticket.user_id,
-            `قضية الاسترداد ${caseNumber} قيد المراجعة من قبل المالية.`,
-            JSON.stringify({ refund_id: refund.id, ticket_id: ticketId, case_number: caseNumber }),
-          ]
-        );
-      }
-
-      await client.query('COMMIT');
-      didCommit = true;
-      client.release();
-      res.json({ ok: true, refund, initial_state: initialState });
-    } catch (err) {
-      if (!didCommit) { try { await client.query('ROLLBACK'); } catch { /* ignore */ } }
-      try { client.release(); } catch { /* ignore */ }
-      throw err;
-    }
-  })
-);
 
 // ════════════════════════════════════════════════════════════════════
 // REFUND CASES — the canonical workspace for finance after conversion.
@@ -2650,21 +2449,28 @@ router.get(
       }
     }
 
+    // Refund-request summary fields ONLY. We deliberately do NOT
+    // expose ticket_id, ticket_number, or anything that lets the
+    // finance UI fetch the support conversation. The single
+    // consolidated brief is r.support_note (written by support at
+    // forward-time). That's all finance sees about the customer's
+    // chat history with us.
     const rows = await db.query(
       `SELECT r.id, r.case_number, r.status, r.amount, r.original_amount,
-              r.refund_type, r.reason, r.created_at, r.updated_at,
+              r.estimated_refund_amount, r.approved_refund_amount,
+              r.refund_type, r.reason, r.support_note,
+              r.support_followup_required,
+              r.created_at, r.updated_at,
               r.state_changed_at, r.due_at, r.priority,
               r.payout_proof_url, r.payout_confirmed_at, r.bank_reference,
               r.refund_invoice_number,
               r.bank_name, r.bank_account_iban, r.account_holder_name,
-              r.ticket_id, r.invoice_id, r.user_id,
+              r.invoice_id, r.user_id, r.assigned_finance_user_id,
               u.name AS user_name, u.email AS user_email,
-              i.invoice_number AS original_invoice_number,
-              st.ticket_number
+              i.invoice_number AS original_invoice_number
        FROM refunds r
        LEFT JOIN users u ON u.id = r.user_id
        LEFT JOIN invoices i ON i.id = r.invoice_id
-       LEFT JOIN support_tickets st ON st.id = r.ticket_id
        WHERE ${where}
        ORDER BY
          CASE r.status
@@ -2691,14 +2497,31 @@ router.get(
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "معرف غير صالح" });
 
+    // Detail endpoint mirrors the list contract: refund-request fields
+    // + customer + invoice ONLY. The support conversation thread that
+    // used to be returned as `ticket_replies` is GONE — the
+    // owner's rule is "finance reads support_note, never the chat".
+    // We also strip ticket_number / ticket_subject — they're support
+    // internals that have no bearing on a refund decision.
     const c = await db.query(
-      `SELECT r.*, u.name AS user_name, u.email AS user_email, u.phone AS user_phone,
-              i.invoice_number AS original_invoice_number, i.total AS invoice_total,
-              st.ticket_number, st.subject AS ticket_subject
+      `SELECT r.id, r.case_number, r.status, r.amount, r.original_amount,
+              r.estimated_refund_amount, r.approved_refund_amount,
+              r.refund_type, r.reason, r.support_note,
+              r.support_followup_required,
+              r.decision_note, r.priority, r.due_at,
+              r.state_changed_at, r.state_changed_by, r.pre_wait_status,
+              r.bank_name, r.bank_account_iban, r.account_holder_name,
+              r.payout_proof_url, r.payout_confirmed_at, r.bank_reference,
+              r.refund_invoice_number, r.refund_invoice_issued_at,
+              r.assigned_finance_user_id, r.processed_by, r.processed_at,
+              r.waiting_info_requested_at, r.waiting_info_received_at,
+              r.created_at, r.updated_at,
+              r.user_id, r.invoice_id,
+              u.name AS user_name, u.email AS user_email, u.phone AS user_phone,
+              i.invoice_number AS original_invoice_number, i.total AS invoice_total
        FROM refunds r
        LEFT JOIN users u ON u.id = r.user_id
        LEFT JOIN invoices i ON i.id = r.invoice_id
-       LEFT JOIN support_tickets st ON st.id = r.ticket_id
        WHERE r.id = $1`,
       [id]
     );
@@ -2714,21 +2537,11 @@ router.get(
       [id]
     );
 
-    let ticketReplies = [];
-    if (c.rows[0].ticket_id) {
-      const r = await db.query(
-        `SELECT id, sender_id, sender_type, message, created_at
-         FROM support_ticket_replies WHERE ticket_id = $1
-         ORDER BY created_at ASC`,
-        [c.rows[0].ticket_id]
-      );
-      ticketReplies = r.rows;
-    }
-
     res.json({
       case: c.rows[0],
       events: events.rows,
-      ticket_replies: ticketReplies,
+      // ticket_replies intentionally absent — finance never sees the
+      // customer↔support conversation.
     });
   })
 );

@@ -1,6 +1,25 @@
 const express = require("express");
 const db = require("../db");
 const { authMiddleware, adminMiddleware, requireRoles } = require("../middleware/auth");
+
+// ────────────────────────────────────────────────────────────────
+// Owner rule: accountant (role='finance_admin') NEVER accesses any
+// support ticket — not the list, not the detail, not the reply
+// thread. Finance only sees the Refund Request object on the
+// finance side, written as a summary by support. This middleware
+// fires a hard 403 with an explicit message so the boundary is
+// visible in network logs.
+// ────────────────────────────────────────────────────────────────
+function denyFinanceFromSupport(req, res, next) {
+  if (req.user && req.user.role === 'finance_admin') {
+    return res.status(403).json({
+      error: "المالية لا تصل لتذاكر الدعم. افتح طلبات الاسترداد من صندوق المالية.",
+      errorEn: "Finance role is not permitted to access support tickets. Use refund-requests instead.",
+      errorCode: "FINANCE_DENIED_SUPPORT_ACCESS",
+    });
+  }
+  return next();
+}
 const { asyncHandler } = require('../middleware/asyncHandler');
 const {
   getSupportTicketScope,
@@ -77,7 +96,7 @@ function getSmartRouting(department, priority, plan_tier) {
   };
 }
 
-router.get("/count", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/count", authMiddleware, denyFinanceFromSupport, asyncHandler(async (req, res) => {
   if (req.user.role === "user") {
     return res.json({ count: 0 });
   }
@@ -91,7 +110,7 @@ router.get("/count", authMiddleware, asyncHandler(async (req, res) => {
   res.json({ count: parseInt(result.rows[0].count, 10) || 0 });
 }));
 
-router.get("/", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/", authMiddleware, denyFinanceFromSupport, asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const role = req.user.role;
 
@@ -470,7 +489,7 @@ router.post("/", authMiddleware, asyncHandler(async (req, res) => {
  *     super_admin (or any staff that ALSO owns notifications about
  *     their own tickets, e.g. from a chatbot escalation they ran for
  *     testing) could never decrement their bell. */
-router.patch("/:id/mark-read", authMiddleware, asyncHandler(async (req, res) => {
+router.patch("/:id/mark-read", authMiddleware, denyFinanceFromSupport, asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (Number.isNaN(id)) {
     return res.status(400).json({ error: "معرف غير صالح" });
@@ -516,7 +535,7 @@ router.patch("/:id/mark-read", authMiddleware, asyncHandler(async (req, res) => 
 /** Staff marks ticket as read on the admin side — counter for admin
  *  bell drops to reflect that the customers latest replies have been
  *  seen. user_last_read_at on the customer side is left untouched. */
-router.patch("/:id/mark-read-admin", authMiddleware, asyncHandler(async (req, res) => {
+router.patch("/:id/mark-read-admin", authMiddleware, denyFinanceFromSupport, asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (Number.isNaN(id)) {
     return res.status(400).json({ error: "معرف غير صالح" });
@@ -550,7 +569,7 @@ router.patch("/:id/mark-read-admin", authMiddleware, asyncHandler(async (req, re
  *  hasnt finished), fall back to "tickets that have ANY customer
  *  reply" so the bell still shows a meaningful number instead of a
  *  500. The fallback gets replaced as soon as init.js finishes. */
-router.get("/admin-unread-count", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/admin-unread-count", authMiddleware, denyFinanceFromSupport, asyncHandler(async (req, res) => {
   res.set('Cache-Control', 'no-store, max-age=0');
   if (req.user.role === "user") {
     return res.json({ count: 0 });
@@ -592,6 +611,162 @@ router.get("/admin-unread-count", authMiddleware, asyncHandler(async (req, res) 
 }));
 
 /** Manual routing: move ticket to Finance (audit trail as internal reply). */
+// ════════════════════════════════════════════════════════════════════
+// /api/support/:id/forward-to-finance
+//
+// Owner rule: Support is the ONLY role that can put a refund in front
+// of finance. This route is the canonical handoff. Finance never sees
+// the underlying ticket — they see the refund_request object that
+// this route creates.
+//
+// Body: { amount, reason, support_note }
+//   amount       — number, must be > 0 and <= invoice total when linked
+//   reason       — short label (e.g. "duplicate charge", "user mistake")
+//   support_note — REQUIRED. The consolidated summary the support agent
+//                  writes after reviewing the conversation. Finance
+//                  reads ONLY this — they cannot see the customer
+//                  conversation.
+//
+// Effect:
+//   - INSERT refunds (status='pending_review', case_number, ticket_id,
+//     amount, support_note, …) — this is the refund_request finance sees
+//   - UPDATE support_tickets SET refund_id, status='in_progress' — the
+//     ticket STAYS on support's side; finance never owns it
+//   - Customer notification: "نراجع طلب الاسترداد مع المالية"
+// ════════════════════════════════════════════════════════════════════
+router.post(
+  "/:id/forward-to-finance",
+  authMiddleware,
+  denyFinanceFromSupport,
+  requireRoles("super_admin", "admin", "support_admin", "admin_manager", "content_admin"),
+  asyncHandler(async (req, res) => {
+    const refundSM = require("../services/refundStateMachine");
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "معرف غير صالح" });
+
+    const amount = req.body?.amount != null ? parseFloat(req.body.amount) : null;
+    const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+    const supportNote = typeof req.body?.support_note === "string" ? req.body.support_note.trim() : "";
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: "المبلغ مطلوب ويجب أن يكون أكبر من صفر" });
+    }
+    if (supportNote.length < 10) {
+      return res.status(400).json({ error: "ملاحظة الدعم مطلوبة (10 حروف على الأقل). هذه ما ستقرأه المالية." });
+    }
+
+    const tRes = await db.query(
+      `SELECT id, ticket_number, user_id, invoice_id, refund_id
+       FROM support_tickets WHERE id = $1`,
+      [id]
+    );
+    if (tRes.rows.length === 0) return res.status(404).json({ error: "التذكرة غير موجودة" });
+    const ticket = tRes.rows[0];
+
+    if (ticket.refund_id) {
+      return res.status(409).json({
+        error: "هذه التذكرة محوّلة بالفعل لطلب استرداد قائم",
+        refund_id: ticket.refund_id,
+      });
+    }
+
+    // Pull invoice total to bound the amount + populate original_amount
+    let originalAmount = null;
+    if (ticket.invoice_id) {
+      const inv = await db.query(`SELECT total FROM invoices WHERE id = $1`, [ticket.invoice_id]);
+      if (inv.rows[0]) {
+        originalAmount = parseFloat(inv.rows[0].total);
+        if (amount > originalAmount) {
+          return res.status(400).json({
+            error: `المبلغ (${amount} ر.س) يتجاوز قيمة الفاتورة (${originalAmount} ر.س)`,
+          });
+        }
+      }
+    }
+    const refundType = (originalAmount != null && amount < originalAmount) ? "partial" : "full";
+
+    const client = await db.getClient();
+    let didCommit = false;
+    try {
+      await client.query("BEGIN");
+      const caseNumber = await refundSM.mintCaseNumber(client);
+      const ins = await client.query(
+        `INSERT INTO refunds
+           (user_id, invoice_id, ticket_id, amount, original_amount,
+            estimated_refund_amount, refund_type, reason, support_note,
+            status, case_number,
+            state_changed_at, state_changed_by,
+            created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $4, $6, $7, $8,
+                 'pending_review', $9,
+                 NOW(), $10, NOW(), NOW())
+         RETURNING *`,
+        [
+          ticket.user_id, ticket.invoice_id || null, id,
+          amount, originalAmount, refundType, reason || null, supportNote,
+          caseNumber, req.user.id,
+        ]
+      );
+      const refund = ins.rows[0];
+
+      // Ticket stays on support's side — only link it, no ownership
+      // change. Status flag tells the support UI "you're waiting on
+      // finance for this one".
+      await client.query(
+        `UPDATE support_tickets
+         SET refund_id = $1, status = 'in_progress', updated_at = NOW()
+         WHERE id = $2`,
+        [refund.id, id]
+      );
+
+      // Internal note on the ticket for the support audit trail.
+      await client.query(
+        `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
+         VALUES ($1, $2, 'internal', $3)`,
+        [
+          id, req.user.id,
+          `تم تحويل الطلب لقضية استرداد ${caseNumber} بمبلغ ${amount} ر.س. ملاحظة المالية: ${supportNote}`,
+        ]
+      );
+
+      // Event in the refund timeline.
+      await refundSM.recordEvent(client, {
+        refund_id: refund.id,
+        event_type: "case_created",
+        from_state: null,
+        to_state: "pending_review",
+        actor_user_id: req.user.id,
+        actor_name: req.user.name,
+        actor_role: req.user.role,
+        note: supportNote,
+        payload: { ticket_id: id, amount, case_number: caseNumber, reason },
+      });
+
+      // Customer notification — support is still the contact channel.
+      await client.query(
+        `INSERT INTO notifications (user_id, type, title, body, channel, status, payload, scheduled_at)
+         VALUES ($1, 'refund_under_review', 'طلب الاسترداد قيد مراجعة المالية',
+                 $2, 'app', 'pending', $3::jsonb, NOW())`,
+        [
+          ticket.user_id,
+          `نراجع طلب الاسترداد بمبلغ ${amount} ر.س مع قسم المالية. سيصلك إشعار عند اعتماده.`,
+          JSON.stringify({ ticket_id: id, refund_id: refund.id, case_number: caseNumber }),
+        ]
+      );
+
+      await client.query("COMMIT");
+      didCommit = true;
+      client.release();
+
+      res.json({ ok: true, refund });
+    } catch (err) {
+      if (!didCommit) { try { await client.query("ROLLBACK"); } catch { /* ignore */ } }
+      try { client.release(); } catch { /* ignore */ }
+      throw err;
+    }
+  })
+);
+
 router.patch(
   "/:id/transfer",
   authMiddleware,
@@ -747,7 +922,7 @@ router.patch(
   })
 );
 
-router.get("/:id", authMiddleware, asyncHandler(async (req, res) => {
+router.get("/:id", authMiddleware, denyFinanceFromSupport, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
   const role = req.user.role;
@@ -847,7 +1022,7 @@ router.get("/:id", authMiddleware, asyncHandler(async (req, res) => {
   });
 }));
 
-router.post("/:id/reply", authMiddleware, asyncHandler(async (req, res) => {
+router.post("/:id/reply", authMiddleware, denyFinanceFromSupport, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { message } = req.body;
   const senderId = req.user.id;
@@ -968,7 +1143,7 @@ router.post("/:id/reply", authMiddleware, asyncHandler(async (req, res) => {
   res.status(201).json({ ok: true, reply: replyWithName.rows[0], message: "تم إرسال الرد بنجاح" });
 }));
 
-router.patch("/:id/status", authMiddleware, requireRoles('super_admin', 'admin', 'support_admin', 'finance_admin', 'content_admin', 'admin_manager'), asyncHandler(async (req, res) => {
+router.patch("/:id/status", authMiddleware, requireRoles('super_admin', 'admin', 'support_admin', 'content_admin', 'admin_manager'), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
   const role = req.user.role;
@@ -1011,7 +1186,7 @@ router.patch("/:id/status", authMiddleware, requireRoles('super_admin', 'admin',
   res.json({ ok: true, ticket: result.rows[0], message: "تم تحديث الحالة" });
 }));
 
-router.patch("/:id/assign", authMiddleware, requireRoles('super_admin', 'admin', 'support_admin', 'finance_admin', 'content_admin', 'admin_manager'), asyncHandler(async (req, res) => {
+router.patch("/:id/assign", authMiddleware, requireRoles('super_admin', 'admin', 'support_admin', 'content_admin', 'admin_manager'), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { assigned_to } = req.body;
   const role = req.user.role;
@@ -1033,7 +1208,7 @@ router.patch("/:id/assign", authMiddleware, requireRoles('super_admin', 'admin',
   res.json({ ok: true, ticket: result.rows[0], message: "تم تعيين المسؤول" });
 }));
 
-router.patch("/:id/priority", authMiddleware, requireRoles('super_admin', 'admin', 'support_admin', 'finance_admin', 'content_admin', 'admin_manager'), asyncHandler(async (req, res) => {
+router.patch("/:id/priority", authMiddleware, requireRoles('super_admin', 'admin', 'support_admin', 'content_admin', 'admin_manager'), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { priority } = req.body;
   const role = req.user.role;

@@ -2377,6 +2377,20 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'approved_refund_amount') THEN
           ALTER TABLE refunds ADD COLUMN approved_refund_amount DECIMAL(10, 2);
         END IF;
+        -- Owner rule: finance never sees the support ticket conversation.
+        -- When support forwards a refund to finance they consolidate the
+        -- context into THIS field — finance reads support_note as the
+        -- canonical brief. support_note replaces "open the chat thread".
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'support_note') THEN
+          ALTER TABLE refunds ADD COLUMN support_note TEXT;
+        END IF;
+        -- Set true when finance presses "request info" — kicks the case
+        -- back to support, who messages the customer, gets the missing
+        -- detail, then re-submits with an updated support_note. Finance
+        -- doesn't see the customer reply, only the new note.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'support_followup_required') THEN
+          ALTER TABLE refunds ADD COLUMN support_followup_required BOOLEAN DEFAULT FALSE;
+        END IF;
         -- Backfill: where estimated is null but we have a row, seed it
         -- from amount so existing cases show a value on the new UI.
         UPDATE refunds SET estimated_refund_amount = amount
