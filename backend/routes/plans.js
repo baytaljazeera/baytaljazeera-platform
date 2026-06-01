@@ -322,10 +322,16 @@ router.get("/by-country/:countryCode", asyncHandler(async (req, res) => {
   const launchFree = await isLaunchFreeMode();
   const plans = launchFree ? applyLaunchFreeMode(promotedPlans) : promotedPlans;
 
+  // has_country_pricing: true iff admin has set at least one
+  // country_plan_prices row for this country. Derived from the
+  // per-plan flag instead of the old priceMap (which was removed
+  // when we switched to getPlanPricingForCountry).
+  const hasCountryPricing = plansWithLocalPricing.some(p => p.is_country_pricing === true);
+
   res.json({
     plans,
     country,
-    has_country_pricing: Object.keys(priceMap).length > 0,
+    has_country_pricing: hasCountryPricing,
     launch_free_mode: launchFree
   });
 }));
