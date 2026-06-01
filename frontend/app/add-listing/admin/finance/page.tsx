@@ -381,7 +381,47 @@ export default function FinancePage() {
     actionLoading: boolean;
   }>({ open: false, loading: false, case: null, events: [], ticketReplies: [], actionLoading: false });
 
-  // New independent finance inbox
+  // ─── Refund Requests (replaces the old Finance Inbox of tickets) ───
+  // Per the owner's reset (10 rules): finance only sees the refund
+  // request OBJECT. Never the underlying support ticket, never a
+  // chat thread. The card displays support_note as the single
+  // consolidated brief.
+  type RefundRequestRow = {
+    id: number;
+    case_number: string | null;
+    status: string;
+    amount: number;
+    original_amount: number | null;
+    estimated_refund_amount: number | null;
+    approved_refund_amount: number | null;
+    refund_type: string;
+    reason: string | null;
+    support_note: string | null;
+    support_followup_required: boolean;
+    user_id: string;
+    user_name: string | null;
+    user_email: string | null;
+    invoice_id: number | null;
+    original_invoice_number: string | null;
+    created_at: string;
+    updated_at: string;
+    state_changed_at: string | null;
+    priority: string | null;
+    due_at: string | null;
+  };
+  const [refundRequests, setRefundRequests] = useState<RefundRequestRow[]>([]);
+  const [loadingRefundRequests, setLoadingRefundRequests] = useState(false);
+  const [refundActionModal, setRefundActionModal] = useState<{
+    open: boolean;
+    request: RefundRequestRow | null;
+    action: "approve" | "reject" | "request-info" | null;
+    approvedAmount: string;
+    note: string;
+    loading: boolean;
+  }>({ open: false, request: null, action: null, approvedAmount: "", note: "", loading: false });
+
+  // Legacy (kept to avoid TS errors from old code paths; not used by
+  // the new Refund Requests tab. Round 3 cleanup will reap them.)
   const [financeInbox, setFinanceInbox] = useState<FinanceInboxTicket[]>([]);
   const [loadingFinanceInbox, setLoadingFinanceInbox] = useState(false);
   const [inboxItemModal, setInboxItemModal] = useState<{
@@ -440,7 +480,7 @@ export default function FinancePage() {
 
   useEffect(() => {
     if (activeTab === "cases") void fetchCases(caseBoardFilter);
-    if (activeTab === "messages") void fetchFinanceInbox();
+    if (activeTab === "messages") void fetchRefundRequests();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, caseBoardFilter]);
 
@@ -743,18 +783,104 @@ export default function FinancePage() {
   }
 
   async function fetchFinanceInbox() {
-    setLoadingFinanceInbox(true);
+    // Legacy stub kept so older useEffect references don't crash. The
+    // new "messages" tab fetches refund requests instead — see
+    // fetchRefundRequests() below.
+    setLoadingFinanceInbox(false);
+    setFinanceInbox([]);
+  }
+
+  async function fetchRefundRequests() {
+    setLoadingRefundRequests(true);
     try {
-      const res = await fetch(`${API_URL}/api/finance/inbox`, {
+      const res = await fetch(`${API_URL}/api/finance/refund-requests`, {
         credentials: "include",
         headers: getAuthHeaders(),
       });
       if (res.ok) {
         const data = await res.json();
-        setFinanceInbox((data.tickets || []) as FinanceInboxTicket[]);
+        // Endpoint returns refund-request summary rows; the contract
+        // explicitly excludes ticket_id / ticket_number / replies.
+        setRefundRequests((data.cases || data.refund_requests || []) as RefundRequestRow[]);
+      } else {
+        setRefundRequests([]);
       }
     } finally {
-      setLoadingFinanceInbox(false);
+      setLoadingRefundRequests(false);
+    }
+  }
+
+  function openRefundAction(request: RefundRequestRow, action: "approve" | "reject" | "request-info") {
+    setRefundActionModal({
+      open: true,
+      request,
+      action,
+      approvedAmount: action === "approve"
+        ? String(request.estimated_refund_amount ?? request.amount ?? "")
+        : "",
+      note: "",
+      loading: false,
+    });
+  }
+
+  async function submitRefundAction() {
+    const { request, action, approvedAmount, note } = refundActionModal;
+    if (!request || !action) return;
+    setRefundActionModal(p => ({ ...p, loading: true }));
+    try {
+      let url = "";
+      let body: any = {};
+      if (action === "approve") {
+        const amt = parseFloat(approvedAmount);
+        if (!Number.isFinite(amt) || amt <= 0) {
+          await alertDialog({ title: "أدخل المبلغ المعتمد", body: "المبلغ يجب أن يكون أكبر من صفر", variant: "warning" });
+          setRefundActionModal(p => ({ ...p, loading: false }));
+          return;
+        }
+        url = `${API_URL}/api/finance/refund-requests/${request.id}/approve`;
+        body = { payload: { approved_refund_amount: amt }, note: note.trim() };
+      } else if (action === "reject") {
+        if (note.trim().length < 5) {
+          await alertDialog({ title: "اكتب سبب الرفض", body: "السبب مطلوب وسيُبلَّغ للعميل عبر الدعم", variant: "warning" });
+          setRefundActionModal(p => ({ ...p, loading: false }));
+          return;
+        }
+        url = `${API_URL}/api/finance/refund-requests/${request.id}/reject`;
+        body = { note: note.trim() };
+      } else {
+        if (note.trim().length < 5) {
+          await alertDialog({ title: "اكتب الملاحظة للدعم", body: "اشرح ما تحتاجه من الدعم بدقة", variant: "warning" });
+          setRefundActionModal(p => ({ ...p, loading: false }));
+          return;
+        }
+        url = `${API_URL}/api/finance/refund-requests/${request.id}/request-info`;
+        body = { note: note.trim() };
+      }
+      const res = await fetch(url, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog({
+          title: "تعذّر تنفيذ الإجراء",
+          body: data?.error || "حدث خطأ غير متوقع",
+          variant: "danger",
+        });
+        setRefundActionModal(p => ({ ...p, loading: false }));
+        return;
+      }
+      setRefundActionModal({ open: false, request: null, action: null, approvedAmount: "", note: "", loading: false });
+      await Promise.all([fetchRefundRequests(), fetchCaseCounters(), fetchCases()]);
+    } catch (e) {
+      await alertDialog({
+        title: "خطأ في الاتصال",
+        body: "تحقق من الاتصال وحاول مجدداً",
+        variant: "danger",
+      });
+      setRefundActionModal(p => ({ ...p, loading: false }));
     }
   }
 
@@ -2814,77 +2940,189 @@ export default function FinancePage() {
           <div className="rounded-2xl border border-[#D4AF37]/30 bg-gradient-to-l from-[#FFFCEE] via-white to-white p-5 shadow-[0_8px_24px_-12px_rgba(212,175,55,0.35)]">
             <div className="flex items-start gap-3">
               <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-[#D4AF37]/15 text-[#9A7D28]">
-                <Headset className="w-5 h-5" />
+                <Wallet className="w-5 h-5" />
               </span>
               <div className="flex-1">
-                <h3 className="text-lg font-black text-[#002845]">
-                  صندوق المالية المستقل
-                </h3>
+                <h3 className="text-lg font-black text-[#002845]">طلبات الاسترداد</h3>
                 <p className="text-sm text-[#002845]/70 mt-1 leading-relaxed">
-                  مراسلات حوّلها الدعم. القرار هنا: أرد كاستفسار وأُغلقه، أعيده للدعم، أو حوّله إلى <span className="font-bold text-[#9A7D28]">قضية استرداد</span> في لوحة القضايا.
+                  طلبات استرداد محالة من الدعم بعد مراجعتها مع العميل. القرار هنا: اعتماد، رفض، أو طلب معلومات من الدعم.
+                </p>
+                <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-2 leading-relaxed">
+                  ⚠️ ملاحظة الدعم أسفل كل بطاقة هي السياق الكامل. لا يمكنك فتح محادثة الدعم — هذا متعمد.
                 </p>
               </div>
               <div className="text-xs font-black text-[#9A7D28] bg-white border border-[#D4AF37]/30 rounded-xl px-3 py-2">
-                {caseCounters.finance_inbox} مراسلة
+                {refundRequests.length} طلب
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            {loadingFinanceInbox && financeInbox.length === 0 ? (
-              <div className="p-12 flex justify-center">
-                <RefreshCw className="w-10 h-10 animate-spin text-[#D4AF37]" />
+          {loadingRefundRequests && refundRequests.length === 0 ? (
+            <div className="p-12 flex justify-center bg-white rounded-2xl border border-gray-100">
+              <RefreshCw className="w-10 h-10 animate-spin text-[#D4AF37]" />
+            </div>
+          ) : refundRequests.length === 0 ? (
+            <div className="p-12 text-center bg-white rounded-2xl border border-gray-100">
+              <Wallet className="w-14 h-14 text-gray-200 mx-auto mb-3" />
+              <p className="font-bold text-[#002845]">لا توجد طلبات استرداد قيد المراجعة</p>
+              <p className="text-sm text-gray-500 mt-2 max-w-md mx-auto">
+                سيظهر هنا فقط ما يحيله الدعم بعد فحصه مع العميل وكتابة ملخّص كافٍ.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {refundRequests.map((r) => (
+                <article
+                  key={r.id}
+                  className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col gap-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-mono text-[10px] text-gray-500">{r.case_number || `#${r.id}`}</p>
+                      <h4 className="font-black text-[#002845] truncate">{r.user_name || "—"}</h4>
+                      <p className="text-xs text-gray-500 truncate">{r.user_email || ""}</p>
+                    </div>
+                    <div className="text-left shrink-0">
+                      <p className="text-xs text-gray-500">المبلغ المطلوب</p>
+                      <p className="text-2xl font-black text-[#D4AF37]">
+                        {formatCurrency(Number(r.estimated_refund_amount ?? r.amount ?? 0))}
+                      </p>
+                    </div>
+                  </div>
+                  {r.original_invoice_number && (
+                    <p className="text-[11px] text-gray-500">
+                      الفاتورة الأصلية: <span className="font-mono text-[#002845]">{r.original_invoice_number}</span>
+                    </p>
+                  )}
+                  {r.reason && (
+                    <p className="text-xs text-[#002845]/80">
+                      <span className="font-bold">السبب: </span>{r.reason}
+                    </p>
+                  )}
+                  <div className="rounded-xl border border-[#D4AF37]/30 bg-[#FFFCEE]/60 p-3">
+                    <p className="text-[10px] font-black text-[#9A7D28] mb-1">ملاحظة الدعم</p>
+                    <p className="text-xs text-[#002845] whitespace-pre-wrap leading-relaxed">
+                      {r.support_note || "—"}
+                    </p>
+                  </div>
+                  {r.support_followup_required && (
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-900">
+                      ⏳ بانتظار تحديث من الدعم
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => openRefundAction(r, "approve")}
+                      disabled={r.status !== "pending_review"}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-black hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      ✅ اعتماد
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openRefundAction(r, "reject")}
+                      disabled={r.status !== "pending_review"}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-600 text-white text-xs font-black hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      ❌ رفض
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openRefundAction(r, "request-info")}
+                      disabled={r.status !== "pending_review" || r.support_followup_required}
+                      title={r.status !== "pending_review" ? "متاح فقط في حالة قيد المراجعة" : ""}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 text-white text-xs font-black hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      ⏎ طلب معلومات من الدعم
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Refund action modal — approve/reject/request-info */}
+      {refundActionModal.open && refundActionModal.request && (
+        <div className="fixed inset-0 z-[80] bg-black/55 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl max-h-[92dvh] flex flex-col overflow-hidden">
+            <div className={`h-1.5 ${
+              refundActionModal.action === "approve" ? "bg-emerald-500"
+              : refundActionModal.action === "reject" ? "bg-rose-500"
+              : "bg-amber-500"
+            }`} />
+            <div className="px-5 py-4 border-b border-slate-100">
+              <h4 className="font-black text-[#002845]">
+                {refundActionModal.action === "approve" && "اعتماد طلب الاسترداد"}
+                {refundActionModal.action === "reject" && "رفض طلب الاسترداد"}
+                {refundActionModal.action === "request-info" && "طلب معلومات من الدعم"}
+              </h4>
+              <p className="text-xs text-gray-500 mt-1">
+                {refundActionModal.request.case_number || `#${refundActionModal.request.id}`} · {refundActionModal.request.user_name}
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-3">
+              {refundActionModal.action === "approve" && (
+                <div>
+                  <label className="block text-xs font-bold text-[#002845] mb-1">
+                    المبلغ المعتمد (ر.س) <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={refundActionModal.approvedAmount}
+                    onChange={(e) => setRefundActionModal(p => ({ ...p, approvedAmount: e.target.value }))}
+                    className="w-full border-2 border-slate-200 focus:border-emerald-500 rounded-xl px-3 py-2 text-sm outline-none"
+                  />
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    يمكن تخفيض المبلغ المطلوب ({formatCurrency(Number(refundActionModal.request.estimated_refund_amount ?? 0))}) إلى مبلغ جزئي.
+                  </p>
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-bold text-[#002845] mb-1">
+                  {refundActionModal.action === "approve" && "ملاحظة الاعتماد (اختياري)"}
+                  {refundActionModal.action === "reject" && <>سبب الرفض <span className="text-rose-600">*</span></>}
+                  {refundActionModal.action === "request-info" && <>ما تطلبه من الدعم <span className="text-rose-600">*</span></>}
+                </label>
+                <textarea
+                  value={refundActionModal.note}
+                  onChange={(e) => setRefundActionModal(p => ({ ...p, note: e.target.value }))}
+                  rows={4}
+                  placeholder={
+                    refundActionModal.action === "approve" ? "" :
+                    refundActionModal.action === "reject" ? "السبب سيُسجَّل في تاريخ القضية." :
+                    "اشرح ما تحتاج من الدعم متابعته مع العميل (50 حرف على الأقل لطلب التحديث)."
+                  }
+                  className="w-full border-2 border-slate-200 focus:border-[#D4AF37] rounded-xl px-3 py-2 text-sm outline-none resize-y"
+                />
               </div>
-            ) : financeInbox.length === 0 ? (
-              <div className="p-12 text-center">
-                <MessageSquare className="w-14 h-14 text-gray-200 mx-auto mb-3" />
-                <p className="font-bold text-[#002845]">صندوق المالية فارغ</p>
-                <p className="text-sm text-gray-500 mt-2 max-w-md mx-auto">
-                  لا توجد مراسلات محوّلة من الدعم. سيظهر هنا فقط ما يحوّله الدعم بعد فحص أوّلي مع العميل.
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-right">
-                  <thead className="bg-slate-50 border-b border-gray-100">
-                    <tr>
-                      <th className="px-4 py-3 font-bold text-[#002845]">التذكرة</th>
-                      <th className="px-4 py-3 font-bold text-[#002845]">العميل</th>
-                      <th className="px-4 py-3 font-bold text-[#002845]">حُوّلت</th>
-                      <th className="px-4 py-3 font-bold text-[#002845] w-40">إجراء</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {financeInbox.map((t) => (
-                      <tr key={t.id} className="border-b border-gray-50 hover:bg-slate-50/80">
-                        <td className="px-4 py-3">
-                          <span className="font-mono text-xs text-gray-500 block">{t.ticket_number}</span>
-                          <span className="font-medium text-[#002845]">{t.subject}</span>
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">
-                          <span className="block">{t.user_name || "—"}</span>
-                          <span className="text-xs text-gray-400">{t.user_email || ""}</span>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-                          {t.transferred_to_finance_at
-                            ? new Date(t.transferred_to_finance_at).toLocaleString("ar-SA")
-                            : "—"}
-                        </td>
-                        <td className="px-4 py-3">
-                          <button
-                            type="button"
-                            onClick={() => void openInboxItem(t.id)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#002845] text-white text-xs font-bold hover:bg-[#003d5c]"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            فتح
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            </div>
+            <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRefundActionModal({ open: false, request: null, action: null, approvedAmount: "", note: "", loading: false })}
+                disabled={refundActionModal.loading}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold hover:bg-white"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitRefundAction()}
+                disabled={refundActionModal.loading}
+                className={`px-5 py-2 rounded-xl text-white text-sm font-black inline-flex items-center gap-2 ${
+                  refundActionModal.action === "approve" ? "bg-emerald-600 hover:bg-emerald-700"
+                  : refundActionModal.action === "reject" ? "bg-rose-600 hover:bg-rose-700"
+                  : "bg-amber-500 hover:bg-amber-600"
+                } disabled:opacity-50`}
+              >
+                {refundActionModal.loading && <RefreshCw className="w-4 h-4 animate-spin" />}
+                تأكيد
+              </button>
+            </div>
           </div>
         </div>
       )}

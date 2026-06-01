@@ -2271,10 +2271,14 @@ router.patch(
     if (r.rows.length === 0) return res.status(404).json({ error: "الطلب غير موجود" });
     const refund = r.rows[0];
 
-    // Allowed only from pending_review or approved (before money moves).
-    if (!["pending_review", "approved"].includes(refund.status)) {
+    // Owner directive: request-info is ONLY allowed from
+    // pending_review. After approval, the case proceeds through the
+    // bank-transfer pipeline — going back to the customer at that
+    // point requires a separate administrative escalation, not this
+    // routine button.
+    if (refund.status !== "pending_review") {
       return res.status(409).json({
-        error: `لا يمكن طلب معلومات إضافية من الحالة "${refund.status}"`,
+        error: `طلب المعلومات يُسمح فقط في حالة "قيد المراجعة". الحالة الحالية: "${refund.status}".`,
       });
     }
 

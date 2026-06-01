@@ -651,8 +651,13 @@ router.post(
     if (!Number.isFinite(amount) || amount <= 0) {
       return res.status(400).json({ error: "المبلغ مطلوب ويجب أن يكون أكبر من صفر" });
     }
-    if (supportNote.length < 10) {
-      return res.status(400).json({ error: "ملاحظة الدعم مطلوبة (10 حروف على الأقل). هذه ما ستقرأه المالية." });
+    // Owner directive: support_note minimum 50 characters. Finance
+    // reads ONLY this — no chat thread, no ticket. A 10-char summary
+    // wasn't doing the work; 50 forces support to write a real brief.
+    if (supportNote.length < 50) {
+      return res.status(400).json({
+        error: "ملاحظة الدعم مطلوبة (٥٠ حرفاً على الأقل). المالية تعتمد عليها وحدها لاتخاذ القرار."
+      });
     }
 
     const tRes = await db.query(
@@ -759,6 +764,136 @@ router.post(
       client.release();
 
       res.json({ ok: true, refund });
+    } catch (err) {
+      if (!didCommit) { try { await client.query("ROLLBACK"); } catch { /* ignore */ } }
+      try { client.release(); } catch { /* ignore */ }
+      throw err;
+    }
+  })
+);
+
+// ════════════════════════════════════════════════════════════════════
+// /api/support/:id/refund-followup-note
+//
+// Owner directive: when finance presses "request-info" and support
+// goes back to the customer for more detail, the new findings are
+// APPENDED to refund.support_note as a numbered update. The original
+// brief is preserved verbatim — finance can always read the audit
+// trail of what support said and when.
+//
+// Format appended to support_note:
+//   \n\n--- تحديث الدعم #N · YYYY-MM-DD HH:MM · <employee name> ---\n<note>
+//
+// Side effects:
+//   - refunds.support_followup_required = FALSE (clears the flag)
+//   - refunds.support_note grows (does NOT replace)
+//   - refund_case_events 'support_followup_provided' entry
+//   - Optionally updates refunds.amount if provided
+// ════════════════════════════════════════════════════════════════════
+router.post(
+  "/:id/refund-followup-note",
+  authMiddleware,
+  denyFinanceFromSupport,
+  requireRoles("super_admin", "admin", "support_admin", "admin_manager", "content_admin"),
+  asyncHandler(async (req, res) => {
+    const refundSM = require("../services/refundStateMachine");
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "معرف غير صالح" });
+
+    const noteText = typeof req.body?.support_note_append === "string"
+      ? req.body.support_note_append.trim()
+      : "";
+    const amountOverride = req.body?.amount != null ? parseFloat(req.body.amount) : null;
+
+    if (noteText.length < 50) {
+      return res.status(400).json({
+        error: "تحديث الدعم يجب ألا يقل عن ٥٠ حرفاً — هذا ما ستقرأه المالية كملحق."
+      });
+    }
+
+    const tRes = await db.query(
+      `SELECT t.id, t.user_id, t.refund_id,
+              r.support_note, r.support_followup_required, r.status, r.case_number
+       FROM support_tickets t
+       LEFT JOIN refunds r ON r.id = t.refund_id
+       WHERE t.id = $1`,
+      [id]
+    );
+    if (tRes.rows.length === 0) return res.status(404).json({ error: "التذكرة غير موجودة" });
+    const row = tRes.rows[0];
+
+    if (!row.refund_id) {
+      return res.status(400).json({
+        error: "لا يوجد طلب استرداد مرتبط بهذه التذكرة. استخدم \"إنشاء طلب استرداد\" أولاً."
+      });
+    }
+    if (row.status !== "pending_review") {
+      return res.status(409).json({
+        error: `لا يمكن إضافة تحديث — حالة القضية الآن: "${row.status}"`,
+      });
+    }
+
+    // Count existing updates to assign the next sequence number.
+    // We look for the pattern "تحديث الدعم #N" in the existing note.
+    const existing = row.support_note || "";
+    const matches = existing.match(/تحديث الدعم #(\d+)/g) || [];
+    const nextNum = matches.length + 1;
+
+    const stamp = new Date().toLocaleString("ar-SA", {
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    });
+    const employeeName = req.user?.name || req.user?.email || "موظف الدعم";
+    const appendBlock =
+      `\n\n--- تحديث الدعم #${nextNum} · ${stamp} · ${employeeName} ---\n${noteText}`;
+    const newSupportNote = existing + appendBlock;
+
+    const client = await db.getClient();
+    let didCommit = false;
+    try {
+      await client.query("BEGIN");
+
+      const updateValues = [newSupportNote, row.refund_id];
+      let amountClause = "";
+      if (amountOverride != null && Number.isFinite(amountOverride) && amountOverride > 0) {
+        amountClause = ", amount = $3, estimated_refund_amount = $3";
+        updateValues.splice(1, 0, amountOverride);
+      }
+
+      await client.query(
+        `UPDATE refunds
+         SET support_note = $1,
+             support_followup_required = FALSE${amountClause},
+             updated_at = NOW()
+         WHERE id = $${updateValues.length}`,
+        updateValues
+      );
+
+      await refundSM.recordEvent(client, {
+        refund_id: row.refund_id,
+        event_type: "support_followup_provided",
+        from_state: row.status,
+        to_state: row.status,
+        actor_user_id: req.user.id,
+        actor_name: req.user.name,
+        actor_role: req.user.role,
+        note: `تحديث الدعم #${nextNum}`,
+        payload: { update_number: nextNum, amount_override: amountOverride },
+      });
+
+      await client.query(
+        `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
+         VALUES ($1, $2, 'internal', $3)`,
+        [
+          id, req.user.id,
+          `أُرسل تحديث #${nextNum} للمالية على القضية ${row.case_number || row.refund_id}: ${noteText.slice(0, 200)}${noteText.length > 200 ? "…" : ""}`,
+        ]
+      );
+
+      await client.query("COMMIT");
+      didCommit = true;
+      client.release();
+      res.json({ ok: true, update_number: nextNum });
     } catch (err) {
       if (!didCommit) { try { await client.query("ROLLBACK"); } catch { /* ignore */ } }
       try { client.release(); } catch { /* ignore */ }
@@ -927,16 +1062,26 @@ router.get("/:id", authMiddleware, denyFinanceFromSupport, asyncHandler(async (r
   const userId = req.user.id;
   const role = req.user.role;
 
+  // Expose refund-request linkage on the ticket so the support UI can
+  // tell the agent which mode they're in: "create a refund request"
+  // when none exists yet, "add a follow-up update" when finance has
+  // requested more info, or "awaiting finance" otherwise. Finance
+  // remains denied from this endpoint by denyFinanceFromSupport.
   let query = `
-    SELECT 
+    SELECT
       st.*,
       u.name as user_name,
       u.email as user_email,
       u.phone as user_phone,
-      a.name as assigned_name
+      a.name as assigned_name,
+      r.case_number    AS refund_case_number,
+      r.status         AS refund_status,
+      r.amount         AS refund_amount,
+      r.support_followup_required AS support_followup_required
     FROM support_tickets st
     LEFT JOIN users u ON st.user_id = u.id
     LEFT JOIN users a ON st.assigned_to = a.id
+    LEFT JOIN refunds r ON r.id = st.refund_id
     WHERE st.id = $1
   `;
   const params = [id];
