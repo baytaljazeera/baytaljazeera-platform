@@ -20,6 +20,10 @@
 // ─────────────────────────────────────────────────────────────────────
 
 const STATES = Object.freeze({
+  // Round 3: the initial state when finance creates a refund transaction
+  // from the conversation. The customer has 4 days to confirm + choose
+  // refund method. Auto-cancels at deadline.
+  PENDING_CUSTOMER_CONFIRMATION: 'pending_customer_confirmation',
   PENDING_REVIEW: 'pending_review',
   WAITING_CUSTOMER_INFO: 'waiting_customer_info',
   APPROVED: 'approved',
@@ -31,6 +35,7 @@ const STATES = Object.freeze({
 
 const ALL_STATES = Object.freeze(Object.values(STATES));
 const ACTIVE_STATES = Object.freeze([
+  STATES.PENDING_CUSTOMER_CONFIRMATION,
   STATES.PENDING_REVIEW,
   STATES.WAITING_CUSTOMER_INFO,
   STATES.APPROVED,
@@ -42,6 +47,16 @@ const TERMINAL_STATES = Object.freeze([STATES.COMPLETED, STATES.REJECTED]);
 // Matrix of allowed (from → [to]) transitions. Any transition not
 // listed here is rejected at the service layer.
 const ALLOWED = Object.freeze({
+  // pending_customer_confirmation is the entry state when finance
+  // converts an inbox ticket into a refund transaction. Customer
+  // can confirm (→ awaiting_bank_transfer, skipping a separate
+  // approval since finance already approved by creating the txn)
+  // or finance can cancel (→ rejected). Auto-cancel scheduler can
+  // also reject this row after the 4-day deadline.
+  [STATES.PENDING_CUSTOMER_CONFIRMATION]: [
+    STATES.AWAITING_BANK_TRANSFER, // customer confirmed + chose method
+    STATES.REJECTED,               // customer declined OR auto-expire
+  ],
   [STATES.PENDING_REVIEW]: [
     STATES.WAITING_CUSTOMER_INFO,
     STATES.APPROVED,
@@ -100,11 +115,28 @@ function guardTransition(toState, refund, payload = {}) {
     }
   }
   if (toState === STATES.AWAITING_BANK_TRANSFER) {
-    if (!refund.bank_name || !refund.bank_account_iban || !refund.account_holder_name) {
-      return "بيانات البنك ناقصة. حوّل القضية أولاً إلى \"بانتظار بيانات العميل\".";
-    }
-    if (refund.approved_refund_amount == null) {
-      return "لا توجد قيمة معتمدة للاسترداد — يجب الاعتماد قبل بدء التحويل البنكي.";
+    // When coming from pending_customer_confirmation, the customer
+    // already picked refund_method (bank or credit_card) and provided
+    // IBAN if needed. When coming from approved (the legacy path),
+    // finance had already filled bank details directly. So the gate
+    // is: bank_method must be set, AND if method=bank, IBAN trio
+    // required.
+    const method = refund.refund_method;
+    if (refund.status === STATES.PENDING_CUSTOMER_CONFIRMATION) {
+      if (!method) {
+        return "لا يمكن بدء التحويل البنكي بدون اختيار العميل لطريقة الإرجاع.";
+      }
+      if (method === 'bank' && (!refund.bank_name || !refund.bank_account_iban || !refund.account_holder_name)) {
+        return "بيانات البنك ناقصة — يجب أن يدخلها العميل في صفحة التأكيد.";
+      }
+    } else {
+      // legacy approved → awaiting path (still supported)
+      if (!refund.bank_name || !refund.bank_account_iban || !refund.account_holder_name) {
+        return "بيانات البنك ناقصة. حوّل القضية أولاً إلى \"بانتظار بيانات العميل\".";
+      }
+      if (refund.approved_refund_amount == null) {
+        return "لا توجد قيمة معتمدة للاسترداد — يجب الاعتماد قبل بدء التحويل البنكي.";
+      }
     }
   }
   if (toState === STATES.PROOF_UPLOADED) {

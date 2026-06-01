@@ -882,6 +882,39 @@ async function initializeDatabase() {
     await db.query(`CREATE INDEX IF NOT EXISTS idx_support_tickets_assigned ON support_tickets(assigned_to);`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_support_ticket_replies_ticket ON support_ticket_replies(ticket_id);`);
 
+    // ──────────────────────────────────────────────────────────────
+    // Reply visibility model (Round 3).
+    //
+    // The thread on a transferred ticket is co-owned by support + finance.
+    // Each reply has TWO dimensions:
+    //   sender_type    'user' | 'admin'   (who wrote it: customer or staff)
+    //   visibility     'customer_visible' | 'internal'
+    //
+    // visibility='internal' replies never reach the customer's view —
+    // staff use them to coordinate ("don't approve before payment gateway
+    // confirms", "needs proof of method", etc).
+    //
+    // sender_role denormalises the staff member's role at the time of
+    // reply (support_admin / finance_admin / super_admin / admin_manager)
+    // so the customer's thread shows accurate "Reply by Finance" /
+    // "Reply by Support" badges even if the user's role changes later.
+    // ──────────────────────────────────────────────────────────────
+    await db.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_ticket_replies' AND column_name = 'visibility') THEN
+          ALTER TABLE support_ticket_replies ADD COLUMN visibility VARCHAR(20) DEFAULT 'customer_visible';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_ticket_replies' AND column_name = 'sender_role') THEN
+          ALTER TABLE support_ticket_replies ADD COLUMN sender_role VARCHAR(50);
+        END IF;
+        -- Backfill: existing rows with sender_type='internal' are internal notes
+        UPDATE support_ticket_replies SET visibility = 'internal' WHERE sender_type = 'internal' AND visibility IS NULL;
+        UPDATE support_ticket_replies SET visibility = 'customer_visible' WHERE visibility IS NULL;
+      END $$;
+    `);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_support_ticket_replies_visibility ON support_ticket_replies(ticket_id, visibility);`);
+
     // Add source column to support_tickets for tracking ticket origin
     await db.query(`
       DO $$ 
@@ -2390,6 +2423,24 @@ async function initializeDatabase() {
         -- doesn't see the customer reply, only the new note.
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'support_followup_required') THEN
           ALTER TABLE refunds ADD COLUMN support_followup_required BOOLEAN DEFAULT FALSE;
+        END IF;
+        -- New "pending customer confirmation" stage (Round 3). After finance
+        -- decides the refund is owed, the customer has a 4-day window to:
+        --   1) confirm they still want the money back
+        --   2) choose refund method (credit_card | bank)
+        --   3) provide IBAN if method=bank
+        -- Auto-cancels after 4 days with no confirmation (scheduler job).
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'refund_method') THEN
+          ALTER TABLE refunds ADD COLUMN refund_method VARCHAR(20);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'customer_confirmation_deadline') THEN
+          ALTER TABLE refunds ADD COLUMN customer_confirmation_deadline TIMESTAMPTZ;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'customer_confirmed_at') THEN
+          ALTER TABLE refunds ADD COLUMN customer_confirmed_at TIMESTAMPTZ;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'customer_declined_at') THEN
+          ALTER TABLE refunds ADD COLUMN customer_declined_at TIMESTAMPTZ;
         END IF;
         -- Backfill: where estimated is null but we have a row, seed it
         -- from amount so existing cases show a value on the new UI.

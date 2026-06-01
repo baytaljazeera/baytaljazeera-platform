@@ -193,23 +193,10 @@ export default function OmniInboxPage() {
   const [visibility, setVisibility] = useState<"public" | "internal_note">("public");
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
-  // Replaces the old transferLoading + transferToFinance pair. The
-  // "Forward as Refund Request" flow opens a modal; the agent fills
-  // amount + reason + a >=50-char support_note that finance will use
-  // as the sole brief. /api/support/:id/forward-to-finance enforces
-  // the same minimum server-side.
-  const [refundForwardOpen, setRefundForwardOpen] = useState(false);
-  const [refundForward, setRefundForward] = useState({
-    amount: "",
-    reason: "",
-    support_note: "",
-  });
-  const [refundForwardLoading, setRefundForwardLoading] = useState(false);
-  // The follow-up modal fires when finance pressed "request-info" and
-  // the support agent has new findings to send back as تحديث الدعم #N.
-  const [refundFollowupOpen, setRefundFollowupOpen] = useState(false);
-  const [refundFollowupNote, setRefundFollowupNote] = useState("");
-  const [refundFollowupLoading, setRefundFollowupLoading] = useState(false);
+  // Round 3: support transfers the ticket to finance via PATCH
+  // /api/support/:id/transfer. Finance then sees + replies in their
+  // own inbox while the ticket stays here too (co-ownership).
+  const [transferLoading, setTransferLoading] = useState(false);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -369,74 +356,30 @@ export default function OmniInboxPage() {
     [loadThread]
   );
 
-  const submitRefundForward = useCallback(async () => {
+  const transferToFinance = useCallback(async () => {
     const tid = ticketMeta?.id ?? selected?.ticket_id ?? null;
     if (tid == null) return;
-    const amount = parseFloat(refundForward.amount);
-    const reason = refundForward.reason.trim();
-    const supportNote = refundForward.support_note.trim();
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error("أدخل مبلغاً صحيحاً أكبر من صفر");
-      return;
-    }
-    if (supportNote.length < 50) {
-      toast.error("ملخص الدعم يجب ألا يقل عن ٥٠ حرفاً — المالية لن ترى المحادثة، تعتمد على هذا الملخص وحده");
-      return;
-    }
-    setRefundForwardLoading(true);
+    setTransferLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/support/${tid}/forward-to-finance`, {
-        method: "POST",
+      const res = await fetch(`${API_URL}/api/support/${tid}/transfer`, {
+        method: "PATCH",
         credentials: "include",
         headers: JSON_HEADERS(),
-        body: JSON.stringify({ amount, reason, support_note: supportNote }),
+        body: JSON.stringify({ target: "financial" }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as { error?: string }).error || "فشل إنشاء طلب الاسترداد");
-      toast.success(`تم إنشاء طلب الاسترداد ${data?.refund?.case_number ?? ""} — المالية ستراجعه الآن`);
-      setRefundForwardOpen(false);
-      setRefundForward({ amount: "", reason: "", support_note: "" });
+      if (!res.ok) throw new Error((data as { error?: string }).error || "فشل التحويل");
+      toast.success("تم تحويل التذكرة للمالية. الفريقان الآن مشاركان فيها.");
       if (selected && omniId) {
         await loadThread({ ...selected, omni_id: omniId, kind: "omni" });
       }
       void fetchInbox();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "فشل إنشاء طلب الاسترداد");
+      toast.error(e instanceof Error ? e.message : "فشل التحويل");
     } finally {
-      setRefundForwardLoading(false);
+      setTransferLoading(false);
     }
-  }, [ticketMeta?.id, selected, omniId, refundForward, loadThread, fetchInbox]);
-
-  const submitRefundFollowup = useCallback(async () => {
-    const tid = ticketMeta?.id ?? selected?.ticket_id ?? null;
-    if (tid == null) return;
-    const note = refundFollowupNote.trim();
-    if (note.length < 50) {
-      toast.error("التحديث يجب ألا يقل عن ٥٠ حرفاً");
-      return;
-    }
-    setRefundFollowupLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/api/support/${tid}/refund-followup-note`, {
-        method: "POST",
-        credentials: "include",
-        headers: JSON_HEADERS(),
-        body: JSON.stringify({ support_note_append: note }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as { error?: string }).error || "فشل إرسال التحديث");
-      toast.success(`أُرسل تحديث الدعم رقم ${data?.update_number ?? ""} إلى المالية`);
-      setRefundFollowupOpen(false);
-      setRefundFollowupNote("");
-      if (selected && omniId) {
-        await loadThread({ ...selected, omni_id: omniId, kind: "omni" });
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "فشل إرسال التحديث");
-    } finally {
-      setRefundFollowupLoading(false);
-    }
-  }, [ticketMeta?.id, selected, omniId, refundFollowupNote, loadThread]);
+  }, [ticketMeta?.id, selected, omniId, loadThread, fetchInbox]);
 
   useEffect(() => {
     void fetchInbox();
@@ -610,31 +553,30 @@ export default function OmniInboxPage() {
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  {/* Owner rule: support is the only role that can put a
-                      refund in front of finance. The mode of this button
-                      depends on whether a refund already exists for the
-                      ticket and whether finance has asked for follow-up. */}
-                  {ticketMeta && !ticketMeta.refund_id && (
+                  {/* Round 3: support transfers the ticket to finance.
+                      The ticket stays in support's inbox AND appears in
+                      finance's inbox — they co-own it. Finance can now
+                      reply to the customer, leave internal notes, and
+                      decide later whether to open a refund transaction. */}
+                  {ticketMeta && ticketMeta.finance_inbox_state !== 'in_inbox' && !ticketMeta.refund_id && (
                     <button
                       type="button"
-                      onClick={() => setRefundForwardOpen(true)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-[#D4AF37]/60 bg-gradient-to-l from-[#FFFCEE] to-white px-3 py-2 text-xs font-black text-[#9A7D28] transition-all duration-300 ease-out hover:from-[#FFF7D6] hover:shadow-md active:scale-[0.97]"
+                      onClick={() => void transferToFinance()}
+                      disabled={transferLoading}
+                      className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-900 transition-all duration-300 ease-out hover:bg-emerald-100 hover:shadow-md active:scale-[0.97] disabled:opacity-50"
                     >
-                      💰 إنشاء طلب استرداد
+                      {transferLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      تحويل للمالية 💰
                     </button>
                   )}
-                  {ticketMeta?.refund_id && ticketMeta.support_followup_required && (
-                    <button
-                      type="button"
-                      onClick={() => setRefundFollowupOpen(true)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-black text-amber-900 transition-all duration-300 ease-out hover:bg-amber-100 hover:shadow-md active:scale-[0.97] animate-pulse"
-                    >
-                      ⏎ تحديث للمالية مطلوب
-                    </button>
+                  {ticketMeta?.finance_inbox_state === 'in_inbox' && !ticketMeta.refund_id && (
+                    <span className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900">
+                      ✓ مع المالية — تشاهد المحادثة وتراسل العميل
+                    </span>
                   )}
-                  {ticketMeta?.refund_id && !ticketMeta.support_followup_required && (
-                    <span className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
-                      📤 لدى المالية — قضية {ticketMeta.refund_case_number || ("#" + ticketMeta.refund_id)}
+                  {ticketMeta?.refund_id && (
+                    <span className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+                      ↪ معاملة استرداد {ticketMeta.refund_case_number || ("#" + ticketMeta.refund_id)}
                     </span>
                   )}
                   {showAiPanel && (
@@ -840,142 +782,6 @@ export default function OmniInboxPage() {
         </main>
       </div>
 
-      {/* ─────────── Forward as Refund Request modal ─────────── */}
-      {refundForwardOpen && ticketMeta && (
-        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
-          <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl flex flex-col max-h-[92dvh] overflow-hidden">
-            <div className="h-1.5 bg-gradient-to-l from-[#D4AF37] via-[#B8860B] to-[#002845]" />
-            <div className="px-6 py-4 border-b border-slate-100">
-              <h3 className="text-lg font-black text-[#002845]">إنشاء طلب استرداد</h3>
-              <p className="text-xs text-slate-500 mt-1">
-                التذكرة {ticketMeta.id} · {ticketMeta.user_name || "العميل"}
-              </p>
-              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-2 leading-relaxed">
-                ⚠️ المالية لا ترى محادثة الدعم. ملخّصك أدناه هو كل ما ستقرأه عن السياق. اكتبه بدقة.
-              </p>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[#002845] mb-1">المبلغ المطلوب استرداده (ر.س)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={refundForward.amount}
-                  onChange={(e) => setRefundForward(p => ({ ...p, amount: e.target.value }))}
-                  className="w-full border-2 border-slate-200 focus:border-[#D4AF37] rounded-xl px-3 py-2 text-sm outline-none"
-                  placeholder="مثال: 599"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-[#002845] mb-1">السبب باختصار</label>
-                <input
-                  type="text"
-                  value={refundForward.reason}
-                  onChange={(e) => setRefundForward(p => ({ ...p, reason: e.target.value }))}
-                  className="w-full border-2 border-slate-200 focus:border-[#D4AF37] rounded-xl px-3 py-2 text-sm outline-none"
-                  placeholder="مثال: خصم مكرر · إلغاء قبل بدء الخدمة"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-[#002845] mb-1">
-                  ملخص للمالية <span className="text-rose-600">*</span>
-                  <span className="text-[10px] text-slate-500 mr-2 font-normal">
-                    (٥٠ حرفاً على الأقل — {refundForward.support_note.trim().length}/50)
-                  </span>
-                </label>
-                <textarea
-                  value={refundForward.support_note}
-                  onChange={(e) => setRefundForward(p => ({ ...p, support_note: e.target.value }))}
-                  rows={6}
-                  placeholder="اشرح للمالية: ماذا حدث، ما هي خلفية العميل، لماذا توصينا بالاسترداد. هذا النص هو كل ما ستراه المالية."
-                  className={`w-full border-2 rounded-xl px-3 py-2 text-sm outline-none resize-y ${
-                    refundForward.support_note.trim().length >= 50
-                      ? "border-emerald-300 focus:border-emerald-500"
-                      : "border-slate-200 focus:border-[#D4AF37]"
-                  }`}
-                />
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setRefundForwardOpen(false)}
-                disabled={refundForwardLoading}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold hover:bg-white"
-              >
-                إلغاء
-              </button>
-              <button
-                type="button"
-                onClick={() => void submitRefundForward()}
-                disabled={
-                  refundForwardLoading ||
-                  refundForward.support_note.trim().length < 50 ||
-                  !refundForward.amount
-                }
-                className="px-5 py-2 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] text-sm font-black shadow-md disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-              >
-                {refundForwardLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-                إرسال للمالية
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─────────── Follow-up update modal ─────────── */}
-      {refundFollowupOpen && ticketMeta?.refund_id && (
-        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
-          <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl flex flex-col max-h-[92dvh] overflow-hidden">
-            <div className="h-1.5 bg-amber-500" />
-            <div className="px-6 py-4 border-b border-slate-100">
-              <h3 className="text-lg font-black text-[#002845]">تحديث الدعم للمالية</h3>
-              <p className="text-xs text-slate-500 mt-1">
-                قضية {ticketMeta.refund_case_number || ("#" + ticketMeta.refund_id)} — المالية تطلب معلومات إضافية
-              </p>
-              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-2 leading-relaxed">
-                هذا التحديث يُضاف كـ "تحديث الدعم رقم N" أسفل الملخص الأصلي. الملخص القديم محفوظ كما هو.
-              </p>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6">
-              <label className="block text-xs font-bold text-[#002845] mb-1">
-                التحديث الجديد <span className="text-[10px] text-slate-500 font-normal">
-                  ({refundFollowupNote.trim().length}/50)
-                </span>
-              </label>
-              <textarea
-                value={refundFollowupNote}
-                onChange={(e) => setRefundFollowupNote(e.target.value)}
-                rows={8}
-                placeholder="ما المعلومة التي وصلتك من العميل، وكيف تجيب على ما طلبته المالية..."
-                className={`w-full border-2 rounded-xl px-3 py-2 text-sm outline-none resize-y ${
-                  refundFollowupNote.trim().length >= 50 ? "border-emerald-300 focus:border-emerald-500" : "border-slate-200 focus:border-[#D4AF37]"
-                }`}
-              />
-            </div>
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setRefundFollowupOpen(false)}
-                disabled={refundFollowupLoading}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold hover:bg-white"
-              >
-                إلغاء
-              </button>
-              <button
-                type="button"
-                onClick={() => void submitRefundFollowup()}
-                disabled={refundFollowupLoading || refundFollowupNote.trim().length < 50}
-                className="px-5 py-2 rounded-xl bg-amber-500 text-white text-sm font-black shadow-md disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-              >
-                {refundFollowupLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-                إرسال التحديث للمالية
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

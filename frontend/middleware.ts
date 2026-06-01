@@ -60,12 +60,15 @@ export function middleware(req: NextRequest) {
 // Pages the matcher covers. Anything customer-service-shaped that a
 // finance_admin could conceivably navigate to. Listed explicitly so
 // future support-only pages just need a one-line addition here.
+// Round 3 update: /admin/finance-inbox is removed from the matcher
+// because it's the finance team's legitimate working surface (the
+// list of tickets transferred to them). It used to leak ticket data
+// — Round 1 closed that — and is now safe to expose to finance.
 export const config = {
   matcher: [
     "/add-listing/admin/omni-inbox/:path*",
     "/add-listing/admin/customer-service/:path*",
     "/add-listing/admin/support/:path*",
     "/add-listing/admin/support-tickets/:path*",
-    "/add-listing/admin/finance-inbox/:path*",
   ],
 };
