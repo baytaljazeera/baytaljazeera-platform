@@ -176,10 +176,11 @@ export default function OmniInboxPage() {
     department?: string | null;
     category?: string | null;
     invoice_id?: number | null;
-    // Set when support has already forwarded this ticket as a refund
-    // request. Both fields drive the support UI: hide "إنشاء طلب
-    // استرداد" once refund_id exists, surface "تحديث للمالية" if
-    // finance asked for more info via support_followup_required.
+    // finance_inbox_state drives the support button mode: while it's
+    // null/undefined the ticket is support-only and the "Transfer to
+    // Finance" button shows; once it equals 'in_inbox' we render the
+    // "✓ Co-owned with Finance" indicator instead.
+    finance_inbox_state?: string | null;
     refund_id?: number | null;
     refund_case_number?: string | null;
     refund_status?: string | null;
@@ -293,6 +294,7 @@ export default function OmniInboxPage() {
             department: data.ticket.department ?? null,
             category: data.ticket.category ?? null,
             invoice_id: data.ticket.invoice_id ?? null,
+            finance_inbox_state: data.ticket.finance_inbox_state ?? null,
             refund_id: data.ticket.refund_id ?? null,
             refund_case_number: data.ticket.refund_case_number ?? null,
             refund_status: data.ticket.refund_status ?? null,
@@ -315,6 +317,7 @@ export default function OmniInboxPage() {
                   user_email: t.user_email,
                   department: t.department ?? null,
                   category: t.category ?? null,
+                  finance_inbox_state: t.finance_inbox_state ?? null,
                   invoice_id: t.invoice_id ?? null,
                   refund_id: t.refund_id ?? null,
                   refund_case_number: t.refund_case_number ?? null,
