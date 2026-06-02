@@ -22,6 +22,7 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { alertDialog, promptDialog } from "@/components/ui/ConfirmDialog";
 import {
   Loader2, RefreshCw, MessageSquare, Send, Lock, ArrowRight,
   Wallet, X, FileText,
@@ -140,7 +141,7 @@ export default function FinanceInboxPage() {
         await openTicket(selected);
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data?.error || "فشل الإرسال");
+        await alertDialog({ title: "فشل الإرسال", body: data?.error || "حاول مرة أخرى.", variant: "danger" });
       }
     } finally {
       setSending(false);
@@ -149,7 +150,16 @@ export default function FinanceInboxPage() {
 
   const returnToSupport = async () => {
     if (!selected) return;
-    const note = prompt("سبب الإرجاع للدعم (اختياري):") || "";
+    const note = await promptDialog({
+      title: "إعادة التذكرة للدعم",
+      body: "اكتب سبب الإرجاع باختصار. هذه ملاحظة داخلية لن يراها العميل.",
+      placeholder: "اختياري — مثال: ليست مالية، خطأ توجيه.",
+      multiline: true,
+      variant: "warning",
+      confirmText: "إعادة للدعم",
+      cancelText: "تراجع",
+    });
+    if (note === null) return; // user cancelled
     const res = await fetch(`${API_URL}/api/finance/inbox/${selected.id}/return-to-support`, {
       method: "POST",
       credentials: "include",
@@ -161,7 +171,7 @@ export default function FinanceInboxPage() {
       await fetchInbox();
     } else {
       const data = await res.json().catch(() => ({}));
-      alert(data?.error || "فشل الإرجاع");
+      await alertDialog({ title: "فشل الإرجاع", body: data?.error || "حاول مجدداً.", variant: "danger" });
     }
   };
 
@@ -169,7 +179,7 @@ export default function FinanceInboxPage() {
     if (!selected) return;
     const amount = parseFloat(convertAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
-      alert("أدخل مبلغاً صحيحاً");
+      await alertDialog({ title: "المبلغ غير صحيح", body: "أدخل قيمة موجبة بالريال.", variant: "warning" });
       return;
     }
     setConvertLoading(true);
@@ -182,14 +192,18 @@ export default function FinanceInboxPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        alert(`تم إنشاء معاملة الاسترداد ${data?.refund?.case_number || ""}. العميل عنده 4 أيام للتأكيد.`);
+        await alertDialog({
+          title: "تم فتح معاملة الاسترداد",
+          body: `الرقم: ${data?.refund?.case_number || ""}. العميل لديه ٤ أيام لاختيار طريقة الإرجاع والتأكيد. سيصلك إشعار عندما يرد.`,
+          variant: "success",
+        });
         setConvertOpen(false);
         setConvertAmount("");
         setConvertReason("");
         await openTicket(selected);
         await fetchInbox();
       } else {
-        alert(data?.error || "فشل التحويل");
+        await alertDialog({ title: "فشل فتح المعاملة", body: data?.error || "حاول مجدداً.", variant: "danger" });
       }
     } finally {
       setConvertLoading(false);

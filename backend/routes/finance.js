@@ -1101,7 +1101,7 @@ router.post(
     const roundedAmount = Math.round(amount * 100) / 100;
     if (!reason) reason = `مُحوَّل من تذكرة ${ticket.ticket_number || ('#' + ticket.id)}`;
 
-    const client = await db.getClient();
+    const client = await db.connect();
     let didCommit = false;
     try {
       await client.query('BEGIN');
@@ -1211,7 +1211,7 @@ router.post("/refunds", authMiddleware, requireRoles('finance_admin'), asyncHand
   
   const roundedAmount = Math.round(parsedAmount * 100) / 100;
   
-  const client = await db.getClient();
+  const client = await db.connect();
   let didCommit = false;
   
   try {
@@ -2316,7 +2316,7 @@ router.post("/customer/:id/confirm", authMiddleware, asyncHandler(async (req, re
     }
   }
 
-  const client = await db.getClient();
+  const client = await db.connect();
   let didCommit = false;
   try {
     await client.query('BEGIN');
@@ -2381,7 +2381,7 @@ router.post("/customer/:id/decline", authMiddleware, asyncHandler(async (req, re
     return res.status(409).json({ error: `لا يمكن إلغاء هذه المعاملة من حالتها الحالية` });
   }
 
-  const client = await db.getClient();
+  const client = await db.connect();
   let didCommit = false;
   try {
     await client.query('BEGIN');
@@ -2476,7 +2476,7 @@ router.patch(
       });
     }
 
-    const client = await db.getClient();
+    const client = await db.connect();
     let didCommit = false;
     try {
       await client.query("BEGIN");
@@ -2795,7 +2795,7 @@ router.post(
     const deadline = new Date();
     deadline.setDate(deadline.getDate() + 4); // 4-day customer confirmation window
 
-    const client = await db.getClient();
+    const client = await db.connect();
     let didCommit = false;
     try {
       await client.query('BEGIN');
@@ -3010,7 +3010,7 @@ router.patch(
       return res.status(400).json({ error: "حالة الوجهة غير معروفة" });
     }
 
-    const client = await db.getClient();
+    const client = await db.connect();
     let didCommit = false;
     try {
       await client.query('BEGIN');
@@ -3159,7 +3159,7 @@ router.post(
       return res.status(400).json({ error: "صورة إثبات التحويل مطلوبة" });
     }
 
-    const client = await db.getClient();
+    const client = await db.connect();
     let didCommit = false;
     try {
       await client.query('BEGIN');
@@ -3283,7 +3283,7 @@ router.post(
       return res.status(400).json({ error: "بيانات البنك الثلاثة مطلوبة" });
     }
 
-    const client = await db.getClient();
+    const client = await db.connect();
     let didCommit = false;
     try {
       await client.query('BEGIN');

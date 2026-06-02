@@ -1,6 +1,7 @@
 "use client";
 
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { alertDialog } from "@/components/ui/ConfirmDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -460,11 +461,11 @@ export default function CustomerServicePage() {
           await fetchTicketDetails(t.id);
         }
       } else {
-        alert(data?.error || "فشل التحويل");
+        await alertDialog({ title: "فشل التحويل", body: data?.error || "حاول مجدداً.", variant: "danger" });
         setTicketTransferModal(p => ({ ...p, submitting: false }));
       }
     } catch {
-      alert("خطأ في الاتصال");
+      await alertDialog({ title: "خطأ في الاتصال", body: "تحقق من الإنترنت وحاول مجدداً.", variant: "danger" });
       setTicketTransferModal(p => ({ ...p, submitting: false }));
     }
   };

@@ -22,6 +22,7 @@ export const dynamic = "force-dynamic";
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { API_URL, getAuthHeaders } from "@/lib/api";
+import { alertDialog } from "@/components/ui/ConfirmDialog";
 import {
   Loader2, CheckCircle2, CreditCard, Building2, AlertTriangle,
   Clock, XCircle, ArrowRight,
@@ -105,11 +106,15 @@ export default function CustomerRefundConfirmPage() {
 
   const submitConfirm = async () => {
     if (!method) {
-      alert("اختر طريقة الإرجاع أولاً");
+      await alertDialog({ title: "اختر طريقة الإرجاع", body: "حدّد بطاقة ائتمانية أو حساب بنكي قبل التأكيد.", variant: "warning" });
       return;
     }
     if (method === "bank" && (!bankName.trim() || !iban.trim() || !holder.trim())) {
-      alert("للطريقة البنكية: اسم البنك، رقم IBAN، واسم صاحب الحساب مطلوبة");
+      await alertDialog({
+        title: "بيانات البنك ناقصة",
+        body: "للطريقة البنكية: اسم البنك، رقم IBAN، واسم صاحب الحساب — كلها مطلوبة.",
+        variant: "warning",
+      });
       return;
     }
     setSubmitting(true);
@@ -130,14 +135,14 @@ export default function CustomerRefundConfirmPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(data?.error || "تعذّر التأكيد");
+        await alertDialog({ title: "تعذّر التأكيد", body: data?.error || "حاول مرة أخرى.", variant: "danger" });
         setSubmitting(false);
         return;
       }
       await load();
       setSubmitting(false);
     } catch {
-      alert("خطأ في الاتصال");
+      await alertDialog({ title: "خطأ في الاتصال", body: "تحقق من إنترنتك وحاول مجدداً.", variant: "danger" });
       setSubmitting(false);
     }
   };
@@ -153,7 +158,7 @@ export default function CustomerRefundConfirmPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(data?.error || "تعذّر الإلغاء");
+        await alertDialog({ title: "تعذّر الإلغاء", body: data?.error || "حاول مرة أخرى.", variant: "danger" });
         setSubmitting(false);
         return;
       }
@@ -161,7 +166,7 @@ export default function CustomerRefundConfirmPage() {
       await load();
       setSubmitting(false);
     } catch {
-      alert("خطأ في الاتصال");
+      await alertDialog({ title: "خطأ في الاتصال", body: "تحقق من إنترنتك وحاول مجدداً.", variant: "danger" });
       setSubmitting(false);
     }
   };
