@@ -966,12 +966,47 @@ router.post("/:id/reply", authMiddleware, denyFinanceFromSupport, asyncHandler(a
     [result.rows[0].id]
   );
   
-  await db.query(
-    `UPDATE support_tickets SET updated_at = NOW() WHERE id = $1`,
-    [id]
-  );
-  
+  // Side-effects of a reply on the parent ticket:
+  //   1. Always bump updated_at, last_reply_at, and last_reply_from
+  //      so the Command Center can colour cards by who's currently
+  //      blocked on the ball.
+  //   2. If STAFF replied and the ticket is still in 'new' or 'open'
+  //      state, transition it to 'in_progress'. Without this, the
+  //      "1 New" counter never decreases after the support team
+  //      sends the first reply — the owner's exact complaint.
+  //   3. Set first_response_at on the very first STAFF customer-
+  //      visible reply (used later for SLA reporting).
+  //   4. Internal notes (visibility='internal') do NOT transition
+  //      status, do NOT count as first response, and do NOT mark
+  //      "staff replied to the customer" — they're invisible to the
+  //      customer side.
+  const replyFromTag = isStaff
+    ? (visibility === 'internal' ? 'internal' : 'staff')
+    : 'customer';
+  const counterVisibleStaffReply = isStaff && visibility === 'customer_visible';
   const ticket = ticketCheck.rows[0];
+  const shouldTransitionToInProgress =
+    counterVisibleStaffReply && (ticket.status === 'new' || ticket.status === 'open');
+  const shouldSetFirstResponse =
+    counterVisibleStaffReply && !ticket.first_response_at;
+
+  // The UPDATE on support_tickets here automatically busts the
+  // 'admin:pending-counts' cache via INVALIDATION_MAP in db.js, so
+  // the Command Center sees the status transition within seconds —
+  // no manual cache-busting needed.
+  await db.query(
+    `UPDATE support_tickets
+       SET updated_at      = NOW(),
+           last_reply_at   = NOW(),
+           last_reply_from = $2,
+           status          = CASE WHEN $3::boolean THEN 'in_progress' ELSE status END,
+           first_response_at = CASE WHEN $4::boolean AND first_response_at IS NULL
+                                   THEN NOW()
+                                   ELSE first_response_at END
+     WHERE id = $1`,
+    [id, replyFromTag, shouldTransitionToInProgress, shouldSetFirstResponse]
+  );
+
   // Notification fan-out — every reply notifies "the OTHER side".
   // Staff replied: ping the customer. Customer replied: ping the
   // assigned admin (or every admin in the auto_assigned_role if

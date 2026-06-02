@@ -959,6 +959,16 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'admin_last_read_at') THEN
           ALTER TABLE support_tickets ADD COLUMN admin_last_read_at TIMESTAMPTZ;
         END IF;
+        -- last_reply_from / last_reply_at: needed so the Command Center
+        -- can colour cards by "who's the ball with right now?" without
+        -- reading the entire reply log. Set on every POST /:id/reply.
+        --   last_reply_from = 'customer' | 'staff' | 'internal'
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'last_reply_from') THEN
+          ALTER TABLE support_tickets ADD COLUMN last_reply_from VARCHAR(20);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'support_tickets' AND column_name = 'last_reply_at') THEN
+          ALTER TABLE support_tickets ADD COLUMN last_reply_at TIMESTAMPTZ;
+        END IF;
         -- Unified-request fields (owner-driven consolidation, June 2026):
         -- ticket_type widens the old "department" (financial|account|technical)
         -- to absorb complaint flavors + property reports + escalations into

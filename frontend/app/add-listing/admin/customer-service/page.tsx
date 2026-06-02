@@ -311,6 +311,35 @@ export default function CustomerServicePage() {
     loadData();
   }, [fetchCurrentUser, fetchTickets, fetchSupportStats, fetchComplaints, fetchComplaintStats]);
 
+  // Auto-refresh the support board every 20 seconds. Without this the
+  // operator has to manually press "تحديث" — meaning a fresh customer
+  // reply sits invisible until they remember to refresh. Tab-visibility
+  // aware: we pause polling when the tab is hidden so we don't burn
+  // backend cycles on tabs left open overnight.
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const tick = () => {
+      void Promise.all([
+        fetchTickets(),
+        fetchSupportStats(),
+        fetchComplaints(),
+        fetchComplaintStats(),
+      ]);
+    };
+    const start = () => {
+      if (timer) return;
+      timer = setInterval(tick, 20_000);
+    };
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+
+    if (typeof document !== "undefined" && document.visibilityState === "visible") {
+      start();
+    }
+    const onVis = () => (document.visibilityState === "visible" ? start() : stop());
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
+  }, [fetchTickets, fetchSupportStats, fetchComplaints, fetchComplaintStats]);
+
   // Auto-switch to the tab with more new items so a fresh complaint isn't
   // hidden behind the default "support" tab. Skipped once the user has
   // clicked any tab themselves so we don't fight their navigation.
