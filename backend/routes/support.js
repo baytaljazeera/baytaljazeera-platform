@@ -613,7 +613,18 @@ router.get("/admin-unread-count", authMiddleware, denyFinanceFromSupport, asyncH
   }
 }));
 
-/** Manual routing: move ticket to Finance (audit trail as internal reply). */
+/** Manual routing: transfer a ticket to another role (finance, content,
+ *  admin_manager, super_admin, or back to support). Writes an internal
+ *  audit reply + notifies the destination role. */
+const TRANSFER_TARGETS = {
+  // role            { departmentTag, labelAr, slaHours }
+  finance_admin:  { dept: 'financial', labelAr: 'قسم المالية',        sla: 24 },
+  content_admin:  { dept: 'technical', labelAr: 'إدارة المحتوى',      sla: 24 },
+  admin_manager:  { dept: 'account',   labelAr: 'الإدارة',            sla: 12 },
+  super_admin:    { dept: 'account',   labelAr: 'الإدارة العليا',     sla: 6  },
+  support_admin:  { dept: 'account',   labelAr: 'الدعم الفني',        sla: 24 },
+};
+
 router.patch(
   "/:id/transfer",
   authMiddleware,
@@ -629,10 +640,21 @@ router.patch(
     if (Number.isNaN(id)) {
       return res.status(400).json({ error: "معرف غير صالح" });
     }
-    const target = (req.body?.target || "financial").toLowerCase();
-    if (target !== "financial") {
-      return res.status(400).json({ error: "نوع التحويل غير مدعوم حالياً" });
+
+    // Body accepts either:
+    //   target_role: 'finance_admin' | 'content_admin' | ... (preferred)
+    //   target:      'financial' (legacy alias for finance_admin)
+    const legacyTarget = typeof req.body?.target === 'string' ? req.body.target.toLowerCase() : '';
+    let targetRole = typeof req.body?.target_role === 'string' ? req.body.target_role : '';
+    if (!targetRole && legacyTarget === 'financial') targetRole = 'finance_admin';
+
+    if (!TRANSFER_TARGETS[targetRole]) {
+      return res.status(400).json({
+        error: "وجهة التحويل غير مدعومة",
+        allowed: Object.keys(TRANSFER_TARGETS),
+      });
     }
+    const targetConfig = TRANSFER_TARGETS[targetRole];
 
     const sc = getSupportTicketScope(req.user.role, req.user.id, 2);
     let ticketQuery = `SELECT * FROM support_tickets st WHERE st.id = $1`;
@@ -648,18 +670,16 @@ router.patch(
     }
 
     const ticket = existing.rows[0];
-    // Idempotency rule: a ticket can be "in" the financial department and
-    // still need transferring — customer-originated refund requests now
-    // land in support_admin with department='financial' on purpose, so we
-    // gate on auto_assigned_role / transferred_to_finance_at, not department.
-    if (
-      ticket.auto_assigned_role === "finance_admin" ||
-      ticket.transferred_to_finance_at
-    ) {
-      return res.status(400).json({ error: "التذكرة محوّلة بالفعل إلى المالية" });
+    // Idempotency: transferring to the same role twice is rejected
+    // (avoids endless transfer-to-finance cycles).
+    if (ticket.auto_assigned_role === targetRole) {
+      return res.status(400).json({
+        error: `التذكرة محوّلة بالفعل إلى ${targetConfig.labelAr}`,
+      });
     }
 
-    const routing = getSmartRouting("financial", ticket.priority || "medium");
+    const routing = { role: targetRole, sla_hours: targetConfig.sla };
+    const isFinance = targetRole === 'finance_admin';
 
     // Resilient UPDATE — try with the new transferred_to_finance_* +
     // finance_inbox_state columns first, fall back as columns get
@@ -670,63 +690,64 @@ router.patch(
     // (finance_inbox_state='in_inbox'). Finance decides later whether
     // to convert it to a Refund Case via /finance/inbox/:id/convert-to-case
     // or to resolve it in place.
+    // Finance is special: the dedicated finance_inbox surface uses the
+    // finance_inbox_state column to gate visibility. For all other
+    // targets we just update auto_assigned_role; the destination
+    // staff sees the ticket in their default queue scope.
     let updated;
-    try {
-      updated = await db.query(
-        `UPDATE support_tickets st
-         SET department = 'financial',
-             category = COALESCE(NULLIF(TRIM(category), ''), 'financial'),
-             auto_assigned_role = $1,
-             sla_hours = $2,
-             transferred_to_finance_at = NOW(),
-             transferred_to_finance_by = $3,
-             finance_inbox_state = 'in_inbox',
-             updated_at = NOW()
-         WHERE st.id = $4
-         RETURNING *`,
-        [routing.role, routing.sla_hours, req.user.id, id]
-      );
-    } catch (err) {
-      if (!(err && err.code === '42703')) throw err;
+    if (isFinance) {
       try {
         updated = await db.query(
           `UPDATE support_tickets st
-           SET department = 'financial',
-               category = COALESCE(NULLIF(TRIM(category), ''), 'financial'),
-               auto_assigned_role = $1,
-               sla_hours = $2,
+           SET department = $1,
+               category = COALESCE(NULLIF(TRIM(category), ''), $1),
+               auto_assigned_role = $2,
+               sla_hours = $3,
                transferred_to_finance_at = NOW(),
-               transferred_to_finance_by = $3,
+               transferred_to_finance_by = $4,
+               finance_inbox_state = 'in_inbox',
+               updated_at = NOW()
+           WHERE st.id = $5
+           RETURNING *`,
+          [targetConfig.dept, routing.role, routing.sla_hours, req.user.id, id]
+        );
+      } catch (err) {
+        if (!(err && err.code === '42703')) throw err;
+        // Migration-lag fallback if finance_inbox_state column isn't there yet.
+        updated = await db.query(
+          `UPDATE support_tickets st
+           SET department = $1,
+               auto_assigned_role = $2,
+               sla_hours = $3,
                updated_at = NOW()
            WHERE st.id = $4
            RETURNING *`,
-          [routing.role, routing.sla_hours, req.user.id, id]
-        );
-      } catch (err2) {
-        if (!(err2 && err2.code === '42703')) throw err2;
-        updated = await db.query(
-          `UPDATE support_tickets st
-           SET department = 'financial',
-               category = COALESCE(NULLIF(TRIM(category), ''), 'financial'),
-               auto_assigned_role = $1,
-               sla_hours = $2,
-               updated_at = NOW()
-           WHERE st.id = $3
-           RETURNING *`,
-          [routing.role, routing.sla_hours, id]
+          [targetConfig.dept, routing.role, routing.sla_hours, id]
         );
       }
+    } else {
+      updated = await db.query(
+        `UPDATE support_tickets st
+         SET department = $1,
+             auto_assigned_role = $2,
+             sla_hours = $3,
+             updated_at = NOW()
+         WHERE st.id = $4
+         RETURNING *`,
+        [targetConfig.dept, routing.role, routing.sla_hours, id]
+      );
     }
 
     const transferNote = typeof req.body?.note === "string" ? req.body.note.trim() : "";
     const auditMessage = transferNote
-      ? `تم تحويل التذكرة إلى قسم المالية — ${transferNote}`
-      : "تم تحويل التذكرة إلى قسم المالية";
+      ? `تم تحويل التذكرة إلى ${targetConfig.labelAr} — ${transferNote}`
+      : `تم تحويل التذكرة إلى ${targetConfig.labelAr}`;
 
     await db.query(
-      `INSERT INTO support_ticket_replies (ticket_id, sender_id, sender_type, message)
-       VALUES ($1, $2, 'internal', $3)`,
-      [id, req.user.id, auditMessage]
+      `INSERT INTO support_ticket_replies
+         (ticket_id, sender_id, sender_type, sender_role, message, visibility)
+       VALUES ($1, $2, 'internal', $3, $4, 'internal')`,
+      [id, req.user.id, req.user.role || null, auditMessage]
     );
 
     // Audit log entry (best-effort).
@@ -735,29 +756,34 @@ router.patch(
         `INSERT INTO support_ticket_audit_log
            (ticket_id, event_type, actor_user_id, actor_name_snapshot,
             actor_email_snapshot, actor_role_snapshot, from_role, to_role, payload)
-         VALUES ($1, 'transferred_to_finance', $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
         [
-          id, req.user.id, req.user?.name || null, req.user?.email || null,
+          id,
+          isFinance ? 'transferred_to_finance' : `transferred_to_${targetRole}`,
+          req.user.id, req.user?.name || null, req.user?.email || null,
           req.user?.role || null, ticket.auto_assigned_role || null,
-          routing.role, JSON.stringify({ note: transferNote || null }),
+          routing.role, JSON.stringify({ note: transferNote || null, target_role: targetRole }),
         ]
       );
     } catch (e) {
       if (e && e.code !== '42P01') console.warn('[support transfer] audit:', e.message);
     }
 
-    // Wake up finance_admin inboxes — best effort, never blocks transfer.
+    // Wake up the destination role's inboxes — best effort.
     try {
-      const fin = await db.query(`SELECT id FROM users WHERE role = 'finance_admin'`);
-      for (const row of fin.rows) {
+      const dest = await db.query(`SELECT id FROM users WHERE role = $1`, [targetRole]);
+      const link = isFinance
+        ? '/add-listing/admin/finance-inbox'
+        : '/add-listing/admin/customer-service';
+      for (const row of dest.rows) {
         await db.query(
-          `INSERT INTO notifications (user_id, type, title, message, link, created_at)
-           VALUES ($1, 'finance_transfer', $2, $3, $4, NOW())`,
+          `INSERT INTO notifications (user_id, type, title, body, link, created_at)
+           VALUES ($1, 'ticket_transferred', $2, $3, $4, NOW())`,
           [
             row.id,
-            'مراسلة محوّلة من الدعم',
-            `تذكرة ${ticket.ticket_number || ('#' + ticket.id)} بانتظار مراجعة المالية`,
-            '/add-listing/admin/finance?tab=messages',
+            `تذكرة محوّلة إليك من ${req.user?.name || 'أحد الموظفين'}`,
+            `تذكرة ${ticket.ticket_number || ('#' + ticket.id)} بانتظار مراجعتك (${targetConfig.labelAr})`,
+            link,
           ]
         );
       }
@@ -765,7 +791,7 @@ router.patch(
       if (e && e.code !== '42P01') console.warn('[support transfer] notify:', e.message);
     }
 
-    res.json({ ok: true, ticket: updated.rows[0], message: auditMessage });
+    res.json({ ok: true, ticket: updated.rows[0], message: auditMessage, target_role: targetRole });
   })
 );
 

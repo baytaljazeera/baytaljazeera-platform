@@ -428,34 +428,44 @@ export default function CustomerServicePage() {
     }
   };
 
-  // Round 3: transfer a ticket to finance. Sets finance_inbox_state
-  // to 'in_inbox' on the ticket — finance team sees it in their
-  // /admin/finance-inbox surface and the ticket STAYS here too
-  // (co-owned). Doesn't create a refund row.
-  const [transferringToFinance, setTransferringToFinance] = useState<number | null>(null);
-  const handleTransferToFinance = async (ticket: SupportTicket) => {
-    if (!window.confirm(`تحويل تذكرة ${ticket.ticket_number} للمالية؟\nالمالية ستراها وتراسل العميل، وتبقى هنا أيضاً.`)) return;
-    setTransferringToFinance(ticket.id);
+  // Round 3.1: transfer modal lets the agent pick the destination role
+  // (finance / content / admin manager / super admin) plus an optional
+  // note. The ticket stays here too (co-owned).
+  const [ticketTransferModal, setTicketTransferModal] = useState<{
+    ticket: SupportTicket | null;
+    targetRole: string;
+    note: string;
+    submitting: boolean;
+  }>({ ticket: null, targetRole: "finance_admin", note: "", submitting: false });
+
+  const submitTicketTransfer = async () => {
+    const t = ticketTransferModal.ticket;
+    if (!t || !ticketTransferModal.targetRole) return;
+    setTicketTransferModal(p => ({ ...p, submitting: true }));
     try {
-      const res = await fetch(`${API_URL}/api/support/${ticket.id}/transfer`, {
+      const res = await fetch(`${API_URL}/api/support/${t.id}/transfer`, {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ target: "financial" }),
+        body: JSON.stringify({
+          target_role: ticketTransferModal.targetRole,
+          note: ticketTransferModal.note.trim() || undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
+        setTicketTransferModal({ ticket: null, targetRole: "finance_admin", note: "", submitting: false });
         await fetchTickets();
-        if (selectedTicket?.id === ticket.id) {
-          await fetchTicketDetails(ticket.id);
+        if (selectedTicket?.id === t.id) {
+          await fetchTicketDetails(t.id);
         }
       } else {
         alert(data?.error || "فشل التحويل");
+        setTicketTransferModal(p => ({ ...p, submitting: false }));
       }
     } catch {
       alert("خطأ في الاتصال");
-    } finally {
-      setTransferringToFinance(null);
+      setTicketTransferModal(p => ({ ...p, submitting: false }));
     }
   };
 
@@ -801,18 +811,19 @@ export default function CustomerServicePage() {
                             </button>
                           )}
                         </div>
-                        {/* Transfer to Finance — only when:
-                            - not already with finance (finance_inbox_state != 'in_inbox')
-                            - not already linked to a refund transaction
-                            Visible for any ticket, but mainly used on financial tickets. */}
-                        {(!ticket.finance_inbox_state || ticket.finance_inbox_state !== 'in_inbox') && !ticket.refund_id && (
+                        {/* Transfer ⇄ — opens a modal asking which role
+                            to send the ticket to. Ticket stays here too. */}
+                        {!ticket.refund_id && (
                           <button
-                            onClick={() => void handleTransferToFinance(ticket)}
-                            disabled={transferringToFinance === ticket.id}
-                            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-100 text-emerald-800 rounded-xl hover:bg-emerald-200 transition text-sm font-bold disabled:opacity-50"
+                            onClick={() => setTicketTransferModal({
+                              ticket,
+                              targetRole: ticket.finance_inbox_state === 'in_inbox' ? 'admin_manager' : 'finance_admin',
+                              note: "",
+                              submitting: false,
+                            })}
+                            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-l from-[#FFFCEE] to-white border border-[#D4AF37]/40 text-[#9A7D28] rounded-xl hover:from-[#FFF7D6] hover:shadow-md transition text-sm font-black"
                           >
-                            {transferringToFinance === ticket.id ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                            💰 تحويل للمالية
+                            ⇄ تحويل
                           </button>
                         )}
                         {ticket.finance_inbox_state === 'in_inbox' && !ticket.refund_id && (
@@ -1248,6 +1259,81 @@ export default function CustomerServicePage() {
       )}
 
       {/* Transfer modal — agent picks destination + optional reason. */}
+      {/* Generic ticket transfer modal (Round 3.1) */}
+      {ticketTransferModal.ticket && (
+        <div className="fixed inset-0 z-[80] bg-black/55 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl max-h-[92dvh] flex flex-col overflow-hidden">
+            <div className="h-1.5 bg-gradient-to-l from-[#D4AF37] via-[#B8860B] to-[#002845]" />
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h3 className="text-lg font-black text-[#002845]">تحويل التذكرة</h3>
+              <p className="text-xs text-slate-500 mt-1 font-mono">
+                {ticketTransferModal.ticket.ticket_number} · {ticketTransferModal.ticket.user_name}
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-3">
+              <div>
+                <label className="block text-xs font-black text-[#002845] mb-2">إلى</label>
+                <div className="space-y-2">
+                  {[
+                    { value: "finance_admin",  label: "💰 قسم المالية",     hint: "للاستردادات والمدفوعات" },
+                    { value: "content_admin",  label: "📋 إدارة المحتوى",   hint: "للإعلانات والمحتوى" },
+                    { value: "admin_manager",  label: "🧑‍💼 المدير الإداري", hint: "للقرارات الإدارية" },
+                    { value: "super_admin",    label: "👑 الإدارة العليا",  hint: "للحالات الحرجة" },
+                    { value: "support_admin",  label: "🎧 الدعم الفني",     hint: "إعادة للدعم" },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setTicketTransferModal(p => ({ ...p, targetRole: opt.value }))}
+                      className={`w-full text-right p-3 rounded-xl border-2 transition flex items-center justify-between ${
+                        ticketTransferModal.targetRole === opt.value
+                          ? "border-[#D4AF37] bg-[#FFFCEE] shadow-md"
+                          : "border-slate-200 bg-white hover:border-slate-300"
+                      }`}
+                    >
+                      <div>
+                        <p className="font-black text-[#002845]">{opt.label}</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">{opt.hint}</p>
+                      </div>
+                      {ticketTransferModal.targetRole === opt.value && (
+                        <span className="text-[#D4AF37] font-black">✓</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-black text-[#002845] mb-1">ملاحظة (اختيارية)</label>
+                <textarea
+                  value={ticketTransferModal.note}
+                  onChange={(e) => setTicketTransferModal(p => ({ ...p, note: e.target.value }))}
+                  rows={2}
+                  placeholder="مثال: العميل مصرّ على استرداد كامل المبلغ."
+                  className="w-full border-2 border-slate-200 focus:border-[#D4AF37] rounded-xl px-3 py-2 text-sm outline-none resize-y"
+                />
+              </div>
+            </div>
+            <div className="px-6 py-3 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setTicketTransferModal({ ticket: null, targetRole: "finance_admin", note: "", submitting: false })}
+                disabled={ticketTransferModal.submitting}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold hover:bg-white"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={() => void submitTicketTransfer()}
+                disabled={ticketTransferModal.submitting}
+                className="px-5 py-2 rounded-xl bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] text-sm font-black inline-flex items-center gap-2 disabled:opacity-50"
+              >
+                {ticketTransferModal.submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                تأكيد التحويل
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {transferTarget && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden max-h-[90vh] flex flex-col">

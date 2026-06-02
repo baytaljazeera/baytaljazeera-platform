@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import { Toaster } from "sonner";
+import ToasterClient from "@/components/ToasterClient";
 import Navbar from "@/components/Navbar";
 import NewsTicker from "@/components/NewsTicker";
 import ChatbotWrapper from "@/components/ChatbotWrapper";
@@ -14,7 +14,7 @@ import { DialogHost } from "@/components/ui/ConfirmDialog";
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SiteStatusWrapper>
-      <Toaster position="top-center" richColors />
+      <ToasterClient />
       <Navbar />
       <NewsTicker />
       <GlobalPromotions />
