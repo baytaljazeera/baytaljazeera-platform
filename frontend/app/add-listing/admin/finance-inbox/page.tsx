@@ -62,6 +62,27 @@ type Reply = {
   created_at: string;
 };
 
+// Round 3.1: the refund transaction linked to a ticket. The finance
+// inbox right-pane uses this to render the state-driven action panel
+// (upload proof, complete, etc.).
+type RefundDetail = {
+  id: number;
+  case_number: string | null;
+  status: string;
+  amount: number;
+  refund_method: "credit_card" | "bank" | null;
+  refund_method_note: string | null;
+  bank_name: string | null;
+  bank_account_iban: string | null;
+  account_holder_name: string | null;
+  customer_confirmation_deadline: string | null;
+  customer_confirmed_at: string | null;
+  payout_proof_url: string | null;
+  bank_reference: string | null;
+  refund_invoice_number: string | null;
+  payout_confirmed_at: string | null;
+};
+
 const ROLE_BADGE: Record<string, { label: string; tone: string }> = {
   support_admin: { label: "الدعم", tone: "bg-sky-50 text-sky-900 border-sky-200" },
   finance_admin: { label: "المالية", tone: "bg-emerald-50 text-emerald-900 border-emerald-200" },
@@ -86,6 +107,16 @@ export default function FinanceInboxPage() {
   const [convertReason, setConvertReason] = useState("");
   const [convertLoading, setConvertLoading] = useState(false);
 
+  // Round 3.1: linked refund detail + the upload-proof modal state.
+  const [refundDetail, setRefundDetail] = useState<RefundDetail | null>(null);
+  const [proofModal, setProofModal] = useState<{
+    open: boolean;
+    bankReference: string;
+    file: File | null;
+    uploading: boolean;
+  }>({ open: false, bankReference: "", file: null, uploading: false });
+  const [completing, setCompleting] = useState(false);
+
   const threadEndRef = useRef<HTMLDivElement>(null);
 
   const fetchInbox = useCallback(async () => {
@@ -108,6 +139,7 @@ export default function FinanceInboxPage() {
     setSelected(row);
     setLoadingThread(true);
     setReplies([]);
+    setRefundDetail(null);
     try {
       const res = await fetch(`${API_URL}/api/finance/inbox/${row.id}`, {
         credentials: "include",
@@ -116,6 +148,7 @@ export default function FinanceInboxPage() {
       if (res.ok) {
         const data = await res.json();
         setReplies((data.replies || []) as Reply[]);
+        setRefundDetail((data.refund as RefundDetail) || null);
       }
     } finally {
       setLoadingThread(false);
@@ -151,6 +184,7 @@ export default function FinanceInboxPage() {
           if (res.ok) {
             const data = await res.json();
             setReplies((data.replies || []) as Reply[]);
+            setRefundDetail((data.refund as RefundDetail) || null);
           }
         } catch { /* ignore polling errors */ }
       })();
@@ -205,6 +239,94 @@ export default function FinanceInboxPage() {
     } else {
       const data = await res.json().catch(() => ({}));
       await alertDialog({ title: "فشل الإرجاع", body: data?.error || "حاول مجدداً.", variant: "danger" });
+    }
+  };
+
+  // Round 3.1: accountant uploads bank-transfer / card-refund proof.
+  // POST /api/finance/cases/:id/attach-proof handles the file upload
+  // + flips the refund to status='proof_uploaded'.
+  const uploadProof = async () => {
+    if (!refundDetail || !proofModal.file) {
+      await alertDialog({ title: "اختر الملف", body: "يجب رفع صورة/PDF لإيصال التحويل.", variant: "warning" });
+      return;
+    }
+    setProofModal(p => ({ ...p, uploading: true }));
+    try {
+      // First upload the file to /api/uploads (existing platform endpoint)
+      const fd = new FormData();
+      fd.append("file", proofModal.file);
+      let url = "";
+      const upRes = await fetch(`${API_URL}/api/uploads`, {
+        method: "POST",
+        credentials: "include",
+        headers: getAuthHeaders(),
+        body: fd,
+      });
+      if (upRes.ok) {
+        const upData = await upRes.json();
+        url = upData?.url || upData?.fileUrl || upData?.path || "";
+      }
+      if (!url) {
+        // Fallback to data URL so the workflow can still close even
+        // if the upload endpoint is down.
+        url = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("read failed"));
+          reader.readAsDataURL(proofModal.file!);
+        });
+      }
+      // Attach to the refund
+      const res = await fetch(`${API_URL}/api/finance/cases/${refundDetail.id}/attach-proof`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({
+          payout_proof_url: url,
+          bank_reference: proofModal.bankReference.trim() || null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog({ title: "فشل رفع الإيصال", body: data?.error || "حاول مجدداً.", variant: "danger" });
+        setProofModal(p => ({ ...p, uploading: false }));
+        return;
+      }
+      setProofModal({ open: false, bankReference: "", file: null, uploading: false });
+      if (selected) await openTicket(selected);
+    } catch {
+      await alertDialog({ title: "خطأ في الاتصال", body: "تحقق من الإنترنت وحاول مرة أخرى.", variant: "danger" });
+      setProofModal(p => ({ ...p, uploading: false }));
+    }
+  };
+
+  // Final step: senior finance/accountant confirms the transfer
+  // actually went through. Transition: proof_uploaded -> completed.
+  // Customer gets the "money sent" notification.
+  const markCompleted = async () => {
+    if (!refundDetail) return;
+    setCompleting(true);
+    try {
+      const res = await fetch(`${API_URL}/api/finance/cases/${refundDetail.id}/transition`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ to: "completed", note: "تم تأكيد التحويل من قبل المحاسب." }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog({ title: "فشل الإكمال", body: data?.error || "حاول مجدداً.", variant: "danger" });
+        return;
+      }
+      await alertDialog({
+        title: "تمت المعاملة ✅",
+        body: "أُرسل إشعار للعميل بإتمام التحويل. الفاتورة الختامية صدرت.",
+        variant: "success",
+      });
+      if (selected) await openTicket(selected);
+      await fetchInbox();
+    } finally {
+      setCompleting(false);
     }
   };
 
@@ -342,6 +464,16 @@ export default function FinanceInboxPage() {
                   </button>
                 </div>
               </div>
+
+              {/* ─────────── Refund Transaction Panel ─────────── */}
+              {refundDetail && (
+                <RefundPanel
+                  refund={refundDetail}
+                  onUploadProofClick={() => setProofModal({ open: true, bankReference: refundDetail.bank_reference || "", file: null, uploading: false })}
+                  onMarkCompleted={markCompleted}
+                  completing={completing}
+                />
+              )}
 
               <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
                 {loadingThread ? (
@@ -510,6 +642,196 @@ export default function FinanceInboxPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ─────────── Upload Proof Modal ─────────── */}
+      {proofModal.open && refundDetail && (
+        <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-[80] flex items-center justify-center p-4" dir="rtl">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl max-h-[92dvh] flex flex-col overflow-hidden">
+            <div className="h-1.5 bg-emerald-500" />
+            <div className="px-5 py-4 border-b border-slate-100">
+              <h3 className="font-black text-[#002845]">رفع إيصال التحويل</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                {refundDetail.case_number} · {refundDetail.amount} ر.س
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-3">
+              <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg p-2 leading-relaxed">
+                ارفع صورة من إيصال التحويل البنكي أو لقطة شاشة من بوابة الدفع. ستُحفظ مع المعاملة وترسَل ضمن إثبات الاسترداد.
+              </p>
+              <div>
+                <label className="block text-xs font-black text-[#002845] mb-1">الإيصال (صورة/PDF)</label>
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => setProofModal(p => ({ ...p, file: e.target.files?.[0] || null }))}
+                  className="w-full text-xs border-2 border-slate-200 focus:border-emerald-400 rounded-xl px-3 py-2 outline-none file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-800"
+                />
+                {proofModal.file && (
+                  <p className="text-[10px] text-slate-500 mt-1">{proofModal.file.name} · {Math.ceil(proofModal.file.size / 1024)} كيلو</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-black text-[#002845] mb-1">رقم المرجع البنكي (اختياري)</label>
+                <input
+                  type="text"
+                  value={proofModal.bankReference}
+                  onChange={(e) => setProofModal(p => ({ ...p, bankReference: e.target.value }))}
+                  placeholder="مثال: TX-839201"
+                  className="w-full border-2 border-slate-200 focus:border-emerald-400 rounded-xl px-3 py-2 text-sm font-mono outline-none"
+                />
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setProofModal({ open: false, bankReference: "", file: null, uploading: false })}
+                disabled={proofModal.uploading}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold hover:bg-white"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={() => void uploadProof()}
+                disabled={proofModal.uploading || !proofModal.file}
+                className="px-5 py-2 rounded-xl bg-emerald-600 text-white text-sm font-black inline-flex items-center gap-2 disabled:opacity-50"
+              >
+                {proofModal.uploading && <Loader2 className="w-4 h-4 animate-spin" />}
+                رفع الإيصال
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// RefundPanel — sticky between the ticket header and the thread
+// when the ticket has a linked refund. Shows the current state, the
+// payment-method info the customer chose, and the action buttons
+// the accountant needs to advance the workflow.
+// ─────────────────────────────────────────────────────────────────
+function RefundPanel({
+  refund,
+  onUploadProofClick,
+  onMarkCompleted,
+  completing,
+}: {
+  refund: RefundDetail;
+  onUploadProofClick: () => void;
+  onMarkCompleted: () => Promise<void>;
+  completing: boolean;
+}) {
+  const statusMeta: Record<string, { label: string; tone: string }> = {
+    pending_customer_confirmation: { label: "بانتظار تأكيد العميل", tone: "bg-amber-50 text-amber-900 border-amber-200" },
+    awaiting_bank_transfer:        { label: "بانتظار التحويل البنكي", tone: "bg-rose-50 text-rose-900 border-rose-300 animate-pulse" },
+    proof_uploaded:                { label: "إيصال مرفوع — بانتظار التأكيد", tone: "bg-violet-50 text-violet-900 border-violet-200" },
+    completed:                     { label: "اكتملت ✓", tone: "bg-emerald-50 text-emerald-900 border-emerald-200" },
+    rejected:                      { label: "مرفوضة / ملغاة", tone: "bg-slate-50 text-slate-700 border-slate-200" },
+    pending_review:                { label: "قيد المراجعة", tone: "bg-slate-50 text-slate-700 border-slate-200" },
+  };
+  const meta = statusMeta[refund.status] || { label: refund.status, tone: "bg-slate-50 text-slate-700" };
+
+  return (
+    <div className="border-b border-slate-100 bg-gradient-to-l from-[#FFFCEE]/60 via-white to-white p-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-[10px] text-slate-500">{refund.case_number}</span>
+            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${meta.tone}`}>
+              {meta.label}
+            </span>
+          </div>
+          <p className="text-lg font-black text-[#D4AF37] mt-1">{refund.amount} ر.س</p>
+          {refund.refund_method && (
+            <p className="text-xs text-[#002845] mt-1">
+              <span className="font-bold">طريقة الإرجاع:</span>{" "}
+              {refund.refund_method === "credit_card" ? "💳 بطاقة ائتمانية" : "🏦 حساب بنكي"}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-col gap-1 items-end">
+          {refund.status === "awaiting_bank_transfer" && (
+            <button
+              type="button"
+              onClick={onUploadProofClick}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-black inline-flex items-center gap-1 hover:bg-emerald-700"
+            >
+              📎 رفع إيصال التحويل
+            </button>
+          )}
+          {refund.status === "proof_uploaded" && (
+            <>
+              {refund.payout_proof_url && (
+                <a
+                  href={refund.payout_proof_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[10px] text-emerald-700 underline"
+                >
+                  عرض الإيصال المرفوع
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => void onMarkCompleted()}
+                disabled={completing}
+                className="px-3 py-1.5 rounded-lg bg-gradient-to-l from-[#D4AF37] to-[#B8860B] text-[#002845] text-xs font-black inline-flex items-center gap-1 disabled:opacity-50"
+              >
+                {completing && <Loader2 className="w-3 h-3 animate-spin" />}
+                ✓ تأكيد الاكتمال
+              </button>
+              <button
+                type="button"
+                onClick={onUploadProofClick}
+                className="px-3 py-1 rounded-lg border border-slate-200 text-slate-600 text-[10px] font-bold hover:bg-slate-50"
+              >
+                إعادة رفع الإيصال
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Method-specific details */}
+      {refund.status !== "pending_customer_confirmation" && (
+        <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-xs">
+          {refund.refund_method === "credit_card" ? (
+            <div>
+              <p className="text-[10px] text-slate-500 mb-1">تفاصيل البطاقة من العميل</p>
+              {refund.refund_method_note ? (
+                <p className="text-[#002845] whitespace-pre-wrap">{refund.refund_method_note}</p>
+              ) : (
+                <p className="text-slate-400 italic">لم يضف العميل تفاصيل إضافية. ارجع لبيانات الفاتورة الأصلية في صفحة المدفوعات.</p>
+              )}
+            </div>
+          ) : refund.refund_method === "bank" ? (
+            <dl className="space-y-1">
+              <div className="flex justify-between"><dt className="text-slate-500">البنك</dt><dd className="font-bold">{refund.bank_name || "—"}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">IBAN</dt><dd className="font-mono">{refund.bank_account_iban || "—"}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">صاحب الحساب</dt><dd className="font-bold">{refund.account_holder_name || "—"}</dd></div>
+              {refund.refund_method_note && (
+                <div className="pt-1 mt-1 border-t border-slate-100">
+                  <p className="text-[10px] text-slate-500">ملاحظة العميل</p>
+                  <p className="text-[#002845]">{refund.refund_method_note}</p>
+                </div>
+              )}
+            </dl>
+          ) : null}
+        </div>
+      )}
+
+      {refund.status === "pending_customer_confirmation" && refund.customer_confirmation_deadline && (
+        <p className="mt-2 text-[11px] text-amber-800">
+          ⏳ العميل لم يؤكد بعد. المهلة تنتهي:{" "}
+          {new Date(refund.customer_confirmation_deadline).toLocaleString("ar-SA")}
+        </p>
+      )}
+      {refund.status === "completed" && refund.refund_invoice_number && (
+        <p className="mt-2 text-[11px] text-emerald-800">
+          فاتورة الاسترداد: <span className="font-mono">{refund.refund_invoice_number}</span>
+        </p>
       )}
     </div>
   );

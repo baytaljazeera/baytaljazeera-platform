@@ -2263,10 +2263,11 @@ router.get("/customer/:id", authMiddleware, asyncHandler(async (req, res) => {
   if (Number.isNaN(id)) return res.status(400).json({ error: "معرف غير صالح" });
   const r = await db.query(
     `SELECT r.id, r.case_number, r.status, r.amount, r.original_amount,
-            r.refund_method, r.bank_name, r.bank_account_iban,
-            r.account_holder_name,
+            r.refund_method, r.refund_method_note,
+            r.bank_name, r.bank_account_iban, r.account_holder_name,
             r.customer_confirmation_deadline,
             r.customer_confirmed_at, r.customer_declined_at,
+            r.payout_proof_url, r.bank_reference,
             r.refund_invoice_number, r.payout_confirmed_at,
             r.created_at, r.updated_at, r.state_changed_at,
             i.invoice_number AS invoice_number
@@ -2284,6 +2285,11 @@ router.post("/customer/:id/confirm", authMiddleware, asyncHandler(async (req, re
   const id = parseInt(req.params.id, 10);
   const method = typeof req.body?.refund_method === 'string' ? req.body.refund_method : '';
   const bank = req.body?.bank || {};
+  // Free-text customer note: for credit_card, typically holds the card
+  // last-4 + reference; for bank, optional additional details.
+  const methodNote = typeof req.body?.refund_method_note === 'string'
+    ? req.body.refund_method_note.trim()
+    : '';
 
   if (Number.isNaN(id)) return res.status(400).json({ error: "معرف غير صالح" });
   if (!['credit_card', 'bank'].includes(method)) {
@@ -2324,12 +2330,13 @@ router.post("/customer/:id/confirm", authMiddleware, asyncHandler(async (req, re
       `UPDATE refunds
        SET refund_method = $1,
            bank_name = $2, bank_account_iban = $3, account_holder_name = $4,
+           refund_method_note = NULLIF($5, ''),
            status = 'awaiting_bank_transfer',
            customer_confirmed_at = NOW(),
-           state_changed_at = NOW(), state_changed_by = $5,
+           state_changed_at = NOW(), state_changed_by = $6,
            updated_at = NOW()
-       WHERE id = $6`,
-      [method, bankName, iban, holder, req.user.id, id]
+       WHERE id = $7`,
+      [method, bankName, iban, holder, methodNote, req.user.id, id]
     );
     await refundSM.recordEvent(client, {
       refund_id: id,
@@ -2645,7 +2652,29 @@ router.get(
        ORDER BY r.created_at ASC`,
       [id]
     );
-    res.json({ ticket: t.rows[0], replies: replies.rows });
+
+    // Round 3.1: if the ticket is linked to a refund transaction,
+    // return the full refund detail so the right-pane "Refund Panel"
+    // can render its state-driven actions (upload proof, complete,
+    // etc.) without a second round trip.
+    let refundDetail = null;
+    if (t.rows[0].refund_id) {
+      const r = await db.query(
+        `SELECT r.id, r.case_number, r.status, r.amount, r.original_amount,
+                r.refund_method, r.refund_method_note,
+                r.bank_name, r.bank_account_iban, r.account_holder_name,
+                r.customer_confirmation_deadline,
+                r.customer_confirmed_at, r.customer_declined_at,
+                r.payout_proof_url, r.bank_reference,
+                r.refund_invoice_number, r.payout_confirmed_at,
+                r.state_changed_at, r.created_at, r.updated_at
+         FROM refunds r WHERE r.id = $1`,
+        [t.rows[0].refund_id]
+      );
+      refundDetail = r.rows[0] || null;
+    }
+
+    res.json({ ticket: t.rows[0], replies: replies.rows, refund: refundDetail });
   })
 );
 
@@ -3120,6 +3149,18 @@ router.patch(
           type: 'refund_rejected',
           title: 'تم رفض طلب الاسترداد',
           body: `سبب الرفض: ${note || 'لا يوجد'}`,
+        };
+      } else if (toState === refundSM.STATES.COMPLETED) {
+        // The actual money-moved notification — fires on the
+        // proof_uploaded -> completed transition that the accountant
+        // confirms after they've executed the bank transfer / card refund.
+        const methodText = refund.refund_method === 'credit_card'
+          ? 'بطاقتك الائتمانية الأصلية'
+          : 'حسابك البنكي';
+        notif = {
+          type: 'refund_completed',
+          title: 'تم تحويل مبلغ الاسترداد ✅',
+          body: `تم استرداد ${refund.amount} ر.س إلى ${methodText}. يصلك خلال 4-6 أيام عمل بنكية. شكراً لتعاملك مع بيت الجزيرة.`,
         };
       }
       if (notif) {

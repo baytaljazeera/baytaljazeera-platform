@@ -77,6 +77,11 @@ export default function CustomerRefundConfirmPage() {
   const [bankName, setBankName] = useState("");
   const [iban, setIban] = useState("");
   const [holder, setHolder] = useState("");
+  // Optional free-text note — typically the card last-4 or transaction
+  // reference when method=credit_card. Finance reads this to know
+  // exactly which card to refund. Captured for bank method too so the
+  // customer can add any extra detail (account branch, etc.).
+  const [methodNote, setMethodNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [declineOpen, setDeclineOpen] = useState(false);
   const [declineNote, setDeclineNote] = useState("");
@@ -126,6 +131,9 @@ export default function CustomerRefundConfirmPage() {
           bank_account_iban: iban.trim(),
           account_holder_name: holder.trim(),
         };
+      }
+      if (methodNote.trim()) {
+        body.refund_method_note = methodNote.trim();
       }
       const res = await fetch(`${API_URL}/api/refunds/customer/${refundId}/confirm`, {
         method: "POST",
@@ -328,6 +336,23 @@ export default function CustomerRefundConfirmPage() {
                 </button>
               </div>
             </div>
+
+            {/* Credit card detail collapsible */}
+            {method === "credit_card" && (
+              <div className="mt-4 rounded-2xl border border-slate-200 p-4 space-y-3 bg-slate-50/60">
+                <h3 className="text-xs font-black text-[#002845]">تفاصيل البطاقة (اختياري)</h3>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  لتسريع التحقق، اكتب آخر ٤ أرقام من البطاقة التي دفعت بها أو رقم العملية إن كان متوفراً. المالية ستستخدمها للتأكد من إرجاع المبلغ للبطاقة الصحيحة.
+                </p>
+                <textarea
+                  value={methodNote}
+                  onChange={(e) => setMethodNote(e.target.value)}
+                  rows={2}
+                  placeholder="مثال: بطاقة منتهية بـ 4527 - رقم العملية: TX-839201"
+                  className="w-full border-2 border-slate-200 focus:border-[#D4AF37] rounded-xl px-3 py-2 text-sm outline-none resize-y"
+                />
+              </div>
+            )}
 
             {/* Bank info collapsible */}
             {method === "bank" && (

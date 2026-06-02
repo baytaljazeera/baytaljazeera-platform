@@ -2463,6 +2463,14 @@ async function initializeDatabase() {
         ) THEN
           ALTER TABLE refunds ALTER COLUMN pre_wait_status TYPE VARCHAR(50);
         END IF;
+        -- Free-text note the customer adds at confirm time. For
+        -- credit_card method this typically holds the card last-4
+        -- + transaction reference; for bank it's an optional
+        -- "any-additional-info" line. Finance reads it on the
+        -- refund panel before executing the transfer.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'refund_method_note') THEN
+          ALTER TABLE refunds ADD COLUMN refund_method_note TEXT;
+        END IF;
         -- Backfill: where estimated is null but we have a row, seed it
         -- from amount so existing cases show a value on the new UI.
         UPDATE refunds SET estimated_refund_amount = amount
