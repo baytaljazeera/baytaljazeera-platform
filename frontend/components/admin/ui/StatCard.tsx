@@ -27,45 +27,47 @@ export function BJStatCard({
     href ? (
       <a
         href={href}
-        className="group block bg-white rounded-bj-lg border border-brand-royal/10 shadow-card p-5 transition-shadow duration-200 hover:shadow-pop hover:border-brand-royal/20 focus-visible:shadow-focus-gold outline-none"
+        className="group block bg-white rounded-bj-lg border border-brand-royal/10 shadow-card p-3 sm:p-4 transition-shadow duration-200 hover:shadow-pop hover:border-brand-royal/20 focus-visible:shadow-focus-gold outline-none"
       >
         {props.children}
       </a>
     ) : (
-      <div className="bg-white rounded-bj-lg border border-brand-royal/10 shadow-card p-5">
+      <div className="bg-white rounded-bj-lg border border-brand-royal/10 shadow-card p-3 sm:p-4">
         {props.children}
       </div>
     );
 
   return (
     <Wrapper>
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="bj-meta uppercase tracking-wide font-bold">{label}</p>
-          <div className="mt-2 bj-stat truncate">
-            {loading ? <span className="inline-block h-9 w-20 rounded-bj-sm bg-brand-paper-2 animate-pulse" /> : value}
+          <p className="text-[10px] sm:text-[11px] uppercase tracking-wide font-bold text-brand-ink-2 leading-tight">{label}</p>
+          <div className="mt-1.5 bj-stat leading-none truncate">
+            {loading ? <span className="inline-block h-7 w-16 rounded-bj-sm bg-brand-paper-2 animate-pulse" /> : value}
           </div>
-          <div className="mt-2 flex items-center gap-2 flex-wrap">
-            {delta && (
-              <span
-                className={[
-                  "inline-flex items-center gap-0.5 text-[11px] font-bold rounded-bj-sm px-1.5 py-0.5",
-                  delta.direction === "up"   ? "text-ok   bg-ok-soft"   :
-                  delta.direction === "down" ? "text-bad  bg-bad-soft"  :
-                                               "text-brand-ink-2 bg-brand-paper-2",
-                ].join(" ")}
-              >
-                {delta.direction === "up"   ? <ArrowUpRight className="w-3 h-3" />   :
-                 delta.direction === "down" ? <ArrowDownRight className="w-3 h-3" /> :
-                                              <Minus className="w-3 h-3" />}
-                {delta.value}
-              </span>
-            )}
-            {hint && <p className="bj-meta">{hint}</p>}
-          </div>
+          {(delta || hint) && (
+            <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+              {delta && (
+                <span
+                  className={[
+                    "inline-flex items-center gap-0.5 text-[10px] font-bold rounded-bj-sm px-1.5 py-0.5",
+                    delta.direction === "up"   ? "text-ok   bg-ok-soft"   :
+                    delta.direction === "down" ? "text-bad  bg-bad-soft"  :
+                                                 "text-brand-ink-2 bg-brand-paper-2",
+                  ].join(" ")}
+                >
+                  {delta.direction === "up"   ? <ArrowUpRight className="w-3 h-3" />   :
+                   delta.direction === "down" ? <ArrowDownRight className="w-3 h-3" /> :
+                                                <Minus className="w-3 h-3" />}
+                  {delta.value}
+                </span>
+              )}
+              {hint && <p className="text-[10px] text-brand-ink-2 leading-tight line-clamp-1">{hint}</p>}
+            </div>
+          )}
         </div>
         {icon && (
-          <div className="shrink-0 w-10 h-10 rounded-bj-md bg-brand-gold-soft text-brand-gold-dark flex items-center justify-center ring-1 ring-brand-gold/20">
+          <div className="shrink-0 w-8 h-8 rounded-bj-md bg-brand-gold-soft text-brand-gold-dark flex items-center justify-center ring-1 ring-brand-gold/20">
             {icon}
           </div>
         )}

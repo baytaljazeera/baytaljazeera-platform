@@ -31,13 +31,34 @@
   --bj-info:          #1E40AF;
   --bj-info-soft:     #EFF6FF;
 
-  /* ── Typography scale (explicit hierarchy) ──────────────────── */
-  --bj-text-display: 2.5rem;   /* 40px - page title only */
-  --bj-text-h1:      1.75rem;  /* 28px - section heading */
-  --bj-text-h2:      1.25rem;  /* 20px - card heading */
-  --bj-text-body:    0.9375rem; /* 15px - body */
-  --bj-text-caption: 0.75rem;  /* 12px - meta */
-  --bj-text-stat:    2.25rem;  /* 36px - big stat numbers */
+  /* ── Typography scale (responsive — narrow phones first) ────── */
+  --bj-text-display: 1.5rem;    /* 24px on mobile, scales up below */
+  --bj-text-h1:      1.25rem;   /* 20px on mobile */
+  --bj-text-h2:      1rem;      /* 16px on mobile */
+  --bj-text-body:    0.875rem;  /* 14px */
+  --bj-text-caption: 0.75rem;   /* 12px */
+  --bj-text-stat:    1.5rem;    /* 24px on mobile */
+}
+
+/* Scale up on tablet (>= 640px) */
+@media (min-width: 640px) {
+  :root {
+    --bj-text-display: 1.875rem;  /* 30px */
+    --bj-text-h1:      1.5rem;    /* 24px */
+    --bj-text-h2:      1.125rem;  /* 18px */
+    --bj-text-stat:    1.875rem;  /* 30px */
+  }
+}
+
+/* Scale up further on desktop (>= 1024px) */
+@media (min-width: 1024px) {
+  :root {
+    --bj-text-display: 2.25rem;   /* 36px */
+    --bj-text-h1:      1.625rem;  /* 26px */
+    --bj-text-h2:      1.125rem;  /* 18px */
+    --bj-text-body:    0.9375rem; /* 15px */
+    --bj-text-stat:    2rem;      /* 32px */
+  }
 
   /* ── Shadow system (3 stops, single visual family) ─────────── */
   --bj-shadow-card:  0 1px 2px rgba(0, 40, 69, 0.04), 0 4px 12px -4px rgba(0, 40, 69, 0.08);
