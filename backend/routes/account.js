@@ -424,10 +424,38 @@ router.get("/pending-counts", authMiddleware, asyncHandler(async (req, res) => {
   `, [userId]);
   
   // الفواتير: جديد = فواتير أنشئت بعد آخر زيارة
+  // PLUS refund cases that need the customer's confirmation right now
+  // (status='pending_customer_confirmation' before the 4-day deadline
+  // expires). Owner-driven: when finance opens a refund case the
+  // customer's "فواتيري" badge MUST tick so they notice the call to
+  // action. Earlier this only updated on new invoice creation.
   const invoicesNew = await db.query(`
-    SELECT COUNT(*) as count FROM invoices 
-    WHERE user_id = $1 AND created_at > $2
+    SELECT
+      (SELECT COUNT(*)::int FROM invoices
+        WHERE user_id = $1 AND created_at > $2)
+      +
+      (SELECT COUNT(*)::int FROM refunds
+        WHERE user_id = $1
+          AND status = 'pending_customer_confirmation'
+          AND (customer_confirmation_deadline IS NULL
+               OR customer_confirmation_deadline > NOW()))
+      AS count
   `, [userId, state.invoices_seen_at]);
+
+  // Dedicated "action required" counter — independent of any
+  // seen_at marker. Used to render a top banner on /account/invoices
+  // with a deep-link to the refund confirmation page.
+  const refundsActionRequired = await db.query(`
+    SELECT id, case_number, amount, customer_confirmation_deadline
+      FROM refunds
+     WHERE user_id = $1
+       AND status = 'pending_customer_confirmation'
+       AND (customer_confirmation_deadline IS NULL
+            OR customer_confirmation_deadline > NOW())
+     ORDER BY created_at ASC
+     LIMIT 5`,
+    [userId]
+  );
   
   // الشكاوى: جديد = تم الرد عليها بعد آخر زيارة، قيد الانتظار = new/in_review
   const complaintsNew = await db.query(`
@@ -476,8 +504,19 @@ router.get("/pending-counts", authMiddleware, asyncHandler(async (req, res) => {
     listingsRejected: parseInt(listingsRejected.rows[0]?.count) || 0,
     listingsApproved: parseInt(listingsApproved.rows[0]?.count) || 0,
     listingsPending: parseInt(listingsPending.rows[0]?.count) || 0,
-    // فواتيري
+    // فواتيري — invoicesNew now also includes pending-confirmation
+    // refunds so the navbar badge bumps when finance opens a refund
+    // case for the customer.
     invoicesNew: parseInt(invoicesNew.rows[0]?.count) || 0,
+    // Lightweight list of refunds that need the customer's confirmation
+    // right now. The /account/invoices page renders a banner from
+    // this so the customer can jump straight to the confirm page.
+    refundsActionRequired: refundsActionRequired.rows.map(r => ({
+      id: r.id,
+      case_number: r.case_number,
+      amount: r.amount,
+      deadline: r.customer_confirmation_deadline,
+    })),
     // شكاواي
     complaintsNew: parseInt(complaintsNew.rows[0]?.count) || 0,
     complaintsPending: parseInt(complaintsPending.rows[0]?.count) || 0,

@@ -70,9 +70,17 @@ export default function InvoicesPage() {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [refundReason, setRefundReason] = useState("");
   const [submittingRefund, setSubmittingRefund] = useState(false);
+  // Pending refund actions surfaced from /api/account/pending-counts
+  // so the customer sees a banner at the top of /invoices with a
+  // one-click jump to confirm. Drives both the badge ("3 جديد") and
+  // a prominent gold-bordered call-to-action.
+  const [pendingRefundActions, setPendingRefundActions] = useState<
+    Array<{ id: number; case_number: string; amount: number | string; deadline: string | null }>
+  >([]);
 
   useEffect(() => {
     fetchInvoices();
+    fetchPendingRefundActions();
     // تحديث آخر زيارة للفواتير
     fetch('/api/account/pending-counts/invoices/seen', {
       method: 'PATCH',
@@ -81,6 +89,22 @@ export default function InvoicesPage() {
       body: JSON.stringify({})
     }).catch(() => {});
   }, []);
+
+  async function fetchPendingRefundActions() {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_URL}/api/account/pending-counts`, {
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPendingRefundActions(data.refundsActionRequired || []);
+      }
+    } catch {
+      /* non-blocking */
+    }
+  }
 
   async function fetchInvoices() {
     try {
@@ -189,6 +213,52 @@ export default function InvoicesPage() {
             العودة لحسابي
           </Link>
         </motion.div>
+
+        {/* Action-required banner — fires when finance has opened a
+            refund case awaiting the customer's method + confirmation.
+            Each banner row links to the confirm page. Auto-hides when
+            the customer confirms (or declines, or the 4-day deadline
+            elapses). */}
+        {pendingRefundActions.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 rounded-2xl bg-gradient-to-l from-[#D4AF37]/95 to-[#B8860B]/95 text-[#002845] shadow-[0_12px_30px_-12px_rgba(212,175,55,0.6)] ring-2 ring-[#D4AF37] p-4 sm:p-5"
+          >
+            <div className="flex items-start gap-3">
+              <div className="shrink-0 w-10 h-10 rounded-full bg-white text-[#B8860B] flex items-center justify-center text-xl font-extrabold animate-pulse shadow">
+                {pendingRefundActions.length}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm sm:text-base font-extrabold leading-tight">
+                  {pendingRefundActions.length === 1
+                    ? "لديك معاملة استرداد بانتظار تأكيدك"
+                    : `لديك ${pendingRefundActions.length} معاملات استرداد بانتظار تأكيدك`}
+                </h3>
+                <p className="mt-1 text-[12px] sm:text-[13px] text-[#002845]/85 leading-relaxed">
+                  افتح كل معاملة لاختيار طريقة الإرجاع (تحويل بنكي أو بطاقة) وتأكيد الطلب قبل انتهاء مهلة 4 أيام.
+                </p>
+                <ul className="mt-3 space-y-1.5">
+                  {pendingRefundActions.map((r) => (
+                    <li key={r.id}>
+                      <Link
+                        href={`/account/refunds/${r.id}/confirm`}
+                        className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-white/85 hover:bg-white transition text-[12px] sm:text-[13px] font-bold text-[#002845]"
+                      >
+                        <span className="inline-flex items-center gap-2 min-w-0">
+                          <Banknote className="w-4 h-4 shrink-0 text-[#B8860B]" />
+                          <span className="font-mono">{r.case_number}</span>
+                          <span className="truncate">— {Number(r.amount).toFixed(0)} ر.س</span>
+                        </span>
+                        <ArrowLeft className="w-4 h-4 shrink-0" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         {invoices.length === 0 ? (
           <motion.div

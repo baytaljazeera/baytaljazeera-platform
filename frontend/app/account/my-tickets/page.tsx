@@ -66,9 +66,13 @@ function normalizeStatusKey(status: string) {
   return (status || "").toLowerCase().trim();
 }
 
+// Chat-style: only fully CLOSED tickets lock the conversation. "resolved"
+// is a staff opinion ("we think this is done") — the customer can still
+// reply to push back, ask follow-ups, or chase a pending refund payout.
+// This matches WhatsApp / Intercom behaviour where threads stay open
+// until explicitly archived/closed.
 function isTicketClosedStatus(status: string) {
-  const s = normalizeStatusKey(status);
-  return s === "resolved" || s === "closed";
+  return normalizeStatusKey(status) === "closed";
 }
 
 function getStatusStyle(status: string) {
