@@ -110,6 +110,24 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
       --   - refund transactions awaiting finance review
       -- For age we take the MIN of both pools (the oldest pending
       -- item from either side is what triggers the SLA alarm).
+      -- Finance inbox UNREAD customer messages — what the owner
+      -- actually wants on the sidebar. Sums all customer replies
+      -- (sender_type='user', customer-visible) that landed AFTER the
+      -- last time any admin opened the parent ticket. Drops to 0
+      -- the moment finance opens each ticket. Used as the source for
+      -- the red sidebar badge.
+      UNION ALL SELECT 'finance_inbox_unread',
+        (SELECT COALESCE(SUM(
+            (SELECT COUNT(*)::int FROM support_ticket_replies sr
+               WHERE sr.ticket_id = st.id
+                 AND sr.sender_type = 'user'
+                 AND (sr.visibility = 'customer_visible' OR sr.visibility IS NULL)
+                 AND (st.admin_last_read_at IS NULL OR sr.created_at > st.admin_last_read_at)
+            )
+          ), 0)::int
+         FROM support_tickets st
+         WHERE st.finance_inbox_state = 'in_inbox'),
+        NULL::float
       UNION ALL SELECT 'finance_inbox_new',
         (SELECT COUNT(*)::int FROM support_tickets
            WHERE finance_inbox_state = 'in_inbox'
@@ -155,6 +173,7 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
       MAX(CASE WHEN key = 'ambassador_pending' THEN cnt END) as ambassador_pending,
       MAX(CASE WHEN key = 'ambassador_withdrawals' THEN cnt END) as ambassador_withdrawals,
       MAX(CASE WHEN key = 'finance_inbox_new' THEN cnt END) as finance_inbox_new,
+      MAX(CASE WHEN key = 'finance_inbox_unread' THEN cnt END) as finance_inbox_unread,
       NULLIF(MAX(CASE WHEN key = 'finance_inbox_new' THEN age_h END), 999999::float) as finance_inbox_age_h,
       MAX(CASE WHEN key = 'executive_inbox_new' THEN cnt END) as executive_inbox_new,
       MAX(CASE WHEN key = 'executive_inbox_new' THEN age_h END) as executive_inbox_age_h
@@ -222,6 +241,10 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
     ambassadorPending: row.ambassador_pending || 0,
     ambassadorWithdrawals: row.ambassador_withdrawals || 0,
     financeInboxNew: row.finance_inbox_new || 0,
+    // Total unread customer messages across all finance-inbox tickets.
+    // This is the source of the red sidebar badge — drops the moment
+    // an operator opens each ticket.
+    financeInboxUnread: row.finance_inbox_unread || 0,
     executiveInboxNew: row.executive_inbox_new || 0,
     // Oldest pending age in hours, per area. Used by the Command Center
     // to escalate red/orange/green by SLA, not just by volume. Any

@@ -71,6 +71,10 @@ type PendingCounts = {
   feedbackNew: number;
   whatsappUnread: number;
   financeInboxNew: number;
+  // True UNREAD customer messages in finance — drives the red badge.
+  // Goes UP when customer sends, DOWN to 0 the moment finance opens
+  // the ticket. Different from financeInboxNew which counts tickets.
+  financeInboxUnread: number;
   executiveInboxNew: number;
 };
 
@@ -99,6 +103,7 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     feedbackNew: 0,
     whatsappUnread: 0,
     financeInboxNew: 0,
+    financeInboxUnread: 0,
     executiveInboxNew: 0,
   });
   const [visibleSections, setVisibleSections] = useState<string[]>([]);
@@ -386,7 +391,21 @@ export default function AdminSidebar({ isMobile = false, onNavigate }: AdminSide
     if (href === '/admin/messages' || href === '/admin/omni-inbox') return { newCount: pendingCounts.messagesNew, inProgressCount: 0 };
     if (href === '/admin/customer-service') return { newCount: pendingCounts.complaintsNew + pendingCounts.supportNew, inProgressCount: pendingCounts.complaintsInProgress + pendingCounts.supportInProgress };
     if (href === '/admin/finance') return { newCount: pendingCounts.refundsNew + pendingCounts.ambassadorWithdrawals, inProgressCount: pendingCounts.refundsInProgress };
-    if (href === '/admin/finance-inbox' || href.startsWith('/admin/finance?tab=messages')) return { newCount: pendingCounts.financeInboxNew, inProgressCount: 0 };
+    // Finance inbox sidebar badge: prefer the TRUE unread customer-message
+    // count when there is one (drops to 0 the moment the operator opens
+    // the ticket). Fall back to the legacy "tickets in inbox" count if
+    // there are no unread messages — that way the row is never silent
+    // when work is sitting there. Owner-driven: the previous behaviour
+    // (always show ticket count) didn't decrease as the operator caught
+    // up reading customer replies.
+    if (href === '/admin/finance-inbox' || href.startsWith('/admin/finance?tab=messages')) {
+      return {
+        newCount: pendingCounts.financeInboxUnread > 0
+          ? pendingCounts.financeInboxUnread
+          : pendingCounts.financeInboxNew,
+        inProgressCount: 0,
+      };
+    }
     if (href === '/admin/executive-inbox') return { newCount: pendingCounts.executiveInboxNew, inProgressCount: 0 };
     if (href === '/admin/ambassador') return { newCount: pendingCounts.ambassadorPending + pendingCounts.ambassadorWithdrawals, inProgressCount: 0 };
     if (href === '/admin/feedback/responses') return { newCount: pendingCounts.feedbackNew, inProgressCount: 0 };

@@ -46,6 +46,12 @@ type InboxRow = {
   invoice_number?: string | null;
   invoice_total?: number | null;
   reply_count?: number;
+  // Number of customer messages received SINCE the last admin opened
+  // this ticket. Rendered as a red badge on the inbox row so the
+  // operator can see "I owe these customers a reply" at a glance.
+  // Drops to 0 the moment the ticket is opened (server bumps
+  // admin_last_read_at on /api/finance/inbox/:id).
+  unread_customer_replies?: number;
   last_reply_at?: string | null;
   transferred_to_finance_at?: string | null;
   created_at: string;
@@ -427,11 +433,22 @@ export default function FinanceInboxPage() {
                       >
                         <div className="flex items-center justify-between gap-2 mb-1">
                           <span className="font-mono text-[10px] text-brand-ink-2">{t.ticket_number}</span>
-                          {t.refund_id && (
-                            <span className="text-[9px] bg-white/70 text-brand-royal px-1.5 py-0.5 rounded-full font-bold border border-current/20">
-                              ↪ {t.refund_case_number || `#${t.refund_id}`}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            {!!t.unread_customer_replies && t.unread_customer_replies > 0 && (
+                              <span
+                                className="inline-flex items-center justify-center min-w-[20px] h-[20px] px-1.5 rounded-full bg-red-600 text-white text-[10px] font-extrabold shadow-md animate-pulse"
+                                aria-label={`${t.unread_customer_replies} رسائل غير مقروءة من العميل`}
+                                title="رسائل من العميل لم يقرأها أحد بعد"
+                              >
+                                {t.unread_customer_replies > 99 ? "99+" : t.unread_customer_replies}
+                              </span>
+                            )}
+                            {t.refund_id && (
+                              <span className="text-[9px] bg-white/70 text-brand-royal px-1.5 py-0.5 rounded-full font-bold border border-current/20">
+                                ↪ {t.refund_case_number || `#${t.refund_id}`}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <p className="text-sm font-bold text-brand-royal truncate">{t.subject}</p>
                         <p className="text-xs text-brand-ink-2 truncate">{t.user_name || "—"} · {t.user_email || ""}</p>

@@ -2583,6 +2583,9 @@ router.get(
 // ════════════════════════════════════════════════════════════════════
 
 // GET /inbox — list of tickets transferred to finance.
+// unread_customer_replies: count of customer messages newer than the
+// last time any admin opened the ticket. Drives the red badge on each
+// row so the operator can see at a glance which tickets are waiting.
 router.get(
   "/inbox",
   authMiddleware,
@@ -2601,7 +2604,13 @@ router.get(
               (SELECT COUNT(*)::int FROM support_ticket_replies sr
                  WHERE sr.ticket_id = st.id AND sr.visibility = 'customer_visible') AS reply_count,
               (SELECT MAX(created_at) FROM support_ticket_replies sr
-                 WHERE sr.ticket_id = st.id) AS last_reply_at
+                 WHERE sr.ticket_id = st.id) AS last_reply_at,
+              (SELECT COUNT(*)::int FROM support_ticket_replies sr
+                 WHERE sr.ticket_id = st.id
+                   AND sr.sender_type = 'user'
+                   AND (sr.visibility = 'customer_visible' OR sr.visibility IS NULL)
+                   AND (st.admin_last_read_at IS NULL OR sr.created_at > st.admin_last_read_at)
+              ) AS unread_customer_replies
        FROM support_tickets st
        LEFT JOIN users u ON u.id = st.user_id
        LEFT JOIN refunds r ON r.id = st.refund_id
@@ -2640,6 +2649,20 @@ router.get(
     if (t.rows.length === 0) return res.status(404).json({ error: "التذكرة غير موجودة" });
     if (t.rows[0].finance_inbox_state !== 'in_inbox') {
       return res.status(403).json({ error: "هذه التذكرة ليست في صندوق المالية" });
+    }
+
+    // Mark this ticket "seen by an admin" right now so the red unread
+    // badge on the inbox row resets to 0. The badge counts customer
+    // replies created after admin_last_read_at, so bumping it here is
+    // what makes the counter decrease the moment finance opens the
+    // ticket. Best-effort — never block the response.
+    try {
+      await db.query(
+        `UPDATE support_tickets SET admin_last_read_at = NOW() WHERE id = $1`,
+        [id]
+      );
+    } catch (e) {
+      console.warn('[finance inbox GET] admin_last_read_at bump failed:', e.message);
     }
 
     const replies = await db.query(
