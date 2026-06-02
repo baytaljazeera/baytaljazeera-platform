@@ -694,13 +694,19 @@ router.patch(
     // finance_inbox_state column to gate visibility. For all other
     // targets we just update auto_assigned_role; the destination
     // staff sees the ticket in their default queue scope.
+    //
+    // Note the explicit ::text casts on every department reference —
+    // department is VARCHAR but COALESCE(NULLIF(TRIM(category), ''), ...)
+    // returns text, and Postgres refuses to infer one type for a
+    // parameter used in both positions. The cast resolves the
+    // "inconsistent types deduced for parameter $N" error.
     let updated;
     if (isFinance) {
       try {
         updated = await db.query(
           `UPDATE support_tickets st
-           SET department = $1,
-               category = COALESCE(NULLIF(TRIM(category), ''), $1),
+           SET department = $1::text,
+               category = COALESCE(NULLIF(TRIM(category), ''), $1::text),
                auto_assigned_role = $2,
                sla_hours = $3,
                transferred_to_finance_at = NOW(),
@@ -716,7 +722,7 @@ router.patch(
         // Migration-lag fallback if finance_inbox_state column isn't there yet.
         updated = await db.query(
           `UPDATE support_tickets st
-           SET department = $1,
+           SET department = $1::text,
                auto_assigned_role = $2,
                sla_hours = $3,
                updated_at = NOW()
@@ -728,7 +734,7 @@ router.patch(
     } else {
       updated = await db.query(
         `UPDATE support_tickets st
-         SET department = $1,
+         SET department = $1::text,
              auto_assigned_role = $2,
              sla_hours = $3,
              updated_at = NOW()
