@@ -19,7 +19,9 @@ interface Reply {
   id: number;
   sender_name: string;
   sender_type: string;
+  sender_role?: string | null;
   message: string;
+  visibility?: "customer_visible" | "internal" | null;
   created_at: string;
 }
 
@@ -170,6 +172,9 @@ export default function CustomerServicePage() {
   const [replies, setReplies] = useState<Reply[]>([]);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
+  // Same visibility model the finance side uses: customer_visible reaches
+  // the customer's ticket view, internal stays on the staff thread only.
+  const [replyVisibility, setReplyVisibility] = useState<"customer_visible" | "internal">("customer_visible");
   
   const [complaints, setComplaints] = useState<AccountComplaint[]>([]);
   const [complaintStats, setComplaintStats] = useState<ComplaintStats>({ new: 0, in_review: 0, closed: 0, dismissed: 0, total: 0 });
@@ -393,7 +398,7 @@ export default function CustomerServicePage() {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
-        body: JSON.stringify({ message: reply }),
+        body: JSON.stringify({ message: reply, visibility: replyVisibility }),
       });
       if (res.ok) {
         setReply("");
@@ -878,34 +883,96 @@ export default function CustomerServicePage() {
                           <p className="text-sm text-slate-700">{ticket.description}</p>
                         </div>
                         
-                        {replies.map((r) => (
-                          <div
-                            key={r.id}
-                            className={`p-3 rounded-xl ${
-                              r.sender_type === "admin" ? "bg-[#002845] text-white mr-8" : "bg-white border border-slate-200 ml-8"
-                            }`}
-                          >
-                            <p className={`text-xs mb-1 ${r.sender_type === "admin" ? "text-white/70" : "text-slate-500"}`}>
-                              {r.sender_name} - {formatDate(r.created_at)}
-                            </p>
-                            <p className="text-sm">{r.message}</p>
-                          </div>
-                        ))}
+                        {replies.map((r) => {
+                          const isInternal = r.visibility === "internal" || r.sender_type === "internal";
+                          const isStaff = r.sender_type === "admin" || isInternal;
+                          return (
+                            <div
+                              key={r.id}
+                              className={`p-3 rounded-xl ${
+                                isInternal
+                                  ? "bg-amber-50 border-2 border-amber-300 mr-8"
+                                  : isStaff
+                                    ? "bg-[#002845] text-white mr-8"
+                                    : "bg-white border border-slate-200 ml-8"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <p className={`text-xs ${isInternal ? "text-amber-900 font-bold" : isStaff ? "text-white/70" : "text-slate-500"}`}>
+                                  {r.sender_name} {r.sender_role ? `· ${r.sender_role === "finance_admin" ? "المالية" : r.sender_role === "support_admin" ? "الدعم" : r.sender_role === "super_admin" ? "الإدارة العليا" : r.sender_role}` : ""}
+                                </p>
+                                <div className="flex items-center gap-1">
+                                  {isInternal && (
+                                    <span className="text-[10px] font-black bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">
+                                      🔒 ملاحظة داخلية
+                                    </span>
+                                  )}
+                                  <p className={`text-[10px] ${isInternal ? "text-amber-700" : isStaff ? "text-white/60" : "text-slate-400"}`}>
+                                    {formatDate(r.created_at)}
+                                  </p>
+                                </div>
+                              </div>
+                              <p className="text-sm whitespace-pre-wrap">{r.message}</p>
+                            </div>
+                          );
+                        })}
                       </div>
                       
+                      {/* Visibility toggle — same model as the
+                          finance-inbox composer. Customer-visible
+                          replies land in the customer's ticket view,
+                          internal notes never reach the customer. */}
+                      <div className="flex items-center gap-2 mb-2">
+                        <button
+                          type="button"
+                          onClick={() => setReplyVisibility("customer_visible")}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                            replyVisibility === "customer_visible"
+                              ? "bg-sky-600 text-white shadow"
+                              : "bg-white border border-slate-200 text-slate-600"
+                          }`}
+                        >
+                          💬 رد للعميل
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReplyVisibility("internal")}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                            replyVisibility === "internal"
+                              ? "bg-amber-500 text-white shadow"
+                              : "bg-white border border-slate-200 text-slate-600"
+                          }`}
+                        >
+                          🔒 ملاحظة داخلية
+                        </button>
+                        {replyVisibility === "internal" && (
+                          <span className="text-[10px] text-amber-700 font-bold">
+                            لن يراها العميل — للزملاء فقط
+                          </span>
+                        )}
+                      </div>
                       <div className="flex gap-2">
                         <input
                           type="text"
                           value={reply}
                           onChange={(e) => setReply(e.target.value)}
-                          placeholder="اكتب ردك هنا..."
-                          className="flex-1 px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D4AF37]"
+                          placeholder={replyVisibility === "internal" ? "ملاحظة داخلية لن يراها العميل..." : "اكتب ردك هنا..."}
+                          className={`flex-1 px-4 py-2 border-2 rounded-xl focus:outline-none transition ${
+                            replyVisibility === "internal"
+                              ? "border-amber-300 bg-amber-50/40 focus:border-amber-500"
+                              : "border-slate-200 focus:border-[#D4AF37]"
+                          }`}
                           onKeyDown={(e) => e.key === "Enter" && handleSendReply()}
                         />
                         <button
                           onClick={handleSendReply}
                           disabled={!reply.trim() || sending}
-                          className="px-4 py-2 bg-[#D4AF37] text-white rounded-xl hover:bg-[#B8860B] transition disabled:opacity-50"
+                          className={`px-4 py-2 text-white rounded-xl transition disabled:opacity-50 ${
+                            replyVisibility === "internal"
+                              ? "bg-amber-500 hover:bg-amber-600"
+                              : "bg-[#D4AF37] hover:bg-[#B8860B]"
+                          }`}
+                          title={replyVisibility === "internal" ? "إرسال كملاحظة داخلية" : "إرسال للعميل"}
                         >
                           {sending ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                         </button>
