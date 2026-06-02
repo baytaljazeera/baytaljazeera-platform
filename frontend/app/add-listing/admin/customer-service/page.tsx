@@ -16,13 +16,18 @@ import Link from "next/link";
 import { toast } from "sonner";
 
 interface Reply {
-  id: number;
+  id: number;          // server replies have positive ids; optimistic local
+                       // ones use a negative temp id so we can match the
+                       // pair when the server response comes back.
   sender_name: string;
   sender_type: string;
   sender_role?: string | null;
   message: string;
   visibility?: "customer_visible" | "internal" | null;
   created_at: string;
+  // Optimistic-UI state — only present on the local optimistic copy.
+  _pending?: boolean;  // request still in flight → small spinner
+  _failed?: boolean;   // POST failed → red badge + retry button
 }
 
 interface SupportTicket {
@@ -257,7 +262,22 @@ export default function CustomerServicePage() {
       const res = await fetch(`${API_URL}/api/support/${ticketId}`, { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
-        setReplies(data.replies || []);
+        const serverReplies: Reply[] = data.replies || [];
+        // Merge server payload with any local optimistic replies that
+        // haven't reached the server yet (or failed). Without this the
+        // 5 s poll would erase a just-sent message that the operator
+        // can still see on screen — exactly the "vanishing message"
+        // class of bug.
+        setReplies((prev) => {
+          const serverIds = new Set(serverReplies.map((r) => r.id));
+          const localOnly = prev.filter(
+            (r) => (r._pending || r._failed) && !serverIds.has(r.id)
+          );
+          if (localOnly.length === 0) return serverReplies;
+          return [...serverReplies, ...localOnly].sort(
+            (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          );
+        });
         setThreadLastSync(new Date().toLocaleTimeString("ar-SA"));
         // Backend bumps admin_last_read_at when staff GETs a ticket.
         // Tell the bell to refetch /admin-unread-count immediately.
@@ -494,24 +514,67 @@ export default function CustomerServicePage() {
 
   const handleSendReply = async () => {
     if (!selectedTicket || !reply.trim()) return;
+    const text = reply.trim();
+    // Optimistic append: build a temp reply, push it into state, clear
+    // the input, scroll-effect kicks in via the replies-count watcher.
+    // The temp id is NEGATIVE so it can never collide with a server id;
+    // when the server response comes back we swap by tempId.
+    const tempId = -Date.now();
+    const optimistic: Reply = {
+      id: tempId,
+      sender_name: "أنت",
+      sender_type: replyVisibility === "internal" ? "internal" : "admin",
+      sender_role: userRole,
+      message: text,
+      visibility: replyVisibility,
+      created_at: new Date().toISOString(),
+      _pending: true,
+    };
+    setReplies((prev) => [...prev, optimistic]);
+    setReply("");
     setSending(true);
     try {
       const res = await fetch(`${API_URL}/api/support/${selectedTicket.id}/reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
-        body: JSON.stringify({ message: reply, visibility: replyVisibility }),
+        body: JSON.stringify({ message: text, visibility: replyVisibility }),
       });
       if (res.ok) {
-        setReply("");
-        await fetchTicketDetails(selectedTicket.id);
-        await fetchTickets();
+        const data = await res.json().catch(() => ({}));
+        const serverReply: Reply | null = data?.reply || null;
+        // Swap optimistic → server. If the server didn't echo the row
+        // back (older endpoint shape) we just drop the _pending flag
+        // and trust the next poll to reconcile.
+        setReplies((prev) =>
+          prev.map((r) =>
+            r.id === tempId
+              ? serverReply
+                ? { ...serverReply, _pending: false, _failed: false }
+                : { ...r, _pending: false }
+              : r
+          )
+        );
+        // Refresh list + counts so the support board reflects the new
+        // last_reply_at + any status transition the server made.
+        void fetchTickets();
         if (typeof window !== "undefined") {
           window.dispatchEvent(new Event("notificationsUpdated"));
         }
+      } else {
+        // Mark the optimistic copy as failed so the UI can show a
+        // retry affordance instead of pretending the send worked.
+        setReplies((prev) =>
+          prev.map((r) => (r.id === tempId ? { ...r, _pending: false, _failed: true } : r))
+        );
+        toast.error("تعذّر إرسال الرد — حاول مرة أخرى");
       }
     } catch (err) {
       console.error("Error sending reply:", err);
+      setReplies((prev) =>
+        prev.map((r) => (r.id === tempId ? { ...r, _pending: false, _failed: true } : r))
+      );
+      toast.error("فشل الاتصال بالخادم");
     } finally {
       setSending(false);
     }
@@ -1025,12 +1088,16 @@ export default function CustomerServicePage() {
                           return (
                             <div
                               key={r.id}
-                              className={`p-3 rounded-xl ${
-                                isInternal
-                                  ? "bg-amber-50 border-2 border-amber-300 mr-8"
-                                  : isStaff
-                                    ? "bg-[#002845] text-white mr-8"
-                                    : "bg-white border border-slate-200 ml-8"
+                              className={`p-3 rounded-xl transition-opacity ${
+                                r._pending ? "opacity-70" : ""
+                              } ${
+                                r._failed
+                                  ? "bg-red-50 border-2 border-red-300 mr-8"
+                                  : isInternal
+                                    ? "bg-amber-50 border-2 border-amber-300 mr-8"
+                                    : isStaff
+                                      ? "bg-[#002845] text-white mr-8"
+                                      : "bg-white border border-slate-200 ml-8"
                               }`}
                             >
                               <div className="flex items-center justify-between gap-2 mb-1">
@@ -1049,6 +1116,17 @@ export default function CustomerServicePage() {
                                 </div>
                               </div>
                               <p className="text-sm whitespace-pre-wrap">{r.message}</p>
+                              {r._pending && (
+                                <p className="mt-1 text-[10px] text-white/70 flex items-center gap-1">
+                                  <span className="inline-block w-2 h-2 rounded-full bg-current animate-pulse" />
+                                  جاري الإرسال…
+                                </p>
+                              )}
+                              {r._failed && (
+                                <p className="mt-1 text-[11px] font-bold text-red-700">
+                                  ⚠ تعذّر إرسال الرد — استخدم زر إعادة المحاولة في إطار الكتابة
+                                </p>
+                              )}
                             </div>
                           );
                         })}

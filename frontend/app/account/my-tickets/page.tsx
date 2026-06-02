@@ -22,7 +22,11 @@ import { useAuthStore } from "@/lib/stores/authStore";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import RequestComposer from "@/components/requests/RequestComposer";
 
-interface Reply {
+interface ReplyExt {
+  _pending?: boolean;
+  _failed?: boolean;
+}
+interface Reply extends ReplyExt {
   id: number;
   sender_name?: string;
   sender_type: string;
@@ -334,7 +338,20 @@ function MyTicketsContent() {
         });
         if (res.ok) {
           const data = await res.json();
-          setReplies(data.replies || []);
+          const serverReplies: Reply[] = data.replies || [];
+          // Merge with any local optimistic replies that haven't been
+          // confirmed by the server yet — protects the "I just sent
+          // it" message from being erased by the next 5s poll.
+          setReplies((prev) => {
+            const serverIds = new Set(serverReplies.map((r) => r.id));
+            const localOnly = prev.filter(
+              (r) => (r._pending || r._failed) && !serverIds.has(r.id)
+            );
+            if (localOnly.length === 0) return serverReplies;
+            return [...serverReplies, ...localOnly].sort(
+              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            );
+          });
           setThreadLastSync(new Date().toLocaleTimeString("ar-SA"));
           await markTicketRead(ticketId);
         }
@@ -462,26 +479,59 @@ function MyTicketsContent() {
   const sendReply = async () => {
     if (!selected || !reply.trim()) return;
     if (isTicketClosedStatus(selected.status)) return;
+    const text = reply.trim();
+    // Optimistic UI: append the message instantly so the user sees
+    // their bubble appear before the network round-trip finishes.
+    // Negative temp id pairs with the server response on success
+    // and survives polling merges (see fetchTicketDetail).
+    const tempId = -Date.now();
+    const optimistic: Reply = {
+      id: tempId,
+      sender_name: user?.name || "أنت",
+      sender_type: "user",
+      message: text,
+      created_at: new Date().toISOString(),
+      _pending: true,
+    };
+    setReplies((prev) => [...prev, optimistic]);
+    setReply("");
     setSending(true);
     try {
       const res = await fetch(`${API_URL}/api/support/${selected.id}/reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
-        body: JSON.stringify({ message: reply }),
+        body: JSON.stringify({ message: text }),
       });
       if (res.ok) {
-        const data = await res.json();
-        if (data.reply) {
-          setReplies((prev) => [...prev, data.reply]);
-        }
-        setReply("");
+        const data = await res.json().catch(() => ({}));
+        const serverReply: Reply | null = data?.reply || null;
+        setReplies((prev) =>
+          prev.map((r) =>
+            r.id === tempId
+              ? serverReply
+                ? { ...serverReply, _pending: false, _failed: false }
+                : { ...r, _pending: false }
+              : r
+          )
+        );
         if (typeof window !== "undefined") {
           window.dispatchEvent(new Event("notificationsUpdated"));
         }
+      } else {
+        setReplies((prev) =>
+          prev.map((r) =>
+            r.id === tempId ? { ...r, _pending: false, _failed: true } : r
+          )
+        );
       }
     } catch (err) {
       console.error("send reply:", err);
+      setReplies((prev) =>
+        prev.map((r) =>
+          r.id === tempId ? { ...r, _pending: false, _failed: true } : r
+        )
+      );
     } finally {
       setSending(false);
     }
@@ -779,7 +829,13 @@ function MyTicketsContent() {
               {replies.map((r) => (
                 <div
                   key={r.id}
-                  className={`rounded-xl p-3 ${r.sender_type === "admin" ? "bg-[#D4AF37]/10 mr-4" : "bg-blue-50 ml-4"}`}
+                  className={`rounded-xl p-3 transition-opacity ${r._pending ? "opacity-70" : ""} ${
+                    r._failed
+                      ? "bg-red-50 border-2 border-red-300 ml-4"
+                      : r.sender_type === "admin"
+                        ? "bg-[#D4AF37]/10 mr-4"
+                        : "bg-blue-50 ml-4"
+                  }`}
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs font-medium text-[#002845]">
@@ -795,6 +851,17 @@ function MyTicketsContent() {
                   </div>
                   <p className="text-sm text-slate-700 whitespace-pre-wrap">{r.message}</p>
                   <p className="text-[10px] text-slate-500 mt-2">{new Date(r.created_at).toLocaleString("ar-SA")}</p>
+                  {r._pending && (
+                    <p className="mt-1 text-[10px] text-slate-500 flex items-center gap-1">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse" />
+                      جاري الإرسال…
+                    </p>
+                  )}
+                  {r._failed && (
+                    <p className="mt-1 text-[11px] font-bold text-red-700">
+                      ⚠ تعذّر الإرسال — أعد كتابة الرسالة وحاول مرة أخرى
+                    </p>
+                  )}
                 </div>
               ))}
               <div ref={messagesEndRef} />
