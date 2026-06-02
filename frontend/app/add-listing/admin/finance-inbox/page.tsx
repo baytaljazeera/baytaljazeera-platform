@@ -123,7 +123,40 @@ export default function FinanceInboxPage() {
     }
   }, []);
 
-  useEffect(() => { void fetchInbox(); }, [fetchInbox]);
+  useEffect(() => {
+    void fetchInbox();
+    // Round 3: poll the list every 20s so the agent doesn't have to
+    // refresh manually when a customer replies. Cheap query — just a
+    // count + a few fields per row, no thread. Stops when the page
+    // unmounts.
+    const id = setInterval(() => { void fetchInbox(); }, 20000);
+    return () => clearInterval(id);
+  }, [fetchInbox]);
+
+  // Round 3: when a specific ticket is open, also auto-refresh the
+  // thread every 15s so the customer's new reply appears without
+  // navigating away. Lightweight — just the replies for that one
+  // ticket, not the whole list.
+  useEffect(() => {
+    if (!selected) return;
+    const id = setInterval(() => {
+      // Re-fetch the thread silently (no full-page spinner — only the
+      // tail-end reply list updates if there's new data).
+      void (async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/finance/inbox/${selected.id}`, {
+            credentials: "include",
+            headers: getAuthHeaders(),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setReplies((data.replies || []) as Reply[]);
+          }
+        } catch { /* ignore polling errors */ }
+      })();
+    }, 15000);
+    return () => clearInterval(id);
+  }, [selected?.id]);
 
   const sendReply = async () => {
     if (!selected || !composer.trim()) return;
