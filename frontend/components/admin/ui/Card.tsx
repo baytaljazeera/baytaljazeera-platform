@@ -2,12 +2,25 @@
 
 import { HTMLAttributes, ReactNode } from "react";
 
-// Single card shape. rounded-bj-lg (16px), shadow-card, paper-bg.
-// Every admin card uses this. No exceptions.
+// Single card shape with STATE-DRIVEN BACKGROUND TINTS.
+// The owner's rule: a card's background color tells the operator
+// what state it's in at-a-glance, without reading any text.
+//
+//   idle       — white. Default. Nothing urgent here.
+//   attention  — soft rose. NEW arrival, needs your action.
+//   working    — soft amber. Something you've touched, in motion.
+//   resolved   — soft emerald. Done. Sit-rep only.
+//   critical   — stronger rose with pulse ring. Past SLA. Drop everything.
+//
+// Apply via state= prop on any BJCard or BJStatCard. The legacy
+// `accent` prop (ring color) still works for non-state badges.
+
+export type BJCardState = "idle" | "attention" | "working" | "resolved" | "critical";
 
 interface BJCardProps extends HTMLAttributes<HTMLDivElement> {
   padding?: "none" | "sm" | "md" | "lg";
   accent?: "none" | "gold" | "info" | "warn" | "bad" | "ok";
+  state?: BJCardState;
   hoverable?: boolean;
 }
 
@@ -27,9 +40,21 @@ const ACCENT: Record<NonNullable<BJCardProps["accent"]>, string> = {
   ok:   "ring-1 ring-ok/30",
 };
 
+// Background + border tints per state. Designed to be readable
+// in a long list — the operator scans rows and the colour itself
+// tells them what's hot.
+const STATE: Record<BJCardState, string> = {
+  idle:      "bg-white border-brand-royal/10",
+  attention: "bg-rose-50/70 border-rose-200",
+  working:   "bg-amber-50/70 border-amber-200",
+  resolved:  "bg-emerald-50/60 border-emerald-200",
+  critical:  "bg-rose-100 border-rose-300 ring-2 ring-rose-300/40",
+};
+
 export function BJCard({
   padding = "md",
   accent = "none",
+  state = "idle",
   hoverable = false,
   className = "",
   children,
@@ -38,10 +63,11 @@ export function BJCard({
   return (
     <div
       className={[
-        "bg-white rounded-bj-lg border border-brand-royal/10 shadow-card",
+        "rounded-bj-lg border shadow-card",
+        STATE[state],
         PAD[padding],
         ACCENT[accent],
-        hoverable ? "transition-shadow duration-200 hover:shadow-pop hover:border-brand-royal/20" : "",
+        hoverable ? "transition-all duration-200 hover:shadow-pop" : "",
         className,
       ].join(" ")}
       {...rest}

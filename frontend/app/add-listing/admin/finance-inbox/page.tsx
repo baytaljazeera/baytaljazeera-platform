@@ -23,6 +23,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { API_URL, getAuthHeaders } from "@/lib/api";
 import { alertDialog, promptDialog } from "@/components/ui/ConfirmDialog";
+import { refundCardState } from "@/components/admin/ui";
 import {
   Loader2, RefreshCw, MessageSquare, Send, Lock, ArrowRight,
   Wallet, X, FileText,
@@ -397,30 +398,50 @@ export default function FinanceInboxPage() {
                 لا توجد تذاكر محوّلة من الدعم
               </div>
             ) : (
-              <ul className="divide-y divide-slate-100 max-h-[75vh] overflow-y-auto">
-                {list.map((t) => (
-                  <li key={t.id}>
-                    <button
-                      type="button"
-                      onClick={() => void openTicket(t)}
-                      className={`w-full text-right p-3 hover:bg-slate-50 transition ${selected?.id === t.id ? "bg-[#FFFCEE] border-r-4 border-[#D4AF37]" : ""}`}
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="font-mono text-[10px] text-slate-500">{t.ticket_number}</span>
-                        {t.refund_id && (
-                          <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full font-bold">
-                            ↪ {t.refund_case_number || `#${t.refund_id}`}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm font-bold text-[#002845] truncate">{t.subject}</p>
-                      <p className="text-xs text-slate-500 truncate">{t.user_name || "—"} · {t.user_email || ""}</p>
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        حُوّلت: {t.transferred_to_finance_at ? new Date(t.transferred_to_finance_at).toLocaleString("ar-SA") : "—"}
-                      </p>
-                    </button>
-                  </li>
-                ))}
+              <ul className="space-y-2 p-2 max-h-[75vh] overflow-y-auto">
+                {list.map((t) => {
+                  // State-driven background tint. Tickets with a refund
+                  // are coloured by REFUND state (priority); otherwise
+                  // by ticket status. Active selection wins the ring.
+                  const tint = t.refund_id
+                    ? refundCardState(t.refund_status || "")
+                    : "attention"; // freshly transferred ticket without refund yet
+                  const TINT: Record<string, string> = {
+                    attention: "bg-rose-50 border-rose-200 hover:bg-rose-100",
+                    critical:  "bg-rose-100 border-rose-300 hover:bg-rose-200 ring-1 ring-rose-300/50",
+                    working:   "bg-amber-50 border-amber-200 hover:bg-amber-100",
+                    resolved:  "bg-emerald-50 border-emerald-200 hover:bg-emerald-100",
+                    idle:      "bg-white border-slate-200 hover:bg-slate-50",
+                  };
+                  const isSel = selected?.id === t.id;
+                  return (
+                    <li key={t.id}>
+                      <button
+                        type="button"
+                        onClick={() => void openTicket(t)}
+                        className={[
+                          "w-full text-right p-3 rounded-bj-md border transition-all duration-200",
+                          TINT[tint],
+                          isSel ? "ring-2 ring-brand-gold shadow-pop" : "",
+                        ].join(" ")}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="font-mono text-[10px] text-brand-ink-2">{t.ticket_number}</span>
+                          {t.refund_id && (
+                            <span className="text-[9px] bg-white/70 text-brand-royal px-1.5 py-0.5 rounded-full font-bold border border-current/20">
+                              ↪ {t.refund_case_number || `#${t.refund_id}`}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm font-bold text-brand-royal truncate">{t.subject}</p>
+                        <p className="text-xs text-brand-ink-2 truncate">{t.user_name || "—"} · {t.user_email || ""}</p>
+                        <p className="text-[10px] text-brand-ink-2 mt-1">
+                          حُوّلت: {t.transferred_to_finance_at ? new Date(t.transferred_to_finance_at).toLocaleString("ar-SA") : "—"}
+                        </p>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>

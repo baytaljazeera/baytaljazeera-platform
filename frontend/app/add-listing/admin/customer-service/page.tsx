@@ -725,12 +725,26 @@ export default function CustomerServicePage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredTickets.map((ticket) => (
+              {filteredTickets.map((ticket) => {
+                // State-driven background colour. Owner's rule:
+                // pink = customer waiting on us / new / urgent.
+                // green = resolved. amber = in progress (we acted last).
+                const tone =
+                  ticket.status === "resolved" || ticket.status === "closed"
+                    ? "bg-emerald-50 border-emerald-200"
+                    : ticket.status === "new"
+                      ? "bg-rose-50 border-rose-200"
+                      : ticket.status === "in_progress"
+                        ? "bg-amber-50 border-amber-200"
+                        : "bg-white border-slate-200";
+                const sel =
+                  selectedTicket?.id === ticket.id
+                    ? "ring-2 ring-[#D4AF37] shadow-pop"
+                    : "shadow-sm";
+                return (
                 <div
                   key={ticket.id}
-                  className={`bg-white rounded-2xl border ${
-                    selectedTicket?.id === ticket.id ? "border-[#D4AF37] ring-2 ring-[#D4AF37]/20" : "border-slate-200"
-                  } shadow-sm overflow-hidden`}
+                  className={`${tone} rounded-2xl border ${sel} overflow-hidden transition-all`}
                 >
                   <div className="p-4 md:p-6">
                     <div className="flex flex-col md:flex-row gap-4">
@@ -980,7 +994,8 @@ export default function CustomerServicePage() {
                     </div>
                   )}
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </div>
