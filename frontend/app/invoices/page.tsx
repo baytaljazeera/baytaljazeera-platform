@@ -44,16 +44,38 @@ type RefundInvoice = {
   original_invoice_number?: string;
 };
 
+// Maps every refund-state-machine status to a customer-friendly badge.
+// The 4 legacy statuses (pending/approved/rejected/completed) are kept
+// for back-compat with old refund rows; the 5 new state-machine ones
+// (pending_customer_confirmation, awaiting_bank_transfer, proof_uploaded,
+// waiting_customer_info, plus pending_review) are what new refunds
+// actually carry. Without these the post-confirmation tracking on
+// /invoices went invisible — the customer would confirm and then
+// see no status until the refund completed weeks later.
 function getRefundStatusBadge(status?: string) {
   if (!status) return null;
-  
+
   switch (status) {
+    // ── Legacy schema (older refund rows) ──────────────────────────
     case 'pending':
       return { text: 'قيد المراجعة', color: 'bg-amber-100 text-amber-700', icon: Clock };
     case 'approved':
       return { text: 'تمت الموافقة', color: 'bg-green-100 text-green-700', icon: CheckCircle2 };
     case 'rejected':
       return { text: 'غير مقبول', color: 'bg-red-100 text-red-700', icon: XCircle };
+
+    // ── New state machine (June 2026) ──────────────────────────────
+    case 'pending_review':
+      return { text: 'قيد المراجعة من المالية', color: 'bg-amber-100 text-amber-700', icon: Clock };
+    case 'pending_customer_confirmation':
+      return { text: 'بانتظار تأكيدك', color: 'bg-[#FFFCEE] text-[#9A7D28] ring-1 ring-[#D4AF37]', icon: AlertCircle };
+    case 'waiting_customer_info':
+      return { text: 'المالية تطلب معلومة', color: 'bg-amber-50 text-amber-800 ring-1 ring-amber-300', icon: AlertCircle };
+    case 'awaiting_bank_transfer':
+      return { text: 'بانتظار التحويل البنكي', color: 'bg-blue-50 text-blue-800 ring-1 ring-blue-200', icon: Clock };
+    case 'proof_uploaded':
+      return { text: 'تم رفع إثبات التحويل', color: 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200', icon: CheckCircle2 };
+
     case 'completed':
       return { text: 'تم التحويل', color: 'bg-blue-100 text-blue-700', icon: Banknote };
     default:

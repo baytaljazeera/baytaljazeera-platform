@@ -3223,6 +3223,22 @@ router.post(
       return res.status(400).json({ error: "صورة إثبات التحويل مطلوبة" });
     }
 
+    // Auto-completion design (June 2026): when the accountant uploads
+    // the bank-transfer proof, the refund finalises in ONE action:
+    //
+    //   AWAITING_BANK_TRANSFER  →  PROOF_UPLOADED  →  COMPLETED
+    //                                   |                |
+    //                                   |                +-> refund invoice generated
+    //                                   |                +-> customer notification
+    //                                   |                +-> ticket reply (customer-visible)
+    //                                   |                +-> email
+    //                                   +-> proof_uploaded event recorded
+    //
+    // Owner's rule: the proof IS the completion evidence. Splitting it
+    // into "upload proof" + "click complete" left customers in limbo
+    // (no invoice, no notification) for hours after the money had
+    // actually moved. The audit trail remains intact via the two
+    // refund_case_events recorded below.
     const client = await db.connect();
     let didCommit = false;
     try {
@@ -3238,13 +3254,13 @@ router.post(
         return res.status(409).json({ error: `لا يمكن رفع الإثبات من حالة "${refund.status}"` });
       }
 
-      const upd = await client.query(
+      // Step 1: transition to PROOF_UPLOADED with the proof URL.
+      await client.query(
         `UPDATE refunds
          SET status = $1, payout_proof_url = $2,
              bank_reference = COALESCE(NULLIF($3, ''), bank_reference),
              state_changed_at = NOW(), state_changed_by = $4, updated_at = NOW()
-         WHERE id = $5
-         RETURNING *`,
+         WHERE id = $5`,
         [refundSM.STATES.PROOF_UPLOADED, proofUrl, bankRef, req.user.id, id]
       );
       await refundSM.recordEvent(client, {
@@ -3258,10 +3274,101 @@ router.post(
         note: bankRef ? `bank_reference=${bankRef}` : null,
         payload: { payout_proof_url: proofUrl },
       });
+
+      // Step 2: generate (or reuse) the refund invoice number.
+      // Uses an advisory lock to serialise the sequence safely under
+      // concurrent finance users.
+      const year = new Date().getFullYear();
+      const lockId = 2000000 + year;
+      await client.query(`SELECT pg_advisory_xact_lock($1)`, [lockId]);
+      const seq = await client.query(
+        `SELECT COALESCE(MAX(CAST(SUBSTRING(refund_invoice_number FROM 'RFD-\\d{4}-(\\d+)') AS INTEGER)), 0) + 1 AS next_num
+           FROM refunds WHERE refund_invoice_number LIKE $1`,
+        [`RFD-${year}-%`]
+      );
+      const nextNum = seq.rows[0].next_num;
+      const refundInvoiceNumber = `RFD-${year}-${String(nextNum).padStart(6, '0')}`;
+
+      // Step 3: finalise — COMPLETED + invoice number + payout_confirmed_at.
+      const finalUpd = await client.query(
+        `UPDATE refunds
+         SET status = $1,
+             refund_invoice_number = COALESCE(refund_invoice_number, $2),
+             refund_invoice_issued_at = COALESCE(refund_invoice_issued_at, NOW()),
+             payout_confirmed_at = NOW(),
+             state_changed_at = NOW(), state_changed_by = $3, updated_at = NOW()
+         WHERE id = $4
+         RETURNING *`,
+        [refundSM.STATES.COMPLETED, refundInvoiceNumber, req.user.id, id]
+      );
+      await refundSM.recordEvent(client, {
+        refund_id: id,
+        event_type: 'state_changed',
+        from_state: refundSM.STATES.PROOF_UPLOADED,
+        to_state: refundSM.STATES.COMPLETED,
+        actor_user_id: req.user.id,
+        actor_name: req.user.name,
+        actor_role: req.user.role,
+        note: `auto-completed on proof upload — invoice ${refundInvoiceNumber}`,
+        payload: { refund_invoice_number: refundInvoiceNumber },
+      });
+
+      // Step 4: customer-visible reply on the linked support ticket so
+      // the conversation captures the completion moment with the
+      // invoice number — customer can scroll up later and see it.
+      if (refund.ticket_id) {
+        const methodText = refund.refund_method === 'credit_card'
+          ? 'بطاقتك الائتمانية الأصلية'
+          : 'حسابك البنكي';
+        await client.query(
+          `INSERT INTO support_ticket_replies
+             (ticket_id, sender_id, sender_type, sender_role, message, visibility)
+           VALUES ($1, $2, 'admin', $3, $4, 'customer_visible')`,
+          [
+            refund.ticket_id, req.user.id, req.user.role,
+            `تم تنفيذ التحويل البنكي وإصدار فاتورة الاسترداد رقم ${refundInvoiceNumber} بمبلغ ${refund.amount} ر.س إلى ${methodText}${bankRef ? ` (مرجع بنكي: ${bankRef})` : ''}. ستظهر الفاتورة في صفحة فواتيرك.`,
+          ]
+        );
+      }
+
+      // Step 5: customer notification (drives the bell + invoices page).
+      await client.query(
+        `INSERT INTO notifications (user_id, type, title, body, link, channel, status, payload, scheduled_at)
+         VALUES ($1, 'refund_completed',
+                 'تم تحويل مبلغ الاسترداد ✅',
+                 $2, $3, 'app', 'pending', $4::jsonb, NOW())`,
+        [
+          refund.user_id,
+          `تم استرداد ${refund.amount} ر.س — فاتورة الاسترداد ${refundInvoiceNumber}. افتح صفحة الفواتير لتنزيلها.`,
+          `/invoices`,
+          JSON.stringify({ refund_id: id, refund_invoice_number: refundInvoiceNumber, bank_reference: bankRef || null }),
+        ]
+      );
+
       await client.query('COMMIT');
       didCommit = true;
       client.release();
-      res.json({ ok: true, case: upd.rows[0] });
+
+      // Best-effort email — never blocks the response.
+      try {
+        const userQ = await db.query(`SELECT name, email FROM users WHERE id = $1`, [refund.user_id]);
+        const u = userQ.rows[0] || {};
+        if (typeof sendRefundEmail === 'function') {
+          sendRefundEmail('completed', finalUpd.rows[0], u.email, u.name, null, bankRef);
+        }
+        if (typeof sendRefundInvoiceEmail === 'function') {
+          sendRefundInvoiceEmail(finalUpd.rows[0], refundInvoiceNumber);
+        }
+      } catch (emailErr) {
+        console.warn('[attach-proof] email send failed (non-critical):', emailErr.message);
+      }
+
+      res.json({
+        ok: true,
+        case: finalUpd.rows[0],
+        refund_invoice_number: refundInvoiceNumber,
+        message: "تم رفع الإثبات وإتمام الاسترداد وإصدار فاتورة الاسترداد",
+      });
     } catch (err) {
       if (!didCommit) { try { await client.query('ROLLBACK'); } catch { /* ignore */ } }
       try { client.release(); } catch { /* ignore */ }
