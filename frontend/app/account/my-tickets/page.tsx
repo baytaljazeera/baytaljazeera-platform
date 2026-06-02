@@ -207,25 +207,52 @@ function MyTicketsContent() {
     }
   };
 
-  // Auto-scroll only when the reply COUNT actually grew — re-polling
-  // the same data must NOT yank the user back to the bottom when
-  // they're scrolling up to read older messages.
+  // Chat-style scroll. Sources of truth:
+  //   prevRepliesCountRef → only act when the count actually grew.
+  //   wasAtBottomRef      → captured from onScroll BEFORE the new
+  //                         bubble enters the DOM (a post-render
+  //                         scrollHeight reading is already stale).
+  //
+  // Rules:
+  //   • First load → instant jump to the newest message.
+  //   • Newest reply is MY optimistic bubble → always scroll, no pill.
+  //   • I was near the bottom → smooth scroll, no pill.
+  //   • I was scrolled up reading history → show pill, don't yank.
   const prevRepliesCountRef = useRef<number>(0);
+  const wasAtBottomRef = useRef<boolean>(true);
   const [hasUnseenReply, setHasUnseenReply] = useState(false);
+
+  const NEAR_BOTTOM_PX = 120;
+  const handleMessagesScroll = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+    wasAtBottomRef.current = atBottom;
+    if (atBottom) setHasUnseenReply((v) => (v ? false : v));
+  }, []);
 
   useEffect(() => {
     const prev = prevRepliesCountRef.current;
     const next = replies.length;
     prevRepliesCountRef.current = next;
-    if (next <= prev) return;             // nothing new arrived
+    if (next <= prev) return;
 
     const el = messagesContainerRef.current;
     if (!el) return;
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     const firstRender = prev === 0;
-    if (firstRender || isNearBottom) {
-      scrollMessagesToBottom(!firstRender);
+    const newest = replies[replies.length - 1];
+    const isMyOwnOptimistic = !!newest?._pending;
+
+    if (firstRender) {
+      scrollMessagesToBottom(false);
       setHasUnseenReply(false);
+      wasAtBottomRef.current = true;
+      return;
+    }
+    if (isMyOwnOptimistic || wasAtBottomRef.current) {
+      scrollMessagesToBottom(true);
+      setHasUnseenReply(false);
+      wasAtBottomRef.current = true;
     } else {
       setHasUnseenReply(true);
     }
@@ -236,6 +263,7 @@ function MyTicketsContent() {
   useEffect(() => {
     prevRepliesCountRef.current = 0;
     setHasUnseenReply(false);
+    wasAtBottomRef.current = true;
     if (!selected || replies.length === 0) return;
     scrollMessagesToBottom(false);
   }, [selected?.id]);
@@ -820,6 +848,7 @@ function MyTicketsContent() {
               )}
             <div
               ref={messagesContainerRef}
+              onScroll={handleMessagesScroll}
               className="p-4 flex-1 min-h-0 overflow-y-auto space-y-3"
             >
               <div className="bg-slate-100 rounded-xl p-3">

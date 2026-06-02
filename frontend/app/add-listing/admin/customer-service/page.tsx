@@ -184,7 +184,27 @@ export default function CustomerServicePage() {
   // position when they're reading older messages.
   const repliesContainerRef = useRef<HTMLDivElement | null>(null);
   const prevRepliesCountRef = useRef<number>(0);
+  // Truth-source for "was the operator at the bottom JUST BEFORE the
+  // new message appeared?". Updated by onScroll, NOT by the post-
+  // render effect — checking it after the DOM grew always reports
+  // "not at bottom" because scrollHeight already includes the new
+  // bubble. Initial value true so the very first new message after
+  // opening (we're auto-scrolled there) is treated as "at bottom".
+  const wasAtBottomRef = useRef<boolean>(true);
   const [hasUnseenReply, setHasUnseenReply] = useState(false);
+
+  // Track operator's scroll position. NEAR_BOTTOM_PX matches the
+  // owner-specified threshold from the chat-UX brief.
+  const NEAR_BOTTOM_PX = 120;
+  const handleRepliesScroll = useCallback(() => {
+    const el = repliesContainerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+    wasAtBottomRef.current = atBottom;
+    // If the operator scrolls back down to the latest message, the
+    // "new message" pill is no longer useful — dismiss it silently.
+    if (atBottom) setHasUnseenReply((v) => (v ? false : v));
+  }, []);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   // Same visibility model the finance side uses: customer_visible reaches
@@ -371,28 +391,43 @@ export default function CustomerServicePage() {
     return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
   }, [fetchTickets, fetchSupportStats, fetchComplaints, fetchComplaintStats]);
 
-  // Auto-scroll behaviour for the open conversation.
-  //   - If the operator is already pinned to the bottom (or this is
-  //     the very first render of the ticket) we scroll smoothly to
-  //     show the new message.
-  //   - If the operator is scrolled UP reading older messages we DO
-  //     NOT yank them down — instead we set hasUnseenReply so a
-  //     "↓ رسالة جديدة" pill appears, and they can tap to jump.
-  // Only fires when the count actually increases, so re-polls of the
-  // same data are no-ops.
+  // Chat-style auto-scroll. Rules per the owner's chat-UX brief:
+  //   • First render of a ticket → instant jump (no smooth) to the
+  //     newest message. Chat opens at the bottom, never at the top.
+  //   • The arriving reply is MINE (the optimistic bubble I just
+  //     sent) → always scroll, never show the pill.
+  //   • Operator WAS at the bottom before the message arrived
+  //     (wasAtBottomRef from onScroll) → smooth scroll, hide pill.
+  //   • Operator was scrolled UP reading older history → do NOT
+  //     yank them; show the "↓ رسالة جديدة" pill instead.
+  //
+  // We read wasAtBottomRef NOT a fresh measurement — by the time
+  // this effect runs the new bubble is already in the DOM and a
+  // fresh scrollHeight check would always claim "not at bottom"
+  // because scrollHeight grew by the bubble's height.
   useEffect(() => {
     const prev = prevRepliesCountRef.current;
     const next = replies.length;
     prevRepliesCountRef.current = next;
-    if (next <= prev) return;             // no new messages
+    if (next <= prev) return;
     const el = repliesContainerRef.current;
     if (!el) return;
 
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     const firstRender = prev === 0;
-    if (firstRender || isNearBottom) {
-      el.scrollTo({ top: el.scrollHeight, behavior: firstRender ? "auto" : "smooth" });
+    const newest = replies[replies.length - 1];
+    const isMyOwnOptimistic = !!newest?._pending;
+
+    if (firstRender) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
       setHasUnseenReply(false);
+      wasAtBottomRef.current = true;
+      return;
+    }
+
+    if (isMyOwnOptimistic || wasAtBottomRef.current) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      setHasUnseenReply(false);
+      wasAtBottomRef.current = true;
     } else {
       setHasUnseenReply(true);
     }
@@ -402,6 +437,7 @@ export default function CustomerServicePage() {
   useEffect(() => {
     prevRepliesCountRef.current = 0;
     setHasUnseenReply(false);
+    wasAtBottomRef.current = true;
   }, [selectedTicket?.id]);
 
   // Active-thread polling: while a ticket is open in the side panel,
@@ -1076,7 +1112,11 @@ export default function CustomerServicePage() {
                             ↓ رسالة جديدة
                           </button>
                         )}
-                      <div ref={repliesContainerRef} className="space-y-3 max-h-80 overflow-y-auto mb-4 scroll-smooth">
+                      <div
+                        ref={repliesContainerRef}
+                        onScroll={handleRepliesScroll}
+                        className="space-y-3 max-h-80 overflow-y-auto mb-4 scroll-smooth"
+                      >
                         <div className="p-3 rounded-xl bg-slate-100">
                           <p className="text-xs text-slate-500 mb-1">الرسالة الأصلية</p>
                           <p className="text-sm text-slate-700">{ticket.description}</p>
