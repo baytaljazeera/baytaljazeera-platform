@@ -86,6 +86,11 @@ interface TypeConfig {
   key: TicketTypeKey;
   label: string;
   tagline: string;
+  // Sub-header shown on the details step *after* this type is picked.
+  // The composer header keeps echoing the type so the customer never
+  // wonders "where am I in the form?" — the icon and the line beneath
+  // it both reflect the chosen branch.
+  detailsHint: string;
   Icon: typeof Wallet;
   iconBg: string;
   iconColor: string;
@@ -100,6 +105,7 @@ const TYPES: TypeConfig[] = [
     key: "financial",
     label: "مالية",
     tagline: "فاتورة، اشتراك، استرداد، دفع",
+    detailsHint: "اختر نوع المسألة المالية (استرداد، فاتورة، دفع فاشل...) واشرح التفاصيل — سيتسلّم طلبك قسم المالية مباشرةً.",
     Icon: Wallet,
     iconBg: "bg-gradient-to-br from-emerald-50 to-emerald-100",
     iconColor: "text-emerald-700",
@@ -118,6 +124,7 @@ const TYPES: TypeConfig[] = [
     key: "account",
     label: "حسابي / إداري",
     tagline: "بيانات، صلاحيات، توثيق، إعلانات",
+    detailsHint: "اختر ما يخص حسابك أو إعلاناتك (تعديل بيانات، توثيق، صلاحيات...) وسيتولّاه فريق إدارة الحسابات.",
     Icon: User,
     iconBg: "bg-gradient-to-br from-blue-50 to-blue-100",
     iconColor: "text-blue-700",
@@ -136,6 +143,7 @@ const TYPES: TypeConfig[] = [
     key: "technical",
     label: "تقنية",
     tagline: "خطأ، بطء، خرائط، صور، AI",
+    detailsHint: "صِف الخطأ والخطوات التي أدّت إليه إن أمكن — سيُحوَّل البلاغ مباشرةً إلى الفريق التقني.",
     Icon: Wrench,
     iconBg: "bg-gradient-to-br from-purple-50 to-purple-100",
     iconColor: "text-purple-700",
@@ -154,6 +162,7 @@ const TYPES: TypeConfig[] = [
     key: "property_report",
     label: "بلاغ ضد إعلان",
     tagline: "إعلان مخالف، مكرر، احتيال، محتوى غير لائق",
+    detailsHint: "حدّد سبب البلاغ على هذا الإعلان (احتيال، تكرار، صور غير لائقة...) وسيراجعه فريق الجودة فوراً.",
     Icon: Flag,
     iconBg: "bg-gradient-to-br from-rose-50 to-rose-100",
     iconColor: "text-rose-700",
@@ -177,6 +186,7 @@ const TYPES: TypeConfig[] = [
     key: "general_complaint",
     label: "شكوى عامة",
     tagline: "تجربة سيئة، تصعيد للإدارة",
+    detailsHint: "اشرح موضوع الشكوى وسبب الحاجة للتصعيد — ستُرفع للإدارة المختصة فوراً.",
     Icon: MessageSquareWarning,
     iconBg: "bg-gradient-to-br from-amber-50 to-amber-100",
     iconColor: "text-amber-700",
@@ -520,7 +530,12 @@ export default function RequestComposer({
                         ? "اكتب رقم الإعلان أو جزء من عنوانه — اخترنا له ٨ نتائج"
                         : step === "pick-invoice"
                           ? "اختر الفاتورة لتسريع معالجة الاسترداد، أو تابع بدون فاتورة محددة"
-                          : "اختر الموضوع وأضف التفاصيل، وسنوجّه طلبك للقسم المختص فوراً"}
+                          // On the details step the subtitle echoes the type
+                          // the customer just picked, so the form makes it
+                          // obvious where their request will be routed and
+                          // what sort of detail is expected.
+                          : selectedType?.detailsHint
+                            ?? "اختر الموضوع وأضف التفاصيل، وسنوجّه طلبك للقسم المختص فوراً"}
                   </p>
                 )}
               </div>
