@@ -113,18 +113,57 @@ export default function InvoicesPage() {
   }, []);
 
   async function fetchPendingRefundActions() {
+    const token = localStorage.getItem("token");
+    const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+
+    // PRIMARY: pending-counts already exposes refundsActionRequired
+    // (added in the previous commit). When it returns data, use it.
     try {
-      const token = localStorage.getItem("token");
       const res = await fetch(`${API_URL}/api/account/pending-counts`, {
         credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers,
       });
       if (res.ok) {
         const data = await res.json();
-        setPendingRefundActions(data.refundsActionRequired || []);
+        const arr = Array.isArray(data.refundsActionRequired) ? data.refundsActionRequired : [];
+        if (arr.length > 0) {
+          setPendingRefundActions(arr);
+          return;
+        }
       }
     } catch {
-      /* non-blocking */
+      /* fall through to fallback */
+    }
+
+    // FALLBACK: hit /api/finance/mine directly and filter for refunds
+    // that need the customer's confirmation right now. This protects
+    // the banner from any pending-counts-side regression — as long as
+    // the customer can list their own refunds, they see the prompt.
+    try {
+      const res = await fetch(`${API_URL}/api/finance/mine`, {
+        credentials: "include",
+        headers,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const refunds = Array.isArray(data.refunds) ? data.refunds : [];
+        const now = Date.now();
+        const filtered = refunds
+          .filter((r: { status: string; customer_confirmation_deadline?: string | null }) =>
+            r.status === "pending_customer_confirmation" &&
+            (!r.customer_confirmation_deadline ||
+              new Date(r.customer_confirmation_deadline).getTime() > now)
+          )
+          .map((r: { id: number; case_number: string; amount: number | string; customer_confirmation_deadline: string | null }) => ({
+            id: r.id,
+            case_number: r.case_number,
+            amount: r.amount,
+            deadline: r.customer_confirmation_deadline,
+          }));
+        setPendingRefundActions(filtered);
+      }
+    } catch {
+      /* non-blocking — if both endpoints fail, banner just stays hidden */
     }
   }
 
