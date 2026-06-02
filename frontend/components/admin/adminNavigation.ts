@@ -54,8 +54,17 @@ export const adminSections: AdminSection[] = [
     links: [
       {
         href: "/admin/dashboard",
-        label: "لوحة التحكم",
+        label: "مركز التشغيل",
         icon: LayoutDashboard,
+        permissionKey: "dashboard",
+      },
+      {
+        // CFO / GM financial summary — revenue, subscriptions,
+        // listings count, elite slots. Lives separately from
+        // /admin/dashboard so the ops floor view stays uncluttered.
+        href: "/admin/executive",
+        label: "الملخص التنفيذي",
+        icon: Activity,
         permissionKey: "dashboard",
       },
       {

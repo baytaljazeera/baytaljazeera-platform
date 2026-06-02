@@ -62,58 +62,102 @@ router.post("/test-send-email", authMiddleware, requireRoles('super_admin'), asy
 router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(async (req, res) => {
   const CACHE_KEY = 'admin:pending-counts';
   
+  // Every counter now exposes BOTH count and oldest_age_hours so the
+  // Command Center can escalate red/orange/green by SLA, not just by
+  // volume. A single 26-hour-old refund must outrank 5 fresh ones —
+  // the previous "count-only" model couldn't see that.
+  //
+  // oldest_age_hours is rounded to one decimal so the frontend can
+  // show "26.4 ساعة" without dragging seconds through the cache.
   const cached = await db.cachedQuery(CACHE_KEY, `
     WITH counts AS (
-      SELECT 'listings_new' as key, COUNT(*)::int as cnt FROM properties WHERE status = 'pending'
-      UNION ALL SELECT 'listings_in_progress', COUNT(*)::int FROM properties WHERE status = 'in_review'
-      UNION ALL SELECT 'reports_new', COUNT(*)::int FROM listing_reports WHERE status IN ('new', 'pending')
-      UNION ALL SELECT 'reports_in_progress', COUNT(*)::int FROM listing_reports WHERE status = 'in_review'
-      UNION ALL SELECT 'membership_new', COUNT(*)::int FROM membership_requests WHERE status = 'pending'
-      UNION ALL SELECT 'membership_in_progress', COUNT(*)::int FROM membership_requests WHERE status = 'in_review'
-      UNION ALL SELECT 'refunds_new', COUNT(*)::int FROM refunds WHERE status = 'pending'
-      UNION ALL SELECT 'refunds_in_progress', COUNT(*)::int FROM refunds WHERE status = 'approved' AND payout_confirmed_at IS NULL
-      UNION ALL SELECT 'messages_new', COUNT(*)::int FROM admin_messages WHERE read_by IS NULL
-      UNION ALL SELECT 'complaints_new', COUNT(*)::int FROM account_complaints WHERE status = 'new'
-      UNION ALL SELECT 'complaints_in_progress', COUNT(*)::int FROM account_complaints WHERE status = 'in_review'
-      UNION ALL SELECT 'support_new', COUNT(*)::int FROM support_tickets WHERE status IN ('new', 'open')
-      UNION ALL SELECT 'support_in_progress', COUNT(*)::int FROM support_tickets WHERE status = 'in_progress'
-      UNION ALL SELECT 'ambassador_pending', COUNT(*)::int FROM ambassador_requests WHERE status IN ('pending', 'under_review')
-      UNION ALL SELECT 'ambassador_withdrawals', COUNT(*)::int FROM ambassador_withdrawal_requests WHERE status IN ('pending', 'finance_review', 'in_progress')
+      SELECT 'listings_new' as key, COUNT(*)::int as cnt,
+             ROUND(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) / 3600, 1)::float as age_h
+        FROM properties WHERE status = 'pending'
+      UNION ALL SELECT 'listings_in_progress', COUNT(*)::int,
+             ROUND(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) / 3600, 1)::float
+        FROM properties WHERE status = 'in_review'
+      UNION ALL SELECT 'reports_new', COUNT(*)::int,
+             ROUND(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) / 3600, 1)::float
+        FROM listing_reports WHERE status IN ('new', 'pending')
+      UNION ALL SELECT 'reports_in_progress', COUNT(*)::int, NULL::float FROM listing_reports WHERE status = 'in_review'
+      UNION ALL SELECT 'membership_new', COUNT(*)::int,
+             ROUND(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) / 3600, 1)::float
+        FROM membership_requests WHERE status = 'pending'
+      UNION ALL SELECT 'membership_in_progress', COUNT(*)::int, NULL::float FROM membership_requests WHERE status = 'in_review'
+      UNION ALL SELECT 'refunds_new', COUNT(*)::int,
+             ROUND(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) / 3600, 1)::float
+        FROM refunds WHERE status = 'pending'
+      UNION ALL SELECT 'refunds_in_progress', COUNT(*)::int,
+             ROUND(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) / 3600, 1)::float
+        FROM refunds WHERE status = 'approved' AND payout_confirmed_at IS NULL
+      UNION ALL SELECT 'messages_new', COUNT(*)::int, NULL::float FROM admin_messages WHERE read_by IS NULL
+      UNION ALL SELECT 'complaints_new', COUNT(*)::int,
+             ROUND(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) / 3600, 1)::float
+        FROM account_complaints WHERE status = 'new'
+      UNION ALL SELECT 'complaints_in_progress', COUNT(*)::int, NULL::float FROM account_complaints WHERE status = 'in_review'
+      UNION ALL SELECT 'support_new', COUNT(*)::int,
+             ROUND(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) / 3600, 1)::float
+        FROM support_tickets WHERE status IN ('new', 'open')
+      UNION ALL SELECT 'support_in_progress', COUNT(*)::int,
+             ROUND(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) / 3600, 1)::float
+        FROM support_tickets WHERE status = 'in_progress'
+      UNION ALL SELECT 'ambassador_pending', COUNT(*)::int, NULL::float FROM ambassador_requests WHERE status IN ('pending', 'under_review')
+      UNION ALL SELECT 'ambassador_withdrawals', COUNT(*)::int, NULL::float FROM ambassador_withdrawal_requests WHERE status IN ('pending', 'finance_review', 'in_progress')
       -- Finance Inbox counter (Round 3 model):
       --   - tickets co-owned with finance (finance_inbox_state='in_inbox')
       --     that are still active — finance needs to read these
       --   - refund transactions awaiting finance review
-      -- The earlier broad formula (any ticket WHERE department='financial')
-      -- was the leak surface. The narrow formula (refunds only) hid the
-      -- co-owned tickets the owner needs to see. This middle path counts
-      -- exactly what finance is responsible for at the moment.
+      -- For age we take the MIN of both pools (the oldest pending
+      -- item from either side is what triggers the SLA alarm).
       UNION ALL SELECT 'finance_inbox_new',
         (SELECT COUNT(*)::int FROM support_tickets
            WHERE finance_inbox_state = 'in_inbox'
              AND status IN ('new', 'open', 'in_progress'))
-        + (SELECT COUNT(*)::int FROM refunds WHERE status = 'pending_review')
+        + (SELECT COUNT(*)::int FROM refunds WHERE status = 'pending_review'),
+        LEAST(
+          COALESCE(
+            (SELECT ROUND(EXTRACT(EPOCH FROM (NOW() - MIN(transferred_to_finance_at))) / 3600, 1)::float
+               FROM support_tickets WHERE finance_inbox_state = 'in_inbox'
+                 AND status IN ('new', 'open', 'in_progress')),
+            999999::float),
+          COALESCE(
+            (SELECT ROUND(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) / 3600, 1)::float
+               FROM refunds WHERE status = 'pending_review'),
+            999999::float)
+        )
       -- Executive Inbox: complaints escalated to admin / super_admin via the transfer modal.
       UNION ALL SELECT 'executive_inbox_new',
-        (SELECT COUNT(*)::int FROM account_complaints WHERE auto_assigned_role IN ('admin','super_admin') AND status IN ('new','in_review','pending','in_progress'))
+        (SELECT COUNT(*)::int FROM account_complaints WHERE auto_assigned_role IN ('admin','super_admin') AND status IN ('new','in_review','pending','in_progress')),
+        (SELECT ROUND(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) / 3600, 1)::float
+           FROM account_complaints WHERE auto_assigned_role IN ('admin','super_admin') AND status IN ('new','in_review','pending','in_progress'))
     )
-    SELECT 
+    SELECT
       MAX(CASE WHEN key = 'listings_new' THEN cnt END) as listings_new,
+      MAX(CASE WHEN key = 'listings_new' THEN age_h END) as listings_age_h,
       MAX(CASE WHEN key = 'listings_in_progress' THEN cnt END) as listings_in_progress,
       MAX(CASE WHEN key = 'reports_new' THEN cnt END) as reports_new,
+      MAX(CASE WHEN key = 'reports_new' THEN age_h END) as reports_age_h,
       MAX(CASE WHEN key = 'reports_in_progress' THEN cnt END) as reports_in_progress,
       MAX(CASE WHEN key = 'membership_new' THEN cnt END) as membership_new,
       MAX(CASE WHEN key = 'membership_in_progress' THEN cnt END) as membership_in_progress,
       MAX(CASE WHEN key = 'refunds_new' THEN cnt END) as refunds_new,
+      MAX(CASE WHEN key = 'refunds_new' THEN age_h END) as refunds_age_h,
       MAX(CASE WHEN key = 'refunds_in_progress' THEN cnt END) as refunds_in_progress,
+      MAX(CASE WHEN key = 'refunds_in_progress' THEN age_h END) as refunds_in_progress_age_h,
       MAX(CASE WHEN key = 'messages_new' THEN cnt END) as messages_new,
       MAX(CASE WHEN key = 'complaints_new' THEN cnt END) as complaints_new,
+      MAX(CASE WHEN key = 'complaints_new' THEN age_h END) as complaints_age_h,
       MAX(CASE WHEN key = 'complaints_in_progress' THEN cnt END) as complaints_in_progress,
       MAX(CASE WHEN key = 'support_new' THEN cnt END) as support_new,
+      MAX(CASE WHEN key = 'support_new' THEN age_h END) as support_age_h,
       MAX(CASE WHEN key = 'support_in_progress' THEN cnt END) as support_in_progress,
       MAX(CASE WHEN key = 'ambassador_pending' THEN cnt END) as ambassador_pending,
       MAX(CASE WHEN key = 'ambassador_withdrawals' THEN cnt END) as ambassador_withdrawals,
       MAX(CASE WHEN key = 'finance_inbox_new' THEN cnt END) as finance_inbox_new,
-      MAX(CASE WHEN key = 'executive_inbox_new' THEN cnt END) as executive_inbox_new
+      NULLIF(MAX(CASE WHEN key = 'finance_inbox_new' THEN age_h END), 999999::float) as finance_inbox_age_h,
+      MAX(CASE WHEN key = 'executive_inbox_new' THEN cnt END) as executive_inbox_new,
+      MAX(CASE WHEN key = 'executive_inbox_new' THEN age_h END) as executive_inbox_age_h
     FROM counts
   `, [], 5000);
   // ↑ 5s cache so the gold executive badge feels responsive after a
@@ -132,7 +176,9 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
 
     const [sn, sip, cn, cip] = await Promise.all([
       db.query(
-        `SELECT COUNT(*)::int AS c FROM support_tickets st WHERE st.status IN ('new', 'open')${sSql}`,
+        `SELECT COUNT(*)::int AS c,
+                ROUND(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) / 3600, 1)::float AS age_h
+           FROM support_tickets st WHERE st.status IN ('new', 'open')${sSql}`,
         sScope.params
       ),
       db.query(
@@ -140,7 +186,9 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
         sScope.params
       ),
       db.query(
-        `SELECT COUNT(*)::int AS c FROM account_complaints c WHERE c.status IN ('new', 'pending')${cSql}`,
+        `SELECT COUNT(*)::int AS c,
+                ROUND(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) / 3600, 1)::float AS age_h
+           FROM account_complaints c WHERE c.status IN ('new', 'pending')${cSql}`,
         cScope.params
       ),
       db.query(
@@ -150,8 +198,10 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
     ]);
 
     row.support_new = sn.rows[0]?.c ?? 0;
+    row.support_age_h = sn.rows[0]?.age_h ?? null;
     row.support_in_progress = sip.rows[0]?.c ?? 0;
     row.complaints_new = cn.rows[0]?.c ?? 0;
+    row.complaints_age_h = cn.rows[0]?.age_h ?? null;
     row.complaints_in_progress = cip.rows[0]?.c ?? 0;
   }
 
@@ -173,6 +223,19 @@ router.get("/pending-counts", authMiddleware, adminMiddleware, asyncHandler(asyn
     ambassadorWithdrawals: row.ambassador_withdrawals || 0,
     financeInboxNew: row.finance_inbox_new || 0,
     executiveInboxNew: row.executive_inbox_new || 0,
+    // Oldest pending age in hours, per area. Used by the Command Center
+    // to escalate red/orange/green by SLA, not just by volume. Any
+    // field may be null when the queue is empty.
+    ages: {
+      listings: row.listings_age_h ?? null,
+      reports: row.reports_age_h ?? null,
+      refunds: row.refunds_age_h ?? null,
+      refundsInProgress: row.refunds_in_progress_age_h ?? null,
+      complaints: row.complaints_age_h ?? null,
+      support: row.support_age_h ?? null,
+      financeInbox: row.finance_inbox_age_h ?? null,
+      executiveInbox: row.executive_inbox_age_h ?? null,
+    },
   });
 }));
 
