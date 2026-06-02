@@ -203,13 +203,35 @@ function MyTicketsContent() {
     }
   };
 
-  // First mount of a ticket: jump (no smooth) so the user lands at
-  // the latest message immediately. Subsequent replies: smooth.
+  // Auto-scroll only when the reply COUNT actually grew — re-polling
+  // the same data must NOT yank the user back to the bottom when
+  // they're scrolling up to read older messages.
+  const prevRepliesCountRef = useRef<number>(0);
+  const [hasUnseenReply, setHasUnseenReply] = useState(false);
+
   useEffect(() => {
-    if (replies.length === 0) return;
-    scrollMessagesToBottom(true);
+    const prev = prevRepliesCountRef.current;
+    const next = replies.length;
+    prevRepliesCountRef.current = next;
+    if (next <= prev) return;             // nothing new arrived
+
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    const firstRender = prev === 0;
+    if (firstRender || isNearBottom) {
+      scrollMessagesToBottom(!firstRender);
+      setHasUnseenReply(false);
+    } else {
+      setHasUnseenReply(true);
+    }
   }, [replies]);
+
+  // Reset on ticket switch + jump to bottom immediately so the user
+  // lands on the latest message.
   useEffect(() => {
+    prevRepliesCountRef.current = 0;
+    setHasUnseenReply(false);
     if (!selected || replies.length === 0) return;
     scrollMessagesToBottom(false);
   }, [selected?.id]);
@@ -733,6 +755,19 @@ function MyTicketsContent() {
                 <ArrowRight className="w-5 h-5" />
               </button>
             </div>
+            <div className="relative flex-1 min-h-0 flex flex-col">
+              {hasUnseenReply && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    scrollMessagesToBottom(true);
+                    setHasUnseenReply(false);
+                  }}
+                  className="absolute left-1/2 -translate-x-1/2 top-2 z-10 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-bold bg-emerald-600 text-white shadow-lg hover:bg-emerald-700 transition animate-bounce"
+                >
+                  ↓ رسالة جديدة
+                </button>
+              )}
             <div
               ref={messagesContainerRef}
               className="p-4 flex-1 min-h-0 overflow-y-auto space-y-3"
@@ -763,6 +798,7 @@ function MyTicketsContent() {
                 </div>
               ))}
               <div ref={messagesEndRef} />
+            </div>
             </div>
             {isTicketClosedStatus(selected.status) ? (
               <div

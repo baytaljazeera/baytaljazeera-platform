@@ -5,7 +5,7 @@ import { alertDialog } from "@/components/ui/ConfirmDialog";
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { 
   Headset, MessageCircle, Clock, CheckCircle, AlertCircle, Search, RefreshCw, 
@@ -174,6 +174,12 @@ export default function CustomerServicePage() {
   // in the conversation header as "آخر تحديث: HH:MM:SS" so the operator
   // can see polling tick in real time.
   const [threadLastSync, setThreadLastSync] = useState<string>("");
+  // Auto-scroll only when the reply COUNT increases — so polling
+  // re-fetches of the same data don't yank the operator's scroll
+  // position when they're reading older messages.
+  const repliesContainerRef = useRef<HTMLDivElement | null>(null);
+  const prevRepliesCountRef = useRef<number>(0);
+  const [hasUnseenReply, setHasUnseenReply] = useState(false);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   // Same visibility model the finance side uses: customer_visible reaches
@@ -344,6 +350,39 @@ export default function CustomerServicePage() {
     document.addEventListener("visibilitychange", onVis);
     return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
   }, [fetchTickets, fetchSupportStats, fetchComplaints, fetchComplaintStats]);
+
+  // Auto-scroll behaviour for the open conversation.
+  //   - If the operator is already pinned to the bottom (or this is
+  //     the very first render of the ticket) we scroll smoothly to
+  //     show the new message.
+  //   - If the operator is scrolled UP reading older messages we DO
+  //     NOT yank them down — instead we set hasUnseenReply so a
+  //     "↓ رسالة جديدة" pill appears, and they can tap to jump.
+  // Only fires when the count actually increases, so re-polls of the
+  // same data are no-ops.
+  useEffect(() => {
+    const prev = prevRepliesCountRef.current;
+    const next = replies.length;
+    prevRepliesCountRef.current = next;
+    if (next <= prev) return;             // no new messages
+    const el = repliesContainerRef.current;
+    if (!el) return;
+
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    const firstRender = prev === 0;
+    if (firstRender || isNearBottom) {
+      el.scrollTo({ top: el.scrollHeight, behavior: firstRender ? "auto" : "smooth" });
+      setHasUnseenReply(false);
+    } else {
+      setHasUnseenReply(true);
+    }
+  }, [replies]);
+
+  // Reset auto-scroll state when switching to a different ticket.
+  useEffect(() => {
+    prevRepliesCountRef.current = 0;
+    setHasUnseenReply(false);
+  }, [selectedTicket?.id]);
 
   // Active-thread polling: while a ticket is open in the side panel,
   // re-fetch its replies every 5 seconds (chat-quality cadence) so
@@ -960,7 +999,21 @@ export default function CustomerServicePage() {
                         )}
                       </h4>
                       
-                      <div className="space-y-3 max-h-80 overflow-y-auto mb-4">
+                      <div className="relative">
+                        {hasUnseenReply && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const el = repliesContainerRef.current;
+                              if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+                              setHasUnseenReply(false);
+                            }}
+                            className="absolute left-1/2 -translate-x-1/2 -top-2 z-10 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-600 text-white shadow-md hover:bg-emerald-700 transition animate-bounce"
+                          >
+                            ↓ رسالة جديدة
+                          </button>
+                        )}
+                      <div ref={repliesContainerRef} className="space-y-3 max-h-80 overflow-y-auto mb-4 scroll-smooth">
                         <div className="p-3 rounded-xl bg-slate-100">
                           <p className="text-xs text-slate-500 mb-1">الرسالة الأصلية</p>
                           <p className="text-sm text-slate-700">{ticket.description}</p>
@@ -1000,7 +1053,8 @@ export default function CustomerServicePage() {
                           );
                         })}
                       </div>
-                      
+                      </div>
+
                       {/* Visibility toggle — same model as the
                           finance-inbox composer. Customer-visible
                           replies land in the customer's ticket view,
