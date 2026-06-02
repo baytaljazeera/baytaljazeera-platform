@@ -80,6 +80,15 @@ interface Subcategory {
   code: string;
   label: string;
   priority?: "low" | "medium" | "high" | "urgent";
+  // Per-subcategory placeholders for the "subject" and "details"
+  // inputs in the details step. When the customer picks "استرداد"
+  // they get refund-specific hints; when they pick "دفع فاشل"
+  // they get failure-specific hints. Without these the user was
+  // staring at one generic "اشرح الموضوع" prompt regardless of
+  // what they had just chosen — exactly the inconsistency the
+  // owner flagged.
+  subjectPlaceholder?: string;
+  detailsPlaceholder?: string;
 }
 
 interface TypeConfig {
@@ -113,11 +122,41 @@ const TYPES: TypeConfig[] = [
     apiTicketType: "financial",
     defaultDepartment: "financial",
     subcategories: [
-      { code: "refund", label: "استرداد مبلغ", priority: "high" },
-      { code: "invoice", label: "فاتورة أو إيصال", priority: "medium" },
-      { code: "failed_payment", label: "دفع فاشل", priority: "high" },
-      { code: "subscription", label: "اشتراك أو تجديد", priority: "medium" },
-      { code: "pricing_inquiry", label: "استفسار عن الأسعار", priority: "low" },
+      {
+        code: "refund",
+        label: "استرداد مبلغ",
+        priority: "high",
+        subjectPlaceholder: "مثال: طلب استرداد مبلغ فاتورة باقة الذهبية",
+        detailsPlaceholder: "اذكر: رقم الفاتورة، تاريخ الدفع، المبلغ، سبب طلب الاسترداد، وطريقة الإرجاع المفضّلة (بنكي أو بطاقة).",
+      },
+      {
+        code: "invoice",
+        label: "فاتورة أو إيصال",
+        priority: "medium",
+        subjectPlaceholder: "مثال: فاتورتي لم تصلني بعد دفع الباقة",
+        detailsPlaceholder: "اذكر: رقم الفاتورة إن وُجد، تاريخ العملية، اسم الباقة، والمشكلة (لم تصل / مبلغ غير صحيح / تفاصيل خاطئة).",
+      },
+      {
+        code: "failed_payment",
+        label: "دفع فاشل",
+        priority: "high",
+        subjectPlaceholder: "مثال: فشل دفع باقة الذهبية ببطاقتي",
+        detailsPlaceholder: "اذكر: وسيلة الدفع (بطاقة / Apple Pay / تحويل)، تاريخ المحاولة، آخر 4 أرقام للبطاقة، رسالة الخطأ الظاهرة (إن وُجدت).",
+      },
+      {
+        code: "subscription",
+        label: "اشتراك أو تجديد",
+        priority: "medium",
+        subjectPlaceholder: "مثال: إلغاء التجديد التلقائي لباقتي / ترقية الباقة",
+        detailsPlaceholder: "اذكر: اسم الباقة الحالية، ما الذي تريد تعديله (إلغاء، ترقية، تخفيض، تأجيل)، ومن متى تريد التغيير يسري.",
+      },
+      {
+        code: "pricing_inquiry",
+        label: "استفسار عن الأسعار",
+        priority: "low",
+        subjectPlaceholder: "مثال: ما الفرق بين الباقة الشهرية والسنوية؟",
+        detailsPlaceholder: "اذكر: الباقة التي تستفسر عنها، البلد المستهدف، نوع الاشتراك (فردي / تجاري)، أو أي تفاصيل تحتاج توضيحها.",
+      },
     ],
   },
   {
@@ -859,7 +898,7 @@ export default function RequestComposer({
                       type="text"
                       value={subject}
                       onChange={(e) => setSubject(e.target.value)}
-                      placeholder="مثال: لم تظهر فاتورتي بعد الترقية"
+                      placeholder={selectedSubcat?.subjectPlaceholder || "مثال: لم تظهر فاتورتي بعد الترقية"}
                       maxLength={150}
                       className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 focus:border-[#D4AF37]"
                     />
@@ -873,7 +912,7 @@ export default function RequestComposer({
                     <textarea
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      placeholder="اشرح الموضوع بوضوح ليتمكّن فريقنا من مساعدتك بسرعة. كلما كانت التفاصيل أدق، كانت الاستجابة أسرع وأدق."
+                      placeholder={selectedSubcat?.detailsPlaceholder || "اشرح الموضوع بوضوح ليتمكّن فريقنا من مساعدتك بسرعة. كلما كانت التفاصيل أدق، كانت الاستجابة أسرع وأدق."}
                       rows={5}
                       maxLength={4000}
                       className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/40 focus:border-[#D4AF37] resize-y"
