@@ -334,6 +334,47 @@ function MyTicketsContent() {
     fetchTicketDetail(selected.id);
   }, [selected, fetchTicketDetail]);
 
+  // Customer-side live updates. Two polls run while the page is open:
+  //   • the ticket LIST refreshes every 20 s so status changes (e.g.
+  //     support reopens / closes) appear without manual refresh.
+  //   • the open THREAD refreshes every 10 s so a fresh support reply
+  //     shows up in the conversation pane immediately.
+  // Tab-visibility aware on both — pauses when the tab is hidden so
+  // the customer's browser doesn't keep hitting the API in the
+  // background.
+  useEffect(() => {
+    if (!user) return;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (timer) return;
+      timer = setInterval(() => { void fetchTickets(); }, 20_000);
+    };
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+    if (typeof document !== "undefined" && document.visibilityState === "visible") {
+      start();
+    }
+    const onVis = () => (document.visibilityState === "visible" ? start() : stop());
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
+  }, [user, fetchTickets]);
+
+  useEffect(() => {
+    if (!selected?.id) return;
+    const tid = selected.id;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (timer) return;
+      timer = setInterval(() => { void fetchTicketDetail(tid); }, 10_000);
+    };
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+    if (typeof document !== "undefined" && document.visibilityState === "visible") {
+      start();
+    }
+    const onVis = () => (document.visibilityState === "visible" ? start() : stop());
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
+  }, [selected?.id, fetchTicketDetail]);
+
   useEffect(() => {
     if (!openIdParam || loading) return;
     const id = parseInt(openIdParam, 10);

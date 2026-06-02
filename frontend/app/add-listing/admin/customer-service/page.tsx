@@ -340,6 +340,28 @@ export default function CustomerServicePage() {
     return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
   }, [fetchTickets, fetchSupportStats, fetchComplaints, fetchComplaintStats]);
 
+  // Active-thread polling: while a ticket is open in the side panel,
+  // re-fetch its replies every 10 seconds so customer messages appear
+  // without forcing the operator to close and reopen the ticket. Runs
+  // independently of the list poll above so the visible conversation
+  // updates faster than the list refresh cadence.
+  useEffect(() => {
+    if (!selectedTicket?.id) return;
+    const ticketId = selectedTicket.id;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (timer) return;
+      timer = setInterval(() => { void fetchTicketDetails(ticketId); }, 10_000);
+    };
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+    if (typeof document !== "undefined" && document.visibilityState === "visible") {
+      start();
+    }
+    const onVis = () => (document.visibilityState === "visible" ? start() : stop());
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
+  }, [selectedTicket?.id, fetchTicketDetails]);
+
   // Auto-switch to the tab with more new items so a fresh complaint isn't
   // hidden behind the default "support" tab. Skipped once the user has
   // clicked any tab themselves so we don't fight their navigation.
