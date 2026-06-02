@@ -2442,6 +2442,27 @@ async function initializeDatabase() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'refunds' AND column_name = 'customer_declined_at') THEN
           ALTER TABLE refunds ADD COLUMN customer_declined_at TIMESTAMPTZ;
         END IF;
+        -- Round 3 broke production: status was VARCHAR(20) but the new
+        -- state name 'pending_customer_confirmation' is 29 chars.
+        -- 'awaiting_bank_transfer' (22) and 'waiting_customer_info' (21)
+        -- already exceeded the cap too. Widen to 50 so future states
+        -- have headroom. Idempotent: the IF guard checks the current
+        -- character_maximum_length and only fires when narrower.
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'refunds' AND column_name = 'status'
+            AND character_maximum_length < 50
+        ) THEN
+          ALTER TABLE refunds ALTER COLUMN status TYPE VARCHAR(50);
+        END IF;
+        -- Same headroom check for pre_wait_status (used by waiting_customer_info).
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'refunds' AND column_name = 'pre_wait_status'
+            AND character_maximum_length < 50
+        ) THEN
+          ALTER TABLE refunds ALTER COLUMN pre_wait_status TYPE VARCHAR(50);
+        END IF;
         -- Backfill: where estimated is null but we have a row, seed it
         -- from amount so existing cases show a value on the new UI.
         UPDATE refunds SET estimated_refund_amount = amount
