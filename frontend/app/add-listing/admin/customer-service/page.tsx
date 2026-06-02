@@ -170,6 +170,10 @@ export default function CustomerServicePage() {
   const [supportSearch, setSupportSearch] = useState("");
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [replies, setReplies] = useState<Reply[]>([]);
+  // Stamped every time the thread is successfully re-fetched. Surfaced
+  // in the conversation header as "آخر تحديث: HH:MM:SS" so the operator
+  // can see polling tick in real time.
+  const [threadLastSync, setThreadLastSync] = useState<string>("");
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   // Same visibility model the finance side uses: customer_visible reaches
@@ -248,6 +252,7 @@ export default function CustomerServicePage() {
       if (res.ok) {
         const data = await res.json();
         setReplies(data.replies || []);
+        setThreadLastSync(new Date().toLocaleTimeString("ar-SA"));
         // Backend bumps admin_last_read_at when staff GETs a ticket.
         // Tell the bell to refetch /admin-unread-count immediately.
         if (typeof window !== "undefined") {
@@ -341,17 +346,24 @@ export default function CustomerServicePage() {
   }, [fetchTickets, fetchSupportStats, fetchComplaints, fetchComplaintStats]);
 
   // Active-thread polling: while a ticket is open in the side panel,
-  // re-fetch its replies every 10 seconds so customer messages appear
-  // without forcing the operator to close and reopen the ticket. Runs
-  // independently of the list poll above so the visible conversation
-  // updates faster than the list refresh cadence.
+  // re-fetch its replies every 5 seconds (chat-quality cadence) so
+  // customer messages appear without forcing the operator to close
+  // and reopen the ticket. Two behaviour fixes from earlier rounds:
+  //   • Fires an IMMEDIATE poll when the page regains focus — the
+  //     operator who Alt+Tabs back from the customer tab no longer
+  //     has to wait for the next interval tick.
+  //   • Runs independently of the list poll so the visible
+  //     conversation refreshes faster than the list.
   useEffect(() => {
     if (!selectedTicket?.id) return;
     const ticketId = selectedTicket.id;
     let timer: ReturnType<typeof setInterval> | null = null;
     const start = () => {
       if (timer) return;
-      timer = setInterval(() => { void fetchTicketDetails(ticketId); }, 10_000);
+      // Fire one poll immediately so re-focusing the tab feels instant,
+      // then settle into the 5s interval cadence.
+      void fetchTicketDetails(ticketId);
+      timer = setInterval(() => { void fetchTicketDetails(ticketId); }, 5_000);
     };
     const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
     if (typeof document !== "undefined" && document.visibilityState === "visible") {
@@ -940,6 +952,12 @@ export default function CustomerServicePage() {
                       <h4 className="text-sm font-bold text-[#002845] mb-4 flex items-center gap-2">
                         <MessageCircle className="w-4 h-4" />
                         المحادثة
+                        {threadLastSync && (
+                          <span className="ms-auto inline-flex items-center gap-1.5 text-[11px] font-normal text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200 px-2 py-0.5 rounded-full">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            مباشر · آخر تحديث {threadLastSync}
+                          </span>
+                        )}
                       </h4>
                       
                       <div className="space-y-3 max-h-80 overflow-y-auto mb-4">

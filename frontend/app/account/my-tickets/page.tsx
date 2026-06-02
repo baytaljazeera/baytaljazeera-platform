@@ -134,6 +134,10 @@ function MyTicketsContent() {
   const [showComposer, setShowComposer] = useState(false);
   const [selected, setSelected] = useState<SupportTicketRow | null>(null);
   const [replies, setReplies] = useState<Reply[]>([]);
+  // Updated on every successful thread refresh — surfaced near the
+  // conversation header as a "live · آخر تحديث HH:MM:SS" pill so the
+  // customer can SEE that the page is polling for new staff replies.
+  const [threadLastSync, setThreadLastSync] = useState<string>("");
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [formData, setFormData] = useState({
@@ -309,6 +313,7 @@ function MyTicketsContent() {
         if (res.ok) {
           const data = await res.json();
           setReplies(data.replies || []);
+          setThreadLastSync(new Date().toLocaleTimeString("ar-SA"));
           await markTicketRead(ticketId);
         }
       } catch (err) {
@@ -364,7 +369,10 @@ function MyTicketsContent() {
     let timer: ReturnType<typeof setInterval> | null = null;
     const start = () => {
       if (timer) return;
-      timer = setInterval(() => { void fetchTicketDetail(tid); }, 10_000);
+      // Fire one poll immediately so re-focusing the tab feels instant,
+      // then settle into a 5 s chat-quality cadence.
+      void fetchTicketDetail(tid);
+      timer = setInterval(() => { void fetchTicketDetail(tid); }, 5_000);
     };
     const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
     if (typeof document !== "undefined" && document.visibilityState === "visible") {
@@ -706,6 +714,12 @@ function MyTicketsContent() {
                     </span>
                   </div>
                   <span className="text-xs text-slate-400 font-mono block mt-1">{selected.ticket_number}</span>
+                  {threadLastSync && (
+                    <span className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200 px-2 py-0.5 rounded-full">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      مباشر · آخر تحديث {threadLastSync}
+                    </span>
+                  )}
                 </div>
               </div>
               <button
