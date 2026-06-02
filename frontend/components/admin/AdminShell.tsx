@@ -15,7 +15,10 @@ export default function AdminShell({ children }: AdminShellProps) {
 
   return (
     <AdminGuard>
-      <div className="min-h-screen bg-[#FAF8F4] overflow-x-hidden" dir="rtl">
+      {/* admin-surface applies BJ design tokens (paper background,
+          Tajawal font, refined scrollbar). Class is defined in
+          frontend/styles/bj-tokens.css. */}
+      <div className="admin-surface min-h-screen overflow-x-hidden" dir="rtl">
         <div className="flex min-h-screen w-full overflow-hidden">
           {/* Desktop sidebar: AdminSidebar uses `hidden md:flex` when not isMobile */}
           <AdminSidebar />

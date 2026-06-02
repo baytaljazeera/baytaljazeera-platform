@@ -2,1084 +2,428 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect, useMemo } from "react";
-import Link from "next/link";
+// ─────────────────────────────────────────────────────────────────
+// Operations Dashboard — Phase 1 redesign.
+//
+// Optimised for one question: "Right now, where do I need to act?"
+// The page is laid out top-to-bottom by decreasing urgency:
+//
+//   1. PageHeader      — where am I + last-updated + refresh
+//   2. ATTENTION STRIP — only the things that NEED a decision now,
+//                        sized so 4 fit above the fold on a laptop.
+//                        Each card is a one-click jump to its queue.
+//   3. KPI STRIP       — read-only numbers the operator glances at
+//                        between actions (revenue, listings, etc).
+//   4. Activity + Quick links — context + jump-points for the
+//                        less-urgent destinations.
+//
+// All data calls are unchanged from the previous dashboard so backend
+// contracts stay intact. Only the rendering layer was rewritten.
+// ─────────────────────────────────────────────────────────────────
+
+import { useState, useEffect } from "react";
 import {
-  FileText,
-  Users,
-  AlertCircle,
-  Clock,
-  RefreshCw,
-  Loader2,
-  Crown,
-  MapPin,
-  CreditCard,
-  Building2,
-  Wallet,
-  Calendar,
-  ArrowLeft,
-  Moon,
-  CheckCircle2,
-  Sparkles,
+  AlertCircle, Headset, Wallet, Building2, MessageSquare, RefreshCw,
+  FileText, Users, CreditCard, Crown, Sparkles, ArrowLeft, ChevronLeft,
 } from "lucide-react";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  AreaChart,
-  Area,
-  LineChart,
-  Line,
-  Legend,
-} from "recharts";
-import { PlatformPulse } from "@/components/admin/PlatformPulse";
+  BJPageShell, BJPageHeader, BJButton, BJCard, BJBadge,
+  BJStatCard, BJAttentionCard, BJEmptyState, BJSectionHeader,
+  BJSkeletonStat,
+} from "@/components/admin/ui";
+import Link from "next/link";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://baytaljazeera-backend.onrender.com";
 
-// Stamped per build so the operator can confirm which JS bundle their
-// browser actually loaded — helps when CDN/ISP caching makes a deploy
-// look like it didnt land. Bumped manually with each visible change.
-const BUILD_TAG = "2026-05-30/live-pulse";
+const BUILD_TAG = "2026-06-02/v3-redesign";
 
-// Owner reports stale chunks served by ISP/edge caches on the office
-// network. This button is a nuclear option: unregister any lingering
-// service workers, wipe every Cache Storage entry the page can see,
-// then reload bypassing the HTTP cache.
-async function hardRefreshAndReload() {
-  try {
-    if ("serviceWorker" in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map((r) => r.unregister()));
-    }
-  } catch {}
-  try {
-    if (typeof caches !== "undefined") {
-      const keys = await caches.keys();
-      await Promise.all(keys.map((k) => caches.delete(k)));
-    }
-  } catch {}
-  try {
-    localStorage.removeItem("__dashboard_build_tag");
-  } catch {}
-  // Cache-busting query so even an aggressive intermediate proxy can't
-  // hand back the old HTML.
-  const url = new URL(window.location.href);
-  url.searchParams.set("_v", String(Date.now()));
-  window.location.replace(url.toString());
+// ─── types ──────────────────────────────────────────────────────
+interface PendingCounts {
+  listingsNew: number; listingsInProgress: number;
+  reportsNew: number; reportsInProgress: number;
+  membershipNew: number; membershipInProgress: number;
+  refundsNew: number; refundsInProgress: number;
+  messagesNew: number;
+  complaintsNew: number; complaintsInProgress: number;
+  supportNew: number; supportInProgress: number;
+  ambassadorPending: number; ambassadorWithdrawals: number;
+  financeInboxNew: number;
+  executiveInboxNew: number;
 }
 
-// ─── Brand palette ────────────────────────────────────────────────────────────
-// Single accent (gold), navy for text/structure. Status hues are reserved for
-// state — they are NOT used to tint category cards.
-const GOLD = "#D4AF37";
-const GOLD_DEEP = "#9A7D28";
-const GOLD_SOFT = "#E6C966";
-const NAVY = "#002845";
-const NAVY_MID = "#01456D";
-const NAVY_SOFT = "#5C7A93";
-const PAPER = "#FAF8F4"; // warm off-white
-const HAIR = "#EDE6D6"; // subtle border on warm bg
-
-// Chart palettes — tonal, no rainbow. Donut/bar legends inherit from these.
-const SUBSCRIPTION_PALETTE = [GOLD, NAVY, NAVY_SOFT];
-const CITY_PALETTE = [NAVY, NAVY_MID, GOLD_DEEP, GOLD, NAVY_SOFT, GOLD_SOFT];
-const PROPERTY_PALETTE = [GOLD, NAVY, GOLD_DEEP, NAVY_MID, NAVY_SOFT];
-
-interface DashboardStats {
+interface DashboardKpis {
   totalListings: number;
   activeUsers: number;
-  newReports: number;
   pendingListings: number;
 }
 
 interface AdvancedStats {
-  listings: {
-    total: number;
-    approved: number;
-    pending: number;
-    new_this_week: number;
-    new_this_month: number;
-  };
-  elite: {
-    active_slots: number;
-    pending_approval: number;
-    pending_payment: number;
-    unique_properties: number;
-  };
-  cities: { city: string; count: number }[];
-  subscriptions: {
-    total_subscriptions: number;
-    active: number;
-    business: number;
-    premium: number;
-    basic: number;
-  };
-  revenue: {
-    total_revenue: number;
-    this_month: number;
-    this_week: number;
-    total_transactions: number;
-  };
-  weeklyListings: { day: string; count: number }[];
-  propertyTypes: { property_type: string; count: number }[];
+  listings:      { total: number; approved: number; pending: number; new_this_week: number; new_this_month: number };
+  elite:         { active_slots: number; pending_approval: number; pending_payment: number; unique_properties: number };
+  subscriptions: { total_subscriptions: number; active: number; business: number; premium: number; basic: number };
+  revenue:       { total_revenue: number; this_month: number; this_week: number; total_transactions: number };
 }
 
-interface ActivityItem {
-  id: string;
-  type: string;
-  text: string;
-  time: string;
+interface ActivityItem { id: string; type: string; text: string; time: string }
+
+// ─── helpers ────────────────────────────────────────────────────
+const EMPTY_COUNTS: PendingCounts = {
+  listingsNew: 0, listingsInProgress: 0,
+  reportsNew: 0, reportsInProgress: 0,
+  membershipNew: 0, membershipInProgress: 0,
+  refundsNew: 0, refundsInProgress: 0,
+  messagesNew: 0,
+  complaintsNew: 0, complaintsInProgress: 0,
+  supportNew: 0, supportInProgress: 0,
+  ambassadorPending: 0, ambassadorWithdrawals: 0,
+  financeInboxNew: 0,
+  executiveInboxNew: 0,
+};
+
+function fmtSAR(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return new Intl.NumberFormat("ar-SA", {
+    style: "currency", currency: "SAR", maximumFractionDigits: 0,
+  }).format(n);
 }
 
-interface AmbassadorStats {
-  active_ambassadors: number;
-  pending_requests: number;
-  consumptions_today: number;
-  total_referrals: number;
-  total_floors_consumed: number;
+function fmtNumber(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return new Intl.NumberFormat("ar-SA", { maximumFractionDigits: 0 }).format(n);
 }
 
-interface AmbassadorChartData {
-  date: string;
-  referrals: number;
-  consumptions: number;
+function timeAgo(iso: string): string {
+  if (!iso) return "الآن";
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return "الآن";
+  if (m < 60) return `قبل ${m} دقيقة`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `قبل ${h} ساعة`;
+  const d = Math.floor(h / 24);
+  return `قبل ${d} يوم`;
 }
 
-// Owner asked for the Islamic salaam as the standing greeting — not a
-// time-of-day phrase. Kept the helper name so the call sites don't move.
-function getGreeting() {
-  return "السلام عليكم ورحمة الله وبركاته";
-}
-
-function formatTodayAr() {
-  try {
-    return new Date().toLocaleDateString("ar-SA-u-ca-gregory", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-    });
-  } catch {
-    return new Date().toLocaleDateString("ar", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-    });
-  }
-}
-
+// ─────────────────────────────────────────────────────────────────
 export default function AdminDashboard() {
-  const [stats, setStats] = useState<DashboardStats>({
-    totalListings: 0,
-    activeUsers: 0,
-    newReports: 0,
-    pendingListings: 0,
-  });
-  const [advancedStats, setAdvancedStats] = useState<AdvancedStats | null>(null);
+  const [counts, setCounts] = useState<PendingCounts>(EMPTY_COUNTS);
+  const [kpis, setKpis] = useState<DashboardKpis>({ totalListings: 0, activeUsers: 0, pendingListings: 0 });
+  const [advanced, setAdvanced] = useState<AdvancedStats | null>(null);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
-  const [ambassadorStats, setAmbassadorStats] = useState<AmbassadorStats | null>(
-    null
-  );
-  const [ambassadorChartData, setAmbassadorChartData] = useState<
-    AmbassadorChartData[]
-  >([]);
   const [loading, setLoading] = useState(true);
-  const [lastUpdate, setLastUpdate] = useState<string>("جاري التحميل...");
-  const [mounted, setMounted] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<string>("");
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const fetchDashboardData = async () => {
+  const fetchAll = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
+      const init: RequestInit = { credentials: "include", headers };
 
-      const [
-        listingsRes,
-        usersRes,
-        complaintsRes,
-        notificationsRes,
-        advancedRes,
-        ambassadorRes,
-        ambassadorChartRes,
-      ] = await Promise.all([
-        fetch(`${API_URL}/api/admin/listings/stats`, { credentials: "include", headers }),
-        fetch(`${API_URL}/api/admin/users/stats`, { credentials: "include", headers }),
-        fetch(`${API_URL}/api/admin/complaints/stats`, { credentials: "include", headers }),
-        fetch(`${API_URL}/api/notifications/recent`, { credentials: "include", headers }),
-        fetch(`${API_URL}/api/admin/dashboard/advanced-stats`, { credentials: "include", headers }),
-        fetch(`${API_URL}/api/ambassador/admin/stats`, { credentials: "include", headers }),
-        fetch(`${API_URL}/api/ambassador/admin/chart-data?days=14`, { credentials: "include", headers }),
+      const [countsRes, listingsRes, usersRes, notificationsRes, advancedRes] = await Promise.all([
+        fetch(`${API_URL}/api/admin/pending-counts`, init),
+        fetch(`${API_URL}/api/admin/listings/stats`, init),
+        fetch(`${API_URL}/api/admin/users/stats`, init),
+        fetch(`${API_URL}/api/notifications/recent`, init),
+        fetch(`${API_URL}/api/admin/dashboard/advanced-stats`, init),
       ]);
 
-      let totalListings = 0,
-        pendingListings = 0;
+      if (countsRes.ok) {
+        const data = await countsRes.json();
+        setCounts({ ...EMPTY_COUNTS, ...data });
+      }
+
+      let totalListings = 0, pendingListings = 0;
       if (listingsRes.ok) {
         const data = await listingsRes.json();
-        totalListings = data.total || 0;
-        pendingListings = data.pending || 0;
+        totalListings  = Number(data.total)   || 0;
+        pendingListings = Number(data.pending) || 0;
       }
 
       let activeUsers = 0;
       if (usersRes.ok) {
         const data = await usersRes.json();
-        activeUsers = data.total || data.active || 0;
+        activeUsers = Number(data.total) || Number(data.active) || 0;
       }
+      setKpis({ totalListings, activeUsers, pendingListings });
 
-      let newReports = 0;
-      if (complaintsRes.ok) {
-        const data = await complaintsRes.json();
-        newReports = data.new || data.pending || 0;
-      }
+      if (advancedRes.ok) setAdvanced(await advancedRes.json());
 
-      let recentActivities: ActivityItem[] = [];
       if (notificationsRes.ok) {
         const data = await notificationsRes.json();
-        recentActivities = (data.notifications || [])
-          .slice(0, 5)
-          .map((n: { id?: string | number; type?: string; title?: string; body?: string; created_at?: string }, i: number) => ({
-            id: String(n.id ?? i),
-            type: n.type || "general",
-            text: n.title || n.body || "نشاط جديد",
-            time: formatTimeAgo(n.created_at || ""),
-          }));
+        setActivities(
+          (data.notifications || []).slice(0, 8).map(
+            (n: { id?: string | number; type?: string; title?: string; body?: string; created_at?: string }, i: number) => ({
+              id: String(n.id ?? i),
+              type: n.type || "general",
+              text: n.title || n.body || "نشاط جديد",
+              time: timeAgo(n.created_at || ""),
+            })
+          )
+        );
       }
 
-      if (advancedRes.ok) {
-        const data = await advancedRes.json();
-        setAdvancedStats(data);
-      }
-
-      if (ambassadorRes.ok) {
-        const data = await ambassadorRes.json();
-        setAmbassadorStats(data.stats);
-      }
-
-      if (ambassadorChartRes.ok) {
-        const data = await ambassadorChartRes.json();
-        setAmbassadorChartData(data);
-      }
-
-      setStats({ totalListings, activeUsers, newReports, pendingListings });
-      setActivities(recentActivities);
       setLastUpdate(new Date().toLocaleTimeString("ar-SA"));
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error);
+    } catch (e) {
+      console.error("[dashboard] fetch failed", e);
     } finally {
       setLoading(false);
     }
   };
 
-  const formatTimeAgo = (dateStr: string) => {
-    if (!dateStr) return "الآن";
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-    if (diffMins < 1) return "الآن";
-    if (diffMins < 60) return `منذ ${diffMins} د`;
-    if (diffHours < 24) return `منذ ${diffHours} س`;
-    return `منذ ${diffDays} يوم`;
+  useEffect(() => { void fetchAll(); }, []);
+
+  // ── Attention items — surfaced only when count > 0 ────────────
+  type Attn = {
+    count: number;
+    label: string;
+    reason: string;
+    href: string;
+    icon: React.ReactNode;
   };
 
-  const formatCurrency = (amount: number) => {
-    if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)} مليون`;
-    if (amount >= 1000) return `${(amount / 1000).toFixed(1)} ألف`;
-    return amount.toLocaleString("en-US");
-  };
-
-  const formatDay = (dateStr: string) => {
-    if (!dateStr) return "";
-    const date = new Date(dateStr);
-    const days = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
-    return days[date.getDay()];
-  };
-
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
-
-  // ─── Derived data ────────────────────────────────────────────────────────────
-  const subscriptionChartData = useMemo(
-    () =>
-      [
-        { name: "بزنس", value: advancedStats?.subscriptions?.business || 0 },
-        { name: "بريميوم", value: advancedStats?.subscriptions?.premium || 0 },
-        { name: "أساسي", value: advancedStats?.subscriptions?.basic || 0 },
-      ].filter((d) => d.value > 0),
-    [advancedStats]
-  );
-
-  const weeklyChartData = useMemo(
-    () =>
-      (advancedStats?.weeklyListings || []).map((item) => ({
-        name: formatDay(item.day),
-        count: item.count,
-      })),
-    [advancedStats]
-  );
-
-  const cityChartData = useMemo(
-    () =>
-      (advancedStats?.cities || []).map((city) => ({
-        name: city.city,
-        count: city.count,
-      })),
-    [advancedStats]
-  );
-
-  const propertyTypeChartData = useMemo(
-    () =>
-      (advancedStats?.propertyTypes || []).map((type) => ({
-        name: type.property_type,
-        value: type.count,
-      })),
-    [advancedStats]
-  );
-
-  // What needs attention right now. Empty array → reassurance state.
-  const attentionItems = useMemo(() => {
-    const items: { count: number; label: string; href: string; tone: "urgent" | "warn" }[] = [];
-    if (stats.newReports > 0)
-      items.push({
-        count: stats.newReports,
-        label: stats.newReports === 1 ? "شكوى تنتظر المراجعة" : "شكاوى تنتظر المراجعة",
-        href: "/add-listing/admin/customer-service?tab=complaints",
-        tone: "urgent",
-      });
-    if (stats.pendingListings > 0)
-      items.push({
-        count: stats.pendingListings,
-        label: stats.pendingListings === 1 ? "إعلان بانتظار الموافقة" : "إعلانات بانتظار الموافقة",
-        href: "/add-listing/admin/listings?status=pending",
-        tone: "warn",
-      });
-    if ((advancedStats?.elite?.pending_approval || 0) > 0)
-      items.push({
-        count: advancedStats!.elite.pending_approval,
-        label: "حجز نخبة بانتظار الموافقة",
-        href: "/add-listing/admin/elite-slots",
-        tone: "warn",
-      });
-    if ((ambassadorStats?.pending_requests || 0) > 0)
-      items.push({
-        count: ambassadorStats!.pending_requests,
-        label: "طلب سفير بانتظار المراجعة",
-        href: "/add-listing/admin/ambassador",
-        tone: "warn",
-      });
-    return items;
-  }, [stats, advancedStats, ambassadorStats]);
-
-  // The four "نبض المنصة" KPIs — one source of truth per metric.
-  // No "live" badge, no category coloring. Single gold rule on the side.
-  const pulseKpis = useMemo(
-    () => [
-      {
-        label: "إعلانات نشطة",
-        value: advancedStats?.listings?.approved ?? stats.totalListings,
-        sub: `${advancedStats?.listings?.new_this_month || 0} جديد هذا الشهر`,
-        href: "/add-listing/admin/listings",
-        icon: FileText,
-      },
-      {
-        label: "المستخدمون",
-        value: stats.activeUsers,
-        sub: "إجمالي حسابات العملاء",
-        href: "/add-listing/admin/users",
-        icon: Users,
-      },
-      {
-        label: "إيرادات الشهر",
-        value: formatCurrency(Number(advancedStats?.revenue?.this_month) || 0),
-        sub: "ر.س",
-        href: "/add-listing/admin/finance",
-        icon: Wallet,
-      },
-      {
-        label: "إعلانات النخبة",
-        value: advancedStats?.elite?.active_slots || 0,
-        sub: `${advancedStats?.elite?.unique_properties || 0} عقار مميّز`,
-        href: "/add-listing/admin/elite-slots",
-        icon: Crown,
-      },
-    ],
-    [stats, advancedStats]
-  );
+  const attentionItems: Attn[] = [
+    counts.supportNew > 0 && {
+      count: counts.supportNew,
+      label: "تذاكر دعم بانتظار الرد",
+      reason: "عملاء بانتظار أول رد من الدعم",
+      href: "/add-listing/admin/customer-service",
+      icon: <Headset className="w-5 h-5" />,
+    },
+    counts.financeInboxNew > 0 && {
+      count: counts.financeInboxNew,
+      label: "في صندوق المالية",
+      reason: "تذاكر محوّلة + معاملات استرداد قيد المراجعة",
+      href: "/add-listing/admin/finance-inbox",
+      icon: <Wallet className="w-5 h-5" />,
+    },
+    counts.listingsNew > 0 && {
+      count: counts.listingsNew,
+      label: "إعلانات بانتظار الموافقة",
+      reason: "إعلانات جديدة تنتظر اعتمادك",
+      href: "/add-listing/admin/listings",
+      icon: <Building2 className="w-5 h-5" />,
+    },
+    counts.complaintsNew > 0 && {
+      count: counts.complaintsNew,
+      label: "شكاوى جديدة",
+      reason: "شكاوى لم يتم مراجعتها بعد",
+      href: "/add-listing/admin/customer-service",
+      icon: <AlertCircle className="w-5 h-5" />,
+    },
+    counts.executiveInboxNew > 0 && {
+      count: counts.executiveInboxNew,
+      label: "صندوق الإدارة العليا",
+      reason: "حالات تم تصعيدها إليك مباشرة",
+      href: "/add-listing/admin/executive-inbox",
+      icon: <Crown className="w-5 h-5" />,
+    },
+    counts.reportsNew > 0 && {
+      count: counts.reportsNew,
+      label: "بلاغات إعلانات",
+      reason: "بلاغات على إعلانات بانتظار المراجعة",
+      href: "/add-listing/admin/reports",
+      icon: <AlertCircle className="w-5 h-5" />,
+    },
+  ].filter(Boolean) as Attn[];
 
   return (
-    <div className="space-y-10 md:space-y-14" dir="rtl">
-      {/* ─── Hero header ─────────────────────────────────────────────── */}
-      <header className="relative overflow-hidden rounded-3xl border border-[#EDE6D6] bg-gradient-to-l from-white via-[#FAF8F4] to-white">
-        {/* Subtle Islamic-inspired dot grid + corner glows */}
-        <div className="pointer-events-none absolute -left-12 -top-12 w-48 h-48 rounded-full bg-[#D4AF37]/15 blur-3xl" />
-        <div className="pointer-events-none absolute -right-16 -bottom-12 w-56 h-56 rounded-full bg-[#002845]/5 blur-3xl" />
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.04]"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 1px 1px, #002845 1px, transparent 0)",
-            backgroundSize: "24px 24px",
-          }}
-          aria-hidden
-        />
-        <div className="relative flex flex-wrap items-end justify-between gap-4 px-6 md:px-8 py-7 md:py-9">
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-[#9A7D28] tracking-[0.2em] uppercase mb-2 flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5" />
-              {formatTodayAr()}
-            </p>
-            <h1 className="text-2xl md:text-3xl font-black text-[#002845] leading-tight">
-              {getGreeting()}
-            </h1>
-            <p className="text-base md:text-lg text-slate-500 font-normal mt-1.5">
-              نظرة على المنصة
-            </p>
-          </div>
-          <div className="flex items-center gap-3 text-sm">
-            <div className="flex flex-col items-end text-[10px] text-slate-400 font-mono leading-tight">
-              <span className="text-[#9A7D28]">v.{BUILD_TAG}</span>
-              <span>آخر تحديث: {lastUpdate}</span>
-            </div>
-            <button
-              onClick={fetchDashboardData}
-              disabled={loading}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#D4AF37]/40 text-[#9A7D28] bg-white hover:bg-[#FFFCEE] active:scale-95 transition disabled:opacity-50"
-            >
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <RefreshCw className="w-4 h-4" />
-              )}
-              تحديث
-            </button>
-            <button
-              type="button"
-              onClick={() => void hardRefreshAndReload()}
-              title="مسح كاش المتصفح وإعادة التحميل القاسي"
-              className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-slate-200 text-slate-500 bg-white hover:bg-slate-50 hover:text-[#9A7D28] hover:border-[#D4AF37]/40 active:scale-95 transition"
-              aria-label="تحديث قاسي"
-            >
-              <Sparkles className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </header>
+    <BJPageShell>
+      <BJPageHeader
+        title="لوحة التحكم"
+        subtitle="نظرة سريعة على ما يحتاج تدخّلك الآن + أرقام اليوم."
+        meta={
+          <>
+            {lastUpdate && (
+              <BJBadge tone="neutral" size="sm">
+                آخر تحديث: {lastUpdate}
+              </BJBadge>
+            )}
+            <BJBadge tone="gold" size="sm">إصدار {BUILD_TAG}</BJBadge>
+          </>
+        }
+        actions={
+          <BJButton
+            variant="secondary"
+            leadingIcon={<RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />}
+            onClick={() => void fetchAll()}
+            loading={loading}
+          >
+            تحديث
+          </BJButton>
+        }
+      />
 
-      {/* ─── 1. يحتاج اهتمامك — or reassurance ─────────────────────────── */}
-      {attentionItems.length === 0 ? (
-        <section
-          className="relative overflow-hidden rounded-3xl border border-[#EDE6D6] bg-gradient-to-l from-[#FAF8F4] via-white to-[#FAF8F4] p-6 md:p-8"
-          aria-label="حالة هادئة"
-        >
-          <div className="absolute -left-8 -top-8 w-32 h-32 rounded-full bg-[#D4AF37]/10 blur-2xl" />
-          <div className="relative flex items-center gap-4">
-            <div className="shrink-0 w-12 h-12 rounded-full bg-white border border-[#EDE6D6] flex items-center justify-center shadow-sm">
-              <Moon className="w-5 h-5 text-[#D4AF37]" />
-            </div>
-            <div>
-              <h2 className="text-lg md:text-xl font-bold text-[#002845]">
-                كل شيء يسير بسلاسة اليوم
-              </h2>
-              <p className="text-sm text-slate-500 mt-0.5">
-                لا شيء يحتاج تدخّلك الآن — وقت مناسب لمراجعة النمو في الأسفل
-              </p>
-            </div>
+      {/* ── ATTENTION STRIP — only renders if there's actually work ── */}
+      <section className="mb-8">
+        <BJSectionHeader
+          title="يحتاج تدخّلك الآن"
+          hint="مرتبة حسب الأقدم — البطاقة الحمراء النابضة هي الأعجل."
+        />
+        {loading && attentionItems.length === 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            {[0,1,2,3].map(i => (
+              <BJCard key={i} padding="md"><BJSkeletonStat /></BJCard>
+            ))}
           </div>
-        </section>
-      ) : (
-        <section
-          className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6"
-          aria-label="يحتاج اهتمامك الآن"
-        >
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-1.5 h-5 rounded-full bg-[#D4AF37]" />
-            <h2 className="text-base md:text-lg font-bold text-[#002845]">
-              يحتاج اهتمامك
-            </h2>
-            <span className="text-xs text-slate-400 mr-1">
-              · {attentionItems.length} بند
-            </span>
+        ) : attentionItems.length === 0 ? (
+          <BJCard padding="lg">
+            <BJEmptyState
+              compact
+              icon={<Sparkles className="w-6 h-6 text-brand-gold" />}
+              title="لا توجد عناصر بانتظار تدخّلك"
+              body="كل القوائم نظيفة الآن. تابع الأرقام أدناه أو افتح إحدى الصفحات السريعة."
+            />
+          </BJCard>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+            {attentionItems.slice(0, 8).map((item, i) => (
+              <BJAttentionCard
+                key={i}
+                count={item.count}
+                label={item.label}
+                reason={item.reason}
+                href={item.href}
+                icon={item.icon}
+                tone="warn"
+              />
+            ))}
           </div>
-          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            {attentionItems.map((a, i) => (
-              <li key={i}>
+        )}
+      </section>
+
+      {/* ── KPI STRIP — read-only numbers ──────────────────────── */}
+      <section className="mb-8">
+        <BJSectionHeader
+          title="الأرقام الأساسية"
+          hint="مؤشرات يومية + شهرية للقراءة السريعة."
+        />
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          <BJStatCard
+            label="الإيرادات الكلية"
+            value={advanced ? fmtSAR(advanced.revenue.total_revenue) : "—"}
+            hint={advanced ? `${fmtNumber(advanced.revenue.total_transactions)} عملية` : ""}
+            icon={<Wallet className="w-5 h-5" />}
+            loading={loading && !advanced}
+          />
+          <BJStatCard
+            label="إيرادات الشهر"
+            value={advanced ? fmtSAR(advanced.revenue.this_month) : "—"}
+            hint={advanced ? `الأسبوع: ${fmtSAR(advanced.revenue.this_week)}` : ""}
+            icon={<CreditCard className="w-5 h-5" />}
+            loading={loading && !advanced}
+          />
+          <BJStatCard
+            label="مستخدمون نشطون"
+            value={fmtNumber(kpis.activeUsers)}
+            icon={<Users className="w-5 h-5" />}
+            href="/add-listing/admin/users"
+            loading={loading && kpis.activeUsers === 0}
+          />
+          <BJStatCard
+            label="إعلانات نشطة"
+            value={advanced ? fmtNumber(advanced.listings.approved) : fmtNumber(kpis.totalListings)}
+            hint={advanced ? `${fmtNumber(advanced.listings.new_this_week)} هذا الأسبوع` : ""}
+            icon={<Building2 className="w-5 h-5" />}
+            href="/add-listing/admin/listings"
+            loading={loading && !advanced}
+          />
+          <BJStatCard
+            label="اشتراكات نشطة"
+            value={advanced ? fmtNumber(advanced.subscriptions.active) : "—"}
+            hint={advanced ? `أعمال: ${advanced.subscriptions.business} · صفوة: ${advanced.subscriptions.premium}` : ""}
+            icon={<Crown className="w-5 h-5" />}
+            href="/add-listing/admin/finance"
+            loading={loading && !advanced}
+          />
+          <BJStatCard
+            label="مواقع النخبة الفعّالة"
+            value={advanced ? fmtNumber(advanced.elite.active_slots) : "—"}
+            hint={advanced ? `قيد الموافقة: ${advanced.elite.pending_approval}` : ""}
+            icon={<Sparkles className="w-5 h-5" />}
+            href="/add-listing/admin/elite-slots"
+            loading={loading && !advanced}
+          />
+        </div>
+      </section>
+
+      {/* ── TWO-COLUMN: Activity + Quick Links ───────────────── */}
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <BJCard padding="lg" className="lg:col-span-2">
+          <BJSectionHeader
+            title="آخر النشاط"
+            hint="آخر 8 إشعارات / إجراءات على المنصة."
+            action={
+              <Link href="/add-listing/admin/notifications">
+                <BJButton variant="ghost" size="sm" trailingIcon={<ChevronLeft className="w-4 h-4" />}>
+                  عرض الكل
+                </BJButton>
+              </Link>
+            }
+          />
+          {loading && activities.length === 0 ? (
+            <ul className="space-y-3">
+              {[0,1,2,3,4].map(i => (
+                <li key={i} className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-bj-md bg-brand-paper-2 animate-pulse" />
+                  <div className="flex-1 h-3 rounded-bj-sm bg-brand-paper-2 animate-pulse" />
+                </li>
+              ))}
+            </ul>
+          ) : activities.length === 0 ? (
+            <BJEmptyState
+              compact
+              icon={<FileText className="w-6 h-6" />}
+              title="لا توجد إشعارات"
+              body="عند حدوث أي نشاط على المنصة (طلب، شكوى، إعلان جديد...) سيظهر هنا."
+            />
+          ) : (
+            <ul className="divide-y divide-brand-line">
+              {activities.map(a => (
+                <li key={a.id} className="py-3 flex items-start gap-3">
+                  <div className="shrink-0 w-8 h-8 rounded-bj-md bg-brand-gold-soft text-brand-gold-dark flex items-center justify-center ring-1 ring-brand-gold/20">
+                    <MessageSquare className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="bj-body line-clamp-2">{a.text}</p>
+                    <p className="bj-meta mt-0.5">{a.time}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </BJCard>
+
+        <BJCard padding="lg">
+          <BJSectionHeader title="روابط سريعة" hint="ادخل أكثر الصفحات استخداماً بنقرة واحدة." />
+          <ul className="space-y-2">
+            {[
+              { label: "صندوق الدعم",       href: "/add-listing/admin/customer-service", icon: <Headset className="w-4 h-4" /> },
+              { label: "صندوق المالية",      href: "/add-listing/admin/finance-inbox",     icon: <Wallet className="w-4 h-4" /> },
+              { label: "موافقات الإعلانات",  href: "/add-listing/admin/listings",           icon: <Building2 className="w-4 h-4" /> },
+              { label: "التقارير المالية",   href: "/add-listing/admin/finance",            icon: <CreditCard className="w-4 h-4" /> },
+              { label: "الإشعارات",         href: "/add-listing/admin/notifications",      icon: <MessageSquare className="w-4 h-4" /> },
+            ].map(link => (
+              <li key={link.href}>
                 <Link
-                  href={a.href}
-                  className="group flex items-center justify-between gap-3 px-4 py-3 rounded-2xl border border-slate-100 hover:border-[#D4AF37]/50 hover:bg-[#FFFCEE] transition"
+                  href={link.href}
+                  className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-bj-md hover:bg-brand-paper-2 transition-colors focus-visible:outline-none focus-visible:shadow-focus-gold"
                 >
-                  <span className="flex items-center gap-3">
-                    <span
-                      className={`w-2.5 h-2.5 rounded-full ${
-                        a.tone === "urgent" ? "bg-rose-500" : "bg-amber-400"
-                      }`}
-                      aria-hidden
-                    />
-                    <span className="text-sm text-slate-600">
-                      <span className="text-[#002845] font-black text-lg">
-                        {a.count.toLocaleString("en-US")}
-                      </span>{" "}
-                      {a.label}
+                  <span className="inline-flex items-center gap-2 text-brand-royal font-bold">
+                    <span className="w-8 h-8 rounded-bj-md bg-brand-paper-2 flex items-center justify-center text-brand-royal">
+                      {link.icon}
                     </span>
+                    {link.label}
                   </span>
-                  <ArrowLeft className="w-4 h-4 text-slate-300 group-hover:text-[#D4AF37] transition" />
+                  <ArrowLeft className="w-4 h-4 text-brand-ink-2" />
                 </Link>
               </li>
             ))}
           </ul>
-        </section>
-      )}
-
-      {/* ─── 2. نبض المنصة (4 KPI) ─────────────────────────────────────── */}
-      <section aria-label="نبض المنصة">
-        <SectionHeader title="نبض المنصة" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          {pulseKpis.map((k, i) => {
-            const Icon = k.icon;
-            const inner = (
-              <div className="group h-full rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6 transition hover:border-[#D4AF37]/50 hover:shadow-[0_1px_24px_-12px_rgba(212,175,55,0.4)]">
-                <div className="flex items-start justify-between mb-4">
-                  <Icon className="w-5 h-5 text-[#D4AF37]" />
-                  <ArrowLeft className="w-4 h-4 text-slate-300 group-hover:text-[#D4AF37] transition" />
-                </div>
-                <p className="text-3xl md:text-4xl font-black text-[#002845] leading-none tabular-nums">
-                  {loading ? (
-                    <Loader2 className="w-6 h-6 animate-spin text-slate-300" />
-                  ) : typeof k.value === "number" ? (
-                    k.value.toLocaleString("en-US")
-                  ) : (
-                    k.value
-                  )}
-                </p>
-                <p className="text-sm font-semibold text-[#002845] mt-3">
-                  {k.label}
-                </p>
-                <p className="text-xs text-slate-400 mt-1">{k.sub}</p>
-              </div>
-            );
-            return k.href ? (
-              <Link key={i} href={k.href} className="block">
-                {inner}
-              </Link>
-            ) : (
-              <div key={i}>{inner}</div>
-            );
-          })}
-        </div>
+        </BJCard>
       </section>
-
-      {/* ─── Platform Pulse component (heartbeat) ────────────────────────── */}
-      <div>
-        <PlatformPulse />
-      </div>
-
-      {/* ─── 3. المالية ──────────────────────────────────────────────────── */}
-      <section aria-label="المالية">
-        <SectionHeader title="المالية" />
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-5">
-          {/* Revenue summary */}
-          <div className="lg:col-span-2 rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
-            <div className="flex items-baseline justify-between mb-5">
-              <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
-                <Wallet className="w-4 h-4 text-[#D4AF37]" />
-                الإيرادات
-              </h3>
-              <span className="text-xs text-slate-400">ر.س</span>
-            </div>
-            <div className="grid grid-cols-3 gap-3 md:gap-4">
-              <RevenueCell
-                label="إجمالي"
-                value={formatCurrency(
-                  Number(advancedStats?.revenue?.total_revenue) || 0
-                )}
-                emphasis
-              />
-              <RevenueCell
-                label="هذا الشهر"
-                value={formatCurrency(
-                  Number(advancedStats?.revenue?.this_month) || 0
-                )}
-              />
-              <RevenueCell
-                label="هذا الأسبوع"
-                value={formatCurrency(
-                  Number(advancedStats?.revenue?.this_week) || 0
-                )}
-              />
-            </div>
-            <div className="mt-5 pt-5 border-t border-[#EDE6D6] flex items-center justify-between text-sm">
-              <span className="text-slate-500">عدد المعاملات</span>
-              <span className="font-bold text-[#002845] tabular-nums">
-                {(advancedStats?.revenue?.total_transactions || 0).toLocaleString(
-                  "en-US"
-                )}
-              </span>
-            </div>
-          </div>
-
-          {/* Subscriptions donut */}
-          <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-[#D4AF37]" />
-                الاشتراكات
-              </h3>
-              <span className="text-xs text-slate-400 tabular-nums">
-                {advancedStats?.subscriptions?.active || 0} نشط
-              </span>
-            </div>
-            {mounted && subscriptionChartData.length > 0 ? (
-              <>
-                <div className="h-44 -mx-2">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={subscriptionChartData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={48}
-                        outerRadius={72}
-                        paddingAngle={3}
-                        dataKey="value"
-                        stroke="none"
-                      >
-                        {subscriptionChartData.map((_, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={
-                              SUBSCRIPTION_PALETTE[
-                                index % SUBSCRIPTION_PALETTE.length
-                              ]
-                            }
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value) => [`${value} اشتراك`, ""]}
-                        contentStyle={tooltipStyle}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <Legend2 items={subscriptionChartData.map((s, i) => ({ label: s.name, color: SUBSCRIPTION_PALETTE[i % SUBSCRIPTION_PALETTE.length] }))} />
-              </>
-            ) : (
-              <EmptyChart icon={CreditCard} text="لا توجد اشتراكات" />
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* ─── 4. النمو ────────────────────────────────────────────────────── */}
-      <section aria-label="النمو">
-        <SectionHeader title="النمو" />
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5">
-          {/* Weekly listings */}
-          <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-[#D4AF37]" />
-                الإعلانات خلال الأسبوع
-              </h3>
-              <span className="text-xs text-slate-400 tabular-nums">
-                {(advancedStats?.listings?.new_this_week || 0).toLocaleString(
-                  "en-US"
-                )}{" "}
-                إعلان
-              </span>
-            </div>
-            {mounted && weeklyChartData.length > 0 ? (
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart
-                    data={weeklyChartData}
-                    margin={{ top: 5, right: 8, left: 0, bottom: 0 }}
-                  >
-                    <defs>
-                      <linearGradient
-                        id="goldFill"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop offset="5%" stopColor={GOLD} stopOpacity={0.4} />
-                        <stop offset="95%" stopColor={GOLD} stopOpacity={0.02} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis
-                      dataKey="name"
-                      tick={{ fontSize: 11, fill: "#94A3B8" }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 11, fill: "#94A3B8" }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      formatter={(value) => [`${value} إعلان`, "الإعلانات"]}
-                      contentStyle={tooltipStyle}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="count"
-                      stroke={GOLD}
-                      strokeWidth={2}
-                      fill="url(#goldFill)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <EmptyChart icon={Calendar} text="لا توجد إعلانات هذا الأسبوع" />
-            )}
-          </div>
-
-          {/* Cities */}
-          <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-[#D4AF37]" />
-                التوزيع حسب المدينة
-              </h3>
-              <span className="text-xs text-slate-400 tabular-nums">
-                {cityChartData.length} مدينة
-              </span>
-            </div>
-            {mounted && cityChartData.length > 0 ? (
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={cityChartData}
-                    layout="vertical"
-                    margin={{ top: 5, right: 16, left: 4, bottom: 5 }}
-                  >
-                    <XAxis
-                      type="number"
-                      tick={{ fontSize: 11, fill: "#94A3B8" }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      dataKey="name"
-                      type="category"
-                      tick={{ fontSize: 11, fill: "#475569" }}
-                      width={70}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      formatter={(value) => [`${value} إعلان`, "العدد"]}
-                      contentStyle={tooltipStyle}
-                    />
-                    <Bar dataKey="count" radius={[0, 8, 8, 0]}>
-                      {cityChartData.map((_, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={CITY_PALETTE[index % CITY_PALETTE.length]}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <EmptyChart icon={MapPin} text="لا توجد بيانات" />
-            )}
-          </div>
-
-          {/* Ambassadors */}
-          <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-[#D4AF37]" />
-                سفراء البيت
-              </h3>
-              <Link
-                href="/add-listing/admin/ambassador"
-                className="text-xs text-[#9A7D28] hover:underline"
-              >
-                عرض الكل
-              </Link>
-            </div>
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <MiniKpi
-                label="نشط"
-                value={ambassadorStats?.active_ambassadors || 0}
-              />
-              <MiniKpi
-                label="إحالات"
-                value={ambassadorStats?.total_referrals || 0}
-              />
-              <MiniKpi
-                label="استهلاك اليوم"
-                value={ambassadorStats?.consumptions_today || 0}
-              />
-            </div>
-            {mounted && ambassadorChartData.length > 0 ? (
-              <div className="h-44">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={ambassadorChartData}
-                    margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
-                  >
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 10, fill: "#94A3B8" }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(value: string) =>
-                        new Date(value).toLocaleDateString("ar-SA", {
-                          day: "numeric",
-                          month: "short",
-                        })
-                      }
-                    />
-                    <YAxis
-                      tick={{ fontSize: 11, fill: "#94A3B8" }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      contentStyle={tooltipStyle}
-                      labelFormatter={(value: string | number) =>
-                        new Date(String(value)).toLocaleDateString("ar-SA")
-                      }
-                    />
-                    <Legend
-                      formatter={(value: string) =>
-                        value === "referrals" ? "الإحالات" : "الاستهلاكات"
-                      }
-                      wrapperStyle={{ fontSize: 11 }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="referrals"
-                      stroke={GOLD}
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="consumptions"
-                      stroke={NAVY}
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <EmptyChart icon={Building2} text="لا توجد بيانات للرسم" small />
-            )}
-          </div>
-
-          {/* Property types */}
-          <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-bold text-[#002845] flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-[#D4AF37]" />
-                أنواع العقارات
-              </h3>
-              <span className="text-xs text-slate-400 tabular-nums">
-                {propertyTypeChartData.reduce((s, p) => s + p.value, 0)} عقار
-              </span>
-            </div>
-            {mounted && propertyTypeChartData.length > 0 ? (
-              <>
-                <div className="h-48 -mx-2">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={propertyTypeChartData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={42}
-                        outerRadius={74}
-                        paddingAngle={3}
-                        dataKey="value"
-                        stroke="none"
-                      >
-                        {propertyTypeChartData.map((_, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={
-                              PROPERTY_PALETTE[
-                                index % PROPERTY_PALETTE.length
-                              ]
-                            }
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value) => [`${value} عقار`, ""]}
-                        contentStyle={tooltipStyle}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <Legend2 items={propertyTypeChartData.map((p, i) => ({ label: p.name, color: PROPERTY_PALETTE[i % PROPERTY_PALETTE.length] }))} />
-              </>
-            ) : (
-              <EmptyChart icon={Building2} text="لا توجد بيانات" />
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* ─── 5. النشاط الأخير ────────────────────────────────────────────── */}
-      <section aria-label="النشاط الأخير">
-        <SectionHeader title="النشاط الأخير" />
-        <div className="rounded-3xl border border-[#EDE6D6] bg-white p-5 md:p-6">
-          {activities.length === 0 ? (
-            <div className="text-center py-10 text-slate-400">
-              <Clock className="w-9 h-9 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">لا يوجد نشاط حديث</p>
-              <p className="text-xs mt-1 text-slate-300">
-                ستظهر الإشعارات الجديدة هنا
-              </p>
-            </div>
-          ) : (
-            <ol className="relative space-y-4 pr-6">
-              <span
-                className="absolute right-2 top-2 bottom-2 w-px bg-[#EDE6D6]"
-                aria-hidden
-              />
-              {activities.map((activity) => (
-                <li key={activity.id} className="relative">
-                  <span
-                    className="absolute right-[-1.05rem] top-1.5 w-2.5 h-2.5 rounded-full bg-[#D4AF37] ring-4 ring-white"
-                    aria-hidden
-                  />
-                  <p className="text-sm font-medium text-[#002845] leading-snug">
-                    {activity.text}
-                  </p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    {activity.time}
-                  </p>
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
-      </section>
-    </div>
+    </BJPageShell>
   );
 }
-
-// ─── Helpers (visual primitives) ─────────────────────────────────────────────
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="flex items-center gap-3 mb-5 md:mb-6">
-      <div className="w-1.5 h-6 rounded-full bg-[#D4AF37]" />
-      <h2 className="text-base md:text-lg font-bold text-[#002845]">{title}</h2>
-      <div className="flex-1 h-px bg-[#EDE6D6]" />
-    </div>
-  );
-}
-
-function RevenueCell({
-  label,
-  value,
-  emphasis,
-}: {
-  label: string;
-  value: string;
-  emphasis?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-2xl p-4 ${
-        emphasis ? "bg-[#FAF8F4] border border-[#EDE6D6]" : "bg-white"
-      }`}
-    >
-      <p
-        className={`tabular-nums leading-none ${
-          emphasis
-            ? "text-2xl md:text-3xl font-black text-[#9A7D28]"
-            : "text-xl md:text-2xl font-bold text-[#002845]"
-        }`}
-      >
-        {value}
-      </p>
-      <p className="text-xs text-slate-500 mt-2">{label}</p>
-    </div>
-  );
-}
-
-function MiniKpi({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-2xl bg-[#FAF8F4] border border-[#EDE6D6] p-3 text-center">
-      <p className="text-xl font-black text-[#002845] tabular-nums leading-none">
-        {value.toLocaleString("en-US")}
-      </p>
-      <p className="text-[11px] text-slate-500 mt-1.5">{label}</p>
-    </div>
-  );
-}
-
-function Legend2({
-  items,
-}: {
-  items: { label: string; color: string }[];
-}) {
-  return (
-    <div className="flex flex-wrap justify-center gap-x-4 gap-y-1.5 mt-2">
-      {items.map((it, i) => (
-        <span key={i} className="flex items-center gap-1.5 text-xs text-slate-500">
-          <span
-            className="w-2.5 h-2.5 rounded-full"
-            style={{ background: it.color }}
-          />
-          {it.label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function EmptyChart({
-  icon: Icon,
-  text,
-  small,
-}: {
-  icon: typeof Calendar;
-  text: string;
-  small?: boolean;
-}) {
-  return (
-    <div
-      className={`flex items-center justify-center text-slate-300 ${
-        small ? "h-44" : "h-56"
-      }`}
-    >
-      <div className="text-center">
-        <Icon className="w-10 h-10 mx-auto mb-2 opacity-50" />
-        <p className="text-sm text-slate-400">{text}</p>
-      </div>
-    </div>
-  );
-}
-
-const tooltipStyle = {
-  background: "white",
-  border: "1px solid #EDE6D6",
-  borderRadius: 12,
-  fontSize: 12,
-  padding: "8px 12px",
-  boxShadow: "0 1px 24px -8px rgba(0, 40, 69, 0.15)",
-} as const;

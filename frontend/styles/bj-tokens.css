@@ -1,0 +1,89 @@
+/* ─────────────────────────────────────────────────────────────────
+   Bayt Aljazira Design Tokens — single source of truth.
+
+   Every admin surface reads from THESE variables, not raw Tailwind
+   color classes. The build rule is "if you're typing bg-emerald-50,
+   bg-purple-100, bg-amber-200 in an admin page, you're doing it
+   wrong." Use bg-brand-*, text-brand-*, ring-brand-* instead.
+   ─────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Brand palette (5 pillars, no more) ──────────────────────── */
+  --bj-royal:       #002845;
+  --bj-royal-deep:  #001A2D;
+  --bj-royal-soft:  #E6EAEE;
+  --bj-gold:        #D4AF37;
+  --bj-gold-dark:   #B8860B;
+  --bj-gold-soft:   #FFFCEE;
+  --bj-paper:       #FAF8F4;
+  --bj-paper-2:     #F2EDE3;
+  --bj-ink:         #1A2433;
+  --bj-ink-2:       #5B6779;
+  --bj-line:        rgba(0, 40, 69, 0.08);
+
+  /* ── Semantic tones (use ONLY for status/alerts, not decoration) ── */
+  --bj-success:       #047857;
+  --bj-success-soft:  #ECFDF5;
+  --bj-warning:       #B45309;
+  --bj-warning-soft:  #FFFBEB;
+  --bj-danger:        #B91C1C;
+  --bj-danger-soft:   #FEF2F2;
+  --bj-info:          #1E40AF;
+  --bj-info-soft:     #EFF6FF;
+
+  /* ── Typography scale (explicit hierarchy) ──────────────────── */
+  --bj-text-display: 2.5rem;   /* 40px - page title only */
+  --bj-text-h1:      1.75rem;  /* 28px - section heading */
+  --bj-text-h2:      1.25rem;  /* 20px - card heading */
+  --bj-text-body:    0.9375rem; /* 15px - body */
+  --bj-text-caption: 0.75rem;  /* 12px - meta */
+  --bj-text-stat:    2.25rem;  /* 36px - big stat numbers */
+
+  /* ── Shadow system (3 stops, single visual family) ─────────── */
+  --bj-shadow-card:  0 1px 2px rgba(0, 40, 69, 0.04), 0 4px 12px -4px rgba(0, 40, 69, 0.08);
+  --bj-shadow-pop:   0 4px 12px -2px rgba(0, 40, 69, 0.12), 0 12px 32px -10px rgba(0, 40, 69, 0.18);
+  --bj-shadow-modal: 0 24px 48px -16px rgba(0, 40, 69, 0.32), 0 8px 16px -8px rgba(0, 40, 69, 0.16);
+  --bj-shadow-focus: 0 0 0 3px rgba(212, 175, 55, 0.35);
+
+  /* ── Radius (3 stops, single rule per element type) ────────── */
+  --bj-r-sm: 8px;    /* badges, pills, small chips */
+  --bj-r-md: 12px;   /* inputs, buttons */
+  --bj-r-lg: 16px;   /* cards */
+  --bj-r-xl: 24px;   /* modals, hero panels */
+
+  /* ── Motion ──────────────────────────────────────────────── */
+  --bj-ease:   cubic-bezier(0.32, 0.72, 0, 1);
+  --bj-dur:    180ms;
+  --bj-dur-lg: 280ms;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Admin shell base — applied via .admin-surface on the shell root.
+   ─────────────────────────────────────────────────────────────── */
+.admin-surface {
+  background: var(--bj-paper);
+  color: var(--bj-ink);
+  font-family: var(--font-tajawal, "Tajawal"), system-ui, sans-serif;
+  font-size: var(--bj-text-body);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Typography utility classes — semantic, not Tailwind-color-based */
+.bj-display { font-size: var(--bj-text-display); font-weight: 800; letter-spacing: -0.02em; color: var(--bj-royal); line-height: 1.1; }
+.bj-h1      { font-size: var(--bj-text-h1);      font-weight: 700; letter-spacing: -0.01em; color: var(--bj-royal); line-height: 1.2; }
+.bj-h2      { font-size: var(--bj-text-h2);      font-weight: 700; color: var(--bj-royal); line-height: 1.3; }
+.bj-body    { font-size: var(--bj-text-body);    color: var(--bj-ink); }
+.bj-meta    { font-size: var(--bj-text-caption); color: var(--bj-ink-2); }
+.bj-stat    { font-size: var(--bj-text-stat);    font-weight: 800; color: var(--bj-royal); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1; }
+
+/* Scrollbar refinement on admin surface */
+.admin-surface ::-webkit-scrollbar       { width: 10px; height: 10px; }
+.admin-surface ::-webkit-scrollbar-track { background: transparent; }
+.admin-surface ::-webkit-scrollbar-thumb {
+  background: rgba(0, 40, 69, 0.18);
+  border-radius: 10px;
+  border: 2px solid var(--bj-paper);
+}
+.admin-surface ::-webkit-scrollbar-thumb:hover { background: rgba(0, 40, 69, 0.32); }
