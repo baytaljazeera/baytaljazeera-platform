@@ -18,9 +18,71 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const axios = require("axios");
+const { spawn } = require("child_process");
+const { promisify } = require("util");
+const stream = require("stream");
+const pipeline = promisify(stream.pipeline);
 const { GoogleGenAI } = require("@google/genai");
 const cloudinaryService = require("./cloudinaryService");
 const db = require("../db");
+
+// ── Hybrid pipeline helpers (mirror Luxury orchestrator) ────────────
+function ffmpegAvailable() {
+  return new Promise((resolve) => {
+    try {
+      const ff = spawn("ffmpeg", ["-version"]);
+      ff.on("error", () => resolve(false));
+      ff.on("close", (code) => resolve(code === 0));
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+async function downloadToTemp(url, suffix = ".mp4") {
+  const tempDir = path.join(os.tmpdir(), "ultra-veo");
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+  const dest = path.join(tempDir, `ux_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${suffix}`);
+  const res = await axios.get(url, { responseType: "stream", timeout: 180000 });
+  await pipeline(res.data, fs.createWriteStream(dest));
+  return dest;
+}
+
+async function concatVideosWithFfmpeg(openingPath, slideshowPath) {
+  if (!fs.existsSync(openingPath)) throw new Error(`opening clip missing at ${openingPath}`);
+  if (!fs.existsSync(slideshowPath)) throw new Error(`slideshow clip missing at ${slideshowPath}`);
+  const outDir = path.dirname(slideshowPath);
+  const outPath = path.join(outDir, `ultra_${Date.now()}.mp4`);
+  // Re-encode concat — safest when input codecs/fps/resolution differ.
+  // Veo currently emits 720p H.264 + AAC; slideshow is 1080p H.264 +
+  // AAC. Re-encoding normalises both to 1080p 30fps so the join is
+  // seamless and audio doesn't desync.
+  const args = [
+    "-y",
+    "-i", openingPath,
+    "-i", slideshowPath,
+    "-filter_complex",
+    "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v0];" +
+    "[1:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v1];" +
+    "[v0][0:a?][v1][1:a?]concat=n=2:v=1:a=1[v][a]",
+    "-map", "[v]", "-map", "[a]",
+    "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+    "-c:a", "aac", "-b:a", "192k",
+    "-movflags", "+faststart",
+    outPath,
+  ];
+  await new Promise((resolve, reject) => {
+    const ff = spawn("ffmpeg", args);
+    let stderr = "";
+    ff.stderr.on("data", (d) => { stderr += d.toString(); });
+    ff.on("error", reject);
+    ff.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg concat failed (${code}): ${stderr.slice(-600)}`));
+    });
+  });
+  return outPath;
+}
 
 function getGenAI() {
   const key = process.env.GEMINI_API_KEY || process.env.Gemeni2 || process.env.Gemeni;
@@ -88,8 +150,8 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
   if (!genAI) {
     throw new Error("GEMINI_API_KEY غير مضبوط — لا يمكن استدعاء Veo.");
   }
-  if (!Array.isArray(imageUrls) || imageUrls.length === 0) {
-    throw new Error("Ultra (Veo) يحتاج صورة واحدة على الأقل لاستخدامها كإطار افتتاحي.");
+  if (!Array.isArray(imageUrls) || imageUrls.length < 2) {
+    throw new Error("Ultra (Veo) يحتاج صورتين على الأقل — الأولى لكليب Veo الافتتاحي والباقي للسلايد شو الكامل بالصوت.");
   }
 
   const prompt = buildVeoPrompt(listingData);
@@ -150,7 +212,11 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
     instances: [instance],
     parameters: {
       aspectRatio: "16:9",
-      durationSeconds: 5,
+      // Max duration for Veo 2.0 generate-001 is 8 s. Longer clips
+      // can be composed by concatenating with the FFmpeg slideshow
+      // below, which carries voice narration and all the listing
+      // photos — the Veo clip is just the cinematic opener.
+      durationSeconds: 8,
       sampleCount: 1,
       personGeneration: "dont_allow",
     },
@@ -324,19 +390,45 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
     throw err;
   }
 
-  // Download to temp + upload to Cloudinary.
-  // `apiKey` already declared above for the REST start/poll calls.
+  // ─── Step 1 complete: Veo opening clip ready. Download to temp. ───
   const tempDir = path.join(os.tmpdir(), "ultra-veo");
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-  const tempPath = path.join(tempDir, `veo_${listingId}_${Date.now()}.mp4`);
-  await downloadVeoVideo(videoUri, apiKey, tempPath);
+  const veoPath = path.join(tempDir, `veo_${listingId}_${Date.now()}.mp4`);
+  await downloadVeoVideo(videoUri, apiKey, veoPath);
+  console.log(`[Ultra/Veo] ✅ Opening clip downloaded (${(fs.statSync(veoPath).size / 1024 / 1024).toFixed(2)} MB)`);
 
+  // ─── Step 2: FFmpeg slideshow on the FULL image set + voice. ──────
+  // Mirrors the Luxury hybrid pipeline. The Veo clip is just the
+  // 8-second cinematic opener; the slideshow carries narration and
+  // walks through every listing photo.
+  if (!(await ffmpegAvailable())) {
+    try { fs.unlinkSync(veoPath); } catch {}
+    throw new Error("FFmpeg غير متاح على الخادم — مطلوب لدمج لقطة Veo مع السلايد شو الكامل.");
+  }
+  console.log(`[Ultra/Veo] 🎬 Generating FFmpeg slideshow on ${imageUrls.length} images + voice…`);
+  const { generateListingSlideshow } = require("./videoService");
+  const slideshowResult = await generateListingSlideshow(listingId, imageUrls, listingData);
+  const slideshowUrl =
+    slideshowResult?.url || (typeof slideshowResult === "string" ? slideshowResult : null);
+  if (!slideshowUrl) {
+    try { fs.unlinkSync(veoPath); } catch {}
+    throw new Error("فشل توليد سلايد شو FFmpeg في مسار Ultra.");
+  }
+  console.log(`[Ultra/Veo] ✅ Slideshow URL: ${slideshowUrl}`);
+
+  // ─── Step 3: Download slideshow + concat with Veo opener. ─────────
+  const slideshowPath = await downloadToTemp(slideshowUrl, ".mp4");
+  console.log(`[Ultra/Veo] 🧵 Concatenating Veo opener + slideshow…`);
+  let stitchedPath = null;
   let finalUrl = null;
   try {
+    stitchedPath = await concatVideosWithFfmpeg(veoPath, slideshowPath);
+
+    // ─── Step 4: Upload stitched final to Cloudinary. ───────────────
     const folder = `listings/${listingId}/promo/ultra`;
-    const uploadResult = await cloudinaryService.uploadVideo(tempPath, folder);
+    const uploadResult = await cloudinaryService.uploadVideo(stitchedPath, folder);
     if (!uploadResult?.success || !uploadResult.url) {
-      throw new Error(uploadResult?.error || "فشل رفع فيديو Veo إلى Cloudinary");
+      throw new Error(uploadResult?.error || "فشل رفع الفيديو الفاخر إلى Cloudinary");
     }
     finalUrl = uploadResult.url;
 
@@ -346,7 +438,12 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
         .catch((e) => console.warn("[Ultra/Veo] DB update failed:", e.message));
     }
   } finally {
-    try { fs.unlinkSync(tempPath); } catch {}
+    // Cleanup all temp files no matter what.
+    for (const p of [veoPath, slideshowPath, stitchedPath]) {
+      if (p) {
+        try { fs.unlinkSync(p); } catch {}
+      }
+    }
   }
 
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
@@ -354,7 +451,9 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
 
   return {
     url: finalUrl,
-    promoText: null,
+    promoText: slideshowResult?.promoText || null,
+    veoOpeningUri: videoUri,
+    slideshowUrl,
     tier: "ultra",
     durationSeconds: parseFloat(elapsedSec),
     costEstimateUsd: "2-6",
