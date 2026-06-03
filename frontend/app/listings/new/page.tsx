@@ -1263,15 +1263,50 @@ export default function NewListingPage() {
               : 60; //  5 minutes — Standard
         let done = false;
         const statusHeaders: HeadersInit = { Authorization: `Bearer ${authToken}` };
+        // Network-resilience: a single failed fetch (Render redeploy,
+        // wifi blip, sleeping idle worker) must NOT crash a 10-15 min
+        // Ultra generation. We tolerate consecutiveNetworkErrors up to
+        // MAX_CONSECUTIVE_NET_ERR (≈30s of trouble at 5s cadence)
+        // before giving up. Any successful poll resets the counter.
+        const MAX_CONSECUTIVE_NET_ERR = 6;
+        let consecutiveNetErr = 0;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           await new Promise((r) => setTimeout(r, intervalMs));
-          const statusRes = await fetch(`${API_URL}/api/ai/user/video-status/${data.operationId}`, {
-            credentials: "include",
-            headers: statusHeaders,
-          });
-          const statusData = await statusRes.json().catch(() => ({}));
+          let statusRes: Response;
+          // Shape mirrors what /api/ai/user/video-status returns plus
+          // optional progress fields the Ultra orchestrator adds.
+          let statusData: any = {};
+          try {
+            statusRes = await fetch(`${API_URL}/api/ai/user/video-status/${data.operationId}`, {
+              credentials: "include",
+              headers: statusHeaders,
+            });
+            statusData = await statusRes.json().catch(() => ({}));
+          } catch (netErr) {
+            consecutiveNetErr += 1;
+            // Surface the issue in the progress label so the user knows
+            // something happened but the system is still trying.
+            setVideoStageLabel(`اتصال غير مستقر — إعادة المحاولة (${consecutiveNetErr}/${MAX_CONSECUTIVE_NET_ERR})`);
+            if (consecutiveNetErr >= MAX_CONSECUTIVE_NET_ERR) {
+              throw new Error(
+                "تعذّر الاتصال بالخادم لعدّة محاولات. قد يكون التوليد لا يزال يعمل في الخلفية — افتح صفحة الإعلان لاحقاً للتأكد."
+              );
+            }
+            continue;
+          }
+          // Successful poll — reset the network-error counter.
+          consecutiveNetErr = 0;
           if (!statusRes.ok) {
-            throw new Error(statusData?.error || (statusRes.status === 401 ? "انتهت صلاحية الجلسة، سجّل الدخول من جديد" : "فشل في التحقق من حالة الفيديو"));
+            const err = statusData as { error?: string };
+            // 404 from the backend means "operation expired / server
+            // restarted". Don't crash — surface it cleanly with the
+            // backend's own message.
+            if (statusRes.status === 404) {
+              throw new Error(
+                err?.error || "انتهت صلاحية عملية التوليد. اضغط إعادة التوليد."
+              );
+            }
+            throw new Error(err?.error || (statusRes.status === 401 ? "انتهت صلاحية الجلسة، سجّل الدخول من جديد" : "فشل في التحقق من حالة الفيديو"));
           }
           if (statusData.status === "completed" && statusData.videoUrl) {
             setVideoProgressPercent(100);
