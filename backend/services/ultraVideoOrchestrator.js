@@ -154,6 +154,20 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
     throw new Error("Ultra (Veo) يحتاج صورتين على الأقل — الأولى لكليب Veo الافتتاحي والباقي للسلايد شو الكامل بالصوت.");
   }
 
+  // Multi-stage progress reporter. Caller may not pass one — guard with
+  // a no-op so we never crash on a missing callback.
+  const onProgress = typeof listingData?.onProgress === "function"
+    ? listingData.onProgress
+    : () => {};
+  // 4 visible stages: 1/4 Veo, 2/4 Voice+Slideshow, 3/4 Merge, 4/4 Upload.
+  onProgress({
+    stage: "veo_starting",
+    stageLabel: "1/4 — توليد لقطة Veo السينمائية",
+    stageIndex: 1,
+    stageTotal: 4,
+    percent: 2,
+  });
+
   const prompt = buildVeoPrompt(listingData);
   console.log(`[Ultra/Veo] ▶️  Starting Veo generation for listing ${listingId}`);
   console.log(`[Ultra/Veo]    prompt: ${prompt}`);
@@ -291,8 +305,27 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
   const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${operation.name}?key=${apiKey}`;
   let result = operation;
   const pollStart = Date.now();
+  // Veo takes 3-8 minutes. Ramp the progress percent inside this stage
+  // from 5 -> 55 over the expected window so the bar visibly creeps
+  // forward even while Google is still grinding.
+  const VEO_PROGRESS_FLOOR = 5;
+  const VEO_PROGRESS_CEIL = 55;
   while (!result.done && Date.now() - pollStart < MAX_WAIT_MS) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+    // Estimate progress as elapsed / 5 minutes (the median Veo time),
+    // clamped to the ceiling so we never claim "done" prematurely.
+    const elapsedMs = Date.now() - pollStart;
+    const veoPct = VEO_PROGRESS_FLOOR + Math.min(
+      VEO_PROGRESS_CEIL - VEO_PROGRESS_FLOOR,
+      Math.floor((elapsedMs / (5 * 60 * 1000)) * (VEO_PROGRESS_CEIL - VEO_PROGRESS_FLOOR))
+    );
+    onProgress({
+      stage: "veo_polling",
+      stageLabel: "1/4 — Veo يصنع لقطة AI سينمائية",
+      stageIndex: 1,
+      stageTotal: 4,
+      percent: veoPct,
+    });
     try {
       const pollRes = await axios.get(pollUrl, {
         timeout: 30000,
@@ -396,6 +429,13 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
   const veoPath = path.join(tempDir, `veo_${listingId}_${Date.now()}.mp4`);
   await downloadVeoVideo(videoUri, apiKey, veoPath);
   console.log(`[Ultra/Veo] ✅ Opening clip downloaded (${(fs.statSync(veoPath).size / 1024 / 1024).toFixed(2)} MB)`);
+  onProgress({
+    stage: "veo_complete",
+    stageLabel: "1/4 — اكتمل توليد لقطة Veo",
+    stageIndex: 1,
+    stageTotal: 4,
+    percent: 60,
+  });
 
   // ─── Step 2: FFmpeg slideshow on the FULL image set + voice. ──────
   // Mirrors the Luxury hybrid pipeline. The Veo clip is just the
@@ -406,6 +446,13 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
     throw new Error("FFmpeg غير متاح على الخادم — مطلوب لدمج لقطة Veo مع السلايد شو الكامل.");
   }
   console.log(`[Ultra/Veo] 🎬 Generating FFmpeg slideshow on ${imageUrls.length} images + voice…`);
+  onProgress({
+    stage: "slideshow",
+    stageLabel: "2/4 — توليد السلايد شو والتعليق الصوتي",
+    stageIndex: 2,
+    stageTotal: 4,
+    percent: 65,
+  });
   const { generateListingSlideshow } = require("./videoService");
   const slideshowResult = await generateListingSlideshow(listingId, imageUrls, listingData);
   const slideshowUrl =
@@ -415,16 +462,37 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
     throw new Error("فشل توليد سلايد شو FFmpeg في مسار Ultra.");
   }
   console.log(`[Ultra/Veo] ✅ Slideshow URL: ${slideshowUrl}`);
+  onProgress({
+    stage: "slideshow_complete",
+    stageLabel: "2/4 — اكتمل السلايد شو",
+    stageIndex: 2,
+    stageTotal: 4,
+    percent: 80,
+  });
 
   // ─── Step 3: Download slideshow + concat with Veo opener. ─────────
   const slideshowPath = await downloadToTemp(slideshowUrl, ".mp4");
   console.log(`[Ultra/Veo] 🧵 Concatenating Veo opener + slideshow…`);
+  onProgress({
+    stage: "merge",
+    stageLabel: "3/4 — دمج اللقطتين",
+    stageIndex: 3,
+    stageTotal: 4,
+    percent: 85,
+  });
   let stitchedPath = null;
   let finalUrl = null;
   try {
     stitchedPath = await concatVideosWithFfmpeg(veoPath, slideshowPath);
 
     // ─── Step 4: Upload stitched final to Cloudinary. ───────────────
+    onProgress({
+      stage: "upload",
+      stageLabel: "4/4 — رفع الفيديو النهائي",
+      stageIndex: 4,
+      stageTotal: 4,
+      percent: 92,
+    });
     const folder = `listings/${listingId}/promo/ultra`;
     const uploadResult = await cloudinaryService.uploadVideo(stitchedPath, folder);
     if (!uploadResult?.success || !uploadResult.url) {

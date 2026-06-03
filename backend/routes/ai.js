@@ -2414,15 +2414,44 @@ router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyn
   console.log("[Video] Image count:", cleanImages.length);
 
   const operationId = `vid_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-  const opData = { userId, status: "processing", startedAt: Date.now() };
+  const opData = {
+    userId,
+    status: "processing",
+    startedAt: Date.now(),
+    // Multi-stage progress fields — kept here so the status endpoint
+    // can surface them without re-deriving each poll. Orchestrators
+    // bump these via the onProgress callback below.
+    stage: null,        // e.g. "veo_polling", "concat", "upload"
+    stageLabel: null,   // human-readable Arabic label
+    stageIndex: 0,      // 1..N
+    stageTotal: 0,      // N (depends on tier)
+    progressPercent: 0, // 0..100
+  };
   videoOperations.set(operationId, opData);
 
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     operationId,
-    message: "جاري إعداد الفيديو السينمائي...", 
-    status: "processing" 
+    message: "جاري إعداد الفيديو السينمائي...",
+    status: "processing"
   });
+
+  // Progress callback that orchestrators use to report stage changes.
+  // Keeps coupling minimal — any orchestrator that ignores it still
+  // works (frontend just sees stage:null and falls back to the
+  // generic elapsed-seconds display).
+  const onProgress = (info) => {
+    const op = videoOperations.get(operationId);
+    if (!op) return;
+    videoOperations.set(operationId, {
+      ...op,
+      stage: info.stage ?? op.stage,
+      stageLabel: info.stageLabel ?? op.stageLabel,
+      stageIndex: info.stageIndex ?? op.stageIndex,
+      stageTotal: info.stageTotal ?? op.stageTotal,
+      progressPercent: typeof info.percent === "number" ? info.percent : op.progressPercent,
+    });
+  };
 
   const { generateListingSlideshow } = require('../services/videoService');
   const { generateHybridLuxuryVideo } = require('../services/luxuryVideoOrchestrator');
@@ -2443,6 +2472,9 @@ router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyn
     elevenlabsVoiceId: !isOpenAiVoice && videoVoice && String(videoVoice).length > 10 ? String(videoVoice).trim() : undefined,
     targetDurationSec: targetDurationSec ?? 20,
     tier: requestedTier,
+    // Wire progress: orchestrators that support multi-stage reporting
+    // (currently Ultra; Luxury can follow) call this at each milestone.
+    onProgress,
   };
   const targetId = listingId || `temp_${Date.now()}`;
 
@@ -2736,12 +2768,23 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
     });
   }
 
-  // Still processing
+  // Still processing — surface the multi-stage progress fields so the
+  // frontend can render a real 4-step bar instead of one long opaque
+  // spinner. All fields are optional; if an orchestrator never calls
+  // onProgress they stay null and the frontend falls back to the
+  // generic elapsed-seconds display.
   const elapsed = Math.floor((Date.now() - opData.startedAt) / 1000);
   res.json({
     status: "processing",
-    message: `جاري توليد الفيديو... (${elapsed} ثانية)`,
-    elapsedSeconds: elapsed
+    message: opData.stageLabel
+      ? `${opData.stageLabel} (${elapsed} ثانية)`
+      : `جاري توليد الفيديو... (${elapsed} ثانية)`,
+    elapsedSeconds: elapsed,
+    stage: opData.stage || null,
+    stageLabel: opData.stageLabel || null,
+    stageIndex: opData.stageIndex || 0,
+    stageTotal: opData.stageTotal || 0,
+    progressPercent: opData.progressPercent || 0,
   });
 }));
 
