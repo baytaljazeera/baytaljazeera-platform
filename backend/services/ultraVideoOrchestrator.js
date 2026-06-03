@@ -48,26 +48,21 @@ async function downloadToTemp(url, suffix = ".mp4") {
   return dest;
 }
 
-async function concatVideosWithFfmpeg(openingPath, slideshowPath) {
-  if (!fs.existsSync(openingPath)) throw new Error(`opening clip missing at ${openingPath}`);
-  if (!fs.existsSync(slideshowPath)) throw new Error(`slideshow clip missing at ${slideshowPath}`);
-  const outDir = path.dirname(slideshowPath);
-  const outPath = path.join(outDir, `ultra_${Date.now()}.mp4`);
-  // Re-encode concat — safest when input codecs/fps/resolution differ.
-  // Veo currently emits 720p H.264 + AAC; slideshow is 1080p H.264 +
-  // AAC. Re-encoding normalises both to 1080p 30fps so the join is
-  // seamless and audio doesn't desync.
+// Veo emits a silent video — no audio track at all. The concat filter
+// below uses [0:a] (audio from input 0) which fails with "matches no
+// streams" when input 0 has no audio. So before concat we pre-process
+// the Veo clip and inject a silent stereo AAC track sized to match
+// the video duration. The slideshow already has voice narration audio,
+// so it's left untouched.
+async function addSilentAudioTrack(inputPath) {
+  const outPath = inputPath.replace(/\.mp4$/i, "_silent.mp4");
   const args = [
     "-y",
-    "-i", openingPath,
-    "-i", slideshowPath,
-    "-filter_complex",
-    "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v0];" +
-    "[1:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v1];" +
-    "[v0][0:a?][v1][1:a?]concat=n=2:v=1:a=1[v][a]",
-    "-map", "[v]", "-map", "[a]",
-    "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+    "-i", inputPath,
+    "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+    "-c:v", "copy",
     "-c:a", "aac", "-b:a", "192k",
+    "-shortest",          // truncate audio to video length
     "-movflags", "+faststart",
     outPath,
   ];
@@ -78,9 +73,58 @@ async function concatVideosWithFfmpeg(openingPath, slideshowPath) {
     ff.on("error", reject);
     ff.on("close", (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`ffmpeg concat failed (${code}): ${stderr.slice(-600)}`));
+      else reject(new Error(`silent-audio injection failed (${code}): ${stderr.slice(-500)}`));
     });
   });
+  return outPath;
+}
+
+async function concatVideosWithFfmpeg(openingPath, slideshowPath) {
+  if (!fs.existsSync(openingPath)) throw new Error(`opening clip missing at ${openingPath}`);
+  if (!fs.existsSync(slideshowPath)) throw new Error(`slideshow clip missing at ${slideshowPath}`);
+
+  // Inject silent audio into the Veo clip so the concat filter has
+  // an audio stream in input 0 (otherwise [0:a] errors out). Output
+  // file is sibling to the original; we clean it up after concat.
+  const openingWithAudio = await addSilentAudioTrack(openingPath);
+  const outDir = path.dirname(slideshowPath);
+  const outPath = path.join(outDir, `ultra_${Date.now()}.mp4`);
+
+  // Re-encode concat — safest when input codecs/fps/resolution differ.
+  // Veo emits 720p H.264; slideshow is 1080p H.264. Re-encoding
+  // normalises both to 1080p 30fps + stereo 44.1k AAC so the join
+  // is seamless and audio doesn't desync.
+  const args = [
+    "-y",
+    "-i", openingWithAudio,
+    "-i", slideshowPath,
+    "-filter_complex",
+    "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v0];" +
+    "[1:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v1];" +
+    "[0:a]aresample=44100,aformat=channel_layouts=stereo[a0];" +
+    "[1:a]aresample=44100,aformat=channel_layouts=stereo[a1];" +
+    "[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]",
+    "-map", "[v]", "-map", "[a]",
+    "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+    "-c:a", "aac", "-b:a", "192k",
+    "-movflags", "+faststart",
+    outPath,
+  ];
+  try {
+    await new Promise((resolve, reject) => {
+      const ff = spawn("ffmpeg", args);
+      let stderr = "";
+      ff.stderr.on("data", (d) => { stderr += d.toString(); });
+      ff.on("error", reject);
+      ff.on("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`ffmpeg concat failed (${code}): ${stderr.slice(-600)}`));
+      });
+    });
+  } finally {
+    // Best-effort cleanup of the intermediate silent-audio file.
+    try { fs.unlinkSync(openingWithAudio); } catch {}
+  }
   return outPath;
 }
 
