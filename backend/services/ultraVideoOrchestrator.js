@@ -139,7 +139,12 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
   const apiKey = process.env.GEMINI_API_KEY || process.env.Gemeni2 || process.env.Gemeni;
   if (!apiKey) throw new Error("GEMINI_API_KEY غير مضبوط — لا يمكن استدعاء Veo.");
 
-  const startUrl = `https://generativelanguage.googleapis.com/v1beta/models/${veoModel}:generateVideos?key=${apiKey}`;
+  // Veo on the Gemini API (generativelanguage.googleapis.com) uses
+  // the :predictLongRunning verb, NOT :generateVideos. The latter
+  // belongs to Vertex AI which uses a different auth surface. Using
+  // the wrong verb returns a generic 404 HTML page (no JSON body)
+  // which is what surfaced in the ultra-diagnostic probe.
+  const startUrl = `https://generativelanguage.googleapis.com/v1beta/models/${veoModel}:predictLongRunning?key=${apiKey}`;
   const instance = imageInput ? { prompt, image: imageInput } : { prompt };
   const payload = {
     instances: [instance],
