@@ -11,6 +11,7 @@ const fs = require("fs").promises;
 const { spawn } = require("child_process");
 const https = require("https");
 const http = require("http");
+const axios = require("axios");
 
 // 🔒 Security: Path validation to prevent path traversal attacks
 function isPathSafe(inputPath, allowedBase) {
@@ -4285,6 +4286,121 @@ ${plansInfo}
     });
   } catch (error) {
     return handleOpenAIError(error, res);
+  }
+}));
+
+// ─────────────────────────────────────────────────────────────────
+// GET /api/ai/ultra-diagnostic?code=<ULTRA_BYPASS_CODE>
+//
+// One-shot connectivity test for Gemini Veo. Owner-only — gated on
+// the same bypass code that protects the real Ultra path so it can't
+// be triggered by anonymous traffic.
+//
+// What it does:
+//   1. Reports whether GEMINI_API_KEY is present.
+//   2. Reports the model name + endpoint that the orchestrator will
+//      hit (so the owner can confirm it matches Google's allowlisted
+//      model for their billing project).
+//   3. Fires the exact Veo `:generateVideos` POST with a minimal
+//      text-only payload and captures Google's response verbatim.
+//      Does NOT poll, does NOT download. If Google returns 4xx we
+//      see the real error; if 200 we know connectivity + auth +
+//      billing all work (a small generation cost may apply on
+//      Google's side for an accepted operation).
+//   4. Returns everything as a flat JSON so the owner can paste it
+//      back without polling or DevTools.
+//
+// The endpoint never echoes the API key — only the model name and
+// path template. The bypass code is matched server-side and not
+// reflected in the response.
+// ─────────────────────────────────────────────────────────────────
+router.get("/ultra-diagnostic", asyncHandler(async (req, res) => {
+  const code = typeof req.query?.code === "string" ? req.query.code : "";
+  if (!code || code !== ULTRA_BYPASS_CODE) {
+    return res.status(403).json({
+      ok: false,
+      error: "unauthorized — supply ?code=<ULTRA_BYPASS_CODE>",
+    });
+  }
+
+  const apiKey =
+    process.env.GEMINI_API_KEY || process.env.Gemeni2 || process.env.Gemeni || "";
+  const veoModel = process.env.VEO_MODEL || "veo-3.0-generate-001";
+  const modelEndpoint = `models/${veoModel}:generateVideos`;
+
+  const base = {
+    geminiKeyPresent: !!apiKey,
+    geminiKeySource: process.env.GEMINI_API_KEY
+      ? "GEMINI_API_KEY"
+      : process.env.Gemeni2
+        ? "Gemeni2"
+        : process.env.Gemeni
+          ? "Gemeni"
+          : null,
+    model: veoModel,
+    modelEndpoint,
+    ultraBypassConfigured: !!process.env.ULTRA_BYPASS_CODE,
+  };
+
+  if (!apiKey) {
+    return res.json({
+      ...base,
+      veoTestResult: "skipped",
+      googleStatus: null,
+      googleError: "GEMINI_API_KEY is not set on Render — Veo cannot be called.",
+    });
+  }
+
+  // Minimal text-only request — no image, no listing data. This is
+  // the smallest call that still validates: key auth, billing
+  // eligibility, allowlist, and model name.
+  const startUrl = `https://generativelanguage.googleapis.com/v1beta/${modelEndpoint}?key=${apiKey}`;
+  const payload = {
+    instances: [{ prompt: "cinematic test of luxury real estate, 2 seconds" }],
+    parameters: {
+      aspectRatio: "16:9",
+      durationSeconds: 5,
+      sampleCount: 1,
+      personGeneration: "dont_allow",
+    },
+  };
+
+  try {
+    const r = await axios.post(startUrl, payload, {
+      headers: { "Content-Type": "application/json" },
+      timeout: 60000,
+      validateStatus: () => true,
+    });
+
+    if (r.status >= 400) {
+      return res.json({
+        ...base,
+        veoTestResult: "google_error",
+        googleStatus: r.status,
+        googleError: r.data?.error || r.data || "unknown",
+      });
+    }
+
+    // 2xx — Veo accepted. We do NOT poll to keep the cost minimal.
+    // The operation name proves the call reached Google and was
+    // accepted by your billing/allowlist.
+    return res.json({
+      ...base,
+      veoTestResult: "accepted",
+      googleStatus: r.status,
+      googleError: null,
+      operationName: r.data?.name || null,
+      googleResponseBody: r.data,
+      note: "Veo accepted the request. The operation is queued on Google's side; this endpoint does not poll or download. A small generation cost may apply.",
+    });
+  } catch (err) {
+    return res.json({
+      ...base,
+      veoTestResult: "network_exception",
+      googleStatus: err.response?.status || null,
+      googleError: err.message || String(err),
+      googleResponseBody: err.response?.data || null,
+    });
   }
 }));
 
