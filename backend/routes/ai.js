@@ -2724,11 +2724,20 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
   const userId = req.user.id;
 
   const opData = videoOperations.get(operationId);
-  
+
   if (!opData) {
-    return res.status(404).json({ 
-      error: "عملية التوليد غير موجودة",
-      status: "not_found"
+    // 404 here usually means one of:
+    //   - the operation was created BEFORE a Render redeploy, so the
+    //     in-memory Map got wiped when Node restarted
+    //   - the frontend kept polling after the final "completed" /
+    //     "error" response (which deletes the op record)
+    //   - the operationId is malformed or from a stale tab
+    // Tell the user the actionable thing: try again, the server is
+    // ready. Avoid the generic "not found" which leaves them stuck.
+    return res.status(404).json({
+      error: "انتهت صلاحية عملية التوليد أو تم إعادة تشغيل السيرفر. اضغط إعادة التوليد مرة أخرى — التشخيص يؤكد أن Veo والإعدادات جاهزة.",
+      status: "expired",
+      hint: "retry_generation",
     });
   }
 
