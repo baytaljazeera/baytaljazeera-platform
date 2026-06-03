@@ -398,6 +398,12 @@ export default function NewListingPage() {
   const [voicePreviewPlaying, setVoicePreviewPlaying] = useState(false);
   const [videoProgressPercent, setVideoProgressPercent] = useState(0);
   const [videoScriptText, setVideoScriptText] = useState<string | null>(null);
+  // Multi-stage progress fields surfaced by the backend (Ultra tier).
+  // null/0 fall back to the legacy single-line UI so Standard tier
+  // (which doesn't report stages) keeps working unchanged.
+  const [videoStageLabel, setVideoStageLabel] = useState<string | null>(null);
+  const [videoStageIndex, setVideoStageIndex] = useState<number>(0);
+  const [videoStageTotal, setVideoStageTotal] = useState<number>(0);
   const videoProgressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Scroll to top button state
@@ -1122,14 +1128,22 @@ export default function NewListingPage() {
     setVideoPromoText(null);
     setVideoScriptText(null);
     setVideoProgressPercent(0);
+    setVideoStageLabel(null);
+    setVideoStageIndex(0);
+    setVideoStageTotal(0);
 
+    // Artificial "creep" timer — only used as a fallback for tiers that
+    // don't report multi-stage progress (Standard). Once the backend
+    // sends a real progressPercent the artificial counter is stopped.
     const estimatedDurationMs = videoQuality === "full" ? 150000 : 90000;
     const startTime = Date.now();
     if (videoProgressIntervalRef.current) clearInterval(videoProgressIntervalRef.current);
     videoProgressIntervalRef.current = setInterval(() => {
       const elapsed = Date.now() - startTime;
       const pct = Math.min(95, (elapsed / estimatedDurationMs) * 100);
-      setVideoProgressPercent(Math.round(pct));
+      // Only update from the artificial counter if the backend hasn't
+      // reported a real stage yet (otherwise we'd fight with it).
+      setVideoProgressPercent((cur) => (cur === 0 || cur < 5 ? Math.round(pct) : cur));
     }, 500);
 
     try {
@@ -1247,6 +1261,9 @@ export default function NewListingPage() {
           }
           if (statusData.status === "completed" && statusData.videoUrl) {
             setVideoProgressPercent(100);
+            setVideoStageLabel("اكتمل التوليد");
+            setVideoStageIndex(statusData.stageTotal || 0);
+            setVideoStageTotal(statusData.stageTotal || 0);
             setVideoResult(statusData.videoUrl);
             if (statusData.promoText) {
               setVideoPromoText(statusData.promoText);
@@ -1260,6 +1277,19 @@ export default function NewListingPage() {
           }
           if (statusData.status === "error") {
             throw new Error(statusData.error || "فشل في توليد الفيديو");
+          }
+          // Still processing — pick up the backend's real progress.
+          // Ultra populates these; Standard leaves them at 0/null and
+          // we keep using the artificial creep counter.
+          if (statusData.status === "processing") {
+            if (typeof statusData.progressPercent === "number" && statusData.progressPercent > 0) {
+              setVideoProgressPercent(statusData.progressPercent);
+            }
+            if (typeof statusData.stageLabel === "string" && statusData.stageLabel) {
+              setVideoStageLabel(statusData.stageLabel);
+            }
+            if (typeof statusData.stageIndex === "number") setVideoStageIndex(statusData.stageIndex);
+            if (typeof statusData.stageTotal === "number") setVideoStageTotal(statusData.stageTotal);
           }
         }
         if (!done) throw new Error("انتهت المهلة. جرب إعادة المحاولة.");
@@ -4617,8 +4647,35 @@ export default function NewListingPage() {
                       <div className="p-6 bg-white/90 rounded-xl border-2 border-[#D4AF37]/50 text-center shadow-inner">
                         <div className="flex items-center justify-center gap-3 mb-3">
                           <Loader2 className="w-6 h-6 animate-spin text-[#D4AF37]" />
-                          <span className="font-semibold text-[#002845]">جاري توليد الفيديو... {videoProgressPercent}%</span>
+                          <span className="font-semibold text-[#002845]">
+                            {videoStageLabel || "جاري توليد الفيديو..."} {videoProgressPercent}%
+                          </span>
                         </div>
+
+                        {/* 4-step indicator (Ultra/Luxury). Hidden for tiers
+                            that don't report stages — videoStageTotal stays 0. */}
+                        {videoStageTotal > 0 && (
+                          <div className="flex gap-1 mb-3" aria-label="مراحل التوليد">
+                            {Array.from({ length: videoStageTotal }).map((_, i) => {
+                              const stepNum = i + 1;
+                              const isDone = stepNum < videoStageIndex;
+                              const isActive = stepNum === videoStageIndex;
+                              return (
+                                <div
+                                  key={stepNum}
+                                  className={`flex-1 h-2 rounded-full transition-colors ${
+                                    isDone
+                                      ? "bg-emerald-500"
+                                      : isActive
+                                        ? "bg-gradient-to-r from-[#D4AF37] to-[#B8860B] animate-pulse"
+                                        : "bg-slate-200"
+                                  }`}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+
                         <div className="w-full bg-[#D4AF37]/20 rounded-full h-3 mb-2 overflow-hidden">
                           <div
                             className="h-full rounded-full bg-gradient-to-r from-[#D4AF37] to-[#B8860B] transition-all duration-500 ease-out"
@@ -4626,7 +4683,11 @@ export default function NewListingPage() {
                           />
                         </div>
                         <p className="text-xs text-[#002845]/80">
-                          {videoQuality === "full" ? "صوت + تأثيرات (2–3 دقائق)" : "صور فقط (1–2 دقيقة)"}
+                          {videoStageTotal > 0
+                            ? `الخطوة ${videoStageIndex} من ${videoStageTotal} — قد يستغرق التوليد حتى 10-15 دقيقة للمستوى الخارق`
+                            : videoQuality === "full"
+                              ? "صوت + تأثيرات (2–3 دقائق)"
+                              : "صور فقط (1–2 دقيقة)"}
                         </p>
                       </div>
                     ) : videoResult ? (
