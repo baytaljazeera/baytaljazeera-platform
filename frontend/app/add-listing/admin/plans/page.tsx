@@ -2050,10 +2050,10 @@ export default function PlansManagement() {
                                   {hasTier('luxury') && <span className="text-white text-sm leading-none">✓</span>}
                                 </span>
                                 <span className="text-lg">✨</span>
-                                <span className="font-bold text-sm text-gray-800">فاخر</span>
+                                <span className="font-bold text-sm text-gray-800">الفيديو السينمائي الفاخر</span>
                                 <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">~$0.30</span>
                               </label>
-                              <p className="text-[11px] text-gray-600 leading-snug">لقطة AI افتتاحية (Replicate) + سلايد شو</p>
+                              <p className="text-[11px] text-gray-600 leading-snug">لقطة AI افتتاحية + سلايد شو احترافي</p>
                               <div className="mt-1">
                                 <label className="text-[10px] text-gray-700 block mb-0.5">عدد فيديوهات الفاخر لكل إعلان</label>
                                 <input
@@ -2095,10 +2095,10 @@ export default function PlansManagement() {
                                   {hasTier('ultra') && <span className="text-white text-sm leading-none">✓</span>}
                                 </span>
                                 <span className="text-lg">👑</span>
-                                <span className="font-bold text-sm text-gray-800">سينمائي خارق</span>
+                                <span className="font-bold text-sm text-gray-800">الإنتاج السينمائي الخارق</span>
                                 <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">$2–6</span>
                               </label>
-                              <p className="text-[11px] text-gray-600 leading-snug">Gemini Veo — فيديو AI متكامل</p>
+                              <p className="text-[11px] text-gray-600 leading-snug">إنتاج سينمائي AI كامل بمستوى وكالات التسويق العالمية</p>
                               <div className="mt-1">
                                 <label className="text-[10px] text-gray-700 block mb-0.5">عدد فيديوهات الخارق لكل إعلان</label>
                                 <input

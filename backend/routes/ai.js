@@ -2288,7 +2288,7 @@ router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyn
     // Bypass accepted — fail fast if Gemini isn't actually configured.
     if (!genAI) {
       return res.status(503).json({
-        error: "خدمة Gemini Veo غير مفعّلة على الخادم. أضف GEMINI_API_KEY في Environment على Render قبل التجربة.",
+        error: "خدمة الإنتاج السينمائي الخارق غير مفعّلة على الخادم حالياً. تواصل مع الدعم.",
         errorEn: "Gemini Veo not configured (missing GEMINI_API_KEY).",
         tier: "ultra",
       });
@@ -2513,7 +2513,7 @@ router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyn
         errMsg = "توكن Replicate غير صالح أو غير مضبوط. تحقق من REPLICATE_API_TOKEN في Environment على Render.";
       }
       if (errMsg.includes("402") && !errMsg.includes("رصيد")) {
-        errMsg = "حساب Replicate يحتاج رصيد أو تفعيل الدفع. تحقق من replicate.com أو جرب لاحقاً.";
+        errMsg = "حساب خدمة الإنتاج السينمائي يحتاج رصيد أو تفعيل الدفع. أعد المحاولة لاحقاً.";
       }
       // Capture the structured diagnostic produced by the Ultra/Veo
       // orchestrator (or any orchestrator that follows the same
@@ -2735,7 +2735,7 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
     // Tell the user the actionable thing: try again, the server is
     // ready. Avoid the generic "not found" which leaves them stuck.
     return res.status(404).json({
-      error: "انتهت صلاحية عملية التوليد أو تم إعادة تشغيل السيرفر. اضغط إعادة التوليد مرة أخرى — التشخيص يؤكد أن Veo والإعدادات جاهزة.",
+      error: "انتهت صلاحية عملية التوليد أو تم إعادة تشغيل السيرفر. اضغط إعادة التوليد مرة أخرى — الإعدادات جاهزة.",
       status: "expired",
       hint: "retry_generation",
     });

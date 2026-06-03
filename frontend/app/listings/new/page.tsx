@@ -4343,7 +4343,7 @@ export default function NewListingPage() {
                               {!tierMeta.standard && <div className="absolute top-2 left-2 text-base">🔒</div>}
                               <div className="flex items-center gap-2 mb-1">
                                 <span className={`text-xl ${!tierMeta.standard ? "grayscale" : ""}`}>🎬</span>
-                                <span className="font-bold text-sm text-[#002845]">قياسي</span>
+                                <span className="font-bold text-sm text-[#002845]">الفيديو الاحترافي</span>
                                 <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded ${
                                   tierMeta.standard ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
                                 }`}>
@@ -4351,7 +4351,7 @@ export default function NewListingPage() {
                                 </span>
                               </div>
                               <p className="text-[11px] text-[#002845]/60 leading-snug">
-                                سلايد شو سينمائي بحركة كاميرا وصوت تعليق
+                                فيديو احترافي بحركة كاميرا وتعليق صوتي AI
                               </p>
                               {tierMeta.standard && tierCount("standard") > 0 && (
                                 <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-[10px] font-bold">
@@ -4375,7 +4375,7 @@ export default function NewListingPage() {
                               {!tierMeta.luxury && <div className="absolute top-2 left-2 text-base">🔒</div>}
                               <div className="flex items-center gap-2 mb-1">
                                 <span className={`text-xl ${!tierMeta.luxury ? "grayscale" : ""}`}>✨</span>
-                                <span className="font-bold text-sm text-[#002845]">فاخر</span>
+                                <span className="font-bold text-sm text-[#002845]">الفيديو السينمائي الفاخر</span>
                                 <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded font-bold ${
                                   tierMeta.luxury ? "bg-[#D4AF37]/20 text-[#B8860B]" : "bg-slate-200 text-slate-600"
                                 }`}>
@@ -4383,7 +4383,7 @@ export default function NewListingPage() {
                                 </span>
                               </div>
                               <p className="text-[11px] text-[#002845]/60 leading-snug">
-                                لقطة افتتاحية AI متحركة + سلايد شو — فيديو واحد/يوم
+                                لقطة افتتاحية AI سينمائية + سلايد شو احترافي — فيديو واحد/يوم
                               </p>
                               {tierMeta.luxury && tierCount("luxury") > 0 && (
                                 <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[10px] font-bold">
@@ -4407,7 +4407,7 @@ export default function NewListingPage() {
                               <div className="absolute top-2 left-2 text-base">🔒</div>
                               <div className="flex items-center gap-2 mb-1">
                                 <span className={`text-xl ${!tierMeta.ultra ? "grayscale" : ""}`}>👑</span>
-                                <span className="font-bold text-sm text-[#002845]">سينمائي خارق</span>
+                                <span className="font-bold text-sm text-[#002845]">الإنتاج السينمائي الخارق</span>
                                 <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded font-bold ${
                                   tierMeta.ultra ? "bg-purple-100 text-purple-700" : "bg-slate-200 text-slate-600"
                                 }`}>
@@ -4415,7 +4415,7 @@ export default function NewListingPage() {
                                 </span>
                               </div>
                               <p className="text-[11px] text-[#002845]/60 leading-snug">
-                                فيديو AI متكامل من Gemini Veo — للباقة المميزة
+                                إنتاج سينمائي AI كامل بمستوى وكالات التسويق العالمية
                               </p>
                               {tierMeta.ultra && tierCount("ultra") > 0 && (
                                 <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full text-[10px] font-bold">
@@ -4443,13 +4443,13 @@ export default function NewListingPage() {
                                 <div className="flex-1 text-center sm:text-right">
                                   <p className="text-[#D4AF37] text-xs font-bold tracking-wide uppercase mb-1">ميزة حصرية للباقات الأعلى</p>
                                   <h4 className="text-white text-lg sm:text-xl font-bold mb-1.5">
-                                    {videoTier === "luxury" && "افتح اللقطة السينمائية الفاخرة"}
-                                    {videoTier === "ultra" && "افتح فيديو AI سينمائي خارق"}
-                                    {videoTier === "standard" && "افتح ميزة توليد الفيديو"}
+                                    {videoTier === "luxury" && "افتح الفيديو السينمائي الفاخر"}
+                                    {videoTier === "ultra" && "افتح الإنتاج السينمائي الخارق"}
+                                    {videoTier === "standard" && "افتح الفيديو الاحترافي"}
                                   </h4>
                                   <p className="text-white/80 text-xs sm:text-sm leading-relaxed mb-3">
-                                    {videoTier === "luxury" && "اجعل أول 5 ثوانٍ من فيديو إعلانك لقطة حركية حقيقية من الذكاء الاصطناعي."}
-                                    {videoTier === "ultra" && "أنتج فيديو AI متكامل بحركات كاميرا سينمائية حقيقية — جودة دور المزادات الفاخرة."}
+                                    {videoTier === "luxury" && "اجعل أول 5 ثوانٍ من فيديو إعلانك لقطة حركية سينمائية حقيقية — جودة وكالات الإنتاج."}
+                                    {videoTier === "ultra" && "أنتج فيلماً تسويقياً كاملاً لعقارك بمستوى وكالات الإنتاج العالمية — حركة كاميرا سينمائية، مونتاج متقدم، تعليق صوتي احترافي."}
                                     {videoTier === "standard" && "ارفع مستوى عرض إعلانك بفيديو ترويجي احترافي ينتجه نظامنا تلقائياً."}
                                   </p>
                                   <div className="flex flex-col sm:flex-row gap-2 items-center justify-center sm:justify-start">
@@ -4466,7 +4466,7 @@ export default function NewListingPage() {
                                       onClick={() => setVideoTier("standard")}
                                       className="text-xs text-white/60 hover:text-white/90 underline transition"
                                     >
-                                      أو تابع بالمستوى القياسي مجاناً
+                                      أو تابع بالفيديو الاحترافي مجاناً
                                     </button>
                                   </div>
                                 </div>
@@ -4493,14 +4493,14 @@ export default function NewListingPage() {
                       </div>
                     )}
 
-                    {/* Ultra bypass code + cost warning (owner testing of Gemini Veo) */}
+                    {/* Ultra bypass code + cost warning */}
                     {videoTier === "ultra" && (
                       <div className="mt-3 p-3 rounded-xl bg-gradient-to-l from-purple-50 to-fuchsia-50 border border-purple-300">
                         <p className="text-[11px] text-purple-900 mb-2 leading-relaxed">
-                          👑 <strong>المستوى السينمائي الخارق (Gemini Veo)</strong> — يولّد فيديو AI متكامل بحركة حقيقية.
+                          👑 <strong>الإنتاج السينمائي الخارق</strong> — فيلم تسويقي AI كامل بحركة كاميرا سينمائية حقيقية وتعليق صوتي احترافي.
                         </p>
                         <p className="text-[11px] text-red-700 mb-2 leading-relaxed">
-                          ⚠️ <strong>تنبيه تكلفة:</strong> كل توليد ناجح يكلّف ~$2-$6 من رصيد Google (تُخصم فوراً). وقت التوليد: 3-8 دقائق.
+                          ⚠️ <strong>تنبيه تكلفة:</strong> كل إنتاج ناجح يستهلك رصيداً مرتفعاً من خدمات الإنتاج لدينا (≈$2-$6). وقت التوليد: 10-15 دقيقة.
                         </p>
                         <input
                           type="text"

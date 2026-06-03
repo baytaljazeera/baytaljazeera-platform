@@ -19,7 +19,7 @@ function getGenAI() {
 
 async function geminiText(prompt, opts = {}) {
   const genAI = getGenAI();
-  if (!genAI) throw new Error('Gemini API key not configured');
+  if (!genAI) throw new Error('AI text-generation service is not configured on the server');
   const result = await genAI.models.generateContent({
     model: 'gemini-2.0-flash',
     contents: prompt,

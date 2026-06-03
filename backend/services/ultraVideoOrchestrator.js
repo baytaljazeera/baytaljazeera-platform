@@ -211,10 +211,10 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
   const startedAt = Date.now();
   const genAI = getGenAI();
   if (!genAI) {
-    throw new Error("GEMINI_API_KEY غير مضبوط — لا يمكن استدعاء Veo.");
+    throw new Error("إعدادات خدمة الإنتاج السينمائي غير مكتملة على الخادم — تواصل مع الدعم.");
   }
   if (!Array.isArray(imageUrls) || imageUrls.length < 2) {
-    throw new Error("Ultra (Veo) يحتاج صورتين على الأقل — الأولى لكليب Veo الافتتاحي والباقي للسلايد شو الكامل بالصوت.");
+    throw new Error("الإنتاج السينمائي الخارق يحتاج صورتين على الأقل — الأولى للقطة AI الافتتاحية والباقي للسلايد شو الكامل بالصوت.");
   }
 
   // Multi-stage progress reporter. Caller may not pass one — guard with
@@ -225,7 +225,7 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
   // 4 visible stages: 1/4 Veo, 2/4 Voice+Slideshow, 3/4 Merge, 4/4 Upload.
   onProgress({
     stage: "veo_starting",
-    stageLabel: "1/4 — توليد لقطة Veo السينمائية",
+    stageLabel: "1/4 — توليد اللقطة السينمائية الافتتاحية",
     stageIndex: 1,
     stageTotal: 4,
     percent: 2,
@@ -276,7 +276,7 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
   // we hit the REST endpoint with the canonical Vertex AI prediction shape
   // ({ instances:[...], parameters:{...} }) and pure camelCase keys.
   const apiKey = process.env.GEMINI_API_KEY || process.env.Gemeni2 || process.env.Gemeni;
-  if (!apiKey) throw new Error("GEMINI_API_KEY غير مضبوط — لا يمكن استدعاء Veo.");
+  if (!apiKey) throw new Error("إعدادات خدمة الإنتاج السينمائي غير مكتملة على الخادم — تواصل مع الدعم.");
 
   // Veo on the Gemini API (generativelanguage.googleapis.com) uses
   // the :predictLongRunning verb, NOT :generateVideos. The latter
@@ -384,7 +384,7 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
     );
     onProgress({
       stage: "veo_polling",
-      stageLabel: "1/4 — Veo يصنع لقطة AI سينمائية",
+      stageLabel: "1/4 — صناعة اللقطة السينمائية AI",
       stageIndex: 1,
       stageTotal: 4,
       percent: veoPct,
@@ -405,7 +405,7 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
     }
   }
   if (!result.done) {
-    throw new Error("انتهت المهلة قبل اكتمال فيديو Veo (>8 دقائق).");
+    throw new Error("انتهت المهلة قبل اكتمال اللقطة السينمائية الافتتاحية (>8 دقائق). أعد المحاولة.");
   }
   if (result.error) {
     throw new Error(`Veo أرجع خطأ بعد الاكتمال: ${JSON.stringify(result.error)}`);
@@ -476,7 +476,7 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
       raw_truncated: JSON.stringify(resp).slice(0, 4000),
     };
     console.error("[Ultra/Veo] ❌ no video URI found — response shape:", JSON.stringify(responseShape));
-    const err = new Error("Veo أرجع نتيجة فارغة — لا يوجد فيديو في الاستجابة. شكل الاستجابة في الـ diagnostic.");
+    const err = new Error("لم نتمكّن من استلام اللقطة السينمائية من خدمة الإنتاج. تواصل مع الدعم — التفاصيل التقنية متاحة في الـ diagnostic.");
     err.diagnostic = {
       stage: "extract_video_uri",
       operation_name: operation?.name,
@@ -494,7 +494,7 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
   console.log(`[Ultra/Veo] ✅ Opening clip downloaded (${(fs.statSync(veoPath).size / 1024 / 1024).toFixed(2)} MB)`);
   onProgress({
     stage: "veo_complete",
-    stageLabel: "1/4 — اكتمل توليد لقطة Veo",
+    stageLabel: "1/4 — اكتملت اللقطة السينمائية الافتتاحية",
     stageIndex: 1,
     stageTotal: 4,
     percent: 60,
@@ -506,7 +506,7 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
   // walks through every listing photo.
   if (!(await ffmpegAvailable())) {
     try { fs.unlinkSync(veoPath); } catch {}
-    throw new Error("FFmpeg غير متاح على الخادم — مطلوب لدمج لقطة Veo مع السلايد شو الكامل.");
+    throw new Error("محرّك الدمج السينمائي غير متاح على الخادم — تواصل مع الدعم.");
   }
   console.log(`[Ultra/Veo] 🎬 Generating FFmpeg slideshow on ${imageUrls.length} images + voice…`);
   onProgress({

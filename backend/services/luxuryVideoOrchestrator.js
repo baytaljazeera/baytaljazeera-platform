@@ -125,7 +125,7 @@ async function concatVideosWithFfmpeg(openingPath, slideshowPath) {
  */
 async function generateHybridLuxuryVideo(listingId, imageUrls, listingData) {
   if (!Array.isArray(imageUrls) || imageUrls.length < 2) {
-    throw new Error("اللقطة الفاخرة تحتاج صورتين على الأقل (الأولى تذهب لـ Replicate، الباقي سلايد شو).");
+    throw new Error("الفيديو السينمائي الفاخر يحتاج صورتين على الأقل (الأولى للقطة AI الافتتاحية، الباقي للسلايد شو).");
   }
   if (!replicateVideoService.isConfigured()) {
     throw new Error("REPLICATE_API_TOKEN غير مضبوط. لا يمكن توليد لقطة افتتاحية فاخرة بدونه.");

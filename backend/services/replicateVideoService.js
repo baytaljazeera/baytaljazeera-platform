@@ -20,7 +20,7 @@ const REPLICATE_OPENING_MODEL = process.env.REPLICATE_OPENING_MODEL || 'pixverse
 const REPLICATE_BASE = 'https://api.replicate.com/v1';
 
 const REPLICATE_401_MSG = 'توكن Replicate غير صالح أو غير مضبوط. تحقق من REPLICATE_API_TOKEN في Environment على Render.';
-const REPLICATE_402_MSG = 'حساب Replicate يحتاج رصيد أو تفعيل الدفع. تحقق من replicate.com أو سيتم المحاولة بالطريقة البديلة.';
+const REPLICATE_402_MSG = 'حساب خدمة الإنتاج السينمائي يحتاج رصيد أو تفعيل الدفع. سيتم المحاولة بالطريقة البديلة.';
 
 function isConfigured() {
   return !!REPLICATE_API_TOKEN;
@@ -122,12 +122,12 @@ async function runSlideshow(imageUrls, options = {}) {
   }
 
   if (status !== 'succeeded' || !output) {
-    throw new Error(status === 'failed' ? (output?.detail || 'فشل توليد الفيديو على Replicate') : 'انتهت المهلة قبل اكتمال الفيديو');
+    throw new Error(status === 'failed' ? (output?.detail || 'فشل توليد اللقطة السينمائية') : 'انتهت المهلة قبل اكتمال الفيديو');
   }
 
   const videoUrl = typeof output === 'string' ? output : (output?.url || output?.video || output);
   if (!videoUrl) {
-    throw new Error('Replicate لم يُرجع رابط فيديو');
+    throw new Error('لم نتمكّن من استلام اللقطة السينمائية من خدمة الإنتاج. أعد المحاولة.');
   }
 
   return videoUrl;
@@ -250,7 +250,7 @@ async function generateOpeningShot(imageUrl, options = {}) {
 
   const videoUrl = typeof output === 'string' ? output : (output?.url || output?.video || output?.[0]);
   if (!videoUrl) {
-    throw new Error('Replicate opening-shot لم يُرجع رابط فيديو صالح.');
+    throw new Error('لم نتمكّن من استلام اللقطة الافتتاحية السينمائية. أعد المحاولة.');
   }
   console.log(`[Replicate] ✅ Opening shot generated via ${modelSlug}: ${videoUrl}`);
   return videoUrl;

@@ -1662,7 +1662,7 @@ function SmartRadar({ onSwitchToTemplates }: { onSwitchToTemplates: () => void }
                 >
                   {aiModal.suggestion || "لم يتمكن الذكاء الاصطناعي من توليد اقتراح."}
                 </div>
-                <p className="text-[10px] text-gray-400 mb-5 text-left">مولّد بواسطة Gemini AI</p>
+                <p className="text-[10px] text-gray-400 mb-5 text-left">مولّد بواسطة محرّك AI الذكي</p>
                 <div className="flex gap-3">
                   <button onClick={() => setAiModal(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm hover:bg-gray-50 transition">
                     إغلاق
