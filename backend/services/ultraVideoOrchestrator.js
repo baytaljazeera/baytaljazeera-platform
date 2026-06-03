@@ -79,52 +79,71 @@ async function addSilentAudioTrack(inputPath) {
   return outPath;
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Concat the Veo opener with the slideshow into one MP4.
+//
+// Audio design (June 2026 — owner-driven):
+//   The narration must "ride along" from t=0 — the Veo cinematic
+//   opener should play WITH the voiceover, not in silence followed
+//   by the voice. So we:
+//     • Concat ONLY the video streams (drop input 0's audio entirely
+//       since Veo is silent, and drop input 1's audio as a concat
+//       member since we want to use it standalone instead).
+//     • Take the slideshow's audio track and start it at t=0 of the
+//       concatenated video. Pad it with silence (apad) so it stretches
+//       to the full combined length if narration is shorter.
+//     • -shortest then truncates the (infinite) audio stream to the
+//       video stream's length so the file ends cleanly.
+//
+//   Net effect for the viewer:
+//     0s         8s                                       ~32s
+//     |  Veo     |  slideshow                                |
+//     |  narration ──────────────────────────────►  silence  |
+//   The cinematic AI opener now has narration describing the
+//   property — feels like one continuous video, not two glued
+//   together.
+// ─────────────────────────────────────────────────────────────────
 async function concatVideosWithFfmpeg(openingPath, slideshowPath) {
   if (!fs.existsSync(openingPath)) throw new Error(`opening clip missing at ${openingPath}`);
   if (!fs.existsSync(slideshowPath)) throw new Error(`slideshow clip missing at ${slideshowPath}`);
 
-  // Inject silent audio into the Veo clip so the concat filter has
-  // an audio stream in input 0 (otherwise [0:a] errors out). Output
-  // file is sibling to the original; we clean it up after concat.
-  const openingWithAudio = await addSilentAudioTrack(openingPath);
   const outDir = path.dirname(slideshowPath);
   const outPath = path.join(outDir, `ultra_${Date.now()}.mp4`);
 
-  // Re-encode concat — safest when input codecs/fps/resolution differ.
-  // Veo emits 720p H.264; slideshow is 1080p H.264. Re-encoding
-  // normalises both to 1080p 30fps + stereo 44.1k AAC so the join
-  // is seamless and audio doesn't desync.
   const args = [
     "-y",
-    "-i", openingWithAudio,
-    "-i", slideshowPath,
+    "-i", openingPath,     // input 0: Veo opener (silent)
+    "-i", slideshowPath,   // input 1: slideshow (carries the voice)
     "-filter_complex",
-    "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v0];" +
-    "[1:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v1];" +
-    "[0:a]aresample=44100,aformat=channel_layouts=stereo[a0];" +
-    "[1:a]aresample=44100,aformat=channel_layouts=stereo[a1];" +
-    "[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]",
-    "-map", "[v]", "-map", "[a]",
+    // 1) Normalise both video streams to 1080p 30fps + stereo 44.1k.
+    "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease," +
+    "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v0];" +
+    "[1:v]scale=1920:1080:force_original_aspect_ratio=decrease," +
+    "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v1];" +
+    // 2) Concat video only — audio comes from the slideshow track
+    //    standalone so it starts at t=0 instead of after the opener.
+    "[v0][v1]concat=n=2:v=1:a=0[outv];" +
+    // 3) Pull slideshow voice, normalise, reset PTS to 0, and pad
+    //    with silence to infinity so the output isn't cut short.
+    "[1:a]aresample=44100,aformat=channel_layouts=stereo," +
+    "asetpts=PTS-STARTPTS,apad[outa]",
+    "-map", "[outv]", "-map", "[outa]",
+    "-shortest",  // audio is infinite via apad; this clamps to the video length
     "-c:v", "libx264", "-preset", "fast", "-crf", "22",
     "-c:a", "aac", "-b:a", "192k",
     "-movflags", "+faststart",
     outPath,
   ];
-  try {
-    await new Promise((resolve, reject) => {
-      const ff = spawn("ffmpeg", args);
-      let stderr = "";
-      ff.stderr.on("data", (d) => { stderr += d.toString(); });
-      ff.on("error", reject);
-      ff.on("close", (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`ffmpeg concat failed (${code}): ${stderr.slice(-600)}`));
-      });
+  await new Promise((resolve, reject) => {
+    const ff = spawn("ffmpeg", args);
+    let stderr = "";
+    ff.stderr.on("data", (d) => { stderr += d.toString(); });
+    ff.on("error", reject);
+    ff.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg concat failed (${code}): ${stderr.slice(-600)}`));
     });
-  } finally {
-    // Best-effort cleanup of the intermediate silent-audio file.
-    try { fs.unlinkSync(openingWithAudio); } catch {}
-  }
+  });
   return outPath;
 }
 
