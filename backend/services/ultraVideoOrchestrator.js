@@ -248,16 +248,80 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
   if (result.error) {
     throw new Error(`Veo أرجع خطأ بعد الاكتمال: ${JSON.stringify(result.error)}`);
   }
-  const generatedVideos = result.response?.generatedVideos || result.response?.generated_videos || [];
-  if (generatedVideos.length === 0) {
-    throw new Error("Veo أرجع نتيجة فارغة — لا يوجد فيديو في الاستجابة.");
-  }
+  // The completed response shape from :predictLongRunning differs
+  // from the older :generateVideos shape. Veo's actual payload sits
+  // at one of these paths — try each in order:
+  //   1. result.response.generatedVideos        (Vertex / older shape)
+  //   2. result.response.generated_videos       (snake_case variant)
+  //   3. result.response.generateVideoResponse.generatedSamples
+  //   4. result.response.generateVideoResponse.generated_samples
+  //   5. result.response.predictions
+  //   6. result.response.candidates
+  //   7. result.response.samples
+  const resp = result.response || {};
+  const candidates =
+    resp.generatedVideos ||
+    resp.generated_videos ||
+    resp.generateVideoResponse?.generatedSamples ||
+    resp.generateVideoResponse?.generated_samples ||
+    resp.generate_video_response?.generated_samples ||
+    resp.predictions ||
+    resp.candidates ||
+    resp.samples ||
+    [];
 
-  const video = generatedVideos[0];
-  const videoData = video.video || video;
-  const videoUri = videoData?.uri || videoData?.url;
+  // Recursively walk the response tree to find any URI to a video.
+  // Belt-and-braces — if Google changes the wrapper again the URL
+  // still gets picked up so the orchestrator doesn't 500 silently.
+  const sniffUri = (node, depth = 0) => {
+    if (!node || depth > 6) return null;
+    if (typeof node !== "object") return null;
+    if (Array.isArray(node)) {
+      for (const item of node) {
+        const u = sniffUri(item, depth + 1);
+        if (u) return u;
+      }
+      return null;
+    }
+    for (const key of ["uri", "url", "videoUri", "video_uri"]) {
+      const v = node[key];
+      if (typeof v === "string" && /^https?:\/\//.test(v) && /\.mp4|video|veo|generativelanguage/i.test(v)) {
+        return v;
+      }
+    }
+    for (const key of Object.keys(node)) {
+      const u = sniffUri(node[key], depth + 1);
+      if (u) return u;
+    }
+    return null;
+  };
+
+  let videoUri = null;
+  if (candidates.length > 0) {
+    const first = candidates[0];
+    const videoData = first.video || first;
+    videoUri = videoData?.uri || videoData?.url || videoData?.videoUri || sniffUri(first);
+  }
+  if (!videoUri) videoUri = sniffUri(resp);
+
   if (!videoUri) {
-    throw new Error("Veo لم يُرجع رابطاً صالحاً للفيديو.");
+    // Surface the EXACT response keys we got, plus a 4000-char raw
+    // sample, so the next failure tells us where Google parked the
+    // video.
+    const responseShape = {
+      top_level_keys: Object.keys(resp),
+      response_dot_response_keys: resp.response ? Object.keys(resp.response) : null,
+      raw_truncated: JSON.stringify(resp).slice(0, 4000),
+    };
+    console.error("[Ultra/Veo] ❌ no video URI found — response shape:", JSON.stringify(responseShape));
+    const err = new Error("Veo أرجع نتيجة فارغة — لا يوجد فيديو في الاستجابة. شكل الاستجابة في الـ diagnostic.");
+    err.diagnostic = {
+      stage: "extract_video_uri",
+      operation_name: operation?.name,
+      response_shape: responseShape,
+      candidates_found: candidates.length,
+    };
+    throw err;
   }
 
   // Download to temp + upload to Cloudinary.
