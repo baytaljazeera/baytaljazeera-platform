@@ -4373,11 +4373,23 @@ router.get("/ultra-diagnostic", asyncHandler(async (req, res) => {
     });
 
     if (r.status >= 400) {
+      // Capture body raw + parsed + the response content-type so we
+      // can see HTML 404 pages, empty bodies, etc — anything Google
+      // might return that doesn't fit the standard error envelope.
+      const rawBody =
+        typeof r.data === "string" ? r.data : (() => { try { return JSON.stringify(r.data); } catch { return String(r.data); } })();
       return res.json({
         ...base,
         veoTestResult: "google_error",
         googleStatus: r.status,
-        googleError: r.data?.error || r.data || "unknown",
+        googleError: r.data?.error || null,
+        googleBodyRaw: rawBody?.slice(0, 4000) || null,
+        googleContentType: r.headers?.["content-type"] || null,
+        googleHeaderHints: {
+          server: r.headers?.["server"] || null,
+          "alt-svc": r.headers?.["alt-svc"] || null,
+        },
+        urlPattern: `https://generativelanguage.googleapis.com/v1beta/${modelEndpoint}?key=***`,
       });
     }
 
