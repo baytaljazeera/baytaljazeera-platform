@@ -2482,8 +2482,24 @@ router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyn
       if (errMsg.includes("402") && !errMsg.includes("رصيد")) {
         errMsg = "حساب Replicate يحتاج رصيد أو تفعيل الدفع. تحقق من replicate.com أو جرب لاحقاً.";
       }
-      videoOperations.set(operationId, { ...op, status: "error", error: errMsg });
-      console.error("[Video] ❌ Background job failed:", err?.message);
+      // Capture the structured diagnostic produced by the Ultra/Veo
+      // orchestrator (or any orchestrator that follows the same
+      // convention) so the operator can read the FULL Google response
+      // — http_status, google_error_status, google_error_details — via
+      // the status endpoint instead of having to dig through Render logs.
+      const diagnostic = err?.diagnostic || null;
+      videoOperations.set(operationId, {
+        ...op,
+        status: "error",
+        error: errMsg,
+        diagnostic,
+        tier: requestedTier,
+      });
+      console.error(
+        "[Video] ❌ Background job failed:",
+        err?.message,
+        diagnostic ? `\n[Video]    diagnostic: ${JSON.stringify(diagnostic)}` : ""
+      );
     });
 }));
 
@@ -2707,9 +2723,15 @@ router.get("/user/video-status/:operationId", authMiddleware, asyncHandler(async
 
   if (opData.status === "error" || opData.status === "timeout") {
     videoOperations.delete(operationId);
+    // Surface the orchestrator's structured diagnostic alongside the
+    // friendly error message. With this in place the operator sees
+    // http_status + google_error_status + google_error_details in the
+    // network response without needing Render logs.
     return res.json({
       status: "error",
-      error: opData.error || "فشل توليد الفيديو"
+      error: opData.error || "فشل توليد الفيديو",
+      diagnostic: opData.diagnostic || null,
+      tier: opData.tier || null,
     });
   }
 

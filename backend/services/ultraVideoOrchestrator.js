@@ -151,6 +151,14 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
     },
   };
 
+  // Helper: attach the FULL Google response as a structured diagnostic
+  // on the thrown Error so the route layer can surface it verbatim to
+  // the operator without anything being swallowed.
+  const tagErr = (err, diag) => {
+    err.diagnostic = diag;
+    return err;
+  };
+
   let operation;
   try {
     const startRes = await axios.post(startUrl, payload, {
@@ -160,18 +168,45 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
     });
     if (startRes.status >= 400) {
       const body = typeof startRes.data === "string" ? startRes.data : JSON.stringify(startRes.data);
+      const diag = {
+        stage: "start",
+        http_status: startRes.status,
+        model: veoModel,
+        request_endpoint: `models/${veoModel}:generateVideos`,
+        google_response_body: startRes.data,
+        google_error: startRes.data?.error || null,
+        google_error_code: startRes.data?.error?.code || null,
+        google_error_status: startRes.data?.error?.status || null,
+        google_error_details: startRes.data?.error?.details || null,
+        request_had_image: !!imageInput,
+        request_payload_shape: {
+          instances_count: payload.instances.length,
+          parameters: payload.parameters,
+        },
+      };
+      console.error("[Ultra/Veo] ❌ start failed:", JSON.stringify(diag));
       if (startRes.status === 403 || /permission/i.test(body)) {
-        throw new Error(`Veo رفض الطلب (403) — تأكد أن GEMINI_API_KEY مفعّل لميزة Veo. التفصيل: ${body}`);
+        throw tagErr(new Error(`Veo رفض الطلب (403). الكود الكامل من Google أدناه.`), diag);
       }
       if (startRes.status === 404 || /not.found/i.test(body)) {
-        throw new Error(`موديل Veo (${veoModel}) غير متاح لحسابك. جرّب VEO_MODEL=veo-2.0-generate-001 في env. التفصيل: ${body}`);
+        throw tagErr(new Error(`موديل Veo (${veoModel}) غير متاح لحسابك. جرّب VEO_MODEL=veo-2.0-generate-001 في env. الكود الكامل من Google أدناه.`), diag);
       }
-      throw new Error(`فشل بدء توليد Veo: ${body}`);
+      throw tagErr(new Error(`فشل بدء توليد Veo (HTTP ${startRes.status}). الكود الكامل من Google أدناه.`), diag);
     }
     operation = startRes.data;
   } catch (e) {
-    if (e.message && e.message.startsWith("فشل") || e.message?.startsWith("Veo") || e.message?.startsWith("موديل")) throw e;
-    throw new Error(`فشل بدء توليد Veo: ${e.message || e}`);
+    if (e.diagnostic) throw e; // already tagged
+    const diag = {
+      stage: "start_network",
+      http_status: e.response?.status || null,
+      model: veoModel,
+      request_endpoint: `models/${veoModel}:generateVideos`,
+      network_error: e.message || String(e),
+      network_code: e.code || null,
+      google_response_body: e.response?.data || null,
+    };
+    console.error("[Ultra/Veo] ❌ start network/exception:", JSON.stringify(diag));
+    throw tagErr(new Error(`فشل بدء توليد Veo: ${e.message || e}`), diag);
   }
 
   if (!operation?.name) {
