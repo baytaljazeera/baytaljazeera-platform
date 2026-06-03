@@ -4326,7 +4326,13 @@ router.get("/ultra-diagnostic", asyncHandler(async (req, res) => {
   const apiKey =
     process.env.GEMINI_API_KEY || process.env.Gemeni2 || process.env.Gemeni || "";
   const veoModel = process.env.VEO_MODEL || "veo-3.0-generate-001";
-  const modelEndpoint = `models/${veoModel}:generateVideos`;
+
+  // First diagnostic returned 404+HTML+empty for :generateVideos.
+  // On the Gemini API (generativelanguage.googleapis.com) Veo's
+  // start action is :predictLongRunning, NOT :generateVideos
+  // (which is a Vertex-AI-only verb). Probe both so the response
+  // shows definitively which action works for this key.
+  const actions = ["predictLongRunning", "generateVideos"];
 
   const base = {
     geminiKeyPresent: !!apiKey,
@@ -4338,7 +4344,6 @@ router.get("/ultra-diagnostic", asyncHandler(async (req, res) => {
           ? "Gemeni"
           : null,
     model: veoModel,
-    modelEndpoint,
     ultraBypassConfigured: !!process.env.ULTRA_BYPASS_CODE,
   };
 
@@ -4351,10 +4356,6 @@ router.get("/ultra-diagnostic", asyncHandler(async (req, res) => {
     });
   }
 
-  // Minimal text-only request — no image, no listing data. This is
-  // the smallest call that still validates: key auth, billing
-  // eligibility, allowlist, and model name.
-  const startUrl = `https://generativelanguage.googleapis.com/v1beta/${modelEndpoint}?key=${apiKey}`;
   const payload = {
     instances: [{ prompt: "cinematic test of luxury real estate, 2 seconds" }],
     parameters: {
@@ -4365,55 +4366,55 @@ router.get("/ultra-diagnostic", asyncHandler(async (req, res) => {
     },
   };
 
-  try {
-    const r = await axios.post(startUrl, payload, {
-      headers: { "Content-Type": "application/json" },
-      timeout: 60000,
-      validateStatus: () => true,
-    });
-
-    if (r.status >= 400) {
-      // Capture body raw + parsed + the response content-type so we
-      // can see HTML 404 pages, empty bodies, etc — anything Google
-      // might return that doesn't fit the standard error envelope.
+  // Try each action and report the result. If ANY succeeds, that's
+  // the action the orchestrator should be using.
+  const probes = [];
+  let firstAccepted = null;
+  for (const action of actions) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${veoModel}:${action}?key=${apiKey}`;
+    try {
+      const r = await axios.post(url, payload, {
+        headers: { "Content-Type": "application/json" },
+        timeout: 60000,
+        validateStatus: () => true,
+      });
       const rawBody =
-        typeof r.data === "string" ? r.data : (() => { try { return JSON.stringify(r.data); } catch { return String(r.data); } })();
-      return res.json({
-        ...base,
-        veoTestResult: "google_error",
-        googleStatus: r.status,
+        typeof r.data === "string"
+          ? r.data
+          : (() => { try { return JSON.stringify(r.data); } catch { return String(r.data); } })();
+      const probe = {
+        action,
+        url: `models/${veoModel}:${action}`,
+        status: r.status,
+        contentType: r.headers?.["content-type"] || null,
         googleError: r.data?.error || null,
-        googleBodyRaw: rawBody?.slice(0, 4000) || null,
-        googleContentType: r.headers?.["content-type"] || null,
-        googleHeaderHints: {
-          server: r.headers?.["server"] || null,
-          "alt-svc": r.headers?.["alt-svc"] || null,
-        },
-        urlPattern: `https://generativelanguage.googleapis.com/v1beta/${modelEndpoint}?key=***`,
+        bodyRaw: rawBody?.slice(0, 2000) || null,
+        operationName: r.status < 400 ? (r.data?.name || null) : null,
+      };
+      probes.push(probe);
+      if (r.status < 400 && !firstAccepted) firstAccepted = probe;
+    } catch (err) {
+      probes.push({
+        action,
+        url: `models/${veoModel}:${action}`,
+        status: err.response?.status || null,
+        networkError: err.message || String(err),
       });
     }
-
-    // 2xx — Veo accepted. We do NOT poll to keep the cost minimal.
-    // The operation name proves the call reached Google and was
-    // accepted by your billing/allowlist.
-    return res.json({
-      ...base,
-      veoTestResult: "accepted",
-      googleStatus: r.status,
-      googleError: null,
-      operationName: r.data?.name || null,
-      googleResponseBody: r.data,
-      note: "Veo accepted the request. The operation is queued on Google's side; this endpoint does not poll or download. A small generation cost may apply.",
-    });
-  } catch (err) {
-    return res.json({
-      ...base,
-      veoTestResult: "network_exception",
-      googleStatus: err.response?.status || null,
-      googleError: err.message || String(err),
-      googleResponseBody: err.response?.data || null,
-    });
   }
+
+  return res.json({
+    ...base,
+    veoTestResult: firstAccepted ? "accepted" : "google_error",
+    googleStatus: firstAccepted ? firstAccepted.status : probes[0]?.status || null,
+    googleError: firstAccepted ? null : (probes[0]?.googleError || probes[0]?.bodyRaw || null),
+    workingAction: firstAccepted ? firstAccepted.action : null,
+    workingOperationName: firstAccepted ? firstAccepted.operationName : null,
+    probes,
+    note: firstAccepted
+      ? `Veo accepted via :${firstAccepted.action}. Update orchestrator to use this action.`
+      : "All probed actions returned 4xx. See probes[] for each action's exact response.",
+  });
 }));
 
 module.exports = router;
