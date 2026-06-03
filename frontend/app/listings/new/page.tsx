@@ -1245,8 +1245,22 @@ export default function NewListingPage() {
           if (script) setVideoScriptText(script);
         }
       } else if (data.success && data.operationId) {
-        const maxAttempts = 60;
+        // Tier-aware polling budget. The 60×5s = 5-minute window was
+        // enough for Standard (FFmpeg slideshow ≈ 1-3 min) but the
+        // Ultra hybrid pipeline takes 10-15 minutes end-to-end:
+        //   • opening cinematic AI clip: 3-8 min
+        //   • full slideshow + voice:     2-3 min
+        //   • concat + upload:            1-2 min
+        // The frontend was giving up after 5 min while the backend
+        // was still working, so the user saw "انتهت المهلة" on a
+        // generation that was actually about to succeed.
         const intervalMs = 5000;
+        const maxAttempts =
+          videoTier === "ultra"
+            ? 240   // 20 minutes — Ultra production cap
+            : videoTier === "luxury"
+              ? 120 // 10 minutes — Luxury hybrid cap
+              : 60; //  5 minutes — Standard
         let done = false;
         const statusHeaders: HeadersInit = { Authorization: `Bearer ${authToken}` };
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -1292,7 +1306,12 @@ export default function NewListingPage() {
             if (typeof statusData.stageTotal === "number") setVideoStageTotal(statusData.stageTotal);
           }
         }
-        if (!done) throw new Error("انتهت المهلة. جرب إعادة المحاولة.");
+        if (!done) {
+          const minutes = Math.round((maxAttempts * intervalMs) / 60000);
+          throw new Error(
+            `استغرق التوليد أكثر من ${minutes} دقيقة. قد يكون لا يزال يعمل في الخلفية — افتح صفحة الإعلان لاحقاً للتأكد، أو أعد المحاولة.`
+          );
+        }
       } else {
         throw new Error(data.error || "فشل في توليد الفيديو");
       }
