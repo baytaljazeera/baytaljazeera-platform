@@ -245,20 +245,41 @@ async function concatManyClipsWithFfmpeg(clipPaths, outPath) {
 
 // Overlay a voice audio track on a silent video, padding silence at
 // the end if voice is shorter than video. Voice starts at t=0.
-async function overlayVoiceOnVideo(videoPath, voicePath, outPath) {
+async function overlayVoiceOnVideo(videoPath, voicePath, outPath, opts = {}) {
   // RE-ENCODE video (don't copy). Phone-camera and WhatsApp videos
   // commonly produce H.264 streams with B-frames / variable frame
   // rate / unusual GOP structures. `-c:v copy` ships those bytes
   // verbatim into the new container — and the browser then reports
   // the result as "corrupt" even though FFmpeg succeeded.
-  // Re-encoding with constant framerate + faststart guarantees a
-  // clean MP4 every time. Costs ~30 s extra; cheap insurance.
+  //
+  // opts.loopVideo (default false):
+  //   true  → video is looped (-stream_loop -1) and output ends at
+  //           the NARRATION end. Used by the cleanup track where
+  //           the customer's phone clip is usually shorter than
+  //           the AI-generated narration; we loop so every word
+  //           gets a frame to ride on. Audio is NOT padded.
+  //   false → existing behaviour: video plays once, narration is
+  //           padded with silence to match video length. Used by
+  //           the Ultra (Replicate) hybrid where the slideshow
+  //           is intentionally longer than the voice.
+  const loopVideo = opts.loopVideo === true;
+
+  const inputArgs = [];
+  if (loopVideo) inputArgs.push("-stream_loop", "-1");
+  inputArgs.push("-i", videoPath, "-i", voicePath);
+
+  const audioFilter = loopVideo
+    // Looped video case: narration plays once at its natural length;
+    // -shortest then clamps the output to the voice end.
+    ? "[1:a]aresample=44100,aformat=channel_layouts=stereo,asetpts=PTS-STARTPTS[outa]"
+    // Non-loop case: video is the length cap; pad narration with
+    // silence to infinity so -shortest fires from the video side.
+    : "[1:a]aresample=44100,aformat=channel_layouts=stereo,asetpts=PTS-STARTPTS,apad[outa]";
+
   const args = [
     "-y",
-    "-i", videoPath,
-    "-i", voicePath,
-    "-filter_complex",
-    "[1:a]aresample=44100,aformat=channel_layouts=stereo,asetpts=PTS-STARTPTS,apad[outa]",
+    ...inputArgs,
+    "-filter_complex", audioFilter,
     "-map", "0:v",
     "-map", "[outa]",
     "-shortest",

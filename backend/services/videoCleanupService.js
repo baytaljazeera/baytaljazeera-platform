@@ -302,7 +302,11 @@ async function generateCleanupVideo(listingId, seedVideoUrl, listingData = {}) {
         // that path. Use it directly — don't rewrap it.
         voiceMp3Path = await elevenLabsTTSToMp3(voiceScript.slice(0, 800), chosenElevenId);
         withVoicePath = path.join(outDir, `voiced_${Date.now()}.mp4`);
-        await overlayVoiceOnVideo(gradedPath, voiceMp3Path, withVoicePath);
+        // loopVideo:true → if the customer's phone clip is shorter
+        // than the narration (the common case for 8-15 s WhatsApp
+        // clips with a 25 s script), the video loops seamlessly so
+        // every word gets a frame. Output ends at narration end.
+        await overlayVoiceOnVideo(gradedPath, voiceMp3Path, withVoicePath, { loopVideo: true });
         console.log("[Cleanup] ✅ ElevenLabs narration overlaid:", withVoicePath);
       }
     }
@@ -336,7 +340,14 @@ async function generateCleanupVideo(listingId, seedVideoUrl, listingData = {}) {
   }
 
   // Title + price overlays — best-effort like in Ultra.
-  const overlayDuration = Math.max(probedSec, 5);
+  // Use the ACTUAL voiced-video duration for overlay timing — not
+  // the source phone-clip duration. After looping, the output is
+  // roughly the narration length; pricing the outro overlay against
+  // the original 8 s phone clip would land it at t≈2 s instead of
+  // the actual finish.
+  const voicedDurationSec = await probeDuration(withVoicePath).catch(() => probedSec);
+  const overlayDuration = Math.max(voicedDurationSec, 5);
+  console.log(`[Cleanup] overlay timing budget: ${overlayDuration.toFixed(1)}s (source=${probedSec.toFixed(1)}s, voiced=${voicedDurationSec.toFixed(1)}s)`);
   const overlays = buildOverlayPlan(listingData, overlayDuration);
   const finalPath = path.join(outDir, `cleanup_final_${Date.now()}.mp4`);
   try {
