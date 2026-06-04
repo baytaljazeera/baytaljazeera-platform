@@ -70,6 +70,131 @@ function buildOpeningPrompt(listingData) {
     .join(", ");
 }
 
+// Each scene gets a SLIGHTLY different camera move so the final video
+// doesn't feel like 5 copies of the same push-in. Cycles through 5
+// premium real-estate motion styles.
+const SCENE_MOTIONS = [
+  "slow cinematic push-in, gimbal-stabilized",
+  "smooth left-to-right dolly across the room",
+  "slow upward tilt revealing the ceiling and full height",
+  "gentle orbital rotation around the focal subject",
+  "slow pull-out reveal showing the wider space",
+];
+
+function buildScenePrompt(listingData, sceneIndex) {
+  const motion = SCENE_MOTIONS[sceneIndex % SCENE_MOTIONS.length];
+  const ptype = listingData.propertyType || listingData.type || "luxury property";
+  const city = listingData.city || "";
+  const features = [];
+  if (listingData.hasPool) features.push("with pool");
+  if (listingData.hasGarden) features.push("with garden");
+  const featureStr = features.join(" ");
+  return [
+    motion,
+    `luxury ${ptype}${city ? " in " + city : ""}`,
+    featureStr,
+    "warm golden-hour lighting, ultra-realistic, premium architecture",
+    "shallow depth of field, no people, no text, no watermark",
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+// Concat N AI clips (any count) into a single MP4. Each input gets
+// normalised to 1920x1080 30fps for a seamless join. Audio is dropped
+// (AI clips are silent); narration is overlaid afterwards.
+async function concatManyClipsWithFfmpeg(clipPaths, outPath) {
+  if (!Array.isArray(clipPaths) || clipPaths.length === 0) {
+    throw new Error("لا توجد لقطات للدمج.");
+  }
+  if (clipPaths.length === 1) {
+    // Single-clip "concat" — just normalise + copy.
+    const args = [
+      "-y",
+      "-i", clipPaths[0],
+      "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30",
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+      "-an",
+      "-movflags", "+faststart",
+      outPath,
+    ];
+    return new Promise((resolve, reject) => {
+      const ff = spawn("ffmpeg", args);
+      let stderr = "";
+      ff.stderr.on("data", (d) => (stderr += d.toString()));
+      ff.on("close", (code) => {
+        if (code === 0 && fs.existsSync(outPath)) resolve(outPath);
+        else reject(new Error(`ffmpeg single-clip pass failed: ${stderr.slice(-500)}`));
+      });
+    });
+  }
+
+  // Build the filter graph for N clips:
+  //   [0:v]scale...[v0];[1:v]scale...[v1];...
+  //   [v0][v1][v2][...]concat=n=N:v=1:a=0[outv]
+  const inputArgs = [];
+  for (const p of clipPaths) {
+    inputArgs.push("-i", p);
+  }
+  const normalise = clipPaths
+    .map(
+      (_, i) =>
+        `[${i}:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v${i}]`
+    )
+    .join(";");
+  const concat = clipPaths.map((_, i) => `[v${i}]`).join("") +
+    `concat=n=${clipPaths.length}:v=1:a=0[outv]`;
+  const filter = normalise + ";" + concat;
+
+  const args = [
+    "-y",
+    ...inputArgs,
+    "-filter_complex", filter,
+    "-map", "[outv]",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+    "-an",
+    "-movflags", "+faststart",
+    outPath,
+  ];
+  return new Promise((resolve, reject) => {
+    const ff = spawn("ffmpeg", args);
+    let stderr = "";
+    ff.stderr.on("data", (d) => (stderr += d.toString()));
+    ff.on("close", (code) => {
+      if (code === 0 && fs.existsSync(outPath)) resolve(outPath);
+      else reject(new Error(`ffmpeg N-clip concat failed (code ${code}): ${stderr.slice(-600)}`));
+    });
+  });
+}
+
+// Overlay a voice audio track on a silent video, padding silence at
+// the end if voice is shorter than video. Voice starts at t=0.
+async function overlayVoiceOnVideo(videoPath, voicePath, outPath) {
+  const args = [
+    "-y",
+    "-i", videoPath,
+    "-i", voicePath,
+    "-filter_complex",
+    "[1:a]aresample=44100,aformat=channel_layouts=stereo,asetpts=PTS-STARTPTS,apad[outa]",
+    "-map", "0:v",
+    "-map", "[outa]",
+    "-shortest",
+    "-c:v", "copy",
+    "-c:a", "aac", "-b:a", "192k",
+    "-movflags", "+faststart",
+    outPath,
+  ];
+  return new Promise((resolve, reject) => {
+    const ff = spawn("ffmpeg", args);
+    let stderr = "";
+    ff.stderr.on("data", (d) => (stderr += d.toString()));
+    ff.on("close", (code) => {
+      if (code === 0 && fs.existsSync(outPath)) resolve(outPath);
+      else reject(new Error(`ffmpeg voice overlay failed (code ${code}): ${stderr.slice(-500)}`));
+    });
+  });
+}
+
 async function concatVideosWithFfmpeg(openingPath, slideshowPath) {
   if (!fs.existsSync(openingPath)) throw new Error(`opening clip missing at ${openingPath}`);
   if (!fs.existsSync(slideshowPath)) throw new Error(`slideshow clip missing at ${slideshowPath}`);
@@ -124,68 +249,157 @@ async function concatVideosWithFfmpeg(openingPath, slideshowPath) {
  * Returns: { url, promoText, openingShotUrl, slideshowUrl, costEstimate }
  */
 async function generateHybridLuxuryVideo(listingId, imageUrls, listingData) {
+  // Owner decision (June 2026): the Ultra tier is FULL multi-scene AI.
+  // Each listing image generates its own cinematic AI clip; they
+  // concatenate into one polished video with narration laid over the
+  // top from t=0. This is what justifies the premium price tag.
   if (!Array.isArray(imageUrls) || imageUrls.length < 2) {
-    throw new Error("الفيديو السينمائي الفاخر يحتاج صورتين على الأقل (الأولى للقطة AI الافتتاحية، الباقي للسلايد شو).");
+    throw new Error("الإنتاج السينمائي الخارق يحتاج صورتين على الأقل لتوليد لقطات AI متعدّدة.");
   }
   if (!replicateVideoService.isConfigured()) {
-    throw new Error("REPLICATE_API_TOKEN غير مضبوط. لا يمكن توليد لقطة افتتاحية فاخرة بدونه.");
+    throw new Error("إعدادات خدمة الإنتاج السينمائي الخارق غير مكتملة على الخادم — تواصل مع الدعم.");
   }
   if (!(await ffmpegAvailable())) {
-    throw new Error("FFmpeg غير متاح على الخادم — مطلوب لدمج اللقطة الافتتاحية مع السلايد شو.");
+    throw new Error("محرّك الدمج السينمائي غير متاح على الخادم — تواصل مع الدعم.");
   }
 
+  // Cost cap: each AI clip is ~\$0.30. We cap at 6 scenes so even a
+  // listing with 20 photos doesn't burn \$6 on a single video. Owner
+  // can raise this via env if desired.
+  const MAX_SCENES = Number(process.env.ULTRA_MAX_SCENES) || 6;
+  const scenes = imageUrls.slice(0, MAX_SCENES);
+
+  const onProgress = typeof listingData?.onProgress === "function"
+    ? listingData.onProgress
+    : () => {};
+
+  // Total stages: N AI clip generations + voice gen + concat + voice
+  // overlay + upload = N + 4. We report stage indices accordingly.
+  const stageTotal = scenes.length + 4;
   const startedAt = Date.now();
-  console.log(`[Luxury] ▶️  Starting hybrid pipeline for listing ${listingId}`);
-  console.log(`[Luxury]    images=${imageUrls.length}, first=${imageUrls[0]}`);
+  console.log(`[Ultra] ▶️  Multi-scene AI pipeline — ${scenes.length} clips × ~\$0.30 each`);
+  console.log(`[Ultra]    listingId=${listingId}, total stages=${stageTotal}`);
 
-  // 1) Opening cinematic shot via Replicate (image-to-video).
-  console.log("[Luxury] 🎥 Step 1/4 — generating opening shot via Replicate…");
-  const openingPrompt = buildOpeningPrompt(listingData);
-  const openingUrl = await replicateVideoService.generateOpeningShot(imageUrls[0], {
-    prompt: openingPrompt,
-    duration: 5,
-    aspect_ratio: "16:9",
-    quality: "720p",
-    motion_mode: "smooth",
+  onProgress({
+    stage: "ultra_starting",
+    stageLabel: `1/${stageTotal} — تحضير ${scenes.length} لقطات AI سينمائية`,
+    stageIndex: 1,
+    stageTotal,
+    percent: 2,
   });
-  console.log("[Luxury] ✅ Opening shot URL:", openingUrl);
 
-  // 2) Standard FFmpeg slideshow on the FULL image set (ElevenLabs voice path unchanged).
-  console.log("[Luxury] 🎬 Step 2/4 — rendering FFmpeg slideshow + voice on all images…");
+  // ─── Step 1..N: Generate one AI clip per image. ──────────────────
+  // Run them in PARALLEL (Promise.all) so the total wall-clock time
+  // is ~1 Replicate generation, not N. Replicate quotas usually
+  // tolerate 4-6 concurrent jobs on a paid plan.
+  console.log("[Ultra] 🎥 Generating all AI clips in parallel…");
+  const clipUrls = await Promise.all(
+    scenes.map((imgUrl, i) => {
+      const prompt = buildScenePrompt(listingData, i);
+      // Stagger the progress label slightly — Promise.all returns in
+      // order so by the time the i-th promise resolves we know up to
+      // i+1 clips are in flight.
+      return replicateVideoService
+        .generateOpeningShot(imgUrl, {
+          prompt,
+          duration: 5,
+          aspect_ratio: "16:9",
+          quality: "720p",
+          motion_mode: "smooth",
+        })
+        .then((url) => {
+          // Bump progress as each clip lands. Map (1..N) into 5..60%.
+          const completedSoFar = i + 1;
+          const pct = 5 + Math.round((completedSoFar / scenes.length) * 55);
+          onProgress({
+            stage: "ultra_clip_done",
+            stageLabel: `${completedSoFar}/${stageTotal} — اكتملت لقطة AI رقم ${completedSoFar} من ${scenes.length}`,
+            stageIndex: completedSoFar,
+            stageTotal,
+            percent: pct,
+          });
+          console.log(`[Ultra] ✅ Clip ${completedSoFar}/${scenes.length}: ${url}`);
+          return url;
+        });
+    })
+  );
+
+  // ─── Step N+1: Generate the voice narration. ─────────────────────
+  // We reuse videoService.generateListingSlideshow which produces a
+  // slideshow video WITH narration audio baked in. We don't care
+  // about the slideshow VIDEO — we extract its audio track for
+  // overlay on the AI clips. This avoids duplicating the entire
+  // ElevenLabs/OpenAI TTS plumbing.
+  onProgress({
+    stage: "ultra_voice",
+    stageLabel: `${scenes.length + 1}/${stageTotal} — توليد التعليق الصوتي`,
+    stageIndex: scenes.length + 1,
+    stageTotal,
+    percent: 65,
+  });
+  console.log("[Ultra] 🗣️  Generating narration via slideshow service…");
   const { generateListingSlideshow } = require("./videoService");
   const slideshowResult = await generateListingSlideshow(listingId, imageUrls, listingData);
-  const slideshowUrl = slideshowResult?.url || (typeof slideshowResult === "string" ? slideshowResult : null);
-  if (!slideshowUrl) {
-    throw new Error("فشل توليد سلايد شو FFmpeg في المسار الفاخر.");
+  const voiceSourceUrl =
+    slideshowResult?.url || (typeof slideshowResult === "string" ? slideshowResult : null);
+  if (!voiceSourceUrl) {
+    throw new Error("فشل توليد التعليق الصوتي للإنتاج السينمائي الخارق.");
   }
-  console.log("[Luxury] ✅ Slideshow URL:", slideshowUrl);
 
-  // 3) Download both clips locally so ffmpeg can stitch them.
-  console.log("[Luxury] ⬇️  Step 3/4 — downloading both clips for local concat…");
-  const openingPath = await downloadToTemp(openingUrl, ".mp4");
-  const slideshowPath = await downloadToTemp(slideshowUrl, ".mp4");
+  // ─── Step N+2: Download every AI clip + the voice-source video. ──
+  const clipPaths = await Promise.all(clipUrls.map((u) => downloadToTemp(u, ".mp4")));
+  const voiceSourcePath = await downloadToTemp(voiceSourceUrl, ".mp4");
 
-  // 4) Concat with FFmpeg + upload final to Cloudinary.
-  console.log("[Luxury] 🧵 Step 4/4 — concatenating and uploading final hybrid…");
-  let stitchedPath = null;
+  // ─── Step N+3: Concat all AI clips (video only). ─────────────────
+  onProgress({
+    stage: "ultra_concat",
+    stageLabel: `${scenes.length + 2}/${stageTotal} — دمج اللقطات السينمائية`,
+    stageIndex: scenes.length + 2,
+    stageTotal,
+    percent: 80,
+  });
+  const outDir = path.dirname(voiceSourcePath);
+  const concatPath = path.join(outDir, `ultra_concat_${Date.now()}.mp4`);
+  await concatManyClipsWithFfmpeg(clipPaths, concatPath);
+  console.log(`[Ultra] ✅ Concatenated ${clipPaths.length} clips into ${concatPath}`);
+
+  // ─── Step N+4: Overlay narration on the concatenated video. ──────
+  onProgress({
+    stage: "ultra_voice_overlay",
+    stageLabel: `${scenes.length + 3}/${stageTotal} — تركيب التعليق الصوتي`,
+    stageIndex: scenes.length + 3,
+    stageTotal,
+    percent: 88,
+  });
+  const withVoicePath = path.join(outDir, `ultra_final_${Date.now()}.mp4`);
+  await overlayVoiceOnVideo(concatPath, voiceSourcePath, withVoicePath);
+  console.log("[Ultra] ✅ Voice overlaid:", withVoicePath);
+
+  // ─── Step N+5: Upload to Cloudinary + persist on the listing row. ─
+  onProgress({
+    stage: "ultra_upload",
+    stageLabel: `${stageTotal}/${stageTotal} — رفع الفيديو النهائي`,
+    stageIndex: stageTotal,
+    stageTotal,
+    percent: 95,
+  });
   let finalUrl = null;
   try {
-    stitchedPath = await concatVideosWithFfmpeg(openingPath, slideshowPath);
-    const folder = `listings/${listingId}/promo/luxury`;
-    const uploadResult = await cloudinaryService.uploadVideo(stitchedPath, folder);
+    const folder = `listings/${listingId}/promo/ultra`;
+    const uploadResult = await cloudinaryService.uploadVideo(withVoicePath, folder);
     if (!uploadResult?.success || !uploadResult.url) {
-      throw new Error(uploadResult?.error || "فشل رفع الفيديو الفاخر إلى Cloudinary");
+      throw new Error(uploadResult?.error || "فشل رفع الإنتاج السينمائي الخارق إلى Cloudinary");
     }
     finalUrl = uploadResult.url;
 
     if (!String(listingId).startsWith("temp_")) {
       await db
         .query(`UPDATE properties SET video_status = 'ready', video_url = $1 WHERE id = $2`, [finalUrl, listingId])
-        .catch((e) => console.warn("[Luxury] DB update failed:", e.message));
+        .catch((e) => console.warn("[Ultra] DB update failed:", e.message));
     }
   } finally {
-    // Best-effort cleanup of temp files regardless of success/failure.
-    for (const p of [openingPath, slideshowPath, stitchedPath]) {
+    // Best-effort cleanup of ALL temp files.
+    for (const p of [...clipPaths, voiceSourcePath, concatPath, withVoicePath]) {
       if (p) {
         try { fs.unlinkSync(p); } catch {}
       }
@@ -193,20 +407,24 @@ async function generateHybridLuxuryVideo(listingId, imageUrls, listingData) {
   }
 
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
-  console.log(`[Luxury] 🏁 Hybrid pipeline done in ${elapsedSec}s — ${finalUrl}`);
+  console.log(`[Ultra] 🏁 Multi-scene AI pipeline done in ${elapsedSec}s — ${finalUrl}`);
 
   return {
     url: finalUrl,
     promoText: slideshowResult?.promoText || null,
-    openingShotUrl: openingUrl,
-    slideshowUrl,
-    tier: "ultra",  // engine swap (June 2026): this orchestrator now powers Ultra (Replicate is higher quality)
+    aiClipUrls: clipUrls,
+    sceneCount: scenes.length,
+    tier: "ultra",  // engine swap (June 2026): Replicate-powered Ultra tier
     durationSeconds: parseFloat(elapsedSec),
+    costEstimateUsd: (scenes.length * 0.3).toFixed(2),
   };
 }
 
 module.exports = {
   generateHybridLuxuryVideo,
   buildOpeningPrompt,
+  buildScenePrompt,
   concatVideosWithFfmpeg,
+  concatManyClipsWithFfmpeg,
+  overlayVoiceOnVideo,
 };
