@@ -247,45 +247,72 @@ async function generateCleanupVideo(listingId, seedVideoUrl, listingData = {}) {
   // ElevenLabs TTS — same pipeline the slideshow service uses, just
   // skipping the slideshow video output. Result is a standalone
   // MP3 we mux on top of the graded video.
+  //
+  // Two real bugs fixed in the previous attempt:
+  //   1. elevenLabsTTSToMp3() returns a FILE PATH (string), not a
+  //      Buffer. The old code did .then((buf) => writeFileSync(buf))
+  //      which wrote the path STRING as bytes into a new file —
+  //      producing a 30-byte "mp3" that broke the whole overlay
+  //      step.
+  //   2. The function rejects when voiceId is < 10 chars. The
+  //      cleanup UI was sending OpenAI voice names (4-6 chars)
+  //      which made the call throw immediately. We now apply the
+  //      same length check the slideshow service uses, and skip
+  //      narration gracefully if no valid Eleven ID is present.
   let withVoicePath = gradedPath;
   let voiceMp3Path = null;
   try {
     const { elevenLabsTTSToMp3 } = require("./videoService");
     const { generateDynamicPromoText, generatePromotionalText } = require("../routes/ai");
-    let voiceScript = "";
-    try {
-      const promo = await generateDynamicPromoText(listingData);
-      voiceScript =
-        promo?.voiceScript ||
-        promo?._voiceScript ||
-        [promo?.headline, promo?.subheadline, promo?.callToAction].filter(Boolean).join(" — ");
-    } catch {
-      /* fall through to deterministic builder */
-    }
-    if (!voiceScript) {
-      const t = generatePromotionalText(
-        listingData?.propertyType,
-        listingData?.purpose,
-        listingData?.city,
-        listingData?.district,
-        listingData?.price
-      );
-      voiceScript = [t?.headline, t?.subheadline, t?.callToAction].filter(Boolean).join(" — ");
-    }
-    if (voiceScript && voiceScript.trim().length > 0) {
-      const voiceId = listingData?.elevenlabsVoiceId || undefined;
-      voiceMp3Path = path.join(outDir, `narration_${Date.now()}.mp3`);
-      await elevenLabsTTSToMp3(voiceScript.slice(0, 800), voiceId).then((buf) =>
-        fs.writeFileSync(voiceMp3Path, buf)
-      );
-      withVoicePath = path.join(outDir, `voiced_${Date.now()}.mp4`);
-      await overlayVoiceOnVideo(gradedPath, voiceMp3Path, withVoicePath);
-      console.log("[Cleanup] ✅ ElevenLabs narration overlaid:", withVoicePath);
+
+    const maybeElevenId = String(listingData?.elevenlabsVoiceId || "").trim();
+    const voiceFromUi = String(listingData?.voice || "").trim();
+    const chosenElevenId =
+      maybeElevenId.length >= 10
+        ? maybeElevenId
+        : voiceFromUi.length >= 10
+          ? voiceFromUi
+          : "";
+
+    if (!chosenElevenId) {
+      console.log("[Cleanup] ℹ️ no ElevenLabs voice ID — skipping narration (will ship silent).");
+    } else {
+      let voiceScript = "";
+      try {
+        const promo = await generateDynamicPromoText(listingData);
+        voiceScript =
+          promo?.voiceScript ||
+          promo?._voiceScript ||
+          [promo?.headline, promo?.subheadline, promo?.callToAction].filter(Boolean).join(" — ");
+      } catch (e) {
+        console.warn("[Cleanup] dynamic promo text failed, using deterministic:", e.message);
+      }
+      if (!voiceScript) {
+        const t = generatePromotionalText(
+          listingData?.propertyType,
+          listingData?.purpose,
+          listingData?.city,
+          listingData?.district,
+          listingData?.price
+        );
+        voiceScript = [t?.headline, t?.subheadline, t?.callToAction].filter(Boolean).join(" — ");
+      }
+      if (voiceScript && voiceScript.trim().length > 0) {
+        // elevenLabsTTSToMp3 writes to its own temp path and RETURNS
+        // that path. Use it directly — don't rewrap it.
+        voiceMp3Path = await elevenLabsTTSToMp3(voiceScript.slice(0, 800), chosenElevenId);
+        withVoicePath = path.join(outDir, `voiced_${Date.now()}.mp4`);
+        await overlayVoiceOnVideo(gradedPath, voiceMp3Path, withVoicePath);
+        console.log("[Cleanup] ✅ ElevenLabs narration overlaid:", withVoicePath);
+      }
     }
   } catch (e) {
     // Voice is enhancement, not blocker. Ship the graded silent video
     // if narration fails for any reason.
     console.warn("[Cleanup] ⚠️ voice narration skipped:", e.message);
+    // Reset withVoicePath in case the overlay step exploded mid-way
+    // and left a partial file.
+    withVoicePath = gradedPath;
   }
 
   // Legacy fallback: if customer happened to upload images too, the
