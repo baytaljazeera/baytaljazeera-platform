@@ -246,6 +246,13 @@ async function concatManyClipsWithFfmpeg(clipPaths, outPath) {
 // Overlay a voice audio track on a silent video, padding silence at
 // the end if voice is shorter than video. Voice starts at t=0.
 async function overlayVoiceOnVideo(videoPath, voicePath, outPath) {
+  // RE-ENCODE video (don't copy). Phone-camera and WhatsApp videos
+  // commonly produce H.264 streams with B-frames / variable frame
+  // rate / unusual GOP structures. `-c:v copy` ships those bytes
+  // verbatim into the new container — and the browser then reports
+  // the result as "corrupt" even though FFmpeg succeeded.
+  // Re-encoding with constant framerate + faststart guarantees a
+  // clean MP4 every time. Costs ~30 s extra; cheap insurance.
   const args = [
     "-y",
     "-i", videoPath,
@@ -255,7 +262,8 @@ async function overlayVoiceOnVideo(videoPath, voicePath, outPath) {
     "-map", "0:v",
     "-map", "[outa]",
     "-shortest",
-    "-c:v", "copy",
+    "-vsync", "cfr", "-r", "30",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
     "-c:a", "aac", "-b:a", "192k",
     "-movflags", "+faststart",
     outPath,
@@ -330,8 +338,12 @@ async function addTextOverlays(videoPath, overlays, outPath) {
     "-y",
     "-i", videoPath,
     "-vf", filterParts.join(","),
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
-    "-c:a", "copy",
+    "-vsync", "cfr", "-r", "30",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+    // Re-encode audio too. -c:a copy can blow up on inputs with
+    // exotic audio (mono AMR from old phones, multi-channel etc).
+    // AAC stereo is universally playable.
+    "-c:a", "aac", "-b:a", "160k",
     "-movflags", "+faststart",
     outPath,
   ];

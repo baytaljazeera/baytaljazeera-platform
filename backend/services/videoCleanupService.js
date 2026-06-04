@@ -59,6 +59,40 @@ async function downloadToTemp(url, suffix = ".mp4") {
   return dest;
 }
 
+// Validate the final MP4 is actually playable: confirm there's a
+// video stream with a non-zero duration. Cloudinary will happily
+// upload a malformed file; the browser then says "corrupt". This
+// check catches it before upload so we can fail with a clear error.
+async function validatePlayableMp4(videoPath) {
+  return new Promise((resolve) => {
+    const ff = spawn("ffprobe", [
+      "-v", "error",
+      "-select_streams", "v:0",
+      "-show_entries", "stream=codec_name,width,height:format=duration",
+      "-of", "default=noprint_wrappers=1:nokey=0",
+      videoPath,
+    ]);
+    let out = "", err = "";
+    ff.stdout.on("data", (d) => (out += d.toString()));
+    ff.stderr.on("data", (d) => (err += d.toString()));
+    ff.on("close", (code) => {
+      if (code !== 0) {
+        resolve({ ok: false, reason: `ffprobe exit ${code}: ${err.slice(-200)}` });
+        return;
+      }
+      const hasCodec = /codec_name=h264|hevc|h265/i.test(out);
+      const durMatch = out.match(/duration=([0-9.]+)/);
+      const duration = durMatch ? parseFloat(durMatch[1]) : 0;
+      const sizeBytes = (() => { try { return fs.statSync(videoPath).size; } catch { return 0; } })();
+      if (!hasCodec) return resolve({ ok: false, reason: "no playable video stream", probe: out });
+      if (duration < 0.5) return resolve({ ok: false, reason: `duration too short (${duration}s)`, probe: out });
+      if (sizeBytes < 10_000) return resolve({ ok: false, reason: `file too small (${sizeBytes} bytes)`, probe: out });
+      resolve({ ok: true, duration, sizeBytes, probe: out });
+    });
+    ff.on("error", (e) => resolve({ ok: false, reason: `ffprobe spawn: ${e.message}` }));
+  });
+}
+
 async function probeDuration(videoPath) {
   return new Promise((resolve) => {
     const ff = spawn("ffprobe", [
@@ -115,8 +149,11 @@ async function applyCinematicGrade(inputPath, outputPath) {
     "-vf", visual,
     // Keep input audio for now (if any). Voice overlay step replaces
     // it cleanly later.
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-    "-c:a", "aac", "-b:a", "160k",
+    // Constant framerate + universal pixel format protects against
+    // browser "corrupt" errors on phone-camera / WhatsApp inputs.
+    "-vsync", "cfr", "-r", "30",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", "160k", "-ac", "2",
     "-movflags", "+faststart",
     outputPath,
   ];
@@ -225,6 +262,19 @@ async function generateCleanupVideo(listingId, seedVideoUrl, listingData = {}) {
     console.warn(`[Cleanup] ⚠️ overlay failed, shipping unoverlaid: ${e.message}`);
     fs.copyFileSync(withVoicePath, finalPath);
   }
+
+  // ─── Validate before upload ──────────────────────────────────
+  // ffprobe the output — codec + duration + file size. If anything
+  // is off (browser would say "corrupt"), throw a clear error
+  // instead of shipping a broken file the customer can't play.
+  const probe = await validatePlayableMp4(finalPath);
+  if (!probe.ok) {
+    console.error("[Cleanup] ❌ output failed validation:", probe.reason, probe.probe || "");
+    throw new Error(
+      `الفيديو الناتج غير صالح للمعاينة (${probe.reason}). جرّب فيديو بصيغة MP4 قياسية أو تواصل مع الدعم.`
+    );
+  }
+  console.log(`[Cleanup] ✅ output valid: ${probe.duration?.toFixed(1)}s, ${(probe.sizeBytes / 1024 / 1024).toFixed(2)} MB`);
 
   // ─── Step 4: Upload to Cloudinary + persist on the listing row.
   onProgress({
