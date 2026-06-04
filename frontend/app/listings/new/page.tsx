@@ -381,6 +381,12 @@ export default function NewListingPage() {
   const [selectedVideoImageIndex, setSelectedVideoImageIndex] = useState<number | null>(null);
   const [videoQuality, setVideoQuality] = useState<"fast" | "full">("full");
   // 3-tier dispatch: "standard" (FFmpeg, free), "luxury" (hybrid, rate-limited), "ultra" (locked).
+  // Two-track video generation (June 2026):
+  //   "images"        — existing 3-tier AI pipeline (Standard/Luxury/Ultra)
+  //   "video_cleanup" — upload a phone video, FFmpeg post-processing only
+  // The customer picks the track first; tier-specific UI only shows
+  // when track === "images".
+  const [videoTrack, setVideoTrack] = useState<"images" | "video_cleanup">("images");
   const [videoTier, setVideoTier] = useState<"standard" | "luxury" | "ultra">("standard");
   // Customer-selectable duration for Ultra (June 2026). 30 / 45 / 60 s.
   // Mapped on the backend to scene count (5 s per AI clip).
@@ -1270,15 +1276,23 @@ export default function NewListingPage() {
           template: "luxury",
           videoQuality: videoQuality,
           videoVoice: videoQuality === "full" ? videoVoice : undefined,
-          // ↓ 3-tier dispatch
-          tier: videoTier,
+          // ↓ Two-track dispatch
+          // mode === "video_cleanup": Track B (FFmpeg-only cinematic
+          // cleanup of the uploaded seed video). Backend ignores tier.
+          mode: videoTrack === "video_cleanup" ? "video_cleanup" : undefined,
+          tier: videoTrack === "images" ? videoTier : undefined,
           // Ultra: customer-selectable video length (30 / 45 / 60 s).
           // Backend converts this to a scene count. Other tiers ignore.
-          targetDurationSec: videoTier === "ultra" ? ultraDurationSec : undefined,
-          // Ultra: optional uploaded phone video — backend extracts
-          // frames from it and uses each as an AI clip seed, replacing
-          // the listing images for the cinematic pipeline.
-          seedVideoUrl: videoTier === "ultra" && seedVideoUrl ? seedVideoUrl : undefined,
+          targetDurationSec:
+            videoTrack === "images" && videoTier === "ultra" ? ultraDurationSec : undefined,
+          // Cleanup mode REQUIRES seedVideoUrl. Ultra ALSO accepts it
+          // (extracts frames). Other image-track tiers ignore.
+          seedVideoUrl:
+            videoTrack === "video_cleanup"
+              ? seedVideoUrl || undefined
+              : videoTrack === "images" && videoTier === "ultra"
+                ? seedVideoUrl || undefined
+                : undefined,
           // Send the bypass code whenever the user typed one — both Luxury and
           // Ultra need it. (Bug fix: earlier this only fired for "luxury", which
           // meant Ultra requests with a valid MMM2099 still got 403.)
@@ -4438,12 +4452,62 @@ export default function NewListingPage() {
 
                       return (
                         <div className="mb-5">
-                          <p className="text-xs font-semibold text-[#002845]/80 mb-2">
-                            اختر مستوى الفيديو
-                            <span className="ml-2 text-[10px] text-[#002845]/50">
-                              ({planName} — المتاح: {Array.from(planAllowedTiers).map((t) => ({ standard: "قياسي", luxury: "فاخر", ultra: "خارق" }[t as string])).filter(Boolean).join(" · ")})
-                            </span>
-                          </p>
+                          {/* ─── Track toggle ──────────────────────
+                              Customer first picks WHAT the source is:
+                                A) صور — the existing 3-tier AI pipeline
+                                B) فيديو — upload a phone clip, FFmpeg
+                                   cinematic cleanup (free for us). */}
+                          <p className="text-xs font-semibold text-[#002845]/80 mb-2">طريقة الإنتاج</p>
+                          <div className="grid grid-cols-2 gap-2 mb-4">
+                            <button
+                              type="button"
+                              onClick={() => setVideoTrack("images")}
+                              className={`text-right rounded-xl border-2 p-3 transition ${
+                                videoTrack === "images"
+                                  ? "border-[#002845] bg-[#002845]/5 shadow-sm"
+                                  : "border-slate-200 bg-white hover:border-[#002845]/40"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-base">📸</span>
+                                <span className="font-bold text-sm text-[#002845]">من الصور</span>
+                              </div>
+                              <p className="text-[11px] text-[#002845]/60 leading-snug">
+                                3 مستويات AI — احترافي / فاخر / خارق
+                              </p>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setVideoTrack("video_cleanup")}
+                              className={`text-right rounded-xl border-2 p-3 transition ${
+                                videoTrack === "video_cleanup"
+                                  ? "border-emerald-600 bg-emerald-50 shadow-sm"
+                                  : "border-slate-200 bg-white hover:border-emerald-400/60"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-base">🎥</span>
+                                <span className="font-bold text-sm text-[#002845]">من فيديو هاتفي</span>
+                                <span className="ml-auto text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">
+                                  مجاناً
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-[#002845]/60 leading-snug">
+                                تنظيف سينمائي — تثبيت + تدرّج لوني + سرد
+                              </p>
+                            </button>
+                          </div>
+
+                          {videoTrack === "images" && (
+                            <p className="text-xs font-semibold text-[#002845]/80 mb-2">
+                              اختر مستوى الفيديو
+                              <span className="ml-2 text-[10px] text-[#002845]/50">
+                                ({planName} — المتاح: {Array.from(planAllowedTiers).map((t) => ({ standard: "قياسي", luxury: "فاخر", ultra: "خارق" }[t as string])).filter(Boolean).join(" · ")})
+                              </span>
+                            </p>
+                          )}
+                          {videoTrack === "images" && (
+                          <>
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                             {/* Tier 1 — Standard */}
                             <button
@@ -4590,11 +4654,71 @@ export default function NewListingPage() {
                               </div>
                             </div>
                           )}
+                          {/* end of plan-locked nudge */}
+                          </>
+                          )}
+
+                          {/* ─── Track B panel: video cleanup ────── */}
+                          {videoTrack === "video_cleanup" && (
+                            <div className="rounded-xl border-2 border-emerald-500 bg-emerald-50/60 p-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-base">🎥</span>
+                                <span className="font-bold text-sm text-[#002845]">تنظيف فيديو هاتفي</span>
+                                <span className="ml-auto text-[9px] bg-emerald-200 text-emerald-900 px-1.5 py-0.5 rounded font-bold">
+                                  مجاناً
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-[#002845]/70 mb-3 leading-relaxed">
+                                ارفع فيديو عقارك بهاتفك — نقوم بالتثبيت + التدرّج اللوني السينمائي + إضافة تعليق صوتي + عنوان وسعر. لا توليد AI، لا تكلفة عليك.
+                              </p>
+                              <label className="block">
+                                <input
+                                  type="file"
+                                  accept="video/*"
+                                  disabled={seedVideoUploading}
+                                  onChange={(e) => {
+                                    const f = e.target.files?.[0];
+                                    if (f) void uploadSeedVideo(f);
+                                  }}
+                                  className="block w-full text-[11px] text-slate-700 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-emerald-100 file:text-emerald-800 hover:file:bg-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                />
+                              </label>
+                              {seedVideoUploading && (
+                                <p className="text-[10px] text-emerald-800 mt-1.5 flex items-center gap-1">
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  جاري رفع الفيديو…
+                                </p>
+                              )}
+                              {seedVideoUrl && seedVideoFile && !seedVideoUploading && (
+                                <div className="mt-1.5 flex items-center justify-between text-[10px] text-emerald-900 bg-white/90 border border-emerald-200 rounded-lg px-2 py-1">
+                                  <span className="truncate">✓ {seedVideoFile.name}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSeedVideoFile(null);
+                                      setSeedVideoUrl(null);
+                                      setSeedVideoError(null);
+                                    }}
+                                    className="ms-2 text-red-600 font-bold shrink-0"
+                                  >
+                                    إزالة
+                                  </button>
+                                </div>
+                              )}
+                              {seedVideoError && (
+                                <p className="text-[10px] text-red-700 mt-1.5">{seedVideoError}</p>
+                              )}
+                              <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-[#002845]/70">
+                                <div className="bg-white/70 rounded p-1.5">⏱ <strong>الوقت:</strong> 30-90 ثانية</div>
+                                <div className="bg-white/70 rounded p-1.5">💵 <strong>الكلفة:</strong> صفر تقريباً</div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
                     {/* Luxury bypass code (owner testing) */}
-                    {videoTier === "luxury" && (
+                    {videoTrack === "images" && videoTier === "luxury" && (
                       <div className="mt-3 p-3 rounded-xl bg-gradient-to-l from-amber-50 to-yellow-50 border border-[#D4AF37]/40">
                         <p className="text-[11px] text-[#002845]/70 mb-2">
                           ✨ المستوى الفاخر مرة واحدة في اليوم لكل حساب. إن كان لديك كود تجربة، أدخله هنا لتجاوز الحد.
@@ -4611,7 +4735,7 @@ export default function NewListingPage() {
                     )}
 
                     {/* Ultra bypass code + cost warning */}
-                    {videoTier === "ultra" && (
+                    {videoTrack === "images" && videoTier === "ultra" && (
                       <div className="mt-3 p-3 rounded-xl bg-gradient-to-l from-purple-50 to-fuchsia-50 border border-purple-300">
                         <p className="text-[11px] text-purple-900 mb-2 leading-relaxed">
                           👑 <strong>الإنتاج السينمائي الخارق</strong> — فيلم تسويقي AI كامل بحركة كاميرا سينمائية حقيقية وتعليق صوتي احترافي.

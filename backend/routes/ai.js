@@ -2264,7 +2264,7 @@ function checkLuxuryQuota(userId, providedBypassCode) {
 
 router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description, videoQuality, videoVoice, targetDurationSec, seedVideoUrl } = req.body;
+  const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description, videoQuality, videoVoice, targetDurationSec, seedVideoUrl, mode } = req.body;
 
   // Resolve requested tier (standard / luxury / ultra). Backwards-compatible —
   // requests without `tier` get treated as the previous default ("standard"),
@@ -2397,17 +2397,24 @@ router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyn
     }).filter(Boolean);
   }
 
-  if (cleanImages.length === 0) {
-    return res.status(400).json({ 
-      success: false, 
-      error: "يرجى رفع صور العقار أولاً لتوليد الفيديو" 
-    });
-  }
-  if (cleanImages.length < 2) {
-    return res.status(400).json({ 
-      success: false, 
-      error: "يحتاج الفيديو صورتين على الأقل. اختر 2–8 صور ثم ولد." 
-    });
+  // Track B (video_cleanup) does NOT need listing images at all — the
+  // source is the uploaded seed video. Images are only needed for the
+  // optional narration source. Skip the strict image-count checks
+  // when cleanup mode is requested.
+  const isCleanupMode = mode === "video_cleanup" && typeof seedVideoUrl === "string" && seedVideoUrl.trim().length > 0;
+  if (!isCleanupMode) {
+    if (cleanImages.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "يرجى رفع صور العقار أولاً لتوليد الفيديو"
+      });
+    }
+    if (cleanImages.length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: "يحتاج الفيديو صورتين على الأقل. اختر 2–8 صور ثم ولد."
+      });
+    }
   }
 
   console.log("🚀 [AI Route] Video generation for user:", userId);
@@ -2487,25 +2494,39 @@ router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyn
   };
   const targetId = listingId || `temp_${Date.now()}`;
 
-  // Tier-aware dispatch (owner-locked engine mapping — June 2026):
-  //   Standard = FFmpeg slideshow + voice (unchanged).
-  //   Luxury   = the Veo-based hybrid (was previously routed as "ultra").
-  //   Ultra    = the Replicate-based hybrid (was previously routed as
-  //              "luxury"). Replicate produces higher-quality image-to-
-  //              video output than Veo for real-estate listings, so it
-  //              earns the premium tier slot.
-  // The file names (luxuryVideoOrchestrator.js / ultraVideoOrchestrator.js)
-  // predate this swap and remain unchanged to avoid an unnecessary import
-  // churn. Treat the function NAME as the source of truth, not the file
-  // name:
+  // Two-track dispatch (June 2026):
+  //
+  //   Track A — IMAGE-based 3 tiers (existing AI pipeline):
+  //      Standard = FFmpeg slideshow + voice
+  //      Luxury   = Veo hybrid
+  //      Ultra    = Replicate multi-scene hybrid
+  //
+  //   Track B — VIDEO-cleanup mode (new, owner-driven):
+  //      mode === "video_cleanup" routes here. Customer uploaded a
+  //      phone video; we polish it with FFmpeg only — no AI cost
+  //      (just ElevenLabs voice). Independent of tier; the tier
+  //      picker is hidden on the frontend when this mode is active.
+  //      Ignores `cleanImages` since the source is the seed video.
+  //
+  // File-name footgun (engine swap memory):
   //   generateUltraVeoVideo      -> Luxury tier (Veo hybrid)
   //   generateHybridLuxuryVideo  -> Ultra  tier (Replicate hybrid)
-  const generationPromise =
-    requestedTier === "ultra"
-      ? generateHybridLuxuryVideo(targetId, cleanImages, listingData)
-      : requestedTier === "luxury"
-        ? generateUltraVeoVideo(targetId, cleanImages, listingData)
-        : generateListingSlideshow(targetId, cleanImages, listingData);
+  let generationPromise;
+  if (mode === "video_cleanup" && typeof seedVideoUrl === "string" && seedVideoUrl.trim()) {
+    const { generateCleanupVideo } = require("../services/videoCleanupService");
+    // listingData carries imageUrls (for narration source) + onProgress.
+    // We pass cleanImages so the slideshow voice path can still fire.
+    generationPromise = generateCleanupVideo(targetId, seedVideoUrl.trim(), {
+      ...listingData,
+      imageUrls: cleanImages,
+    });
+  } else if (requestedTier === "ultra") {
+    generationPromise = generateHybridLuxuryVideo(targetId, cleanImages, listingData);
+  } else if (requestedTier === "luxury") {
+    generationPromise = generateUltraVeoVideo(targetId, cleanImages, listingData);
+  } else {
+    generationPromise = generateListingSlideshow(targetId, cleanImages, listingData);
+  }
 
   generationPromise
     .then((result) => {
