@@ -195,6 +195,111 @@ async function overlayVoiceOnVideo(videoPath, voicePath, outPath) {
   });
 }
 
+// Bake premium text overlays onto the final video. Used by Ultra to
+// add an animated title at the intro and a price/CTA at the outro —
+// the cinematic-real-estate "كلام ينزل بشكل احترافي" feel.
+//
+// overlays  Array<{ text, startSec, endSec, fontSize, y?: "top"|"middle"|"bottom" }>
+// Each overlay fades in over 0.5s and fades out over 0.5s.
+async function addTextOverlays(videoPath, overlays, outPath) {
+  const AMIRI = path.resolve(__dirname, "../public/fonts/Amiri-Regular.ttf");
+  if (!fs.existsSync(AMIRI)) {
+    // Font missing — copy through without overlays rather than crash.
+    fs.copyFileSync(videoPath, outPath);
+    return outPath;
+  }
+  // FFmpeg drawtext requires special chars escaped. ':' is the spec
+  // separator; '\\' becomes '\\\\'; single quotes wrap the text.
+  const esc = (s) =>
+    String(s)
+      .replace(/\\/g, "\\\\")
+      .replace(/:/g, "\\:")
+      .replace(/'/g, "\\'");
+
+  const filterParts = overlays
+    .filter((o) => o && o.text)
+    .map((o) => {
+      const fade = 0.5;
+      const t1 = o.startSec;
+      const t2 = o.endSec;
+      const fontSize = o.fontSize || 72;
+      // Vertical position:
+      //   bottom → 80% from top
+      //   top    → 12% from top
+      //   middle (default) → centred
+      const y =
+        o.y === "bottom"
+          ? "h*0.80"
+          : o.y === "top"
+            ? "h*0.12"
+            : "(h-text_h)/2";
+      // Linear fade-in then fade-out on alpha.
+      const alpha = `if(lt(t,${t1}),0,if(lt(t,${t1 + fade}),(t-${t1})/${fade},if(lt(t,${t2 - fade}),1,if(lt(t,${t2}),(${t2}-t)/${fade},0))))`;
+      // Black drop-shadow box for legibility on any background.
+      return (
+        `drawtext=fontfile='${AMIRI}':text='${esc(o.text)}':` +
+        `fontcolor=white:fontsize=${fontSize}:` +
+        `box=1:boxcolor=black@0.55:boxborderw=20:` +
+        `x=(w-text_w)/2:y=${y}:` +
+        `alpha='${alpha}'`
+      );
+    });
+
+  if (filterParts.length === 0) {
+    fs.copyFileSync(videoPath, outPath);
+    return outPath;
+  }
+
+  const args = [
+    "-y",
+    "-i", videoPath,
+    "-vf", filterParts.join(","),
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+    "-c:a", "copy",
+    "-movflags", "+faststart",
+    outPath,
+  ];
+  return new Promise((resolve, reject) => {
+    const ff = spawn("ffmpeg", args);
+    let stderr = "";
+    ff.stderr.on("data", (d) => (stderr += d.toString()));
+    ff.on("close", (code) => {
+      if (code === 0 && fs.existsSync(outPath)) resolve(outPath);
+      else reject(new Error(`ffmpeg text-overlay failed (${code}): ${stderr.slice(-600)}`));
+    });
+  });
+}
+
+// Pick the curated overlay set for an Ultra video based on the
+// listing data. We use English-style numerals for price/area so
+// the Arabic text reads cleanly without RTL/LTR jitter inside
+// FFmpeg drawtext (which doesn't shape Arabic numerals well).
+function buildOverlayPlan(listingData, totalDurationSec) {
+  const title = listingData?.title || listingData?.propertyType || "عقار مميز";
+  const city = listingData?.city || "";
+  const price = listingData?.price;
+  const overlays = [];
+  // Intro title: appears at t=1 for 4 seconds
+  overlays.push({
+    text: city ? `${title} — ${city}` : title,
+    startSec: 1.0,
+    endSec: 5.0,
+    fontSize: 80,
+    y: "bottom",
+  });
+  // Price + CTA outro: last 5 seconds
+  if (price) {
+    overlays.push({
+      text: `${Number(price).toLocaleString("en-US")} ر.س`,
+      startSec: Math.max(6, totalDurationSec - 6),
+      endSec: totalDurationSec - 0.5,
+      fontSize: 96,
+      y: "middle",
+    });
+  }
+  return overlays;
+}
+
 async function concatVideosWithFfmpeg(openingPath, slideshowPath) {
   if (!fs.existsSync(openingPath)) throw new Error(`opening clip missing at ${openingPath}`);
   if (!fs.existsSync(slideshowPath)) throw new Error(`slideshow clip missing at ${slideshowPath}`);
@@ -266,8 +371,33 @@ async function generateHybridLuxuryVideo(listingId, imageUrls, listingData) {
   // Cost cap: each AI clip is ~\$0.30. We cap at 6 scenes so even a
   // listing with 20 photos doesn't burn \$6 on a single video. Owner
   // can raise this via env if desired.
-  const MAX_SCENES = Number(process.env.ULTRA_MAX_SCENES) || 6;
-  const scenes = imageUrls.slice(0, MAX_SCENES);
+  // Customer-selectable duration (June 2026). The frontend sends
+  // targetDurationSec ∈ {30, 45, 60}. Each AI clip is 5 s so
+  //   30 s → 6 scenes
+  //   45 s → 9 scenes
+  //   60 s → 12 scenes
+  // Cap at ULTRA_MAX_SCENES (env, default 12) so a malicious or
+  // misconfigured client can't request 100 scenes and burn $30.
+  const PER_CLIP_SECONDS = 5;
+  const MAX_SCENES = Number(process.env.ULTRA_MAX_SCENES) || 12;
+  const requestedDuration = Number(listingData?.targetDurationSec) || 30;
+  // Snap the requested duration to the closest valid tier so the
+  // customer's pick maps cleanly to a scene count.
+  const VALID_DURATIONS = [30, 45, 60];
+  const targetDuration =
+    VALID_DURATIONS.includes(requestedDuration)
+      ? requestedDuration
+      : VALID_DURATIONS.reduce((best, d) =>
+          Math.abs(d - requestedDuration) < Math.abs(best - requestedDuration) ? d : best,
+          30
+        );
+  let desiredSceneCount = Math.ceil(targetDuration / PER_CLIP_SECONDS);
+  // Cap by the hard ceiling AND by the number of images we actually
+  // have. If the customer uploaded 4 images and wants 60s, they get
+  // a 20-second video from 4 scenes — better than 5x repeating the
+  // same hero image.
+  desiredSceneCount = Math.min(desiredSceneCount, MAX_SCENES, imageUrls.length);
+  const scenes = imageUrls.slice(0, desiredSceneCount);
 
   const onProgress = typeof listingData?.onProgress === "function"
     ? listingData.onProgress
@@ -416,9 +546,24 @@ async function generateHybridLuxuryVideo(listingId, imageUrls, listingData) {
     stageTotal,
     percent: 88,
   });
-  const withVoicePath = path.join(outDir, `ultra_final_${Date.now()}.mp4`);
+  const withVoicePath = path.join(outDir, `ultra_voice_${Date.now()}.mp4`);
   await overlayVoiceOnVideo(concatPath, voiceSourcePath, withVoicePath);
   console.log("[Ultra] ✅ Voice overlaid:", withVoicePath);
+
+  // ─── Step N+4.5: Bake premium text overlays (title + price). ─────
+  const totalDuration = scenes.length * PER_CLIP_SECONDS;
+  const overlays = buildOverlayPlan(listingData, totalDuration);
+  const finalPath = path.join(outDir, `ultra_final_${Date.now()}.mp4`);
+  console.log(`[Ultra] ✍️  Baking ${overlays.length} curated text overlays…`);
+  try {
+    await addTextOverlays(withVoicePath, overlays, finalPath);
+    console.log("[Ultra] ✅ Overlays applied:", finalPath);
+  } catch (e) {
+    // Text overlay is enhancement, not blocker. If it fails (e.g.
+    // font lookup, weird unicode), ship the no-overlay version.
+    console.warn("[Ultra] ⚠️ overlay step failed; using clean video:", e.message);
+    fs.copyFileSync(withVoicePath, finalPath);
+  }
 
   // ─── Step N+5: Upload to Cloudinary + persist on the listing row. ─
   onProgress({
@@ -431,7 +576,7 @@ async function generateHybridLuxuryVideo(listingId, imageUrls, listingData) {
   let finalUrl = null;
   try {
     const folder = `listings/${listingId}/promo/ultra`;
-    const uploadResult = await cloudinaryService.uploadVideo(withVoicePath, folder);
+    const uploadResult = await cloudinaryService.uploadVideo(finalPath, folder);
     if (!uploadResult?.success || !uploadResult.url) {
       throw new Error(uploadResult?.error || "فشل رفع الإنتاج السينمائي الخارق إلى Cloudinary");
     }
@@ -444,7 +589,7 @@ async function generateHybridLuxuryVideo(listingId, imageUrls, listingData) {
     }
   } finally {
     // Best-effort cleanup of ALL temp files.
-    for (const p of [...clipPaths, voiceSourcePath, concatPath, withVoicePath]) {
+    for (const p of [...clipPaths, voiceSourcePath, concatPath, withVoicePath, finalPath]) {
       if (p) {
         try { fs.unlinkSync(p); } catch {}
       }
@@ -459,8 +604,10 @@ async function generateHybridLuxuryVideo(listingId, imageUrls, listingData) {
     promoText: slideshowResult?.promoText || null,
     aiClipUrls: clipUrls,
     sceneCount: scenes.length,
+    videoDurationSec: scenes.length * PER_CLIP_SECONDS,
+    requestedDurationSec: targetDuration,
     tier: "ultra",  // engine swap (June 2026): Replicate-powered Ultra tier
-    durationSeconds: parseFloat(elapsedSec),
+    durationSeconds: parseFloat(elapsedSec),  // wall-clock generation time
     costEstimateUsd: (scenes.length * 0.3).toFixed(2),
   };
 }
@@ -472,4 +619,6 @@ module.exports = {
   concatVideosWithFfmpeg,
   concatManyClipsWithFfmpeg,
   overlayVoiceOnVideo,
+  addTextOverlays,
+  buildOverlayPlan,
 };

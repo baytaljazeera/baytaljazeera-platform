@@ -382,6 +382,12 @@ export default function NewListingPage() {
   const [videoQuality, setVideoQuality] = useState<"fast" | "full">("full");
   // 3-tier dispatch: "standard" (FFmpeg, free), "luxury" (hybrid, rate-limited), "ultra" (locked).
   const [videoTier, setVideoTier] = useState<"standard" | "luxury" | "ultra">("standard");
+  // Customer-selectable duration for Ultra (June 2026). 30 / 45 / 60 s.
+  // Mapped on the backend to scene count (5 s per AI clip).
+  const [ultraDurationSec, setUltraDurationSec] = useState<30 | 45 | 60>(30);
+  // Future: seed video for video-to-video transformation (Ultra only).
+  // Currently a UI skeleton — backend transformation isn't wired yet.
+  const [seedVideoFile, setSeedVideoFile] = useState<File | null>(null);
   const [luxuryBypassCode, setLuxuryBypassCode] = useState("");
   const [videoVoice, setVideoVoice] = useState<string>("onyx");
   const [elevenlabsVoices, setElevenlabsVoices] = useState<{ id: string; name: string; previewUrl: string | null }[]>([]);
@@ -1216,6 +1222,9 @@ export default function NewListingPage() {
           videoVoice: videoQuality === "full" ? videoVoice : undefined,
           // ↓ 3-tier dispatch
           tier: videoTier,
+          // Ultra: customer-selectable video length (30 / 45 / 60 s).
+          // Backend converts this to a scene count. Other tiers ignore.
+          targetDurationSec: videoTier === "ultra" ? ultraDurationSec : undefined,
           // Send the bypass code whenever the user typed one — both Luxury and
           // Ultra need it. (Bug fix: earlier this only fired for "luxury", which
           // meant Ultra requests with a valid MMM2099 still got 403.)
@@ -4567,6 +4576,70 @@ export default function NewListingPage() {
                         <p className="text-[10px] text-purple-700/70 mt-1.5">
                           بدون كود صالح، السيرفر يرفض الطلب فوراً (403) قبل أي صرف.
                         </p>
+
+                        {/* ── Duration picker (June 2026) ─────────────
+                            30s / 45s / 60s. Backend converts the choice
+                            to a scene count (5 s per AI clip). Longer =
+                            more clips = higher Replicate cost. */}
+                        <div className="mt-3 pt-3 border-t border-purple-200/60">
+                          <p className="text-[11px] font-bold text-purple-900 mb-2">⏱ مدة الفيديو</p>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {[
+                              { sec: 30 as const, scenes: 6,  label: "30 ثانية", hint: "6 لقطات AI" },
+                              { sec: 45 as const, scenes: 9,  label: "45 ثانية", hint: "9 لقطات AI" },
+                              { sec: 60 as const, scenes: 12, label: "60 ثانية", hint: "12 لقطة AI" },
+                            ].map((opt) => {
+                              const active = ultraDurationSec === opt.sec;
+                              return (
+                                <button
+                                  key={opt.sec}
+                                  type="button"
+                                  onClick={() => setUltraDurationSec(opt.sec)}
+                                  className={`relative rounded-lg border-2 p-2 transition text-center ${
+                                    active
+                                      ? "border-purple-500 bg-purple-100 shadow-sm"
+                                      : "border-purple-200 bg-white hover:border-purple-400/60"
+                                  }`}
+                                >
+                                  <div className={`text-xs font-bold ${active ? "text-purple-900" : "text-[#002845]"}`}>
+                                    {opt.label}
+                                  </div>
+                                  <div className="text-[9px] text-purple-700/80 mt-0.5">{opt.hint}</div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="text-[10px] text-purple-700/70 mt-1.5">
+                            كلّما زادت المدّة، زادت اللقطات AI ومعها الكلفة. اختر ما يناسب أهمية الإعلان.
+                          </p>
+                        </div>
+
+                        {/* ── Seed-video upload skeleton (Ultra only) ──
+                            UI placeholder for the planned video-to-video
+                            transformation feature: customer uploads a
+                            poorly-shot phone video, AI re-renders it as
+                            a cinematic production. Backend wiring is not
+                            yet built — input is disabled with a clear
+                            "coming soon" tag so the picker shows what's
+                            planned. */}
+                        <div className="mt-3 pt-3 border-t border-purple-200/60">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-[11px] font-bold text-purple-900">🎥 ارفع فيديو موجود (اختياري)</p>
+                            <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">قريباً</span>
+                          </div>
+                          <label className="block">
+                            <input
+                              type="file"
+                              accept="video/*"
+                              disabled
+                              onChange={(e) => setSeedVideoFile(e.target.files?.[0] || null)}
+                              className="block w-full text-[11px] text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-purple-100 file:text-purple-700 hover:file:bg-purple-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                            />
+                          </label>
+                          <p className="text-[10px] text-purple-700/70 mt-1.5">
+                            لو عندك فيديو هاتفي بسيط للعقار، نحوّله إلى إخراج سينمائي بصيغة AI. الميزة قيد التطوير — سنخبرك عند الإطلاق.
+                          </p>
+                        </div>
                       </div>
                     )}
 
