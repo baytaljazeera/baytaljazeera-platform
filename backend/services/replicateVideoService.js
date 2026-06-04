@@ -205,7 +205,14 @@ async function generateOpeningShot(imageUrl, options = {}) {
     duration: options.duration || 5,           // pixverse supports 5 or 8s
     quality: options.quality || '720p',        // 720p balances cost and look; 1080p costs more
     motion_mode: options.motion_mode || 'smooth',
-    negative_prompt: options.negative_prompt || 'blurry, low quality, distorted, watermark, people, hands, faces',
+    // Aggressive negative prompt — image-to-video models tend to
+    // hallucinate floating objects, melting textures, extra limbs,
+    // distorted text, and surreal artifacts especially in the middle
+    // of the clip. Listing visuals must look like real estate, not
+    // surrealist art. Owner observed "خياليه" artifacts on first
+    // Ultra run; this list is the standard cinematic-cleanup set.
+    negative_prompt: options.negative_prompt
+      || 'blurry, low quality, distorted, watermark, text, signs, logos, people, hands, faces, body, child, animal, surreal, abstract, melting, dripping, floating objects, extra limbs, deformed, hallucination, glitch, warping textures, morphing furniture, dreamy, fantasy, anime, cartoon',
   };
 
   let prediction;
