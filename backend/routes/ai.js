@@ -2264,7 +2264,7 @@ function checkLuxuryQuota(userId, providedBypassCode) {
 
 router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description, videoQuality, videoVoice, targetDurationSec } = req.body;
+  const { propertyType, purpose, city, district, price, title, imagePaths, listingId, description, videoQuality, videoVoice, targetDurationSec, seedVideoUrl } = req.body;
 
   // Resolve requested tier (standard / luxury / ultra). Backwards-compatible —
   // requests without `tier` get treated as the previous default ("standard"),
@@ -2471,6 +2471,15 @@ router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyn
     voice: isOpenAiVoice ? (videoVoice || 'onyx') : 'onyx',
     elevenlabsVoiceId: !isOpenAiVoice && videoVoice && String(videoVoice).length > 10 ? String(videoVoice).trim() : undefined,
     targetDurationSec: targetDurationSec ?? 20,
+    // Ultra only: when the customer uploaded a phone video via
+    // /api/ai/user/upload-seed-video, that Cloudinary URL flows
+    // here. The orchestrator extracts N frames from it (where N =
+    // sceneCount from the duration tier) and uses them as image-to-
+    // video seeds — turning amateur footage into a cinematic AI
+    // production. Other tiers ignore.
+    seedVideoUrl: requestedTier === "ultra" && typeof seedVideoUrl === "string" && seedVideoUrl.trim()
+      ? seedVideoUrl.trim()
+      : undefined,
     tier: requestedTier,
     // Wire progress: orchestrators that support multi-stage reporting
     // (currently Ultra; Luxury can follow) call this at each milestone.
@@ -4478,6 +4487,57 @@ router.get("/ultra-diagnostic", asyncHandler(async (req, res) => {
       : "All probed actions returned 4xx. See probes[] for each action's exact response.",
   });
 }));
+
+// ─────────────────────────────────────────────────────────────────
+// POST /api/ai/user/upload-seed-video
+//
+// Customer uploads a poorly-shot phone video; we host it on
+// Cloudinary and return the URL. The Ultra generation endpoint
+// can then accept this URL via `seedVideoUrl` and the orchestrator
+// extracts frames from it to use as image-to-video seeds —
+// transforming amateur footage into a cinematic AI production.
+//
+// Multer limits already enforce 20 MB max per file (config/multer.js).
+// Only the Ultra tier path consumes this URL; other tiers ignore.
+// ─────────────────────────────────────────────────────────────────
+const { upload: seedVideoMulter } = require("../config/multer");
+const { uploadVideo: cloudinaryUploadVideoForSeed } = require("../services/cloudinaryService");
+
+router.post(
+  "/user/upload-seed-video",
+  authMiddleware,
+  seedVideoMulter.single("video"),
+  asyncHandler(async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: "يرجى رفع ملف فيديو واحد." });
+    }
+    const mt = (req.file.mimetype || "").toLowerCase();
+    const ext = path.extname(req.file.originalname || "").toLowerCase();
+    if (!mt.startsWith("video/") && !/\.(mp4|webm|mov|m4v)$/i.test(ext)) {
+      try { await fs.unlink(req.file.path); } catch {}
+      return res.status(400).json({ error: "صيغة الملف غير مدعومة — استخدم MP4 أو MOV أو WebM." });
+    }
+    try {
+      const folder = `users/${req.user.id}/seed-videos`;
+      const uploadResult = await cloudinaryUploadVideoForSeed(req.file.path, folder);
+      if (!uploadResult?.success || !uploadResult.url) {
+        throw new Error(uploadResult?.error || "فشل رفع الفيديو إلى التخزين السحابي.");
+      }
+      try { await fs.unlink(req.file.path); } catch {}
+      return res.json({
+        success: true,
+        url: uploadResult.url,
+        publicId: uploadResult.publicId || null,
+        durationSec: uploadResult.duration || null,
+        message: "تم رفع الفيديو. يمكنك الآن توليد الإنتاج السينمائي.",
+      });
+    } catch (e) {
+      try { await fs.unlink(req.file.path); } catch {}
+      console.error("[upload-seed-video] failed:", e.message);
+      return res.status(500).json({ error: e.message || "فشل رفع الفيديو." });
+    }
+  })
+);
 
 module.exports = router;
 

@@ -388,6 +388,11 @@ export default function NewListingPage() {
   // Future: seed video for video-to-video transformation (Ultra only).
   // Currently a UI skeleton — backend transformation isn't wired yet.
   const [seedVideoFile, setSeedVideoFile] = useState<File | null>(null);
+  // After upload to backend: Cloudinary URL of the seed video. Sent
+  // to the generation endpoint when present.
+  const [seedVideoUrl, setSeedVideoUrl] = useState<string | null>(null);
+  const [seedVideoUploading, setSeedVideoUploading] = useState(false);
+  const [seedVideoError, setSeedVideoError] = useState<string | null>(null);
   const [luxuryBypassCode, setLuxuryBypassCode] = useState("");
   const [videoVoice, setVideoVoice] = useState<string>("onyx");
   const [elevenlabsVoices, setElevenlabsVoices] = useState<{ id: string; name: string; previewUrl: string | null }[]>([]);
@@ -1127,6 +1132,51 @@ export default function NewListingPage() {
     doVideoGeneration(imagesToUse);
   }
 
+  // Upload the customer's seed video so the backend can extract
+  // frames from it for the video-to-cinematic Ultra path.
+  async function uploadSeedVideo(file: File): Promise<void> {
+    setSeedVideoError(null);
+    if (file.size > 20 * 1024 * 1024) {
+      setSeedVideoError("الملف أكبر من 20 ميجابايت — قص الفيديو أو اضغطه قبل الرفع.");
+      return;
+    }
+    if (!file.type.startsWith("video/") && !/\.(mp4|webm|mov|m4v)$/i.test(file.name)) {
+      setSeedVideoError("صيغة غير مدعومة — استخدم MP4 أو MOV أو WebM.");
+      return;
+    }
+    setSeedVideoUploading(true);
+    try {
+      const authHeaders = getAuthHeaders();
+      const authToken =
+        (authHeaders as Record<string, string>)["Authorization"]?.replace(/^Bearer\s+/i, "") ||
+        useAuthStore.getState().token ||
+        (typeof localStorage !== "undefined" ? (localStorage.getItem("token") || localStorage.getItem("oauth_token")) : null);
+      if (!authToken) {
+        setSeedVideoError("الجلسة منتهية — أعد تسجيل الدخول.");
+        return;
+      }
+      const fd = new FormData();
+      fd.append("video", file);
+      const res = await fetch(`${API_URL}/api/ai/user/upload-seed-video`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${authToken}` },
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success || !data?.url) {
+        throw new Error(data?.error || "فشل رفع الفيديو.");
+      }
+      setSeedVideoUrl(data.url);
+      setSeedVideoFile(file);
+    } catch (e: any) {
+      setSeedVideoError(e?.message || "فشل رفع الفيديو.");
+      setSeedVideoUrl(null);
+    } finally {
+      setSeedVideoUploading(false);
+    }
+  }
+
   async function doVideoGeneration(imagesToUse: File[]) {
     setVideoLoading(true);
     setVideoError(null);
@@ -1225,6 +1275,10 @@ export default function NewListingPage() {
           // Ultra: customer-selectable video length (30 / 45 / 60 s).
           // Backend converts this to a scene count. Other tiers ignore.
           targetDurationSec: videoTier === "ultra" ? ultraDurationSec : undefined,
+          // Ultra: optional uploaded phone video — backend extracts
+          // frames from it and uses each as an AI clip seed, replacing
+          // the listing images for the cinematic pipeline.
+          seedVideoUrl: videoTier === "ultra" && seedVideoUrl ? seedVideoUrl : undefined,
           // Send the bypass code whenever the user typed one — both Luxury and
           // Ultra need it. (Bug fix: earlier this only fired for "luxury", which
           // meant Ultra requests with a valid MMM2099 still got 403.)
@@ -4614,30 +4668,59 @@ export default function NewListingPage() {
                           </p>
                         </div>
 
-                        {/* ── Seed-video upload skeleton (Ultra only) ──
-                            UI placeholder for the planned video-to-video
-                            transformation feature: customer uploads a
-                            poorly-shot phone video, AI re-renders it as
-                            a cinematic production. Backend wiring is not
-                            yet built — input is disabled with a clear
-                            "coming soon" tag so the picker shows what's
-                            planned. */}
+                        {/* ── Seed-video upload (Ultra only) ──
+                            Customer uploads a poorly-shot phone video;
+                            backend extracts frames and uses each as an
+                            AI clip seed, replacing the listing images
+                            for the multi-scene pipeline. Max 20 MB. */}
                         <div className="mt-3 pt-3 border-t border-purple-200/60">
                           <div className="flex items-center justify-between mb-2">
-                            <p className="text-[11px] font-bold text-purple-900">🎥 ارفع فيديو موجود (اختياري)</p>
-                            <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">قريباً</span>
+                            <p className="text-[11px] font-bold text-purple-900">🎥 ارفع فيديو هاتفي (اختياري)</p>
+                            {seedVideoUrl && (
+                              <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">
+                                ✓ تم الرفع
+                              </span>
+                            )}
                           </div>
                           <label className="block">
                             <input
                               type="file"
                               accept="video/*"
-                              disabled
-                              onChange={(e) => setSeedVideoFile(e.target.files?.[0] || null)}
-                              className="block w-full text-[11px] text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-purple-100 file:text-purple-700 hover:file:bg-purple-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={seedVideoUploading}
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) void uploadSeedVideo(f);
+                              }}
+                              className="block w-full text-[11px] text-slate-700 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-purple-100 file:text-purple-700 hover:file:bg-purple-200 disabled:opacity-50 disabled:cursor-not-allowed"
                             />
                           </label>
+                          {seedVideoUploading && (
+                            <p className="text-[10px] text-purple-700 mt-1.5 flex items-center gap-1">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              جاري رفع الفيديو…
+                            </p>
+                          )}
+                          {seedVideoUrl && seedVideoFile && !seedVideoUploading && (
+                            <div className="mt-1.5 flex items-center justify-between text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1">
+                              <span className="truncate">{seedVideoFile.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSeedVideoFile(null);
+                                  setSeedVideoUrl(null);
+                                  setSeedVideoError(null);
+                                }}
+                                className="ms-2 text-red-600 font-bold shrink-0"
+                              >
+                                إزالة
+                              </button>
+                            </div>
+                          )}
+                          {seedVideoError && (
+                            <p className="text-[10px] text-red-700 mt-1.5">{seedVideoError}</p>
+                          )}
                           <p className="text-[10px] text-purple-700/70 mt-1.5">
-                            لو عندك فيديو هاتفي بسيط للعقار، نحوّله إلى إخراج سينمائي بصيغة AI. الميزة قيد التطوير — سنخبرك عند الإطلاق.
+                            عند رفعك فيديو، نستخرج لقطات منه ونحوّلها إلى إخراج سينمائي AI بدل استخدام صور الإعلان. الحد الأقصى 20 ميجابايت (MP4 / MOV / WebM).
                           </p>
                         </div>
                       </div>

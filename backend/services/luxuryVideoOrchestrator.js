@@ -40,6 +40,82 @@ function ffmpegAvailable() {
   });
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Extract N frames from a video at evenly-spaced timestamps.
+// Used when the customer uploads a seed video for the Ultra
+// "video-to-cinematic" path: we sample the seed video and use each
+// frame as an image-to-video seed for Replicate, yielding N
+// AI-cinematic scenes derived from the customer's footage.
+//
+// Returns: string[] — absolute paths of the extracted JPEGs.
+// ─────────────────────────────────────────────────────────────────
+async function extractFramesFromVideo(videoPath, frameCount) {
+  if (!fs.existsSync(videoPath)) throw new Error(`seed video missing at ${videoPath}`);
+  if (!Number.isInteger(frameCount) || frameCount < 1) frameCount = 1;
+
+  // First, probe the duration so we can space frames evenly.
+  const probeDuration = () =>
+    new Promise((resolve, reject) => {
+      const ff = spawn("ffprobe", [
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        videoPath,
+      ]);
+      let out = "", err = "";
+      ff.stdout.on("data", (d) => (out += d.toString()));
+      ff.stderr.on("data", (d) => (err += d.toString()));
+      ff.on("close", (code) => {
+        if (code === 0) {
+          const sec = parseFloat(out.trim());
+          resolve(Number.isFinite(sec) && sec > 0 ? sec : 0);
+        } else {
+          reject(new Error(`ffprobe failed (${code}): ${err.slice(-300)}`));
+        }
+      });
+    });
+
+  let totalSec = await probeDuration().catch(() => 0);
+  // Fallback: if probe failed, assume a 30-sec phone clip — generous,
+  // we just want non-zero spacing.
+  if (totalSec === 0) totalSec = 30;
+
+  // Sample at (i + 0.5) / N to land in the MIDDLE of each segment —
+  // avoids the first dark frame and the last fadeout.
+  const tempDir = path.join(os.tmpdir(), "seed-frames");
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+  const frames = [];
+  for (let i = 0; i < frameCount; i++) {
+    const t = ((i + 0.5) / frameCount) * totalSec;
+    const outJpg = path.join(tempDir, `frame_${Date.now()}_${i}.jpg`);
+    await new Promise((resolve, reject) => {
+      const args = [
+        "-y",
+        "-ss", String(t.toFixed(3)),
+        "-i", videoPath,
+        "-frames:v", "1",
+        "-q:v", "2",
+        // Cap longest side at 1920 — keeps Replicate happy & uploads
+        // fast — preserves aspect via -1 on the other side.
+        "-vf", "scale='min(1920,iw)':'-2'",
+        outJpg,
+      ];
+      const ff = spawn("ffmpeg", args);
+      let stderr = "";
+      ff.stderr.on("data", (d) => (stderr += d.toString()));
+      ff.on("close", (code) => {
+        if (code === 0 && fs.existsSync(outJpg)) {
+          frames.push(outJpg);
+          resolve();
+        } else {
+          reject(new Error(`frame extract failed at t=${t.toFixed(2)} (${code}): ${stderr.slice(-300)}`));
+        }
+      });
+    });
+  }
+  return frames;
+}
+
 async function downloadToTemp(url, suffix = ".mp4") {
   const tempDir = path.join(os.tmpdir(), "luxury-video");
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
@@ -396,8 +472,34 @@ async function generateHybridLuxuryVideo(listingId, imageUrls, listingData) {
   // have. If the customer uploaded 4 images and wants 60s, they get
   // a 20-second video from 4 scenes — better than 5x repeating the
   // same hero image.
-  desiredSceneCount = Math.min(desiredSceneCount, MAX_SCENES, imageUrls.length);
-  const scenes = imageUrls.slice(0, desiredSceneCount);
+  // If the customer uploaded a seed video for the "video-to-cinematic"
+  // path (Ultra only), we extract frames from THAT video and use them
+  // as image-to-video seeds instead of the listing photos. This lets
+  // a poorly-shot phone clip become the basis for a cinematic AI
+  // production — owner's vision.
+  let workingImageUrls = imageUrls;
+  let seedTempPath = null;
+  let seedFramePaths = [];
+  if (typeof listingData?.seedVideoUrl === "string" && listingData.seedVideoUrl.trim()) {
+    console.log("[Ultra/Seed] 📥 downloading uploaded seed video…");
+    seedTempPath = await downloadToTemp(listingData.seedVideoUrl.trim(), ".mp4");
+    const desiredFrames = Math.min(MAX_SCENES, Math.ceil(targetDuration / PER_CLIP_SECONDS));
+    console.log(`[Ultra/Seed] 🎞️  extracting ${desiredFrames} frames from seed video…`);
+    seedFramePaths = await extractFramesFromVideo(seedTempPath, desiredFrames);
+    console.log(`[Ultra/Seed] ⬆️  uploading frames to Cloudinary for Replicate access…`);
+    const seedFolder = `users/${listingData?.userId || "anon"}/seed-frames`;
+    const uploaded = await Promise.all(
+      seedFramePaths.map((p) => cloudinaryService.uploadImage(p, seedFolder))
+    );
+    const failed = uploaded.find((r) => !r?.success || !r?.url);
+    if (failed) {
+      throw new Error("فشل تحميل إطارات الفيديو المرفوع للمعالجة.");
+    }
+    workingImageUrls = uploaded.map((r) => r.url);
+    console.log(`[Ultra/Seed] ✅ ${workingImageUrls.length} frames ready as scene seeds`);
+  }
+  desiredSceneCount = Math.min(desiredSceneCount, MAX_SCENES, workingImageUrls.length);
+  const scenes = workingImageUrls.slice(0, desiredSceneCount);
 
   const onProgress = typeof listingData?.onProgress === "function"
     ? listingData.onProgress
@@ -589,7 +691,15 @@ async function generateHybridLuxuryVideo(listingId, imageUrls, listingData) {
     }
   } finally {
     // Best-effort cleanup of ALL temp files.
-    for (const p of [...clipPaths, voiceSourcePath, concatPath, withVoicePath, finalPath]) {
+    for (const p of [
+      ...clipPaths,
+      ...seedFramePaths,
+      seedTempPath,
+      voiceSourcePath,
+      concatPath,
+      withVoicePath,
+      finalPath,
+    ]) {
       if (p) {
         try { fs.unlinkSync(p); } catch {}
       }
