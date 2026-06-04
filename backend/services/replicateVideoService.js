@@ -35,6 +35,15 @@ function wrapReplicateErr(err) {
   if (status === 402 || (msg && msg.includes('402'))) {
     throw new Error(REPLICATE_402_MSG);
   }
+  // Surface 429 with its own marker so callers (the Ultra orchestrator)
+  // can recognise it and retry. The orchestrator code keys on
+  // .replicate429 = true.
+  if (status === 429 || (msg && msg.includes('429'))) {
+    const err429 = new Error('Replicate يطلب تخفيف معدل الطلبات (429) — سنعيد المحاولة تلقائياً.');
+    err429.replicate429 = true;
+    err429.retryAfterSec = Number(err.response?.headers?.['retry-after']) || null;
+    throw err429;
+  }
   throw err;
 }
 

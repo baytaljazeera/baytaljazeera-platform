@@ -289,40 +289,85 @@ async function generateHybridLuxuryVideo(listingId, imageUrls, listingData) {
   });
 
   // ─── Step 1..N: Generate one AI clip per image. ──────────────────
-  // Run them in PARALLEL (Promise.all) so the total wall-clock time
-  // is ~1 Replicate generation, not N. Replicate quotas usually
-  // tolerate 4-6 concurrent jobs on a paid plan.
-  console.log("[Ultra] 🎥 Generating all AI clips in parallel…");
-  const clipUrls = await Promise.all(
-    scenes.map((imgUrl, i) => {
-      const prompt = buildScenePrompt(listingData, i);
-      // Stagger the progress label slightly — Promise.all returns in
-      // order so by the time the i-th promise resolves we know up to
-      // i+1 clips are in flight.
-      return replicateVideoService
-        .generateOpeningShot(imgUrl, {
+  //
+  // Replicate rate-limits aggressive concurrent submissions with
+  // 429 ("Too Many Requests"). To stay under it we run a SMALL
+  // worker pool (default 2, env-tunable via ULTRA_REPLICATE_CONCURRENCY)
+  // instead of firing all N at once via Promise.all. We also retry
+  // each clip up to MAX_RETRIES on 429, sleeping using the
+  // Retry-After header when Replicate provides one.
+  //
+  // Wall-clock at concurrency=2 for N=6 clips ≈ 3 batches × per-clip
+  // time. Each clip takes 3-5 min on pixverse v3.5, so total ≈
+  // 10-15 min. Acceptable for the premium tier.
+
+  const CONCURRENCY = Number(process.env.ULTRA_REPLICATE_CONCURRENCY) || 2;
+  const MAX_RETRIES = 3;
+
+  // Per-clip generator with backoff on 429. Other errors bubble up
+  // immediately so the whole pipeline fails fast on a real problem.
+  const generateClipWithRetry = async (imgUrl, i) => {
+    const prompt = buildScenePrompt(listingData, i);
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const url = await replicateVideoService.generateOpeningShot(imgUrl, {
           prompt,
           duration: 5,
           aspect_ratio: "16:9",
           quality: "720p",
           motion_mode: "smooth",
-        })
-        .then((url) => {
-          // Bump progress as each clip lands. Map (1..N) into 5..60%.
-          const completedSoFar = i + 1;
-          const pct = 5 + Math.round((completedSoFar / scenes.length) * 55);
-          onProgress({
-            stage: "ultra_clip_done",
-            stageLabel: `${completedSoFar}/${stageTotal} — اكتملت لقطة AI رقم ${completedSoFar} من ${scenes.length}`,
-            stageIndex: completedSoFar,
-            stageTotal,
-            percent: pct,
-          });
-          console.log(`[Ultra] ✅ Clip ${completedSoFar}/${scenes.length}: ${url}`);
-          return url;
         });
-    })
-  );
+        return url;
+      } catch (e) {
+        if (e?.replicate429 && attempt < MAX_RETRIES - 1) {
+          // Back off: prefer the server's Retry-After hint, fall back
+          // to exponential (15 s, 30 s, 60 s).
+          const baseDelay = (e.retryAfterSec ? e.retryAfterSec : (15 * Math.pow(2, attempt))) * 1000;
+          // Add small jitter so two scenes don't wake up simultaneously.
+          const delayMs = baseDelay + Math.floor(Math.random() * 1500);
+          console.warn(`[Ultra] ⏳ Clip ${i + 1}: 429 received — backing off ${Math.round(delayMs / 1000)} s (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          onProgress({
+            stage: "ultra_rate_limited",
+            stageLabel: `إبطاء مؤقت بسبب ازدحام الخدمة — إعادة المحاولة بعد ${Math.round(delayMs / 1000)} ث`,
+            stageIndex: i + 1,
+            stageTotal,
+            percent: 5 + Math.round((i / scenes.length) * 55),
+          });
+          await new Promise((r) => setTimeout(r, delayMs));
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new Error(`فشل توليد اللقطة رقم ${i + 1} بعد ${MAX_RETRIES} محاولات بسبب ازدحام الخدمة. حاول لاحقاً.`);
+  };
+
+  // Bounded-concurrency worker pool. Each worker pulls indices off
+  // a shared queue and processes them in arrival order — output is
+  // collected in `clipUrls` indexed by the original scene position.
+  console.log(`[Ultra] 🎥 Generating ${scenes.length} AI clips at concurrency=${CONCURRENCY}…`);
+  const clipUrls = new Array(scenes.length);
+  let nextIdx = 0;
+  let completed = 0;
+  const worker = async () => {
+    while (true) {
+      const i = nextIdx++;
+      if (i >= scenes.length) return;
+      const url = await generateClipWithRetry(scenes[i], i);
+      clipUrls[i] = url;
+      completed += 1;
+      const pct = 5 + Math.round((completed / scenes.length) * 55);
+      onProgress({
+        stage: "ultra_clip_done",
+        stageLabel: `${completed}/${stageTotal} — اكتملت لقطة AI رقم ${completed} من ${scenes.length}`,
+        stageIndex: completed,
+        stageTotal,
+        percent: pct,
+      });
+      console.log(`[Ultra] ✅ Clip ${completed}/${scenes.length}: ${url}`);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, scenes.length) }, worker));
 
   // ─── Step N+1: Generate the voice narration. ─────────────────────
   // We reuse videoService.generateListingSlideshow which produces a
