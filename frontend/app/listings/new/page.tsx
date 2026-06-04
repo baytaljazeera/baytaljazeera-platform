@@ -1086,11 +1086,27 @@ export default function NewListingPage() {
     }
   }
 
-  // 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي (FFmpeg - مجاني) 
+  // 🎬 توليد فيديو ترويجي بالذكاء الاصطناعي (FFmpeg - مجاني)
   async function handleGenerateVideo() {
     if (!form.propertyType) {
       setVideoError("يرجى اختيار نوع العقار أولاً من الخطوة الأولى");
       toast.error("يرجى اختيار نوع العقار أولاً", { duration: 3000 });
+      return;
+    }
+
+    // Track B (video_cleanup) bypasses ALL image requirements — the
+    // source is the uploaded seed video. We only need to confirm
+    // the seed video has actually been uploaded.
+    if (videoTrack === "video_cleanup") {
+      if (!seedVideoUrl) {
+        setVideoError("يرجى رفع فيديو هاتفي أولاً للتنظيف.");
+        toast.error("يرجى رفع فيديو أولاً", { duration: 3000 });
+        return;
+      }
+      // Skip the image-count gates entirely and dispatch directly to
+      // the generation flow. doVideoGeneration will pass [] images
+      // and the backend cleanup mode handles it.
+      doVideoGeneration([]);
       return;
     }
 
@@ -1099,7 +1115,7 @@ export default function NewListingPage() {
       toast.error("يرجى رفع صور العقار أولاً", { duration: 3000 });
       return;
     }
-    
+
     // للباقات المتقدمة (aiSupportLevel >= 3): يجب اختيار صور
     const aiSupportLevel = selectedBucket?.benefits?.aiSupportLevel ?? 0;
     if (aiSupportLevel >= 3) {
@@ -1109,12 +1125,12 @@ export default function NewListingPage() {
         return;
       }
     }
-    
+
     // استخدام الصور المختارة إذا كانت موجودة، وإلا استخدام جميع الصور
-    const imagesToUse = selectedImagesForVideo.size > 0 
+    const imagesToUse = selectedImagesForVideo.size > 0
       ? Array.from(selectedImagesForVideo).map(idx => images[idx]).filter(Boolean)
       : images;
-    
+
     if (imagesToUse.length === 0) {
       setVideoError("يرجى اختيار صور للفيديو أو رفع صور جديدة");
       toast.error("لا توجد صور متاحة", { duration: 3000 });
@@ -1221,30 +1237,36 @@ export default function NewListingPage() {
         return;
       }
 
-      // Step 1: Upload images temporarily for video generation
-      const formData = new FormData();
-      imagesToUse.forEach((img) => {
-        formData.append('images', img);
-      });
-      const uploadHeaders: HeadersInit = { Authorization: `Bearer ${authToken}` };
+      // Step 1: Upload images temporarily for video generation.
+      // Skip this entirely in cleanup mode — the source is the
+      // already-uploaded seed video, not listing photos. Backend's
+      // cleanup branch handles an empty imagePaths array gracefully.
+      let uploadedPaths: string[] = [];
+      if (videoTrack !== "video_cleanup" && imagesToUse.length > 0) {
+        const formData = new FormData();
+        imagesToUse.forEach((img) => {
+          formData.append('images', img);
+        });
+        const uploadHeaders: HeadersInit = { Authorization: `Bearer ${authToken}` };
 
-      const uploadRes = await fetch(`${API_URL}/api/listings/temp-images`, {
-        method: "POST",
-        credentials: "include",
-        headers: uploadHeaders,
-        body: formData
-      });
+        const uploadRes = await fetch(`${API_URL}/api/listings/temp-images`, {
+          method: "POST",
+          credentials: "include",
+          headers: uploadHeaders,
+          body: formData
+        });
 
-      if (!uploadRes.ok) {
-        const err = await uploadRes.json().catch(() => ({}));
-        throw new Error(err.error || "فشل في رفع الصور");
-      }
+        if (!uploadRes.ok) {
+          const err = await uploadRes.json().catch(() => ({}));
+          throw new Error(err.error || "فشل في رفع الصور");
+        }
 
-      const uploadData = await uploadRes.json();
-      const uploadedPaths = uploadData.paths || [];
+        const uploadData = await uploadRes.json();
+        uploadedPaths = uploadData.paths || [];
 
-      if (uploadedPaths.length === 0) {
-        throw new Error("لم يتم رفع أي صور");
+        if (uploadedPaths.length === 0) {
+          throw new Error("لم يتم رفع أي صور");
+        }
       }
 
       // Step 2: Generate video (token already resolved above)
@@ -5113,11 +5135,15 @@ export default function NewListingPage() {
                                 }
                                 disabled={
                                   videoLoading ||
-                                  (!blockedByQuota && (
-                                    !form.propertyType ||
-                                    images.length === 0 ||
-                                    ((selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && selectedImagesForVideo.size === 0)
-                                  ))
+                                  // Cleanup track: only require a seed video.
+                                  // Image-based track: require images + tier-specific rules.
+                                  (videoTrack === "video_cleanup"
+                                    ? !seedVideoUrl
+                                    : (!blockedByQuota && (
+                                        !form.propertyType ||
+                                        images.length === 0 ||
+                                        ((selectedBucket?.benefits?.aiSupportLevel ?? 0) >= 3 && selectedImagesForVideo.size === 0)
+                                      )))
                                 }
                                 className={`w-full flex items-center justify-center gap-3 px-6 py-4 md:py-5 rounded-xl transition-all font-bold text-base md:text-lg shadow-lg active:scale-95 touch-manipulation ${
                                   blockedByQuota
