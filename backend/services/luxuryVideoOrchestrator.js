@@ -200,7 +200,7 @@ async function generateHybridLuxuryVideo(listingId, imageUrls, listingData) {
     promoText: slideshowResult?.promoText || null,
     openingShotUrl: openingUrl,
     slideshowUrl,
-    tier: "luxury",
+    tier: "ultra",  // engine swap (June 2026): this orchestrator now powers Ultra (Replicate is higher quality)
     durationSeconds: parseFloat(elapsedSec),
   };
 }

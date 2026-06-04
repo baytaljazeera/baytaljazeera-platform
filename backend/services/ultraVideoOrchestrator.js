@@ -585,7 +585,7 @@ async function generateUltraVeoVideo(listingId, imageUrls, listingData) {
     promoText: slideshowResult?.promoText || null,
     veoOpeningUri: videoUri,
     slideshowUrl,
-    tier: "ultra",
+    tier: "luxury",  // engine swap (June 2026): this orchestrator now powers Luxury
     durationSeconds: parseFloat(elapsedSec),
     costEstimateUsd: "2-6",
     model: veoModel,

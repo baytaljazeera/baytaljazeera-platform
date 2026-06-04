@@ -2478,14 +2478,24 @@ router.post("/user/generate-video", authMiddleware, videoGenerationLimiter, asyn
   };
   const targetId = listingId || `temp_${Date.now()}`;
 
-  // Tier-aware dispatch. Standard = existing FFmpeg flow (unchanged).
-  // Luxury = hybrid Replicate-opening + FFmpeg slideshow + concat.
-  // Ultra  = full Veo generation (bypass code already verified above).
+  // Tier-aware dispatch (owner-locked engine mapping — June 2026):
+  //   Standard = FFmpeg slideshow + voice (unchanged).
+  //   Luxury   = the Veo-based hybrid (was previously routed as "ultra").
+  //   Ultra    = the Replicate-based hybrid (was previously routed as
+  //              "luxury"). Replicate produces higher-quality image-to-
+  //              video output than Veo for real-estate listings, so it
+  //              earns the premium tier slot.
+  // The file names (luxuryVideoOrchestrator.js / ultraVideoOrchestrator.js)
+  // predate this swap and remain unchanged to avoid an unnecessary import
+  // churn. Treat the function NAME as the source of truth, not the file
+  // name:
+  //   generateUltraVeoVideo      -> Luxury tier (Veo hybrid)
+  //   generateHybridLuxuryVideo  -> Ultra  tier (Replicate hybrid)
   const generationPromise =
     requestedTier === "ultra"
-      ? generateUltraVeoVideo(targetId, cleanImages, listingData)
+      ? generateHybridLuxuryVideo(targetId, cleanImages, listingData)
       : requestedTier === "luxury"
-        ? generateHybridLuxuryVideo(targetId, cleanImages, listingData)
+        ? generateUltraVeoVideo(targetId, cleanImages, listingData)
         : generateListingSlideshow(targetId, cleanImages, listingData);
 
   generationPromise
