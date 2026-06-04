@@ -953,4 +953,7 @@ async function generateListingSlideshow(listingId, imageUrls, listingData) {
 module.exports = {
   generateListingSlideshow,
   checkFFmpegAvailable,
+  // Exposed so the video-cleanup track (which has no listing images)
+  // can still generate the ElevenLabs narration audio file directly.
+  elevenLabsTTSToMp3,
 };

@@ -125,19 +125,30 @@ async function probeDuration(videoPath) {
 //   scale + fps         — normalise to 1920x1080 30fps for join
 // ─────────────────────────────────────────────────────────────────
 async function applyCinematicGrade(inputPath, outputPath) {
-  // Visual filter chain. Order matters — denoise BEFORE color grade
-  // so the noise itself isn't graded; sharpen AFTER denoise to put
-  // edges back.
+  // Visual filter chain — REAL ESTATE optimised (June 2026).
+  // Owner feedback after first run: 'too dark, no real change'.
+  // Reworked to LIFT exposure instead of crushing blacks. Order:
+  // denoise → sharpen → tone → subtle color → saturation → letterbox.
+  //
+  // The Hollywood teal/orange was too aggressive — real estate
+  // viewers want to see the actual property colours, just brighter
+  // and crisper. So now:
+  //   - eq lifts brightness/gamma so dark phone footage looks naturally lit
+  //   - colorbalance is SUBTLE (warm highlights only, no teal shadows)
+  //   - hue saturation bump for vibrant but realistic colour
+  //   - vignette adds a cinematic edge fall-off
   const visual = [
     "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30",
     "deshake=rx=16:ry=16",
-    "hqdn3d=4:3:6:4.5",
-    "unsharp=5:5:1.0:5:5:0.0",
-    "curves=preset=increase_contrast",
-    // Teal shadows, warm highlights — the classic orange/teal look.
-    // rs/gs/bs = shadows, rm/gm/bm = midtones, rh/gh/bh = highlights.
-    "colorbalance=rs=-0.05:gs=0.00:bs=0.06:rm=0.00:gm=0.00:bm=0.00:rh=0.08:gh=0.04:bh=-0.04",
-    "eq=saturation=1.15:contrast=1.08:brightness=0.00",
+    "hqdn3d=2:1:4:3",                         // lighter denoise — keep detail
+    "unsharp=5:5:1.2:5:5:0.0",                // bit more edge punch
+    // Lift exposure + lift midtones + warm slightly. Brightens dark
+    // phone footage without crushing highlights.
+    "eq=brightness=0.06:gamma=1.12:saturation=1.25:contrast=1.06",
+    // Subtle warm grade — slightly warm highlights, no teal shadow
+    // crush. Real estate looks better warm than cold.
+    "colorbalance=rh=0.06:gh=0.03:bh=-0.02",
+    "vignette=PI/5",                          // soft cinematic edge darkening
     // 2.35:1 cinematic letterbox: crop the middle 85% vertically,
     // then pad back to 1080 height with black top/bottom.
     "crop=iw:ih*0.85:0:ih*0.075,pad=iw:1080:0:(1080-ih)/2:black",
@@ -231,9 +242,56 @@ async function generateCleanupVideo(listingId, seedVideoUrl, listingData = {}) {
     percent: 60,
   });
 
+  // Voice narration: cleanup mode no longer requires uploaded images.
+  // We generate the script directly from listingData and call
+  // ElevenLabs TTS — same pipeline the slideshow service uses, just
+  // skipping the slideshow video output. Result is a standalone
+  // MP3 we mux on top of the graded video.
   let withVoicePath = gradedPath;
+  let voiceMp3Path = null;
+  try {
+    const { elevenLabsTTSToMp3 } = require("./videoService");
+    const { generateDynamicPromoText, generatePromotionalText } = require("../routes/ai");
+    let voiceScript = "";
+    try {
+      const promo = await generateDynamicPromoText(listingData);
+      voiceScript =
+        promo?.voiceScript ||
+        promo?._voiceScript ||
+        [promo?.headline, promo?.subheadline, promo?.callToAction].filter(Boolean).join(" — ");
+    } catch {
+      /* fall through to deterministic builder */
+    }
+    if (!voiceScript) {
+      const t = generatePromotionalText(
+        listingData?.propertyType,
+        listingData?.purpose,
+        listingData?.city,
+        listingData?.district,
+        listingData?.price
+      );
+      voiceScript = [t?.headline, t?.subheadline, t?.callToAction].filter(Boolean).join(" — ");
+    }
+    if (voiceScript && voiceScript.trim().length > 0) {
+      const voiceId = listingData?.elevenlabsVoiceId || undefined;
+      voiceMp3Path = path.join(outDir, `narration_${Date.now()}.mp3`);
+      await elevenLabsTTSToMp3(voiceScript.slice(0, 800), voiceId).then((buf) =>
+        fs.writeFileSync(voiceMp3Path, buf)
+      );
+      withVoicePath = path.join(outDir, `voiced_${Date.now()}.mp4`);
+      await overlayVoiceOnVideo(gradedPath, voiceMp3Path, withVoicePath);
+      console.log("[Cleanup] ✅ ElevenLabs narration overlaid:", withVoicePath);
+    }
+  } catch (e) {
+    // Voice is enhancement, not blocker. Ship the graded silent video
+    // if narration fails for any reason.
+    console.warn("[Cleanup] ⚠️ voice narration skipped:", e.message);
+  }
+
+  // Legacy fallback: if customer happened to upload images too, the
+  // slideshow path can still feed voice as well. Kept for back-compat.
   const sampleImages = Array.isArray(listingData?.imageUrls) ? listingData.imageUrls : [];
-  if (sampleImages.length >= 2) {
+  if (withVoicePath === gradedPath && sampleImages.length >= 2) {
     try {
       const { generateListingSlideshow } = require("./videoService");
       const slideshowResult = await generateListingSlideshow(listingId, sampleImages.slice(0, 4), listingData);
@@ -246,8 +304,6 @@ async function generateCleanupVideo(listingId, seedVideoUrl, listingData = {}) {
         try { fs.unlinkSync(voiceSourcePath); } catch {}
       }
     } catch (e) {
-      // Voice overlay is enhancement, not blocker. Keep the graded
-      // video without narration if the slideshow service fails.
       console.warn(`[Cleanup] ⚠️ voice overlay skipped: ${e.message}`);
     }
   }
@@ -300,7 +356,7 @@ async function generateCleanupVideo(listingId, seedVideoUrl, listingData = {}) {
     }
   } finally {
     // Cleanup ALL temp files.
-    for (const p of [seedPath, gradedPath, withVoicePath, finalPath]) {
+    for (const p of [seedPath, gradedPath, withVoicePath, voiceMp3Path, finalPath]) {
       if (p) {
         try { fs.unlinkSync(p); } catch {}
       }

@@ -4510,12 +4510,9 @@ export default function NewListingPage() {
                               <div className="flex items-center gap-2 mb-1">
                                 <span className="text-base">🎥</span>
                                 <span className="font-bold text-sm text-[#002845]">من فيديو هاتفي</span>
-                                <span className="ml-auto text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">
-                                  مجاناً
-                                </span>
                               </div>
                               <p className="text-[11px] text-[#002845]/60 leading-snug">
-                                تنظيف سينمائي — تثبيت + تدرّج لوني + سرد
+                                تحسين سينمائي + سرد صوتي احترافي
                               </p>
                             </button>
                           </div>
@@ -4685,13 +4682,10 @@ export default function NewListingPage() {
                             <div className="rounded-xl border-2 border-emerald-500 bg-emerald-50/60 p-3">
                               <div className="flex items-center gap-2 mb-2">
                                 <span className="text-base">🎥</span>
-                                <span className="font-bold text-sm text-[#002845]">تنظيف فيديو هاتفي</span>
-                                <span className="ml-auto text-[9px] bg-emerald-200 text-emerald-900 px-1.5 py-0.5 rounded font-bold">
-                                  مجاناً
-                                </span>
+                                <span className="font-bold text-sm text-[#002845]">تحسين فيديو هاتفي</span>
                               </div>
                               <p className="text-[11px] text-[#002845]/70 mb-3 leading-relaxed">
-                                ارفع فيديو عقارك بهاتفك — نقوم بالتثبيت + التدرّج اللوني السينمائي + إضافة تعليق صوتي + عنوان وسعر. لا توليد AI، لا تكلفة عليك.
+                                ارفع فيديو عقارك بهاتفك — نُطبّق تثبيتاً سينمائياً وتدرّجاً لونياً احترافياً، ونضيف سرداً صوتياً عربياً مع عنوان وسعر متحرّكين.
                               </p>
                               <label className="block">
                                 <input
@@ -4730,9 +4724,8 @@ export default function NewListingPage() {
                               {seedVideoError && (
                                 <p className="text-[10px] text-red-700 mt-1.5">{seedVideoError}</p>
                               )}
-                              <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-[#002845]/70">
-                                <div className="bg-white/70 rounded p-1.5">⏱ <strong>الوقت:</strong> 30-90 ثانية</div>
-                                <div className="bg-white/70 rounded p-1.5">💵 <strong>الكلفة:</strong> صفر تقريباً</div>
+                              <div className="mt-2 text-[10px] text-[#002845]/70 bg-white/70 rounded p-1.5">
+                                ⏱ <strong>وقت المعالجة:</strong> 1-3 دقائق · 16:9 سينمائي مع تعليق صوتي ElevenLabs
                               </div>
                             </div>
                           )}
